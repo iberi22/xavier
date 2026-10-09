@@ -1836,4 +1836,60 @@ mod tests {
         assert_eq!(stats.read, 3);
         Ok(())
     }
+
+    /// A cursor saved for database A is not a cursor for database B.
+    /// Same session ids in both files: if the stored path is ignored, B is
+    /// skipped and this test fails.
+    #[tokio::test]
+    async fn cursor_rejects_other_database_path() -> Result<()> {
+        let dir = tempdir()?;
+        let db_a = dir.path().join("a.db");
+        let db_b = dir.path().join("b.db");
+        seed_three_sessions(&db_a)?;
+        seed_three_sessions(&db_b)?;
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+
+        let _env = RestoreEnv::set("OPENCODE_DB_PATH", &db_a);
+        let first = OpenCodeImporter::new()
+            .with_hot_window(0)
+            .with_cursor_path(&cursor);
+        assert_eq!(first.sync(&store).await?.read, 3);
+        drop(first);
+
+        std::env::set_var("OPENCODE_DB_PATH", &db_b);
+        let second = OpenCodeImporter::new()
+            .with_hot_window(0)
+            .with_cursor_path(&cursor);
+        let stats = second.sync(&store).await?;
+        assert_eq!(
+            stats.read, 3,
+            "a cursor for another database must be a full pass"
+        );
+        assert_eq!(stats.skipped, 0);
+        Ok(())
+    }
+
+    /// Puts an env var back when the test ends, including on assertion failure.
+    struct RestoreEnv {
+        key: &'static str,
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl RestoreEnv {
+        fn set(key: &'static str, value: &std::path::Path) -> Self {
+            let prev = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for RestoreEnv {
+        fn drop(&mut self) {
+            match self.prev.take() {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 }
