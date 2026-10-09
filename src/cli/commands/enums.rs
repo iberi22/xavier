@@ -1912,6 +1912,21 @@ pub enum RecoveryCommand {
         /// Seal under an interactively-entered passphrase.
         #[arg(long)]
         passphrase: bool,
+        /// Read the passphrase without prompting.
+        #[arg(long, requires = "passphrase")]
+        passphrase_file: Option<std::path::PathBuf>,
+        /// Write the new mnemonic to a new private file instead of stdout.
+        #[arg(long, requires = "mnemonic")]
+        words_out: Option<std::path::PathBuf>,
+        /// Explicitly replace an existing mnemonic seal.
+        #[arg(long, requires = "mnemonic")]
+        replace_mnemonic: bool,
+        /// Explicitly replace an existing passphrase seal.
+        #[arg(long, requires = "passphrase")]
+        replace_passphrase: bool,
+        /// Allow sealing a key different from the stored KCV.
+        #[arg(long)]
+        rekey: bool,
     },
     /// Install a recovered record key. Refuses to overwrite an existing one.
     Restore {
@@ -1921,6 +1936,24 @@ pub enum RecoveryCommand {
         /// Expected key-check value. Defaults to the stored one.
         #[arg(long)]
         kcv: Option<String>,
+    },
+    /// Unseal a record key from a mnemonic or passphrase seal.
+    Unseal {
+        /// Unseal using the 24-word mnemonic seal.
+        #[arg(long)]
+        mnemonic: bool,
+        /// Unseal using the passphrase seal.
+        #[arg(long)]
+        passphrase: bool,
+        /// Path to a file containing the 24 words (for scripts and non-interactive use).
+        #[arg(long)]
+        words_file: Option<std::path::PathBuf>,
+        /// Path to a file containing the passphrase (for scripts and non-interactive use).
+        #[arg(long)]
+        passphrase_file: Option<std::path::PathBuf>,
+        /// Optional path to write the unsealed key in hex (0600) instead of installing it.
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
     },
     /// Report the Google Drive connection used for encrypted backups.
     Drive,

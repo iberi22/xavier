@@ -8,7 +8,7 @@ pub mod reflection;
 
 use anyhow::Result;
 use chrono::Utc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -68,7 +68,7 @@ impl Default for ConsolidationTask {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ConsolidationStats {
     pub selected: usize,
     pub grouped: usize,
@@ -186,16 +186,26 @@ impl ConsolidationTask {
                 continue;
             }
 
+            let created_at = managed.created_at.or_else(|| {
+                managed
+                    .doc
+                    .metadata
+                    .get("created_at")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+
             let importance = merger::importance_score(
                 managed.access_count,
                 managed.last_access,
-                managed.created_at,
+                created_at,
                 &managed.doc.metadata,
             );
             let decayed = merger::decay_importance(
                 importance,
                 managed.last_access,
-                managed.created_at,
+                created_at,
                 self.decay_rate,
             );
 
@@ -266,7 +276,15 @@ impl ConsolidationTask {
         let recent: Vec<_> = memories
             .iter()
             .filter(|m| {
-                let age = merger::age_days(m.last_access, m.created_at);
+                let created_at = m.created_at.or_else(|| {
+                    m.doc
+                        .metadata
+                        .get("created_at")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.with_timezone(&Utc))
+                });
+                let age = merger::age_days(m.last_access, created_at);
                 age < 1.0 // less than 1 day old
             })
             .collect();
@@ -419,13 +437,22 @@ impl ConsolidationTask {
         let mut candidates: Vec<ManagedMemory> = memories
             .into_iter()
             .filter(|memory| {
+                let created_at = memory.created_at.or_else(|| {
+                    memory
+                        .doc
+                        .metadata
+                        .get("created_at")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.with_timezone(&Utc))
+                });
                 let importance = merger::importance_score(
                     memory.access_count,
                     memory.last_access,
-                    memory.created_at,
+                    created_at,
                     &memory.doc.metadata,
                 );
-                let age_days = merger::age_days(memory.last_access, memory.created_at);
+                let age_days = merger::age_days(memory.last_access, created_at);
                 importance < 0.65 || age_days >= self.reflection_age_days as f32
             })
             .collect();
@@ -510,5 +537,198 @@ impl ConsolidationTask {
             "memory reflection complete"
         );
         Ok(stats)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::store::MemoryBackend;
+    use crate::workspace::{WorkspaceConfig, WorkspaceState};
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_consolidation_task_defaults() {
+        let task = ConsolidationTask::default();
+        assert_eq!(task.batch_size, 32);
+        assert!((task.similarity_threshold - 0.88).abs() < 1e-4);
+        assert!((task.decay_rate - 0.94).abs() < 1e-4);
+        assert!((task.min_importance_for_decay - 0.30).abs() < 1e-4);
+        assert_eq!(task.reflection_batch_size, 8);
+        assert_eq!(task.reflection_age_days, 30);
+        assert!((task.cleanup_similarity_threshold - 0.91).abs() < 1e-4);
+    }
+
+    #[tokio::test]
+    async fn test_consolidation_task_decay_and_pruning() {
+        std::env::set_var("XAVIER_TOKEN", "test-token");
+        let temp_dir = tempdir().unwrap();
+        let workspace_dir = temp_dir.path().to_path_buf();
+
+        let mut config = WorkspaceConfig::from_env();
+        config.id = "test-consolidation-ws".to_string();
+        config.memory_backend = MemoryBackend::Memory;
+        let runtime_config = crate::agents::RuntimeConfig::default();
+        let workspace_state = Arc::new(
+            WorkspaceState::new(config, runtime_config, workspace_dir)
+                .await
+                .unwrap(),
+        );
+
+        let workspace_ctx = WorkspaceContext {
+            workspace_id: "test-consolidation-ws".to_string(),
+            workspace: workspace_state,
+        };
+
+        // 1. Add an active fresh document with high importance
+        workspace_ctx
+            .workspace
+            .memory
+            .add_document_typed_with_embedding(
+                "notes/active.md".to_string(),
+                "Active project decision note with substantial content to preserve.".to_string(),
+                serde_json::json!({
+                    "memory_importance": 0.95,
+                    "memory_priority": "high",
+                    "kind": "decision"
+                }),
+                None,
+                Some(Vec::new()),
+            )
+            .await
+            .unwrap();
+
+        // 2. Add a stale low-importance document created 100 days ago
+        let old_ts = Utc::now() - chrono::Duration::days(100);
+        workspace_ctx
+            .workspace
+            .memory
+            .add_document_typed_with_embedding(
+                "notes/stale_low.md".to_string(),
+                "Stale low importance scratch note from past iterations.".to_string(),
+                serde_json::json!({
+                    "memory_importance": 0.20,
+                    "memory_priority": "low",
+                    "created_at": old_ts.to_rfc3339(),
+                    "kind": "scratch"
+                }),
+                None,
+                Some(Vec::new()),
+            )
+            .await
+            .unwrap();
+
+        let task = ConsolidationTask {
+            decay_rate: 0.94,
+            min_importance_for_decay: 0.30,
+            ..Default::default()
+        };
+
+        let stats = task.consolidate(&workspace_ctx, None).await.unwrap();
+
+        // Stale document should decay below 0.30 and get deleted
+        assert!(
+            stats.deleted_redundant_documents >= 1,
+            "expected stale low-importance document to be deleted"
+        );
+
+        // Verify active note is still present
+        let all_docs = workspace_ctx.workspace.memory.all_documents().await;
+        assert!(
+            all_docs.iter().any(|d| d.path == "notes/active.md"),
+            "active document must remain present"
+        );
+        assert!(
+            !all_docs.iter().any(|d| d.path == "notes/stale_low.md"),
+            "stale document must have been pruned"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_consolidation_task_clusters_and_merges_duplicates() {
+        std::env::set_var("XAVIER_TOKEN", "test-token");
+        let temp_dir = tempdir().unwrap();
+        let workspace_dir = temp_dir.path().to_path_buf();
+
+        let mut config = WorkspaceConfig::from_env();
+        config.id = "test-consolidation-merge".to_string();
+        config.memory_backend = MemoryBackend::Memory;
+        let runtime_config = crate::agents::RuntimeConfig::default();
+        let workspace_state = Arc::new(
+            WorkspaceState::new(config, runtime_config, workspace_dir)
+                .await
+                .unwrap(),
+        );
+
+        let workspace_ctx = WorkspaceContext {
+            workspace_id: "test-consolidation-merge".to_string(),
+            workspace: workspace_state,
+        };
+
+        // Add two highly similar documents that should cluster and merge
+        workspace_ctx
+            .workspace
+            .memory
+            .add_document_typed_with_embedding(
+                "docs/feature_a.md".to_string(),
+                "The authentication token must be bound to NodeId public key to prevent impersonation.".to_string(),
+                serde_json::json!({
+                    "memory_importance": 0.85,
+                    "kind": "spec"
+                }),
+                None,
+                Some(Vec::new()),
+            )
+            .await
+            .unwrap();
+
+        workspace_ctx
+            .workspace
+            .memory
+            .add_document_typed_with_embedding(
+                "docs/feature_b.md".to_string(),
+                "The authentication token must be bound to NodeId public key to prevent impersonation attacks.".to_string(),
+                serde_json::json!({
+                    "memory_importance": 0.85,
+                    "kind": "spec"
+                }),
+                None,
+                Some(Vec::new()),
+            )
+            .await
+            .unwrap();
+
+        let task = ConsolidationTask {
+            similarity_threshold: 0.80,
+            decay_rate: 0.94,
+            ..Default::default()
+        };
+
+        let stats = task.consolidate(&workspace_ctx, None).await.unwrap();
+
+        assert!(stats.grouped >= 1, "expected documents to be clustered");
+        assert!(
+            stats.merged_documents >= 1,
+            "expected documents to be merged"
+        );
+
+        let all_docs = workspace_ctx.workspace.memory.all_documents().await;
+        let spec_docs: Vec<_> = all_docs
+            .iter()
+            .filter(|d| d.path.starts_with("docs/feature"))
+            .collect();
+        assert_eq!(
+            spec_docs.len(),
+            1,
+            "expected duplicate document to be merged into one"
+        );
+        assert_eq!(
+            spec_docs[0]
+                .metadata
+                .get("memory_merged")
+                .and_then(|v| v.as_bool()),
+            Some(true),
+            "merged document must have memory_merged=true in metadata"
+        );
     }
 }

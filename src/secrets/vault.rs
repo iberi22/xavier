@@ -45,12 +45,13 @@ fn fallback_base_dir(isolated_service: Option<&str>) -> Option<std::path::PathBu
 /// is loaded: an absent secret is the common case and must stay side-effect
 /// free.
 fn fallback_dir_for_service(service_name: &str) -> Option<std::path::PathBuf> {
-    let base = fallback_base_dir(is_isolated_service(service_name).then_some(service_name))?;
-    Some(if service_name == "xavier" {
-        base
+    if is_isolated_service(service_name) {
+        fallback_base_dir(Some(service_name))
+    } else if service_name == "xavier" {
+        fallback_base_dir(None)
     } else {
-        base.join(service_name)
-    })
+        fallback_base_dir(None).map(|base| base.join(service_name))
+    }
 }
 
 fn build_backend(isolated_service: Option<&str>) -> Option<VaultBackend> {

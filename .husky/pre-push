@@ -157,7 +157,7 @@ PY
         note "🔐  [SWAL] nada nuevo que subir"
     fi
 else
-    skip "🔐  gitleaks NO DISPONIBLE — escaneo del historial OMITIDO"
+    fail "🔐  gitleaks NO DISPONIBLE — el runtime de seguridad es obligatorio"
 fi
 
 # ── 2. Commit messages must not describe the attack surface ───────────────────

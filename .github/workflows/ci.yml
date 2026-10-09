@@ -226,6 +226,17 @@ jobs:
           cargo test --package xavier --features ci-safe --test clavis_namespace_e2e -- --test-threads=1
           cargo test --package xavier --features ci-safe --test clavis_vault_smoke_e2e -- --test-threads=1
 
+      - name: Run Recovery E2E (seal -> perder record.key -> unseal -> restore)
+        # Sin TTY y hermético: HOME, XAVIER_DATA_DIR y XAVIER_RECOVERY_DIR temporales,
+        # keyring inalcanzable. El script recorre el binario real (target/debug/xavier).
+        run: |
+          cargo test --package xavier --features ci-safe --test recovery_unseal_e2e --test recovery_cli_e2e -- --test-threads=1
+          cargo build --package xavier --features ci-safe --bin xavier
+          bash scripts/test-recovery-e2e.sh --bin target/debug/xavier
+
+      - name: Run E3 (una credencial nunca vuelve en memory_search)
+        run: cargo test --package xavier --features ci-safe --test v1_api_ingest_test -- --test-threads=1
+
   # Job 3b: Espacios (per-space keys, stores, tokens, links, routing)
   #
   # These are `tests/*.rs` targets, so `cargo test --lib` never compiles or runs
