@@ -985,25 +985,22 @@ Detect removable USB storage devices and show mount points and capacity.
 
 ### `xavier airgap pack`
 
-Pack a file, directory, or database backup into an encrypted capsule.
-
-| Flag | Default | Description |
-|---|---|---|
-| `-i, --input <path>` | required | File or directory to pack. |
-| `-o, --output <path>` | `<input>.swal_capsule` | Output capsule file path. |
-| `-p, --passphrase <text>` | prompt | Passphrase; prompted interactively when omitted. |
-| `-k, --kind <kind>` | inferred from the input | `file`, `directory`, `db_backup`, `memory_dump`, `secrets_vault`. |
-| `--author <name>` | `$USER` / `xavier-node` | Author or operator identity tag. |
+Capsule creation is disabled pending a format redesign. The subcommand remains parseable and exits non-zero; see [the capsule protocol](ARCHITECTURE/AIRGAP_CAPSULE_PROTOCOL.md).
 
 ### `xavier airgap unpack`
 
-Unpack an encrypted capsule to a destination directory.
+Decrypt and authenticate an existing capsule in memory before writing its contents. Single-file capsules write only to a user-selected output path or a name derived from the capsule file path; header filenames are display metadata only.
 
 | Flag | Default | Description |
 |---|---|---|
 | `-c, --capsule <path>` | required | Path to the `.swal_capsule` file. |
-| `-o, --output-dir <path>` | required | Destination directory. |
-| `-p, --passphrase <text>` | prompt | Passphrase; prompted interactively when omitted. |
+| `--output <file>` | none | Explicit relative output file for a single-file capsule; mutually exclusive with `--output-dir`. |
+| `-o, --output-dir <path>` | none | Relative destination directory. Single files use `<capsule-file-stem>.out` inside an existing directory. Directory capsules require a new directory created by unpack. |
+| `--passphrase-file <path>` | prompt | Read the passphrase from a file; otherwise prompt interactively. |
+
+Choose exactly one destination option. Absolute output paths, `..` components, symlinks, existing destination files, protected Xavier key areas, and `record.key`/`master.key` names (matched case-insensitively) are refused. Unpack also refuses to run when the home directory cannot be resolved, because the `~/.xavier` key area cannot then be checked. Directory entries must remain within the new extraction directory and obey the same key-name and symlink restrictions. There is no overwrite option. Passphrases on argv (`-p`/`--passphrase`) are not accepted.
+
+Capsule key derivation uses Argon2id with 19,456 KiB memory, 2 iterations, and parallelism 1. These parameters are pinned in the code and do not change with dependency updates.
 
 ### `xavier airgap inspect`
 
@@ -1016,7 +1013,7 @@ Inspect the unencrypted header metadata of a capsule.
 
 ```bash
 xavier airgap detect
-xavier airgap pack --input ./backup.db --kind db_backup
+xavier airgap unpack --capsule ./backup.db.swal_capsule --output ./restored.db --passphrase-file ./capsule-passphrase.txt
 xavier airgap inspect --capsule ./backup.db.swal_capsule --json
 ```
 
