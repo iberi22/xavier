@@ -7,6 +7,9 @@ from pathlib import Path
 def validate(dag: dict, repo_root: Path) -> list[str]:
     reasons = []
 
+    if isinstance(dag, dict):
+        dag = dag.get("tasks", [])
+
     if not isinstance(dag, list):
         return ["DAG root must be a list of tasks"]
 

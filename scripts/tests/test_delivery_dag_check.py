@@ -27,6 +27,16 @@ class TestDeliveryDagCheck(unittest.TestCase):
         reasons = check_module.validate(dag, self.repo_root)
         self.assertEqual(reasons, [])
 
+    def test_canonical_shape(self):
+        dag = {
+            "epics": [],
+            "tasks": [
+                {"id": "A", "files": [{"path": "a.txt", "action": "create"}], "depends_on": []}
+            ]
+        }
+        reasons = check_module.validate(dag, self.repo_root)
+        self.assertEqual(reasons, [])
+
     def test_cycle(self):
         dag = [
             {"id": "A", "files": ["a.txt"], "depends_on": ["B"]},
