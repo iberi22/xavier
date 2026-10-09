@@ -99,7 +99,7 @@ run_attempt() {
 
   if [[ -n "$reason" ]]; then
     if [[ -n "$backend_pid" ]]; then
-      kill -TERM -- -"$backend_pid" 2>/dev/null || true
+      kill -- -"$backend_pid" 2>/dev/null || true
       sleep 1
       kill -KILL -- -"$backend_pid" 2>/dev/null || true
     fi
