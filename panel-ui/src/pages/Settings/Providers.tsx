@@ -210,70 +210,12 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
             </div>
             <div className="grid gap-4">
               {configs.map((config) => (
-                <div
+                <ProviderConfigCard
                   key={config.provider}
-                  className="bg-[#050505]/30 border border-white/5 rounded-2xl p-6"
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-sm font-bold capitalize">
-                      {config.provider}
-                    </h4>
-                    <div className="flex items-center gap-4">
-                      <div className="flex flex-col items-end">
-                        <label
-                          htmlFor={`${config.provider}-model-input`}
-                          className="text-[9px] text-white/30 uppercase font-bold"
-                        >
-                          Model
-                        </label>
-                        <input
-                          id={`${config.provider}-model-input`}
-                          value={config.model}
-                          onChange={(e) =>
-                            updateConfig(config.provider, {
-                              model: e.target.value,
-                            })
-                          }
-                          className="bg-transparent text-right text-xs text-white/80 focus:text-[#39ff14] outline-none"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <ApiKeyInput
-                    label="API Key"
-                    value={config.api_key || ""}
-                    onChange={(val) =>
-                      updateConfig(config.provider, { api_key: val })
-                    }
-                    onTest={() =>
-                      client.testProvider(config.provider).then(() => {})
-                    }
-                    onRemove={() =>
-                      updateConfig(config.provider, { api_key: "" })
-                    }
-                  />
-                  {config.provider === "local" && (
-                    <div className="mt-4">
-                      <label
-                        htmlFor={`${config.provider}-endpoint-input`}
-                        className="text-[10px] uppercase text-white/50 tracking-widest block mb-2"
-                      >
-                        Endpoint URL
-                      </label>
-                      <input
-                        id={`${config.provider}-endpoint-input`}
-                        value={config.base_url || ""}
-                        onChange={(e) =>
-                          updateConfig(config.provider, {
-                            base_url: e.target.value,
-                          })
-                        }
-                        className="w-full bg-black/40 border border-white/5 rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30"
-                        placeholder="http://localhost:11434"
-                      />
-                    </div>
-                  )}
-                </div>
+                  config={config}
+                  onUpdateConfig={updateConfig}
+                  onTestProvider={handleTestProvider}
+                />
               ))}
             </div>
           </section>
