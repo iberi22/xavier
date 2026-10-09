@@ -7,6 +7,19 @@ use tracing::{error, info};
 
 use super::plans::{Plan, PlanLimits, SubscriptionStatus};
 
+/// Encode an `application/x-www-form-urlencoded` body.
+///
+/// The workspace builds reqwest with `default-features = false` (no `form`
+/// support), so this uses the already-direct `urlencoding` dependency
+/// instead of `RequestBuilder::form`.
+fn form_body(params: &[(&str, &str)]) -> String {
+    params
+        .iter()
+        .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
 /// Stripe API client
 #[derive(Clone)]
 pub struct StripeClient {
@@ -44,16 +57,17 @@ impl StripeClient {
     pub async fn create_customer(&self, email: &str, name: &str) -> Result<Customer> {
         let url = format!("{}/customers", self.base_url());
 
-        let params = [
-            ("email", email),
-            ("name", name),
-        ];
+        let params = [("email", email), ("name", name)];
 
         let response = self
             .http_client
             .post(&url)
             .basic_auth(&self.secret_key, Some(""))
-            .form(&params)
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .body(form_body(&params))
             .send()
             .await?;
 
@@ -95,14 +109,21 @@ impl StripeClient {
             .http_client
             .post(&url)
             .basic_auth(&self.secret_key, Some(""))
-            .form(&params)
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .body(form_body(&params))
             .send()
             .await?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            error!("Stripe create_checkout_session failed: {} - {}", status, body);
+            error!(
+                "Stripe create_checkout_session failed: {} - {}",
+                status, body
+            );
             return Err(anyhow!("Stripe API error: {} - {}", status, body));
         }
 
@@ -119,16 +140,17 @@ impl StripeClient {
     ) -> Result<PortalSession> {
         let url = format!("{}/billing_portal/sessions", self.base_url());
 
-        let params = [
-            ("customer", customer_id),
-            ("return_url", return_url),
-        ];
+        let params = [("customer", customer_id), ("return_url", return_url)];
 
         let response = self
             .http_client
             .post(&url)
             .basic_auth(&self.secret_key, Some(""))
-            .form(&params)
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .body(form_body(&params))
             .send()
             .await?;
 
@@ -198,7 +220,11 @@ impl StripeClient {
     }
 
     /// Verify webhook signature
-    pub fn verify_webhook_signature(&self, payload: &[u8], signature: &str) -> Result<WebhookEvent> {
+    pub fn verify_webhook_signature(
+        &self,
+        payload: &[u8],
+        signature: &str,
+    ) -> Result<WebhookEvent> {
         // Parse the signature header
         let parts: Vec<&str> = signature.split(',').collect();
         let mut timestamp: Option<&str> = None;
@@ -227,7 +253,10 @@ impl StripeClient {
             signed_payload.as_bytes(),
         ));
 
-        if sig != expected {
+        if !bool::from(subtle::ConstantTimeEq::ct_eq(
+            sig.as_bytes(),
+            expected.as_bytes(),
+        )) {
             return Err(anyhow!("Webhook signature verification failed"));
         }
 
@@ -346,13 +375,17 @@ impl BillingService {
                 match self.stripe.get_subscription(subscription_id).await {
                     Ok(sub) => {
                         let plan = Plan::from_price_id(
-                            sub.items.data.first()
+                            sub.items
+                                .data
+                                .first()
                                 .map(|item| item.price.id.as_str())
-                                .unwrap_or("")
-                        ).unwrap_or(Plan::Free);
+                                .unwrap_or(""),
+                        )
+                        .unwrap_or(Plan::Free);
 
                         let subscription_status = sub.status.clone();
-                        let is_active = subscription_status == "active" || subscription_status == "trialing";
+                        let is_active =
+                            subscription_status == "active" || subscription_status == "trialing";
 
                         return Ok(SubscriptionStatus {
                             plan,
@@ -375,15 +408,24 @@ impl BillingService {
     }
 
     /// Create a new customer for a workspace
-    pub async fn create_customer(&self, workspace_id: &str, email: &str, name: &str) -> Result<String> {
+    pub async fn create_customer(
+        &self,
+        workspace_id: &str,
+        email: &str,
+        name: &str,
+    ) -> Result<String> {
         let customer = self.stripe.create_customer(email, name).await?;
 
         // Store customer ID in workspace metadata
-        self.save_workspace_billing_metadata(workspace_id, &WorkspaceBillingMetadata {
-            stripe_customer_id: Some(customer.id.clone()),
-            stripe_subscription_id: None,
-            stripe_price_id: None,
-        }).await?;
+        self.save_workspace_billing_metadata(
+            workspace_id,
+            &WorkspaceBillingMetadata {
+                stripe_customer_id: Some(customer.id.clone()),
+                stripe_subscription_id: None,
+                stripe_price_id: None,
+            },
+        )
+        .await?;
 
         Ok(customer.id)
     }
@@ -398,22 +440,35 @@ impl BillingService {
     ) -> Result<String> {
         let metadata = self.get_workspace_billing_metadata(workspace_id).await?;
 
-        let customer_id = metadata.stripe_customer_id
+        let customer_id = metadata
+            .stripe_customer_id
             .ok_or_else(|| anyhow!("No Stripe customer found. Call create-customer first."))?;
 
-        let price_id = plan.price_id()
+        let price_id = plan
+            .price_id()
             .ok_or_else(|| anyhow!("Plan {} does not have a price configured", plan))?;
 
-        let session = self.stripe
-            .create_checkout_session(&customer_id, &price_id, success_url, cancel_url, workspace_id)
+        let session = self
+            .stripe
+            .create_checkout_session(
+                &customer_id,
+                &price_id,
+                success_url,
+                cancel_url,
+                workspace_id,
+            )
             .await?;
 
         // Store price ID for later reference
-        self.save_workspace_billing_metadata(workspace_id, &WorkspaceBillingMetadata {
-            stripe_customer_id: Some(customer_id),
-            stripe_subscription_id: None,
-            stripe_price_id: Some(price_id),
-        }).await?;
+        self.save_workspace_billing_metadata(
+            workspace_id,
+            &WorkspaceBillingMetadata {
+                stripe_customer_id: Some(customer_id),
+                stripe_subscription_id: None,
+                stripe_price_id: Some(price_id),
+            },
+        )
+        .await?;
 
         Ok(session.url.unwrap_or_default())
     }
@@ -422,10 +477,14 @@ impl BillingService {
     pub async fn create_portal(&self, workspace_id: &str, return_url: &str) -> Result<String> {
         let metadata = self.get_workspace_billing_metadata(workspace_id).await?;
 
-        let customer_id = metadata.stripe_customer_id
+        let customer_id = metadata
+            .stripe_customer_id
             .ok_or_else(|| anyhow!("No Stripe customer found"))?;
 
-        let session = self.stripe.create_portal_session(&customer_id, return_url).await?;
+        let session = self
+            .stripe
+            .create_portal_session(&customer_id, return_url)
+            .await?;
         Ok(session.url)
     }
 
@@ -433,31 +492,46 @@ impl BillingService {
     pub async fn cancel_subscription(&self, workspace_id: &str) -> Result<()> {
         let metadata = self.get_workspace_billing_metadata(workspace_id).await?;
 
-        let subscription_id = metadata.stripe_subscription_id
+        let subscription_id = metadata
+            .stripe_subscription_id
             .ok_or_else(|| anyhow!("No active subscription found"))?;
 
         self.stripe.cancel_subscription(&subscription_id).await?;
 
         // Clear subscription metadata
-        self.save_workspace_billing_metadata(workspace_id, &WorkspaceBillingMetadata {
-            stripe_customer_id: metadata.stripe_customer_id,
-            stripe_subscription_id: None,
-            stripe_price_id: None,
-        }).await?;
+        self.save_workspace_billing_metadata(
+            workspace_id,
+            &WorkspaceBillingMetadata {
+                stripe_customer_id: metadata.stripe_customer_id,
+                stripe_subscription_id: None,
+                stripe_price_id: None,
+            },
+        )
+        .await?;
 
         Ok(())
     }
 
-    async fn get_workspace_billing_metadata(&self, _workspace_id: &str) -> Result<WorkspaceBillingMetadata> {
+    async fn get_workspace_billing_metadata(
+        &self,
+        _workspace_id: &str,
+    ) -> Result<WorkspaceBillingMetadata> {
         // This would load from workspace metadata store
         // For now, return empty metadata
         Ok(WorkspaceBillingMetadata::default())
     }
 
-    async fn save_workspace_billing_metadata(&self, workspace_id: &str, metadata: &WorkspaceBillingMetadata) -> Result<()> {
+    async fn save_workspace_billing_metadata(
+        &self,
+        workspace_id: &str,
+        metadata: &WorkspaceBillingMetadata,
+    ) -> Result<()> {
         // This would save to workspace metadata store
         // For now, just log
-        info!("Would save billing metadata for workspace {}: {:?}", workspace_id, metadata);
+        info!(
+            "Would save billing metadata for workspace {}: {:?}",
+            workspace_id, metadata
+        );
         Ok(())
     }
 }
@@ -493,6 +567,50 @@ mod urlencoding {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn webhook_signature_accepts_valid_and_rejects_forged() {
+        let client = StripeClient {
+            http_client: Client::new(),
+            secret_key: String::new(),
+            webhook_secret: "whsec_test".to_string(),
+        };
+        let payload = br#"{"id":"evt_1","type":"invoice.paid"}"#;
+        let valid = crate::crypto::hex_encode(crate::crypto::hmac::hmac_sha256(
+            b"whsec_test",
+            format!("123.{}", String::from_utf8_lossy(payload)).as_bytes(),
+        ));
+
+        let event = client
+            .verify_webhook_signature(payload, &format!("t=123,v1={valid}"))
+            .expect("valid signature must verify");
+        assert_eq!(event.id, "evt_1");
+
+        let mut forged = valid.clone();
+        forged.replace_range(0..1, if valid.starts_with('0') { "1" } else { "0" });
+        assert!(client
+            .verify_webhook_signature(payload, &format!("t=123,v1={forged}"))
+            .is_err());
+        assert!(client
+            .verify_webhook_signature(payload, "t=123,v1=")
+            .is_err());
+    }
+
+    #[test]
+    fn test_form_body_encoding() {
+        // Regression: workspace reqwest has no `form` support, so Stripe
+        // params go through this encoder; brackets must be percent-encoded
+        // (Stripe accepts %5B..%5D) and values must round-trip exactly.
+        assert_eq!(
+            form_body(&[("email", "a@b.com"), ("name", "x y")]),
+            "email=a%40b.com&name=x%20y"
+        );
+        assert_eq!(
+            form_body(&[("line_items[0][price]", "price_1")]),
+            "line_items%5B0%5D%5Bprice%5D=price_1"
+        );
+        assert_eq!(form_body(&[]), "");
+    }
 
     #[test]
     fn test_urlencoding() {
