@@ -42,11 +42,15 @@ pub struct IndexedSkill {
     /// Dense vector of [`skill_embed_text`] via `EmbeddingPort` (`None` = not embedded yet)
     #[serde(default)]
     pub embedding: Option<Vec<f32>>,
+    /// If true, this skill can be listed but is excluded from active dispatch selection.
+    #[serde(default)]
+    pub disable_model_invocation: bool,
 }
 
 impl IndexedSkill {
     /// Build a compacted version of the skill that uses fewer tokens.
     /// Strips examples, tests sections, and verbose formatting.
+    /// Note: This is for Tier-2 page-in path and is not used by Tier-1 dispatch.
     pub fn compacted_content(&self, max_tokens: usize) -> String {
         let mut content = self.content.clone();
 
@@ -176,7 +180,7 @@ fn load_disabled_from_config(config_path: &Path) -> HashSet<String> {
 fn is_skill_file_name(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
-        .map(|name| name == "SKILL.md" || name.ends_with(".md"))
+        .map(|name| name.eq_ignore_ascii_case("SKILL.md"))
         .unwrap_or(false)
 }
 
@@ -422,7 +426,7 @@ impl SkillRegistry {
         let content_hash = crate::crypto::hex_encode(hasher.finalize());
 
         // Parse frontmatter
-        let (name, description) = parse_frontmatter(&content);
+        let (name, description, disable_model_invocation) = parse_frontmatter(&content);
         let name = name.unwrap_or_else(|| {
             path.parent()
                 .and_then(|p| p.file_name())
@@ -464,6 +468,7 @@ impl SkillRegistry {
             content,
             source_path: path.to_string_lossy().to_string(),
             embedding: None,
+            disable_model_invocation,
         };
 
         // Embed at index time; failures stay fail-open (skill works keyword-only).
@@ -572,6 +577,7 @@ impl SkillRegistry {
         let mut scored: Vec<(f32, &IndexedSkill)> = self
             .skills
             .values()
+            .filter(|skill| !skill.disable_model_invocation)
             .map(|skill| {
                 let score = score_skill_match(skill, &query_lower, &query_terms);
                 (score, skill)
@@ -646,6 +652,7 @@ impl SkillRegistry {
         let rows: Vec<SkillVectorRow> = self
             .skills
             .values()
+            .filter(|skill| !skill.disable_model_invocation)
             .filter_map(|skill| {
                 let vector = skill.embedding.as_ref()?;
                 if vector.is_empty() || vector.len() != query_vector.len() {
@@ -853,13 +860,27 @@ fn parse_skill_clearance(content: &str) -> ClearanceLevel {
 }
 
 /// Parse YAML frontmatter from a skill markdown file.
-fn parse_frontmatter(content: &str) -> (Option<String>, String) {
+fn parse_frontmatter(content: &str) -> (Option<String>, String, bool) {
     let Some(frontmatter) = frontmatter_block(content) else {
-        return (None, String::new());
+        return (None, String::new(), false);
     };
+
+    #[derive(serde::Deserialize)]
+    struct FrontmatterData {
+        name: Option<String>,
+        #[serde(default)]
+        description: String,
+        #[serde(rename = "disable-model-invocation", default)]
+        disable_model_invocation: bool,
+    }
+
+    if let Ok(data) = serde_yaml::from_str::<FrontmatterData>(frontmatter) {
+        return (data.name, data.description, data.disable_model_invocation);
+    }
 
     let mut name = None;
     let mut description = String::new();
+    let mut disable_model_invocation = false;
 
     for line in frontmatter.lines() {
         let line = line.trim();
@@ -867,10 +888,14 @@ fn parse_frontmatter(content: &str) -> (Option<String>, String) {
             name = Some(value.trim().trim_matches('"').to_string());
         } else if let Some(value) = line.strip_prefix("description:") {
             description = value.trim().trim_matches('"').to_string();
+        } else if let Some(value) = line.strip_prefix("disable-model-invocation:") {
+            if value.trim() == "true" {
+                disable_model_invocation = true;
+            }
         }
     }
 
-    (name, description)
+    (name, description, disable_model_invocation)
 }
 
 /// Infer domain tags from the skill description and content.
@@ -995,9 +1020,28 @@ description: "A test skill for unit testing"
 
 Instructions here.
 "#;
-        let (name, desc) = parse_frontmatter(content);
+        let (name, desc, disable_model_invocation) = parse_frontmatter(content);
         assert_eq!(name.unwrap(), "test-skill");
         assert_eq!(desc, "A test skill for unit testing");
+        assert_eq!(disable_model_invocation, false);
+    }
+
+    #[test]
+    fn parses_yaml_frontmatter_block_scalar() {
+        let content = r#"---
+name: block-skill
+description: >-
+  This is a multiline
+  description string.
+disable-model-invocation: true
+---
+
+# Block Skill
+"#;
+        let (name, desc, disable_model_invocation) = parse_frontmatter(content);
+        assert_eq!(name.unwrap(), "block-skill");
+        assert_eq!(desc, "This is a multiline description string.");
+        assert_eq!(disable_model_invocation, true);
     }
 
     #[test]
@@ -1064,6 +1108,7 @@ Instructions here.
             content: "# Instructions".to_string(),
             source_path: "test".to_string(),
             embedding: None,
+            disable_model_invocation: false,
         };
 
         let query = "analyze openclaw bot failures";
@@ -1085,6 +1130,7 @@ Instructions here.
             content: "# Instructions".to_string(),
             source_path: "test".to_string(),
             embedding: None,
+            disable_model_invocation: false,
         };
         let query = "please give explanation of rust architecture";
         let query_lower = query.to_lowercase();
@@ -1108,6 +1154,7 @@ Instructions here.
             content: "# Instructions".to_string(),
             source_path: "test".to_string(),
             embedding: None,
+            disable_model_invocation: false,
         };
         let query = "what is the plan for today";
         let query_lower = query.to_lowercase();
@@ -1132,6 +1179,7 @@ Instructions here.
             content: "# Instructions".to_string(),
             source_path: "test".to_string(),
             embedding: None,
+            disable_model_invocation: false,
         };
         let query = "web search help";
         let query_lower = query.to_lowercase();
@@ -1191,6 +1239,15 @@ Instructions here.
         assert!(registry.get("cycle-skill").is_some());
     }
 
+    #[test]
+    fn is_skill_file_name_rejects_non_skill_md() {
+        assert!(is_skill_file_name(Path::new("SKILL.md")));
+        assert!(is_skill_file_name(Path::new("skill.md"))); // case-insensitive
+        assert!(!is_skill_file_name(Path::new("DESCRIPTION.md")));
+        assert!(!is_skill_file_name(Path::new("README.md")));
+        assert!(!is_skill_file_name(Path::new("other-skill.md")));
+    }
+
     #[tokio::test]
     async fn test_registry_honors_disabled_list() {
         let home = tempfile::tempdir().unwrap();
@@ -1218,6 +1275,26 @@ Instructions here.
             registry.get("yes-go-skill").is_some(),
             "enabled skill must be indexed"
         );
+    }
+
+    #[tokio::test]
+    async fn test_disable_model_invocation_frontmatter() {
+        let workspace = tempfile::tempdir().unwrap();
+        let skills_dir = workspace.path().join("skills");
+        std::fs::create_dir_all(&skills_dir.join("silent-skill")).unwrap();
+        std::fs::write(
+            skills_dir.join("silent-skill").join("SKILL.md"),
+            "---\nname: silent-skill\ndescription: \"silent\"\ndisable-model-invocation: true\n---\nbody",
+        ).unwrap();
+
+        let mut registry = SkillRegistry::with_home(workspace.path(), None);
+        registry.reindex().await.unwrap();
+
+        let skill = registry.get("silent-skill").expect("skill should still be indexed");
+        assert!(skill.disable_model_invocation);
+
+        let search_results = registry.search("silent", 10);
+        assert!(search_results.is_empty(), "disabled skill should not appear in search results");
     }
 
     // --- feat-skill-semantic-rank (#302) ---
@@ -1252,6 +1329,7 @@ Instructions here.
             content: format!("# {name}\n{description}"),
             source_path: format!("test/{name}"),
             embedding: Some(embedding),
+            disable_model_invocation: false,
         }
     }
 
@@ -1641,6 +1719,7 @@ mod eval_tests_302 {
                     content: format!("# {name}\n{desc}"),
                     source_path: format!("eval/{name}"),
                     embedding: Some(hashed_bow(&text)),
+                    disable_model_invocation: false,
                 },
             );
         }
