@@ -1,51 +1,69 @@
 import sys
 import json
 import argparse
+from datetime import datetime, timezone
 
 def plan_rollback(decision: dict, target: dict, state: dict, api=None, dry_run: bool = True) -> dict:
+    target_id = target.get("id", decision.get("target_id"))
+    from_deployment_id = target.get("production_id")
+
+    def make_result(result_val: str, verified: bool, to_deployment_id: str, detail: str) -> dict:
+        return {
+            "target_id": target_id,
+            "kind": "cf_worker",
+            "action": "rollback",
+            "dry_run": dry_run,
+            "from_deployment_id": from_deployment_id,
+            "to_deployment_id": to_deployment_id,
+            "result": result_val,
+            "verified": verified,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "detail": detail
+        }
+
     if target.get("kind") != "cf_worker":
-        return {"result": "rejected", "verified": False, "detail": "Target kind is not cf_worker"}
+        return make_result("skipped", False, None, "Target kind is not cf_worker")
 
     if decision.get("action") != "rollback":
-        return {"result": "rejected", "verified": False, "detail": "Action is not rollback"}
+        return make_result("skipped", False, None, "Action is not rollback")
 
-    if decision.get("deployment_id") != target.get("production_id"):
-        return {"result": "rejected", "verified": False, "detail": "Deployment ID mismatch"}
+    if decision.get("deployment_id") != from_deployment_id:
+        return make_result("skipped", False, None, "Deployment ID mismatch")
 
     version_id = decision.get("version_id", decision.get("target_version_id", decision.get("artifact_digest")))
     if not version_id:
-        return {"result": "rejected", "verified": False, "detail": "Missing version ID"}
+        return make_result("skipped", False, None, "Missing version ID")
 
     retained_versions = state.get("retained_versions", {})
     if version_id not in retained_versions:
-        return {"result": "rejected", "verified": False, "detail": "Target version ID absent from retained_versions"}
+        return make_result("skipped", False, None, "Target version ID absent from retained_versions")
 
     retained = retained_versions[version_id]
     traffic = retained.get("traffic", retained.get("traffic_percentage", 0))
     if str(traffic) != "100":
-        return {"result": "rejected", "verified": False, "detail": "Traffic percentage is not 100"}
+        return make_result("skipped", False, None, "Traffic percentage is not 100")
 
     if dry_run:
-        return {"result": "planned", "verified": False, "version_id": version_id, "detail": "Dry run"}
+        return make_result("skipped", False, version_id, "Dry run")
 
     if api is None:
-        return {"result": "failed", "verified": False, "version_id": version_id, "detail": "No API injected"}
+        return make_result("failed", False, version_id, "No API injected")
 
     try:
         api("rollback", version_id)
         probe = api("probe", version_id)
 
         if probe.get("version_id") == version_id and str(probe.get("traffic", "0")) == "100":
-            return {"result": "verified", "verified": True, "version_id": version_id, "detail": "Verified route and deployment ID"}
+            return make_result("applied", True, version_id, "Verified route and deployment ID")
         else:
-            return {"result": "failed", "verified": False, "version_id": version_id, "detail": "Probe traffic mismatch or wrong version"}
+            return make_result("failed", False, version_id, "Probe traffic mismatch or wrong version")
     except Exception as e:
         err_msg = str(e)
         if "?" in err_msg:
             err_msg = err_msg.split("?")[0]
         if "token" in err_msg.lower() or "secret" in err_msg.lower():
             err_msg = "provider error (redacted)"
-        return {"result": "failed", "verified": False, "version_id": version_id, "detail": err_msg}
+        return make_result("failed", False, version_id, err_msg)
 
 def main():
     parser = argparse.ArgumentParser(description="Cloudflare Worker version recovery adapter")
