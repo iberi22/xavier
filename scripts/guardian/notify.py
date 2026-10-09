@@ -30,36 +30,70 @@ def redact(payload: dict) -> dict:
     _redact(result)
     return result
 
+CONTRACT_SEVERITIES = ("critical", "warning", "info")
+CONTRACT_STATES = ("open", "resolved", "escalated")
+
+
+def _deployment_id(event: dict) -> str:
+    """Derive the deployment id for the incident key.
+
+    ActionResult has no deployment_id, so fall back to its from/to ids. A real
+    event therefore never degrades to "unknown_deployment".
+    """
+    for key in ("deployment_id", "from_deployment_id", "to_deployment_id",
+                "previous_known_good_id", "failing_sha"):
+        value = event.get(key)
+        if value:
+            return str(value)
+    return "unknown_deployment"
+
+
 def record_incident(existing: list[dict], event: dict, now: datetime) -> tuple[dict, list[dict]]:
     new_list = copy.deepcopy(existing)
-    
-    target_id = event.get('target_id', 'unknown_target')
-    deployment_id = event.get('deployment_id', 'unknown_deployment')
+
+    target_id = event.get('target_id') or 'unknown_target'
+    deployment_id = _deployment_id(event)
     incident_key = f"{target_id}:{deployment_id}"
-    
+
     now_str = now.isoformat()
-    
+
+    severity = event.get('severity')
+    if severity not in CONTRACT_SEVERITIES:
+        severity = 'warning'
+
+    state = event.get('state')
+    if state not in CONTRACT_STATES:
+        state = 'open'
+
+    # The contract IncidentRecord carries evidence as a dict.
+    evidence = dict(event)
+
     record = None
     for r in new_list:
         if r.get('incident_key') == incident_key:
             record = r
             break
-            
+
     if record:
         record['updated_at'] = now_str
-        if 'state' in event:
-            record['state'] = event['state']
-        if 'evidence' in event:
-            record['evidence'] = event['evidence']
+        record['severity'] = severity
+        record['state'] = state
+        record['evidence'] = evidence
         returned_record = record
     else:
-        new_record = copy.deepcopy(event)
-        new_record['incident_key'] = incident_key
-        new_record['created_at'] = now_str
-        new_record['updated_at'] = now_str
-        new_list.append(new_record)
-        returned_record = new_record
-        
+        returned_record = {
+            'incident_key': incident_key,
+            'target_id': target_id,
+            'kind': event.get('kind') or 'unknown',
+            'severity': severity,
+            'state': state,
+            'opened_at': event.get('opened_at') or now_str,
+            'updated_at': now_str,
+            'evidence': evidence,
+            'notification': {'attempts': 0, 'delivered': False, 'channel': 'default'},
+        }
+        new_list.append(returned_record)
+
     return returned_record, new_list
 
 def notify(record: dict, send=None, attempts: int = 2) -> dict:

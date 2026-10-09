@@ -23,7 +23,9 @@ class TestGuardianNotify(unittest.TestCase):
         record1, state1 = notify.record_incident([], event1, self.now)
         self.assertEqual(len(state1), 1)
         self.assertEqual(record1['incident_key'], "t1:d1")
-        self.assertEqual(state1[0]['evidence'], "error1")
+        self.assertEqual(record1['evidence']['evidence'], "error1")
+        # "failing" is not a contract state, so it defaults to "open"
+        self.assertEqual(record1['state'], "open")
         
         # Duplicate record updates the existing one without appending
         later = datetime(2023, 10, 20, 12, 5, 0, tzinfo=timezone.utc)
@@ -32,13 +34,57 @@ class TestGuardianNotify(unittest.TestCase):
         
         self.assertEqual(len(state2), 1)
         self.assertEqual(record2['incident_key'], "t1:d1")
-        self.assertEqual(record2['evidence'], "error2")
+        self.assertEqual(record2['evidence']['evidence'], "error2")
         self.assertEqual(record2['state'], "escalated")
         self.assertEqual(record2['updated_at'], later.isoformat())
-        self.assertEqual(record2['created_at'], self.now.isoformat())
+        self.assertEqual(record2['opened_at'], self.now.isoformat())
         
         # Original state1 should not be mutated
-        self.assertEqual(state1[0]['evidence'], "error1")
+        self.assertEqual(state1[0]['evidence']['evidence'], "error1")
+
+    def test_incident_record_contract_keys(self):
+        event = {"target_id": "t1", "deployment_id": "d1", "severity": "critical",
+                 "state": "open", "kind": "cf_worker", "detail": "rollback failed"}
+        record, _ = notify.record_incident([], event, self.now)
+        self.assertEqual(set(record.keys()), {
+            "incident_key", "target_id", "kind", "severity", "state",
+            "opened_at", "updated_at", "evidence", "notification"})
+        self.assertIn(record["severity"], ("critical", "warning", "info"))
+        self.assertIn(record["state"], ("open", "resolved", "escalated"))
+        self.assertIsInstance(record["evidence"], dict)
+        self.assertTrue(record["opened_at"].endswith("+00:00"))
+
+    def test_action_result_never_degrades_key(self):
+        # ActionResult has no deployment_id; the key must not become unknown_deployment.
+        action_result = {
+            "target_id": "worker-a",
+            "kind": "cf_worker",
+            "action": "rollback",
+            "dry_run": False,
+            "from_deployment_id": "w-new",
+            "to_deployment_id": "w-old",
+            "result": "applied",
+            "verified": True,
+            "observed_at": "2026-10-09T00:00:00Z",
+            "detail": "rollback verified",
+        }
+        self.assertNotIn("deployment_id", action_result)
+        record, _ = notify.record_incident([], action_result, self.now)
+        self.assertEqual(record["incident_key"], "worker-a:w-new")
+        self.assertNotIn("unknown_deployment", record["incident_key"])
+
+    def test_severity_stays_inside_contract_enum(self):
+        for severity, expected in (("critical", "critical"),
+                                   ("warning", "warning"),
+                                   ("info", "info"),
+                                   ("incident", "warning"),
+                                   (None, "warning")):
+            event = {"target_id": "t1", "deployment_id": "d1"}
+            if severity is not None:
+                event["severity"] = severity
+            record, _ = notify.record_incident([], event, self.now)
+            self.assertEqual(record["severity"], expected)
+            self.assertIn(record["severity"], ("critical", "warning", "info"))
         
     def test_delivery_outage(self):
         def failing_send(record):
