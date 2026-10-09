@@ -44,13 +44,15 @@ pub async fn list_handler(State(_service): State<ModelRouterService>) -> impl In
     )
 }
 
-/// GET `/v1/maloca/models/health`: Placeholder handler that does not check health.
+/// GET `/v1/maloca/models/health`: public liveness of the placeholder router.
+/// Answers 200 (the route is up) but says plainly that no provider is checked.
 pub async fn health_handler(State(_service): State<ModelRouterService>) -> impl IntoResponse {
     (
-        StatusCode::NOT_IMPLEMENTED,
+        StatusCode::OK,
         Json(serde_json::json!({
-            "status": "error",
-            "error": "/v1/maloca/models/health is a placeholder and does not check health"
+            "status": "unavailable",
+            "implemented": false,
+            "message": "/v1/maloca/models/health is a placeholder and does not check provider health"
         })),
     )
 }
@@ -151,17 +153,14 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+        assert_eq!(response.status(), StatusCode::OK);
 
         let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
-        assert_eq!(json["status"], "error");
-        assert_eq!(
-            json["error"],
-            "/v1/maloca/models/health is a placeholder and does not check health"
-        );
+        assert_eq!(json["status"], "unavailable");
+        assert_eq!(json["implemented"], false);
     }
 }
