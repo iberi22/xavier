@@ -48,19 +48,10 @@ EVENT_JSON=$(cat <<EOF
 EOF
 )
 
-# Use env to set GUARDIAN_STATE explicitly for notify.py to use it as its default or something
 export GUARDIAN_STATE="$STATE_FILE"
 
-# Deduplication needs to happen.
-# Actually, the instructions say: "builds one incident event ... and records it by invoking python3 scripts/guardian/notify.py with the event on stdin ... it never calls gh directly ... Exit 0 when the incident is recorded".
-# Does notify.py do the deduplication or does main-incident.sh need to do it?
-# Let's read the instructions again: "the same SHA twice records one incident (dedupe); a second distinct SHA adds one"
-# Since notify.py is an existing script (which we aren't allowed to touch), and the offline test for main-incident-test.sh says "the same SHA twice records one incident (dedupe)", maybe we need to dedupe before calling notify.py? Wait, if we call notify.py, it records it. If we call it twice, does it record it twice? The test says: "the same SHA twice records one incident (dedupe)", so if we run main-incident.sh twice with the same SHA, it should only record it once.
-# Since we don't have notify.py in the tree (or we couldn't find it), let's implement deduplication in main-incident.sh by checking the state file first.
-
 if [[ -f "$STATE_FILE" ]]; then
-  if grep -q "\"failing_sha\": \"$SHA\"" "$STATE_FILE"; then
-    # Already recorded
+  if jq -e --arg sha "$SHA" 'if type == "array" then any(.[]; .failing_sha == $sha) else .failing_sha == $sha end' "$STATE_FILE" >/dev/null 2>&1; then
     if [[ $JSON_OUT -eq 1 ]]; then
       echo '{"status": "deduplicated"}'
     fi
