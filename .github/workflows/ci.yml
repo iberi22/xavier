@@ -122,6 +122,12 @@ jobs:
         with:
           toolchain: "1.94"
 
+      # The workflow-level RUSTFLAGS forces `-fuse-ld=mold`, so this job must
+      # install mold too or every link fails with "cannot find 'ld'"
+      # (see the mold step in rust-clippy / rust-local-gllm-check).
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
 
