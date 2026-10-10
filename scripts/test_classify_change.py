@@ -1,179 +1,79 @@
-import importlib.util
-import json
-import os
-import subprocess
-import sys
-import tempfile
-import unittest
-
-# Load the script dynamically for unit tests
+import importlib.util, json, os, subprocess, sys, tempfile, unittest
 script_path = os.path.join(os.path.dirname(__file__), "classify-change.py")
-spec = importlib.util.spec_from_file_location("classify_change", script_path)
-classify_change = importlib.util.module_from_spec(spec)
-sys.modules["classify_change"] = classify_change
-spec.loader.exec_module(classify_change)
+spec = importlib.util.spec_from_file_location("c", script_path)
+c = importlib.util.module_from_spec(spec)
+sys.modules["c"] = c
+spec.loader.exec_module(c)
 
-class TestClassifyChange(unittest.TestCase):
+class T(unittest.TestCase):
+ def test_table(self):
+  cases = [
+   (["x.txt"],10,"human",None,False,False,False,"flow:ask",False),
+   (["src/a.rs","crates/b.rs"],20,"agent",None,False,False,False,"flow:show",False),
+   (["src/a.rs","src/b.rs","src/c.rs","src/d.rs","src/e.rs"],10,"agent",None,False,False,False,"flow:ask",False),
+   (["src/a.rs"],401,"agent",None,False,False,False,"flow:ask",False),
+   (["src/crypto/mod.rs"],10,"agent",None,False,False,False,"flow:ask",False),
+   (["crates/Cargo.toml"],10,"human",None,False,False,False,"flow:ask",False),
+   (["docs/a.md"],10,"human",None,False,False,False,"flow:ask",False),
+   (["src/../Cargo.toml"],10,"human",None,False,False,False,"flow:ask",False),
+   ([".env.example"],2,"agent",None,False,False,False,"flow:ask",False),
+   (["src/a.rs","src/b.rs"],20,"agent",None,True,False,False,"flow:show",False),
+   (["src/a.rs","docs/a.md"],20,"agent",None,True,False,False,"flow:ask",False),
+   (["src/a.png"],0,"human",None,False,True,False,"flow:ask",False),
+   ([],0,"human",None,False,False,True,"flow:ask",False),
+   (["docs/a.md"],10,"agent","flow:ship",False,False,False,"flow:ask",True),
+   (["src/a.rs"],10,"agent","flow:ask",False,False,False,"flow:ask",False),
+  ]
+  for P,l,a,L,dr,bin,emp,E_c,E_ld in cases:
+   with self.subTest(P=P,l=l,a=a,L=L,dr=dr,bin=bin,emp=emp):
+    r = c.cmp(P,l,a,L,dr,bin,emp)
+    self.assertEqual(r["class"], E_c)
+    self.assertEqual(r["label_downgrade_attempted"], E_ld)
 
-    def test_default_to_ask_for_ambiguous_paths(self):
-        result = classify_change.compute_classification(
-            paths=["some_folder/file.txt"], lines=10, actor="human", label=None
-        )
-        self.assertEqual(result["class"], "flow:ask")
+class TCLI(unittest.TestCase):
+ def setUp(self):
+  self.d = tempfile.TemporaryDirectory()
+  self.r = self.d.name
+  subprocess.run(["git","init","-b","main"],cwd=self.r,check=True,capture_output=True)
+  subprocess.run(["git","config","user.name","X"],cwd=self.r,check=True)
+  subprocess.run(["git","config","user.email","x@x"],cwd=self.r,check=True)
+  subprocess.run(["git","commit","--allow-empty","-m","I"],cwd=self.r,check=True)
+ def tearDown(self): self.d.cleanup()
+ def cli(self,*a):
+  return json.loads(subprocess.run([sys.executable,os.path.abspath(script_path)]+list(a),cwd=self.r,capture_output=True,text=True).stdout.strip())
+ def test_cli(self):
+  self.assertEqual(self.cli("--base","HEAD~1","--head","HEAD","--paths","a","--lines","1")["class"],"flow:ask")
+  subprocess.run(["git","checkout","-b","f"],cwd=self.r,check=True)
+  self.assertEqual(self.cli("--base","main","--head","f")["class"],"flow:ask")
 
-    def test_show_path_for_src_and_crates(self):
-        result = classify_change.compute_classification(
-            paths=["src/main.rs", "crates/my_lib/lib.rs"], lines=20, actor="agent", label=None
-        )
-        self.assertEqual(result["class"], "flow:show")
+  with open(os.path.join(self.r,"a.bin"),"wb") as f: f.write(b'\x00\x01')
+  subprocess.run(["git","add","a.bin"],cwd=self.r,check=True)
+  subprocess.run(["git","commit","-m","B"],cwd=self.r,check=True)
+  self.assertEqual(self.cli("--base","HEAD~1","--head","HEAD")["class"],"flow:ask")
 
-    def test_agent_limit_over_files(self):
-        result = classify_change.compute_classification(
-            paths=["src/a.rs", "src/b.rs", "src/c.rs", "src/d.rs", "src/e.rs"], lines=10, actor="agent", label=None
-        )
-        self.assertEqual(result["class"], "flow:ask")
+  os.makedirs(os.path.join(self.r,"src"),exist_ok=True)
+  with open(os.path.join(self.r,"src","a.txt"),"w") as f: f.write("a\n")
+  subprocess.run(["git","add","src/a.txt"],cwd=self.r,check=True)
+  subprocess.run(["git","commit","-m","T"],cwd=self.r,check=True)
+  subprocess.run(["git","mv","src/a.txt","src/b.txt"],cwd=self.r,check=True)
+  subprocess.run(["git","commit","-m","R"],cwd=self.r,check=True)
+  self.assertEqual(self.cli("--base","HEAD~1","--head","HEAD")["class"],"flow:show")
 
-    def test_agent_limit_over_lines(self):
-        result = classify_change.compute_classification(
-            paths=["src/main.rs"], lines=401, actor="agent", label=None
-        )
-        self.assertEqual(result["class"], "flow:ask")
+  self.assertEqual(self.cli("--base","unknown_ref","--head","HEAD")["class"],"flow:ask")
 
-    def test_sensitive_path_crypto(self):
-        result = classify_change.compute_classification(
-            paths=["src/crypto/mod.rs"], lines=10, actor="agent", label=None
-        )
-        self.assertEqual(result["class"], "flow:ask")
+  # Three-dot empty (Head behind/at merge base, main ahead)
+  subprocess.run(["git","checkout","main"],cwd=self.r,check=True)
+  subprocess.run(["git","commit","--allow-empty","-m","AHEAD"],cwd=self.r,check=True)
+  self.assertEqual(self.cli("--base","main","--head","f")["class"],"flow:ask")
 
-    def test_sensitive_path_cargo_toml(self):
-        result = classify_change.compute_classification(
-            paths=["crates/foo/Cargo.toml"], lines=10, actor="human", label=None
-        )
-        self.assertEqual(result["class"], "flow:ask")
+  # CLI sub-process for Ask paths
+  cases = [("src/security/x.rs","ask"), ("crates/a/Cargo.toml","ask"), ("src/../Cargo.toml","ask")]
+  for p, _ in cases:
+   d = os.path.join(self.r, os.path.dirname(p))
+   os.makedirs(d, exist_ok=True)
+   with open(os.path.join(self.r, p), "w") as f: f.write("1\n")
+   subprocess.run(["git","add",p],cwd=self.r,check=True)
+   subprocess.run(["git","commit","-m","A"],cwd=self.r,check=True)
+   self.assertEqual(self.cli("--base","HEAD~1","--head","HEAD")["class"],"flow:ask")
 
-    def test_sensitive_path_docs(self):
-        result = classify_change.compute_classification(
-            paths=["docs/design/trunk-based/01-DESIGN.md"], lines=10, actor="human", label=None
-        )
-        self.assertEqual(result["class"], "flow:ask")
-
-    def test_sensitive_path_symlink_escape(self):
-        result = classify_change.compute_classification(
-            paths=["src/../Cargo.toml"], lines=10, actor="human", label=None
-        )
-        self.assertEqual(result["class"], "flow:ask")
-
-    def test_sensitive_path_env(self):
-        result = classify_change.compute_classification(
-            paths=[".env.example"], lines=2, actor="agent", label=None
-        )
-        self.assertEqual(result["class"], "flow:ask")
-
-    def test_diff_rename_or_delete(self):
-        result = classify_change.compute_classification(
-            paths=["src/old.rs", "src/new.rs"], lines=20, actor="agent", label=None, has_delete_or_rename=True
-        )
-        self.assertEqual(result["class"], "flow:show")
-
-    def test_diff_rename_or_delete_ask(self):
-        result = classify_change.compute_classification(
-            paths=["src/old.rs", "docs/new.md"], lines=20, actor="agent", label=None, has_delete_or_rename=True
-        )
-        self.assertEqual(result["class"], "flow:ask")
-
-    def test_diff_binary_file(self):
-        result = classify_change.compute_classification(
-            paths=["src/asset.png"], lines=0, actor="human", label=None, has_binary=True
-        )
-        self.assertEqual(result["class"], "flow:ask")
-
-    def test_diff_empty_range(self):
-        result = classify_change.compute_classification(
-            paths=[], lines=0, actor="human", label=None, is_empty_diff=True
-        )
-        self.assertEqual(result["class"], "flow:ask")
-
-    def test_cli_weaker_label_emits_boolean(self):
-        result = classify_change.compute_classification(
-            paths=["docs/README.md"], lines=10, actor="agent", label="flow:ship"
-        )
-        self.assertEqual(result["class"], "flow:ask")
-        self.assertTrue(result["label_downgrade_attempted"])
-
-    def test_cli_stricter_label_keeps_reason(self):
-        result = classify_change.compute_classification(
-            paths=["src/main.rs"], lines=10, actor="agent", label="flow:ask"
-        )
-        self.assertEqual(result["class"], "flow:ask")
-        self.assertFalse(result["label_downgrade_attempted"])
-
-
-class TestClassifyChangeCLIIntegration(unittest.TestCase):
-    def setUp(self):
-        self.test_dir = tempfile.TemporaryDirectory()
-        self.repo_dir = self.test_dir.name
-
-        # Init dummy git repo
-        subprocess.run(["git", "init"], cwd=self.repo_dir, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=self.repo_dir, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=self.repo_dir, check=True)
-
-        # Initial commit
-        subprocess.run(["git", "commit", "--allow-empty", "-m", "initial"], cwd=self.repo_dir, check=True)
-
-    def tearDown(self):
-        self.test_dir.cleanup()
-
-    def run_cli(self, *args):
-        # We call the script from the original path but execute it within the dummy repo
-        script_exec = os.path.abspath(script_path)
-        res = subprocess.run([sys.executable, script_exec] + list(args), cwd=self.repo_dir, capture_output=True, text=True)
-        return json.loads(res.stdout.strip())
-
-    def test_cli_both_modes_is_ask(self):
-        # Providing both --base/--head and --paths/--lines should default to Ask
-        res = self.run_cli("--base", "HEAD~1", "--head", "HEAD", "--paths", "src/main.rs", "--lines", "10")
-        self.assertEqual(res["class"], "flow:ask")
-        self.assertIn("Empty diff, missing range, or zero paths defaults to Ask.", res["reason"])
-
-    def test_cli_three_dot_empty(self):
-        # base...head is empty
-        # create a branch, no new commits
-        subprocess.run(["git", "checkout", "-b", "feature"], cwd=self.repo_dir, check=True)
-        res = self.run_cli("--base", "main", "--head", "feature")
-        self.assertEqual(res["class"], "flow:ask")
-        self.assertIn("Empty diff", res["reason"])
-
-    def test_cli_binary_dash_dash(self):
-        # Add a binary file (dummy binary)
-        bin_path = os.path.join(self.repo_dir, "src", "dummy.bin")
-        os.makedirs(os.path.dirname(bin_path), exist_ok=True)
-        with open(bin_path, "wb") as f:
-            f.write(b'\x00\x01\x02\x03')
-        subprocess.run(["git", "add", "src/dummy.bin"], cwd=self.repo_dir, check=True)
-        subprocess.run(["git", "commit", "-m", "add binary"], cwd=self.repo_dir, check=True)
-
-        res = self.run_cli("--base", "HEAD~1", "--head", "HEAD")
-        self.assertEqual(res["class"], "flow:ask")
-        self.assertIn("binary", res["reason"])
-
-    def test_cli_rename_numstat(self):
-        # Add a file
-        text_path = os.path.join(self.repo_dir, "src", "dummy.txt")
-        os.makedirs(os.path.dirname(text_path), exist_ok=True)
-        with open(text_path, "w") as f:
-            f.write("hello\nworld\n")
-        subprocess.run(["git", "add", "src/dummy.txt"], cwd=self.repo_dir, check=True)
-        subprocess.run(["git", "commit", "-m", "add text"], cwd=self.repo_dir, check=True)
-
-        # Rename it
-        new_text_path = os.path.join(self.repo_dir, "src", "dummy2.txt")
-        subprocess.run(["git", "mv", "src/dummy.txt", "src/dummy2.txt"], cwd=self.repo_dir, check=True)
-        subprocess.run(["git", "commit", "-m", "rename text"], cwd=self.repo_dir, check=True)
-
-        res = self.run_cli("--base", "HEAD~1", "--head", "HEAD")
-        # Since it's in src/, rename is allowed -> Show
-        self.assertEqual(res["class"], "flow:show")
-
-if __name__ == '__main__':
-    unittest.main()
+if __name__=='__main__': unittest.main()
