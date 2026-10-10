@@ -9,6 +9,7 @@ permissions:
   pull-requests: write
   actions: read
   contents: read
+  issues: write
 
 jobs:
   notify-jules-on-failure:
@@ -17,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Extract Failed Logs and Notify PR
         env:
@@ -30,13 +31,14 @@ jobs:
           if [ "$HEAD_BRANCH" = "main" ]; then
             echo "Failure is on main. Checking for existing incident..."
             WORKFLOW_NAME="Xavier CI / CD"
+            gh label create main-red --color B60205 --description "CI failing on main" 2>/dev/null || true
             EXISTING_ISSUE=$(gh issue list --label "main-red" --state open --search "in:title \"$WORKFLOW_NAME\"" --json number -q '.[0].number')
             if [ -n "$EXISTING_ISSUE" ]; then
               echo "Found existing incident #$EXISTING_ISSUE. Adding comment..."
-              gh issue comment "$EXISTING_ISSUE" --body "Another failure occurred on main in run $RUN_ID. See: $RUN_URL"
+              gh issue comment "$EXISTING_ISSUE" --body "Another failure occurred on main in run $RUN_ID. See: $RUN_URL" || exit 1
             else
               echo "Creating new incident..."
-              gh issue create --title "CI Failure on main ($WORKFLOW_NAME): Run $RUN_ID" --body "CI failed on main in run $RUN_ID. See: $RUN_URL" --label "main-red"
+              gh issue create --title "CI Failure on main ($WORKFLOW_NAME): Run $RUN_ID" --body "CI failed on main in run $RUN_ID. See: $RUN_URL" --label "main-red" || exit 1
             fi
             exit 0
           fi
