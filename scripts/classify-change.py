@@ -12,35 +12,13 @@ import os
 import subprocess
 import sys
 
-# Severity hierarchy for labels/flow. Higher value = more restrictive.
 FLOW_SEVERITY = {
     "flow:ship": 1,
     "flow:show": 2,
     "flow:ask": 3
 }
 
-# Paths that are sensitive or unknown and should default to Ask.
-SENSITIVE_PREFIXES = [
-    ".github/workflows/",
-    ".gitcore/",
-    ".env",
-    "data/",
-]
-
-# Allowed prefixes (directories known to be somewhat safe). Anything else is "unknown"
-ALLOWED_PREFIXES = [
-    "src/",
-    "scripts/",
-    "tests/",
-    "docs/",
-    "panel-ui/",
-    "public/",
-    "installer/",
-    "skills/",
-    "plugins/",
-    "crates/",
-    ".github/" # but workflows are sensitive
-]
+HUMAN_ALLOWLIST = []
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Compute PR classification for Ship/Show/Ask flow")
@@ -52,67 +30,185 @@ def parse_args():
     parser.add_argument("--label", help="Existing label on the PR (e.g., 'flow:ship')")
     return parser.parse_args()
 
+def normalize_path(path):
+    if not path:
+        return None
+
+    # Check for absolute path or symlink escape
+    if os.path.isabs(path) or ".." in path.split(os.sep):
+        return None
+
+    return os.path.normpath(path)
+
+def is_explicit_ask_path(path):
+    if path is None:
+        return True # un-normalized or absolute -> Ask
+
+    # Check sensitive prefixes
+    sensitive_prefixes = [
+        "src/security/",
+        "src/domain/security/",
+        "src/crypto/",
+        "src/keystore/",
+        "src/auth2/",
+        ".cargo/",
+        ".env", # catches .env.example
+        "docs/",
+        "panel-ui/",
+        ".gitcore/",
+        ".github/",
+        ".husky/"
+    ]
+
+    for prefix in sensitive_prefixes:
+        if path.startswith(prefix) or path.startswith(os.path.normpath(prefix)):
+            return True
+
+    # Base names
+    basename = os.path.basename(path)
+    if basename in ["Cargo.toml", "Cargo.lock", "build.rs", ".gitleaks.toml"]:
+        return True
+
+    # Root configs
+    if path in ["package.json", "pnpm-workspace.yaml", "deny.toml", "rust-toolchain.toml", "clippy.toml"]:
+        return True
+
+    # Scripts that are CI gates
+    if path in ["scripts/check-secrets.sh", "scripts/verify-pipeline.sh"]:
+        return True
+
+    # Any other script is ambiguous -> Ask
+    if path.startswith("scripts/") or path.startswith("scripts" + os.sep):
+        return True
+
+    # Schema and migration paths
+    if "schema" in path.lower() or "migration" in path.lower():
+        return True
+
+    return False
+
+def is_show_path(path):
+    if not path:
+        return False
+    if path.startswith("src/") or path.startswith("crates/") or path.startswith("code-graph/"):
+        return True
+    return False
+
 def get_git_diff_stats(base, head):
     try:
-        result = subprocess.run(
-            ["git", "diff", "--numstat", base, head],
-            capture_output=True,
-            text=True,
-            check=True
+        status_res = subprocess.run(
+            ["git", "diff", "--name-status", "-z", "-M", f"{base}...{head}"],
+            capture_output=True, text=True, check=True
         )
+        numstat_res = subprocess.run(
+            ["git", "diff", "--numstat", "-z", "-M", f"{base}...{head}"],
+            capture_output=True, text=True, check=True
+        )
+
+        status_parts = status_res.stdout.split("\0")
+        numstat_parts = numstat_res.stdout.split("\0")
+
+        if not status_res.stdout.strip():
+            # Empty diff
+            return [], 0, False, False
+
         paths = []
-        total_lines = 0
-        for line in result.stdout.strip().split("\n"):
-            if not line:
-                continue
-            parts = line.split("\t")
-            if len(parts) == 3:
-                added, deleted, path = parts
+        has_delete_or_rename = False
+
+        i = 0
+        while i < len(status_parts) - 1:
+            status = status_parts[i]
+            if not status:
+                break
+            if status.startswith("R"):
+                old_path = status_parts[i+1]
+                new_path = status_parts[i+2]
+                paths.extend([old_path, new_path])
+                has_delete_or_rename = True
+                i += 3
+            else:
+                path = status_parts[i+1]
                 paths.append(path)
-                if added != "-":
-                    total_lines += int(added)
-                if deleted != "-":
-                    total_lines += int(deleted)
-        return paths, total_lines
+                if status.startswith("D"):
+                    has_delete_or_rename = True
+                i += 2
+
+        # Parse numstat
+        j = 0
+        total_lines = 0
+        has_binary = False
+        while j < len(numstat_parts) - 1:
+            if not numstat_parts[j]:
+                break
+            part = numstat_parts[j]
+            if "\t" in part:
+                tabs = part.split("\t")
+                added = tabs[0]
+                deleted = tabs[1]
+                if added == "-" or deleted == "-":
+                    has_binary = True
+                else:
+                    total_lines += int(added) + int(deleted)
+
+                if len(tabs) == 3 and not tabs[2]:
+                    # Rename case (added \t deleted \t \0 old \0 new \0)
+                    j += 3 # skip the next two path parts
+                else:
+                    j += 1
+            else:
+                j += 1
+
+        return paths, total_lines, has_delete_or_rename, has_binary
+
     except subprocess.CalledProcessError as e:
-        print(f"Error running git diff: {e}", file=sys.stderr)
-        sys.exit(1)
+        return None, 0, False, False
 
-def is_path_sensitive_or_unknown(path):
-    for sensitive in SENSITIVE_PREFIXES:
-        if path.startswith(sensitive):
-            return True, f"Sensitive path modified: {path}"
+def compute_classification(paths, lines, actor, label, has_delete_or_rename=False, has_binary=False, is_empty_diff=False):
+    computed_class = "flow:ask"
+    reason = "Defaulted to Ask."
 
-    is_known = False
-    for allowed in ALLOWED_PREFIXES:
-        if path.startswith(allowed):
-            is_known = True
-            break
+    if is_empty_diff or not paths:
+        return {
+            "class": "flow:ask",
+            "reason": "Empty diff, missing range, or zero paths defaults to Ask.",
+            "label_downgrade_attempted": False
+        }
 
-    # Also allow root level files like README.md, Cargo.toml, etc.
-    if "/" not in path:
-        is_known = True
+    # Normalize paths and check for Ask
+    normalized_paths = []
+    has_ask_path = False
+    all_show_paths = True
 
-    if not is_known:
-        return True, f"Unknown path modified: {path}"
+    for p in paths:
+        norm = normalize_path(p)
+        normalized_paths.append(norm)
 
-    return False, ""
+        if is_explicit_ask_path(norm):
+            has_ask_path = True
+            all_show_paths = False
+        elif not is_show_path(norm):
+            # Unknown paths -> Ask
+            has_ask_path = True
+            all_show_paths = False
 
-def compute_classification(paths, lines, actor, label):
-    computed_class = "flow:ship"
-    reason = "Change meets ship criteria."
+    if has_ask_path:
+        computed_class = "flow:ask"
+        reason = "Contains Ask path (sensitive, unknown, un-normalized, or script)."
+    elif has_binary:
+        computed_class = "flow:ask"
+        reason = "Contains binary file changes."
+    elif all_show_paths:
+        computed_class = "flow:show"
+        reason = "Changes limited to show paths (src, crates, code-graph)."
+    else:
+        # Fallback
+        computed_class = "flow:ask"
+        reason = "Paths could not be proved as Ship or Show, defaulting to Ask."
 
-    # 1. Path Classification
-    for path in paths:
-        sensitive, msg = is_path_sensitive_or_unknown(path)
-        if sensitive:
-            computed_class = "flow:ask"
-            reason = msg
-            break
-
-    # 2. Actor Classification (Agent limits)
-    # Agent Ship is limited to four files and 400 changed lines
-    if "agent" in str(actor).lower():
+    # Actor evaluation
+    is_human = (actor in HUMAN_ALLOWLIST) if actor else False
+    if not is_human:
+        # Agent
         if len(paths) > 4:
             if FLOW_SEVERITY["flow:ask"] > FLOW_SEVERITY.get(computed_class, 0):
                 computed_class = "flow:ask"
@@ -122,7 +218,8 @@ def compute_classification(paths, lines, actor, label):
                 computed_class = "flow:ask"
                 reason = f"Agent change exceeds line limit (lines={lines}, max=400)."
 
-    # 3. Label Downgrade Prevention
+    # Label Evaluation
+    label_downgrade_attempted = False
     if label and label in FLOW_SEVERITY:
         label_sev = FLOW_SEVERITY[label]
         computed_sev = FLOW_SEVERITY.get(computed_class, 0)
@@ -130,14 +227,15 @@ def compute_classification(paths, lines, actor, label):
         if label_sev > computed_sev:
             # PR already has a more restrictive label, keep it
             computed_class = label
-            reason = f"Maintained existing restrictive label {label}."
+            reason = f"Maintained existing stricter label {label}. " + reason
         elif label_sev < computed_sev:
-            # Trying to downgrade (e.g. computed is ask, but label is ship)
+            label_downgrade_attempted = True
             reason += f" (Blocked label downgrade from {computed_class} to {label})."
 
     return {
         "class": computed_class,
-        "reason": reason
+        "reason": reason,
+        "label_downgrade_attempted": label_downgrade_attempted
     }
 
 def main():
@@ -145,23 +243,45 @@ def main():
 
     paths = []
     lines = 0
+    has_delete_or_rename = False
+    has_binary = False
+    is_empty_diff = False
 
-    if args.paths is not None or args.lines is not None:
-        if args.paths is not None:
+    # CLI checking
+    has_paths_args = args.paths is not None
+    has_lines_args = args.lines is not None
+    has_git_args = bool(args.base) or bool(args.head)
+
+    if (has_paths_args or has_lines_args) and has_git_args:
+        # Both modes at once
+        is_empty_diff = True
+    elif has_paths_args or has_lines_args:
+        if not (has_paths_args and has_lines_args):
+            # Missing one of them
+            is_empty_diff = True
+        elif len(args.paths) == 0:
+            is_empty_diff = True
+        else:
             paths = args.paths
-        if args.lines is not None:
             lines = args.lines
     elif args.base and args.head:
-        paths, lines = get_git_diff_stats(args.base, args.head)
+        result = get_git_diff_stats(args.base, args.head)
+        if result[0] is None:
+            is_empty_diff = True
+        else:
+            paths, lines, has_delete_or_rename, has_binary = result
+            if not paths:
+                is_empty_diff = True
     else:
-        # Default fail-closed if insufficient info
-        print(json.dumps({
-            "class": "flow:ask",
-            "reason": "Missing required arguments for diff or explicit paths/lines."
-        }))
-        sys.exit(0)
+        is_empty_diff = True
 
-    result = compute_classification(paths, lines, args.actor, args.label)
+    result = compute_classification(
+        paths, lines, args.actor, args.label,
+        has_delete_or_rename=has_delete_or_rename,
+        has_binary=has_binary,
+        is_empty_diff=is_empty_diff
+    )
+
     print(json.dumps(result))
 
 if __name__ == "__main__":

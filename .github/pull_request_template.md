@@ -14,4 +14,4 @@ This PR will be classified using our automated tools into one of the following f
 - `flow:show`
 - `flow:ask`
 
-If you are an agent, ensure you remain within the defined limits to qualify for `flow:ship`.
+the class is computed from the diff; an author label cannot downgrade it.
