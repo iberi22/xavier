@@ -12,7 +12,7 @@
 //! `dry_run` so the default call reports the plan without applying it.
 
 use chrono::{DateTime, TimeDelta, Utc};
-use rusqlite::Connection;
+use rusqlite::{Connection, ErrorCode};
 use thiserror::Error;
 
 /// Documented default retention window, in days (D12).
@@ -22,6 +22,18 @@ pub const DEFAULT_RETENTION_DAYS: u32 = 30;
 pub const MAX_FIELD_LEN: usize = 128;
 
 const _: () = assert!(DEFAULT_RETENTION_DAYS > 0 && MAX_FIELD_LEN > 0);
+
+/// Total insert attempts for one event: the first try plus one per backoff.
+const MAX_WRITE_ATTEMPTS: usize = 5;
+
+/// Delay before each retry, in milliseconds: 25, 50, 100, 200.
+///
+/// Deterministic exponential backoff — no jitter and no new dependency. The
+/// total wait stays bounded (375 ms) because the caller's `busy_timeout`
+/// already waited before the failure reached us: rusqlite installs a 5000 ms
+/// handler on every connection, so this covers what that window cannot, and
+/// never parks a writer.
+const RETRY_BACKOFF_MS: [u64; MAX_WRITE_ATTEMPTS - 1] = [25, 50, 100, 200];
 
 /// Fixed-width UTC stamp: `observed_at` then sorts lexicographically, so the
 /// retention sweep compares TEXT with a plain `<`.
@@ -220,6 +232,16 @@ fn affected_rows<T: TryInto<u64>>(value: T) -> u64 {
     value.try_into().unwrap_or(0)
 }
 
+/// True when SQLite reports contention a bounded retry can still clear: another
+/// writer holding the database, or the shared-cache lock.
+fn is_sqlite_lock_error(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::SqliteFailure(failure, _)
+            if matches!(failure.code, ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
+    )
+}
+
 /// Result of a (possibly dry-run) write or retention sweep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Outcome {
@@ -260,6 +282,13 @@ impl<'a> TelemetryWriter<'a> {
     }
 
     /// Append one event. A repeated `event_id` is idempotent, not an error.
+    ///
+    /// A transient `SQLITE_BUSY` / `SQLITE_LOCKED` is retried with bounded
+    /// backoff instead of being reported to the caller: a competing writer
+    /// holding the database for a moment is contention, not a lost event, and
+    /// that error is what made `concurrent_writers_persist_every_event` flake
+    /// under load. The error type is unchanged and the last failure still
+    /// surfaces after [`MAX_WRITE_ATTEMPTS`] attempts.
     pub fn record(&self, event: &UsageEvent, dry_run: bool) -> Result<Outcome, TelemetryError> {
         event.validate()?;
         if dry_run {
@@ -268,25 +297,25 @@ impl<'a> TelemetryWriter<'a> {
                 affected: 0,
             });
         }
-        let affected = self.conn.execute(
-            "INSERT OR IGNORE INTO skill_usage_events (
-                 event_id, workspace_id, task_id, tool, skill_name, package_hash,
-                 stage, outcome, latency_ms, token_estimate, observed_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            rusqlite::params![
-                event.event_id,
-                event.workspace_id,
-                event.task_id,
-                event.tool,
-                event.skill_name,
-                event.package_hash,
-                event.stage.as_str(),
-                event.outcome,
-                event.latency_ms,
-                event.token_estimate,
-                event.observed_at.format(TIMESTAMP_FORMAT).to_string(),
-            ],
-        )?;
+        let observed_at = event.observed_at.format(TIMESTAMP_FORMAT).to_string();
+        let mut backoff = RETRY_BACKOFF_MS.into_iter();
+        let affected = loop {
+            match self.insert_event(event, &observed_at) {
+                Ok(affected) => break affected,
+                Err(TelemetryError::Sql(error)) if is_sqlite_lock_error(&error) => {
+                    let Some(delay_ms) = backoff.next() else {
+                        return Err(TelemetryError::Sql(error));
+                    };
+                    tracing::debug!(
+                        event_id = %event.event_id,
+                        delay_ms,
+                        "skill usage event deferred by a competing writer; retrying"
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                }
+                Err(error) => return Err(error),
+            }
+        };
         tracing::debug!(
             event_id = %event.event_id,
             stage = event.stage.as_str(),
@@ -297,6 +326,32 @@ impl<'a> TelemetryWriter<'a> {
             applied: true,
             affected: affected_rows(affected),
         })
+    }
+
+    /// One insert attempt, isolated so the retry loop re-runs the same
+    /// statement instead of duplicating it.
+    fn insert_event(&self, event: &UsageEvent, observed_at: &str) -> Result<usize, TelemetryError> {
+        self.conn
+            .execute(
+                "INSERT OR IGNORE INTO skill_usage_events (
+                 event_id, workspace_id, task_id, tool, skill_name, package_hash,
+                 stage, outcome, latency_ms, token_estimate, observed_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                rusqlite::params![
+                    event.event_id,
+                    event.workspace_id,
+                    event.task_id,
+                    event.tool,
+                    event.skill_name,
+                    event.package_hash,
+                    event.stage.as_str(),
+                    event.outcome,
+                    event.latency_ms,
+                    event.token_estimate,
+                    observed_at,
+                ],
+            )
+            .map_err(TelemetryError::from)
     }
 
     /// Delete events observed before the retention cutoff, and only those.
@@ -693,6 +748,76 @@ mod tests {
                 assert_eq!(stage, "invoked", "event {event_id} must keep its stage");
             }
         }
+    }
+
+    /// A write lock held by a second connection for ~300 ms must not lose the
+    /// event. `record` retries the insert with bounded backoff, so the row lands
+    /// once the lock is released instead of surfacing `DatabaseBusy` to the
+    /// caller — that error is what made `concurrent_writers_persist_every_event`
+    /// flake under load.
+    #[test]
+    fn record_survives_a_write_lock_held_by_a_second_connection() {
+        const LOCK_HOLD_MS: u64 = 300;
+
+        let dir = tempdir().expect("tempdir");
+        let db_path = dir.path().join("locked.db");
+        {
+            let conn = Connection::open(&db_path).expect("open workspace fixture");
+            crate::storage::migrations::run(&conn).expect("baseline migrations must apply");
+        }
+
+        // The writer connection drops the busy handler rusqlite installs by
+        // default (`sqlite3_busy_timeout(db, 5000)`), so the lock surfaces as
+        // `SQLITE_BUSY` instead of blocking inside SQLite: absorbing a transient
+        // lock is the writer's job, and this is the deterministic shape of the
+        // contention the busy handler only defers.
+        let conn = Connection::open(&db_path).expect("open writer connection");
+        conn.busy_timeout(std::time::Duration::from_millis(0))
+            .expect("the writer must see lock contention immediately");
+        let writer = TelemetryWriter::new(&conn);
+        writer
+            .ensure_schema()
+            .expect("telemetry schema must be available");
+
+        // Second connection takes the write lock and keeps it ~300 ms.
+        let lock_holder = Connection::open(&db_path).expect("open lock holder connection");
+        lock_holder
+            .execute_batch(&format!(
+                "BEGIN IMMEDIATE;\
+                 \n                 INSERT INTO skill_usage_events (
+                     event_id, workspace_id, task_id, tool, skill_name, stage, observed_at
+                 ) VALUES ('evt-lock-holder', 'ws-locked', 'task-locked', 'tool', 'skill', 'invoked', '{NOW}');"
+            ))
+            .expect("the second connection must take the write lock");
+
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(LOCK_HOLD_MS));
+            lock_holder
+                .execute_batch("ROLLBACK")
+                .expect("the write lock must be released");
+        });
+
+        let outcome = writer
+            .record(&event("evt-after-lock", SkillStage::Invoked), false)
+            .expect("a transient write lock must not lose the event");
+        releaser.join().expect("releaser thread must not panic");
+
+        assert!(
+            outcome.applied,
+            "the event must be applied, not just planned"
+        );
+        assert_eq!(
+            outcome.affected, 1,
+            "the event must be inserted exactly once"
+        );
+        assert_eq!(
+            writer.count().expect("count must succeed"),
+            1,
+            "only the retried event survives: the lock holder rolled back"
+        );
+        let (stage, ..) = stored_row(&conn, "evt-after-lock")
+            .expect("the retried event must be readable once the lock is released");
+        assert_eq!(stage, "invoked", "the retried event must keep its stage");
     }
 
     /// Insert `PER_WORKER` events over its own connection, as one harness would.
