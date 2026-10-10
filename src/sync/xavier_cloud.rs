@@ -76,6 +76,9 @@ const MIN_SHRINK_PERCENT: usize = 50;
 const MAX_MANIFEST_BYTES: usize = 4 * 1024 * 1024;
 /// Hard ceiling for one encrypted blob (the Worker accepts 8 MiB).
 const MAX_BLOB_BYTES: usize = 7 * 1024 * 1024;
+/// Hard ceiling for the small auxiliary bodies (`/health`, usage, error text):
+/// a JSON object and a one-line message, never a pack blob.
+const MAX_AUX_BODY_BYTES: usize = 64 * 1024;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -184,8 +187,8 @@ pub fn passphrase_from_env() -> Result<Option<Zeroizing<String>>> {
     Ok(None)
 }
 
-/// Read the passphrase from the first line of a file. The mode and owner are
-/// checked on the opened handle (no symlink follow), then read from it.
+/// Read the passphrase from the first line of a file. The file mode is checked
+/// on the opened handle (no symlink follow), then read from it.
 pub fn passphrase_from_file(path: &std::path::Path) -> Result<Zeroizing<String>> {
     use std::io::Read;
     let mut opts = std::fs::OpenOptions::new();
@@ -679,7 +682,7 @@ impl HttpBlobStore {
 
     /// `GET /health` of the Worker (no auth).
     pub async fn health(&self) -> Result<serde_json::Value> {
-        let resp = self
+        let mut resp = self
             .client
             .get(format!("{}/health", self.base))
             .send()
@@ -687,14 +690,47 @@ impl HttpBlobStore {
         if !resp.status().is_success() {
             bail!("Xavier Cloud /health answered {}", resp.status());
         }
-        Ok(resp.json().await?)
+        let body = read_body_capped(&mut resp, MAX_AUX_BODY_BYTES, "the /health body").await?;
+        Ok(serde_json::from_slice(&body)?)
     }
 }
 
-async fn error_text(resp: reqwest::Response) -> String {
+/// Read a response body under `limit` bytes, streaming: the declared length
+/// and every received chunk are checked, so a lying or missing
+/// `Content-Length` cannot make an oversized body exhaust memory.
+async fn read_body_capped(
+    resp: &mut reqwest::Response,
+    limit: usize,
+    what: impl std::fmt::Display,
+) -> Result<Vec<u8>> {
+    if resp.content_length().is_some_and(|n| n > limit as u64) {
+        bail!("Xavier Cloud {what} exceeds {limit} bytes");
+    }
+    let mut body = Vec::new();
+    while let Some(part) = resp.chunk().await? {
+        if body.len() + part.len() > limit {
+            bail!("Xavier Cloud {what} exceeds {limit} bytes");
+        }
+        body.extend_from_slice(&part);
+    }
+    Ok(body)
+}
+
+/// First bytes of an error body, for the failure message. The Worker's error
+/// text is never trusted, so it is read under the auxiliary cap: an oversized
+/// body is dropped instead of buffered without a bound.
+async fn error_text(mut resp: reqwest::Response) -> String {
     let status = resp.status();
-    let body = resp.text().await.unwrap_or_default();
-    format!("{status}: {}", body.chars().take(300).collect::<String>())
+    match read_body_capped(&mut resp, MAX_AUX_BODY_BYTES, "the error body").await {
+        Ok(body) => format!(
+            "{status}: {}",
+            String::from_utf8_lossy(&body)
+                .chars()
+                .take(300)
+                .collect::<String>()
+        ),
+        Err(e) => format!("{status}: <error body dropped: {e}>"),
+    }
 }
 
 #[async_trait]
@@ -736,17 +772,8 @@ impl BlobStore for HttpBlobStore {
             );
         }
         let limit = MAX_BLOB_BYTES + 4096;
-        if resp.content_length().is_some_and(|n| n > limit as u64) {
-            bail!("Xavier Cloud chunk {name} exceeds {limit} bytes");
-        }
         let mut resp = resp;
-        let mut body = Vec::new();
-        while let Some(part) = resp.chunk().await? {
-            if body.len() + part.len() > limit {
-                bail!("Xavier Cloud chunk {name} exceeds {limit} bytes");
-            }
-            body.extend_from_slice(&part);
-        }
+        let body = read_body_capped(&mut resp, limit, format!("chunk {name}")).await?;
         Ok(Some(body))
     }
 
@@ -765,7 +792,7 @@ impl BlobStore for HttpBlobStore {
     }
 
     async fn usage(&self) -> Result<CloudUsage> {
-        let resp = self
+        let mut resp = self
             .client
             .get(format!("{}/v1/cloud/usage", self.base))
             .bearer_auth(&self.token)
@@ -774,7 +801,9 @@ impl BlobStore for HttpBlobStore {
         if !resp.status().is_success() {
             bail!("Xavier Cloud /v1/cloud/usage: {}", error_text(resp).await);
         }
-        Ok(resp.json().await?)
+        let body =
+            read_body_capped(&mut resp, MAX_AUX_BODY_BYTES, "the /v1/cloud/usage body").await?;
+        Ok(serde_json::from_slice(&body)?)
     }
 }
 
@@ -1779,6 +1808,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn http_client_does_not_follow_redirects() {
+        let mut server = mockito::Server::new_async().await;
+        let redirect = server
+            .mock("GET", "/v1/cloud/chunks/src000000")
+            .with_status(302)
+            .with_header("location", "/v1/cloud/chunks/hidden00000")
+            .create_async()
+            .await;
+        // Nothing behind the redirect may ever be requested (following it would
+        // also leak the Bearer token to an attacker-chosen host).
+        let target = server
+            .mock("GET", "/v1/cloud/chunks/hidden00000")
+            .with_status(200)
+            .with_body("REDIRECT-TARGET-BODY")
+            .expect(0)
+            .create_async()
+            .await;
+        let store = HttpBlobStore::new(&CloudBackupConfig {
+            url: server.url(),
+            token: "tok".into(),
+            instance_id: "i".into(),
+        })
+        .unwrap();
+        match store.get("src000000").await {
+            Ok(Some(body)) => assert_ne!(
+                body,
+                b"REDIRECT-TARGET-BODY".to_vec(),
+                "the redirect target body must never be read"
+            ),
+            Ok(None) => panic!("a 3xx must not be reported as an absent chunk"),
+            Err(e) => assert!(e.to_string().contains("302"), "{e}"),
+        }
+        redirect.assert_async().await;
+        target.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn http_aux_bodies_are_bounded() {
+        let mut server = mockito::Server::new_async().await;
+        let big = vec![b'x'; MAX_AUX_BODY_BYTES + 4096];
+        let usage = server
+            .mock("GET", "/v1/cloud/usage")
+            .match_header("authorization", "Bearer tok")
+            .with_status(200)
+            .with_body(big.clone())
+            .create_async()
+            .await;
+        let health = server
+            .mock("GET", "/health")
+            .with_status(200)
+            .with_body(big.clone())
+            .create_async()
+            .await;
+        let rejected = server
+            .mock("PUT", "/v1/cloud/chunks/full000000")
+            .with_status(429)
+            .with_body(big)
+            .create_async()
+            .await;
+        let store = HttpBlobStore::new(&CloudBackupConfig {
+            url: server.url(),
+            token: "tok".into(),
+            instance_id: "i".into(),
+        })
+        .unwrap();
+        let e = store.usage().await.unwrap_err();
+        assert!(e.to_string().contains("exceeds"), "{e}");
+        let e = store.health().await.unwrap_err();
+        assert!(e.to_string().contains("exceeds"), "{e}");
+        // The oversized error body is dropped, but the status still reaches the caller.
+        let err = store.put("full000000", b"x").await.unwrap_err().to_string();
+        assert!(err.contains("429") && err.contains("exceeds"), "{err}");
+        usage.assert_async().await;
+        health.assert_async().await;
+        rejected.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn unsigned_legacy_manifest_gets_a_distinct_error() {
         let dir = tempfile::tempdir().unwrap();
         let remote = MemBlobs::default();
@@ -1810,6 +1917,23 @@ mod tests {
             .await
             .unwrap();
         assert!(!r.backup_complete);
+
+        // The complete case must report `true`, otherwise this assertion could
+        // not distinguish a hard-coded `false` from a real incomplete backup.
+        let full_dir = tempfile::tempdir().unwrap();
+        let full = temp_store(full_dir.path()).await;
+        full.put(record("ws", "a", "one", 0)).await.unwrap();
+        let full_remote = MemBlobs::default();
+        run_backup(&full, &full_remote, &cfg(), PASS, cheap_kdf(), false)
+            .await
+            .unwrap();
+        let dst2_dir = tempfile::tempdir().unwrap();
+        let dst2 = temp_store(dst2_dir.path()).await;
+        let r = run_restore(&dst2, &full_remote, &cfg().instance_id, PASS)
+            .await
+            .unwrap();
+        assert!(r.backup_complete);
+        assert_eq!(r.restored, 1);
     }
 
     #[cfg(unix)]
