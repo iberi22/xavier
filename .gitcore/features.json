@@ -3373,6 +3373,25 @@
       ],
       "req_ids": [],
       "user_stories": []
+    },
+    "feat-autonomous-delivery": {
+      "id": "feat-autonomous-delivery",
+      "name": "Autonomous Delivery Pipeline (verifiable ship/show/ask + DONE)",
+      "category": "process",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Evidence-gated delivery pipeline: DONE is a computed verdict for an immutable SHA, a per-stage evidence chain, ship/show/ask computed from the minimum path/diff class, independent panel review for Ask, and a DONE verifier that recomputes scope/secret/test/CI/review from a JSON bundle and never edits the ledger.",
+      "steps": [
+        "Equip the 8-stage pipeline with the JSON evidence bundle and the co-agent-review adapter",
+        "Define done-check.sh task/feature/increment levels and interface per 03-DONE-PROTOCOL.md",
+        "Review the computed ship/show/ask classification policy; never hand-promote ledger status"
+      ],
+      "passes": false,
+      "notes": "Registers the autonomous-delivery feature (P01, docs/CI only, no code PR). Spec: docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md; SRS mapping: REQ-085 (planned) in docs/SRS/REQUIREMENTS.md. Design: docs/design/trunk-based/01-DESIGN.md (flow + ship/show/ask), 02-AUTONOMOUS-PIPELINE.md (stages/gates), 03-DONE-PROTOCOL.md (DONE verifier contract); policy: docs/adr/ADR-035-trunk-based-ship-show-ask.md (accepted 2026-09-27). A docs/SRS/** change is Ask class and needs pre-merge panel approval. scripts/done-check.sh is a defined future contract, not yet present. Status changes only on a green scripts/verify-pipeline.sh run after executed tests; never hand-promoted.",
+      "tests": [],
+      "req_ids": [
+        "REQ-085"
+      ]
     }
   },
   "verification_commands": {
