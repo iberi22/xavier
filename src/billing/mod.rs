@@ -144,38 +144,85 @@ pub async fn create_customer(
     }
 }
 
+/// Error de catálogo para un plan que no existe: enumera TODO el catálogo,
+/// incluidos los planes que no se contratan por checkout (Empresa).
+fn invalid_plan_error() -> CreateCheckoutResponse {
+    let names: Vec<&str> = Plan::ALL.iter().map(|p| p.catalog_id()).collect();
+    CreateCheckoutResponse {
+        status: "error".to_string(),
+        checkout_url: None,
+        message: Some(format!("Invalid plan. Use: {}", names.join(", "))),
+    }
+}
+
+/// Error de un plan conocido, con precio publicado y sin venta por
+/// autoservicio hoy (incluido Local, que es gratuito: no hay nada que cobrar).
+fn not_on_sale_error(plan: Plan) -> CreateCheckoutResponse {
+    let message = match plan.status() {
+        PlanStatus::Available => format!("Plan {plan} is free: no checkout required"),
+        _ => format!("Plan {plan} not on sale yet (waitlist / coming soon)"),
+    };
+    CreateCheckoutResponse {
+        status: "error".to_string(),
+        checkout_url: None,
+        message: Some(message),
+    }
+}
+
 /// Valida el plan pedido en el camino de checkout (catálogo v1).
 ///
-/// `Ok(plan)` solo si el plan existe y se vende por autoservicio hoy; en
-/// cualquier otro caso devuelve la respuesta de error que el handler publica,
-/// siempre con `checkout_url: None` (no se inicia ningún cobro).
+/// `Ok(plan)` solo si el plan existe, publica precio y se vende por
+/// autoservicio hoy; en cualquier otro caso devuelve la respuesta de error que
+/// el handler publica, siempre con `checkout_url: None` (no se inicia ningún
+/// cobro).
+///
+/// Existencia, vendibilidad comercial y precio publicado son cosas distintas:
+/// Empresa existe y se vende, pero por contacto (no publica precio), así que
+/// nunca es "Invalid plan" ni "not on sale".
 fn resolve_checkout_plan(requested: &str) -> Result<Plan, CreateCheckoutResponse> {
-    let plan = match Plan::from_catalog_id(requested) {
-        Some(plan) if plan.monthly_price_cents().is_some_and(|cents| cents > 0) => plan,
-        _ => {
-            return Err(CreateCheckoutResponse {
-                status: "error".to_string(),
-                checkout_url: None,
-                message: Some(
-                    "Invalid plan. Use: fundador, respaldo (alias cloud), pro, equipo".to_string(),
-                ),
-            });
-        }
+    resolve_checkout_plan_gated(requested, None)
+}
+
+/// Núcleo de [`resolve_checkout_plan`].
+///
+/// `purchasable_override` inyecta el resultado del gate de venta: `None` usa el
+/// del catálogo; `Some(true)` permite a los tests alcanzar la rama
+/// `Ok(plan)` sin abrir la venta real de ningún plan.
+fn resolve_checkout_plan_gated(
+    requested: &str,
+    purchasable_override: Option<bool>,
+) -> Result<Plan, CreateCheckoutResponse> {
+    let Some(plan) = Plan::from_catalog_id(requested) else {
+        return Err(invalid_plan_error());
     };
 
-    // Catálogo v1: ningún plan de pago se vende todavía (cobro con Polar pendiente).
-    if !plan.is_purchasable() {
+    // Plan a medida: existe y se vende, pero por contacto, no en checkout.
+    if plan.monthly_price_cents().is_none() {
         return Err(CreateCheckoutResponse {
             status: "error".to_string(),
             checkout_url: None,
             message: Some(format!(
-                "Plan {} not on sale yet (waitlist / coming soon)",
-                plan
+                "Plan {plan} is contact-only: contact sales to subscribe"
             )),
         });
     }
 
+    // Catálogo v1: ningún plan de pago se vende todavía (cobro con Polar pendiente).
+    let purchasable = purchasable_override.unwrap_or_else(|| plan.is_purchasable());
+    if !purchasable {
+        return Err(not_on_sale_error(plan));
+    }
+
     Ok(plan)
+}
+
+/// Igual que [`resolve_checkout_plan`] pero forzando el plan como vendible.
+///
+/// Gancho de test: el catálogo v1 no vende ningún plan de pago, así que sin
+/// esta inyección ningún test podría llegar al camino `Ok(plan)`.
+#[cfg(test)]
+fn resolve_checkout_plan_sellable(requested: &str) -> Result<Plan, CreateCheckoutResponse> {
+    resolve_checkout_plan_gated(requested, Some(true))
 }
 
 /// Create a checkout session for subscription upgrade
@@ -376,17 +423,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_paid_plan_returns_checkout_url_none() {
-        // Planes de pago del catálogo, con el alias `cloud` de Respaldo y el
-        // plan a medida (Empresa): ninguno puede iniciar un checkout todavía.
-        for requested in ["fundador", "respaldo", "cloud", "pro", "equipo", "empresa"] {
-            let response = resolve_checkout_plan(requested)
-                .expect_err("un plan no contratable no puede iniciar checkout");
-            assert_eq!(response.status, "error", "{requested}");
-            assert!(
-                response.checkout_url.is_none(),
-                "{requested} no debe devolver checkout_url"
-            );
+    fn unknown_plan_error_names_the_whole_catalog() {
+        let response =
+            resolve_checkout_plan("diamante").expect_err("un plan fuera del catálogo no existe");
+        assert_eq!(response.status, "error");
+        let message = response.message.expect("el error debe explicarse");
+        assert!(message.starts_with("Invalid plan."), "{message}");
+        // Los seis planes del catálogo, en orden, incluido Empresa: antes el
+        // mensaje se lo saltaba y además lo clasificaba como inexistente.
+        assert!(
+            message.ends_with("local, fundador, respaldo, pro, equipo, empresa"),
+            "{message}"
+        );
+        for plan in Plan::ALL {
+            assert!(message.contains(plan.catalog_id()), "{message} sin {plan}");
+        }
+    }
+
+    #[test]
+    fn empresa_is_contact_only_not_invalid() {
+        let response =
+            resolve_checkout_plan("empresa").expect_err("Empresa no se contrata en checkout");
+        assert_eq!(response.status, "error");
+        let message = response.message.expect("el error debe explicarse");
+        assert!(message.contains("contact-only"), "{message}");
+        assert!(message.contains("contact sales"), "{message}");
+        // Que no caiga en ninguna de las otras dos ramas.
+        assert!(!message.contains("Invalid plan"), "{message}");
+        assert!(!message.contains("not on sale yet"), "{message}");
+    }
+
+    #[test]
+    fn every_catalog_plan_is_a_known_plan() {
+        // Cada id del catálogo (más los alias `free`/`cloud`) debe resolverse a
+        // un plan real; el único error posible hoy es el de no poder cobrarse.
+        for id in [
+            "local", "free", "fundador", "respaldo", "cloud", "pro", "equipo", "empresa",
+        ] {
+            let message = resolve_checkout_plan(id)
+                .expect_err("ningún plan se vende todavía")
+                .message
+                .unwrap_or_default();
+            assert!(!message.contains("Invalid plan"), "{id}: {message}");
         }
     }
 
@@ -405,10 +483,47 @@ mod tests {
     }
 
     #[test]
+    fn free_plan_is_not_a_checkout_either() {
+        // Local existe y publica precio (0): error propio, no el de espera.
+        let message = resolve_checkout_plan("local")
+            .expect_err("Local no se contrata por checkout")
+            .message
+            .unwrap_or_default();
+        assert!(message.contains("free"), "{message}");
+        assert!(!message.contains("not on sale yet"), "{message}");
+    }
+
+    #[test]
+    fn a_sellable_plan_resolves_to_ok() {
+        for (requested, expected) in [
+            ("local", Plan::Free),
+            ("fundador", Plan::Fundador),
+            ("respaldo", Plan::Cloud),
+            ("cloud", Plan::Cloud),
+            ("pro", Plan::Pro),
+            ("equipo", Plan::Equipo),
+        ] {
+            let resolved = resolve_checkout_plan_sellable(requested)
+                .unwrap_or_else(|e| panic!("{requested} debe resolver: {e:?}"));
+            assert_eq!(resolved, expected, "{requested}");
+        }
+        // El gate inyectado no convierte un plan a medida en autoservicio: el
+        // gate de contacto va antes.
+        assert!(resolve_checkout_plan_sellable("empresa").is_err());
+        // Y un plan fuera del catálogo sigue siendo inválido.
+        assert!(resolve_checkout_plan_sellable("diamante").is_err());
+    }
+
+    #[test]
     fn billing_plans_publishes_status_and_purchasable_flag() {
         let plans = plan_catalog();
 
-        assert_eq!(plans.len(), Plan::ALL.len());
+        // Nombres y orden exactos del catálogo publicado (no solo el tamaño).
+        let names: Vec<&str> = plans.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["local", "fundador", "respaldo", "pro", "equipo", "empresa"]
+        );
         for info in &plans {
             assert!(!info.is_purchasable, "{} no debe venderse", info.name);
         }
