@@ -1278,7 +1278,7 @@ fn drive_connect_status_report() -> serde_json::Value {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A fresh, empty vault under a tempdir: no keyring, no real `~/.xavier`.
@@ -1339,12 +1339,12 @@ mod tests {
     /// back when it drops — including when the test body unwinds after a failed
     /// assertion. A hand-rolled restore at the end of the body silently leaks a
     /// tempdir path into the next test of the serialised suite.
-    struct RecoveryDirGuard {
+    pub(crate) struct RecoveryDirGuard {
         previous: Option<std::ffi::OsString>,
     }
 
     impl RecoveryDirGuard {
-        fn at(dir: &std::path::Path) -> Self {
+        pub(crate) fn at(dir: &std::path::Path) -> Self {
             let previous = std::env::var_os("XAVIER_RECOVERY_DIR");
             std::env::set_var("XAVIER_RECOVERY_DIR", dir);
             Self { previous }

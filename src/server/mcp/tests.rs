@@ -15,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tower::util::ServiceExt;
 
 use super::session::mcp_post_handler;
+use super::tools_core::tests::RecoveryDirGuard;
 use crate::workspace::WorkspaceContext;
 use crate::{
     agents::RuntimeConfig,
@@ -2619,8 +2620,7 @@ async fn recovery_status_uses_configured_directory() {
     crate::isolate_test_process!();
     let default_dir = tempfile::tempdir().unwrap();
     let extra_dir = tempfile::tempdir().unwrap();
-    let previous = std::env::var_os("XAVIER_RECOVERY_DIR");
-    std::env::set_var("XAVIER_RECOVERY_DIR", default_dir.path());
+    let _guard = RecoveryDirGuard::at(default_dir.path());
     crate::recovery::RecoveryStore::at(default_dir.path())
         .write_kcv(&[7; 32])
         .unwrap();
@@ -2639,10 +2639,6 @@ async fn recovery_status_uses_configured_directory() {
         json!({"recovery_dir": extra_dir.path(), "crypt_passphrase_backed_up": true}),
     )
     .await;
-    match previous {
-        Some(v) => std::env::set_var("XAVIER_RECOVERY_DIR", v),
-        None => std::env::remove_var("XAVIER_RECOVERY_DIR"),
-    }
     let output = result.expect("admin status");
     assert_eq!(output["structuredContent"]["kcvPresent"], true);
     assert_eq!(output["structuredContent"]["cryptPassphraseBackedUp"], true);
