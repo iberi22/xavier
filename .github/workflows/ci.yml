@@ -379,3 +379,18 @@ jobs:
             python3 -c "import json, sys; data=json.load(open('/tmp/preflight.json')); sys.exit(0 if data.get('ready') else 1)"
           fi
 
+
+  # Job 6: Full Ledger Verification on main
+  ledger-verification:
+    name: Full Ledger Verification
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Shadow for now: becomes blocking after the known pre-existing ledger failure is reconciled
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Full Ledger
+        run: bash scripts/verify-pipeline.sh
