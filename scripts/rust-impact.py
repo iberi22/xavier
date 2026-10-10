@@ -39,7 +39,7 @@ def get_cargo_metadata():
     except subprocess.CalledProcessError as e:
         sys.exit(f"Failed to run cargo metadata: {e.output}")
 
-def build_package_graph(metadata, repo_root):
+def build_package_graph(metadata):
     if not metadata.get('workspace_members'):
         sys.stderr.write("Error: empty workspace_members\n")
         sys.exit(1)
@@ -172,15 +172,22 @@ def main():
     else:
         parser.error("Must provide either --paths or --base")
 
-    repo_root = resolve_repo_root()
-
     if args.mock_metadata:
         with open(args.mock_metadata, 'r') as f:
             metadata = json.load(f)
     else:
         metadata = get_cargo_metadata()
 
-    packages = build_package_graph(metadata, repo_root)
+    repo_root = metadata.get('workspace_root')
+    if not repo_root:
+        for pkg in metadata.get('packages', []):
+            if pkg.get('name') == 'xavier':
+                repo_root = os.path.dirname(pkg['manifest_path'])
+                break
+    if not repo_root:
+        repo_root = resolve_repo_root()
+
+    packages = build_package_graph(metadata)
 
     fallback = False
     reason = None
