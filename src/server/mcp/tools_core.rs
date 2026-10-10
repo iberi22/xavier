@@ -1335,6 +1335,110 @@ mod tests {
         )
     }
 
+    /// Puts `XAVIER_RECOVERY_DIR` where a test says, and puts the previous value
+    /// back when it drops — including when the test body unwinds after a failed
+    /// assertion. A hand-rolled restore at the end of the body silently leaks a
+    /// tempdir path into the next test of the serialised suite.
+    struct RecoveryDirGuard {
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl RecoveryDirGuard {
+        fn at(dir: &std::path::Path) -> Self {
+            let previous = std::env::var_os("XAVIER_RECOVERY_DIR");
+            std::env::set_var("XAVIER_RECOVERY_DIR", dir);
+            Self { previous }
+        }
+    }
+
+    impl Drop for RecoveryDirGuard {
+        fn drop(&mut self) {
+            match self.previous.as_ref() {
+                Some(previous) => std::env::set_var("XAVIER_RECOVERY_DIR", previous),
+                None => std::env::remove_var("XAVIER_RECOVERY_DIR"),
+            }
+        }
+    }
+
+    fn admin_claims() -> crate::security::auth::Claims {
+        crate::security::auth::Claims::new(
+            "operator".to_string(),
+            "local@xavier".to_string(),
+            crate::security::auth::UserRole::Admin,
+            chrono::Duration::hours(1),
+        )
+    }
+
+    /// `recovery_status` reports the CONFIGURED recovery directory, never a
+    /// caller-supplied one: the override argument is gone from the schema and
+    /// the store is resolved from `XAVIER_RECOVERY_DIR`.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn recovery_status_uses_configured_recovery_dir() {
+        crate::isolate_test_process!();
+        let configured = tempfile::tempdir().expect("tempdir");
+        let caller = tempfile::tempdir().expect("tempdir");
+        let _guard = RecoveryDirGuard::at(configured.path());
+        crate::recovery::RecoveryStore::at(configured.path())
+            .write_kcv(&[7; 32])
+            .expect("seed kcv");
+
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let claims = admin_claims();
+        let output = handle_core_tool(
+            state,
+            workspace,
+            Some(&claims),
+            "recovery_status",
+            json!({
+                "recovery_dir": caller.path(),
+                "crypt_passphrase_backed_up": true
+            }),
+        )
+        .await
+        .expect("admin status");
+
+        assert_eq!(output["structuredContent"]["kcvPresent"], true);
+        assert_eq!(output["structuredContent"]["cryptPassphraseBackedUp"], true);
+
+        let schema = crate::server::mcp::server::get_xavier_tools()
+            .into_iter()
+            .find(|t| t.name == "recovery_status")
+            .expect("recovery_status advertised")
+            .input_schema;
+        assert!(schema["properties"].get("recovery_dir").is_none());
+    }
+
+    /// The guard's whole point: an unwinding body still restores the variable.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn recovery_dir_guard_restores_on_panic() {
+        crate::isolate_test_process!();
+        let configured = tempfile::tempdir().expect("tempdir");
+        let scratch = tempfile::tempdir().expect("tempdir");
+        let _guard = RecoveryDirGuard::at(configured.path());
+        let previous = std::env::var_os("XAVIER_RECOVERY_DIR");
+
+        fn set_then_unwind(dir: &std::path::Path) {
+            let _guard = RecoveryDirGuard::at(dir);
+            panic!("the guard must still be dropped on unwind");
+        }
+
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            set_then_unwind(scratch.path());
+        }));
+        std::panic::set_hook(hook);
+
+        assert!(outcome.is_err(), "the body did unwind");
+        assert_eq!(
+            std::env::var_os("XAVIER_RECOVERY_DIR"),
+            previous,
+            "guard must restore the previous value even when the body panics"
+        );
+    }
+
     /// The espacio tools use the daemon's shared, persisted manager, need the
     /// root identity, and refuse unknown spaces.
     #[tokio::test]
