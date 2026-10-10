@@ -1,0 +1,13 @@
+[Unit]
+Description=Periodic health check and previous-binary watchdog for Xavier (G9/R07)
+
+[Timer]
+# Probes /health; only restores the retained previous binary after repeated
+# unhealthy probes. One restore attempt, then it escalates.
+OnCalendar=*:0/15
+Persistent=true
+AccuracySec=30s
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
