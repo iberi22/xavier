@@ -272,6 +272,38 @@ pub fn memory_large_body_routes() -> Router<CliState> {
         .route("/memory/export-pack", post(export_pack_handler))
 }
 
+/// Importers owned by one process of the periodic ingestion loop.
+///
+/// Built once, outside the cycle loop. Each cursor file is
+/// `{data_dir}/ingest-cursors/<source>.json`, so a later process skips sources
+/// that have not changed. Without those files a new process full-scans.
+struct SessionImporters {
+    antigravity: xavier::memory::antigravity_importer::AntigravityImporter,
+    opencode: xavier::memory::opencode_importer::OpenCodeImporter,
+    hermes: xavier::memory::hermes_importer::HermesImporter,
+    codex: xavier::memory::codex_importer::CodexImporter,
+}
+
+fn build_session_importers(
+    data_dir: &std::path::Path,
+    embedder: Arc<dyn xavier::embedding::Embedder>,
+) -> SessionImporters {
+    let cursors = data_dir.join("ingest-cursors");
+    SessionImporters {
+        antigravity: xavier::memory::antigravity_importer::AntigravityImporter::new()
+            .with_embedder(embedder.clone())
+            .with_cursor_path(cursors.join("antigravity.json")),
+        opencode: xavier::memory::opencode_importer::OpenCodeImporter::new()
+            .with_embedder(embedder.clone())
+            .with_cursor_path(cursors.join("opencode.json")),
+        hermes: xavier::memory::hermes_importer::HermesImporter::new()
+            .with_embedder(embedder.clone())
+            .with_cursor_path(cursors.join("hermes.json")),
+        codex: xavier::memory::codex_importer::CodexImporter::with_embedder(embedder)
+            .with_cursor_path(cursors.join("codex.json")),
+    }
+}
+
 /// Start http server.
 pub async fn start_http_server(
     port: u16,
@@ -872,24 +904,22 @@ pub async fn start_http_server(
         );
         let in_flight = Arc::clone(&ingestion_in_flight);
         // The importers are built ONCE, here, and not inside the cycle loop.
-        // Each one carries an in-memory cursor (fingerprint / watermark of what
-        // it already ingested) and `sync` consults it to skip work. A
-        // constructor inside the loop discards that state every cycle, which
-        // silently degrades every `sync` back into a full scan — the exact
-        // regression this wiring fixes. The structural tests in
-        // `ingestion_wiring_tests` guard the position of these constructors.
-        let ag_importer = xavier::memory::antigravity_importer::AntigravityImporter::new()
-            .with_embedder(ingestion_embedder.clone());
-        let oc_importer = xavier::memory::opencode_importer::OpenCodeImporter::new()
-            .with_embedder(ingestion_embedder.clone());
-        let hermes_importer = xavier::memory::hermes_importer::HermesImporter::new()
-            .with_embedder(ingestion_embedder.clone());
-        // Codex is built once too (D8): it carries a per-file fingerprint cursor,
-        // so rebuilding it every cycle would re-read every session file again.
-        // `with_embedder` is an associated fn, not a builder method.
-        let codex_importer = xavier::memory::codex_importer::CodexImporter::with_embedder(
-            ingestion_embedder.clone(),
-        );
+        // Each one carries a cursor (fingerprint / watermark of what it already
+        // ingested), loaded from and saved to `ingest-cursors/` under the daemon
+        // data dir, and `sync` consults it to skip work. A constructor inside
+        // the loop discards that state every cycle, which silently degrades
+        // every `sync` back into a full scan — the exact regression this wiring
+        // fixes. The structural tests in `ingestion_wiring_tests` guard the
+        // position of these constructors. This stays inside the enabled branch:
+        // `XAVIER_INGESTION_INTERVAL_SECS=0` does not build importers or cursor
+        // files.
+        let ingestion_data_dir = xavier::maloca::MalocaStore::resolve_state_dir();
+        let SessionImporters {
+            antigravity: ag_importer,
+            opencode: oc_importer,
+            hermes: hermes_importer,
+            codex: codex_importer,
+        } = build_session_importers(&ingestion_data_dir, ingestion_embedder);
         tokio::spawn(async move {
             // Initial grace period to allow server start
             tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
@@ -2692,6 +2722,228 @@ mod ingestion_wiring_tests {
             guard,
             first_sync,
             release
+        );
+    }
+}
+
+#[cfg(test)]
+mod ingestion_persisted_cursor_tests {
+    use super::build_session_importers;
+    use std::path::{Path, PathBuf};
+    use xavier::embedding::NoopEmbedder;
+    use xavier::memory::store::{InMemoryMemoryStore, MemoryStore};
+
+    /// Puts env vars back when the test ends, including on assertion failure.
+    struct RestoreEnv {
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl RestoreEnv {
+        fn set(pairs: &[(&'static str, &Path)]) -> Self {
+            let saved = pairs
+                .iter()
+                .map(|(key, value)| {
+                    let prev = std::env::var_os(key);
+                    std::env::set_var(key, value);
+                    (*key, prev)
+                })
+                .collect();
+            Self { saved }
+        }
+    }
+
+    impl Drop for RestoreEnv {
+        fn drop(&mut self) {
+            for (key, prev) in self.saved.drain(..) {
+                match prev {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
+    fn write_opencode_db(path: &Path) -> std::io::Result<()> {
+        let conn =
+            rusqlite::Connection::open(path).map_err(|e| std::io::Error::other(e.to_string()))?;
+        conn.execute_batch(
+            "CREATE TABLE session (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                agent TEXT,
+                model TEXT,
+                time_created INTEGER,
+                time_updated INTEGER
+            );
+            CREATE TABLE message (
+                id TEXT PRIMARY KEY,
+                session_id TEXT,
+                time_created INTEGER,
+                data TEXT
+            );
+            CREATE TABLE part (
+                id TEXT PRIMARY KEY,
+                message_id TEXT,
+                session_id TEXT,
+                time_created INTEGER,
+                data TEXT
+            );
+            INSERT INTO session VALUES (
+                'ses_a', 'title', 'coder', 'model', 1600000000000, 1600000000000
+            );
+            INSERT INTO message VALUES (
+                'm1', 'ses_a', 1600000000001, '{\"role\":\"user\"}'
+            );
+            INSERT INTO part VALUES (
+                'p1', 'm1', 'ses_a', 1600000000001,
+                '{\"type\":\"text\",\"text\":\"hello opencode\"}'
+            );",
+        )
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+        Ok(())
+    }
+
+    fn write_sources(root: &Path) -> std::io::Result<(PathBuf, PathBuf, PathBuf, PathBuf)> {
+        let ag = root.join("ag");
+        let logs = ag.join("sess_a").join(".system_generated").join("logs");
+        std::fs::create_dir_all(&logs)?;
+        std::fs::write(
+            logs.join("transcript.jsonl"),
+            "{\"step_index\":0,\"type\":\"USER_INPUT\",\"content\":\"hello antigravity\"}\n",
+        )?;
+
+        let oc = root.join("opencode.db");
+        write_opencode_db(&oc)?;
+
+        let hermes = root.join("hermes");
+        std::fs::create_dir_all(&hermes)?;
+        std::fs::write(
+            hermes.join("s1.json"),
+            r#"{"session_id":"s1","request":{"body":{"model":"m","messages":[{"role":"user","content":"hello hermes"},{"role":"assistant","content":"ack"}]}}}"#,
+        )?;
+
+        let codex = root.join("codex");
+        std::fs::create_dir_all(&codex)?;
+        std::fs::write(
+            codex.join("a.json"),
+            r#"{"session_id":"a","messages":[{"role":"user","content":"hello codex"}]}"#,
+        )?;
+        Ok((ag, oc, hermes, codex))
+    }
+
+    async fn stored(store: &InMemoryMemoryStore) -> [usize; 4] {
+        [
+            store.list("agent:antigravity").await.expect("ag").len(),
+            store.list("agent:opencode").await.expect("oc").len(),
+            store.list("agent:hermes").await.expect("hermes").len(),
+            store.list("agent:codex").await.expect("codex").len(),
+        ]
+    }
+
+    /// A second process over unchanged sources reads and imports nothing.
+    /// The first set is dropped: an in-memory cursor would skip on its own,
+    /// and only the files under `ingest-cursors/` make the new set a no-op.
+    #[tokio::test]
+    async fn second_ingestion_pass_over_unchanged_sources_reads_nothing_new() {
+        let src = include_str!("server.rs");
+        let after_disabled = src
+            .split_once("Universal agent session ingestion DISABLED")
+            .expect("disabled branch")
+            .1;
+        let call_at = after_disabled
+            .find("build_session_importers(")
+            .expect("the enabled loop must build importers through build_session_importers");
+        assert!(
+            after_disabled[..call_at].contains("} else {"),
+            "persisted cursors must be built only when the ingestion loop is enabled"
+        );
+        let dir_needle = format!("{}{}", "data_dir.join(\"", "ingest-cursors\")");
+        assert!(
+            src.contains(&dir_needle),
+            "cursor files must live in an ingest-cursors/ directory"
+        );
+        for name in [
+            "antigravity.json",
+            "opencode.json",
+            "hermes.json",
+            "codex.json",
+        ] {
+            let needle = format!("cursors.join(\"{name}\")");
+            assert!(
+                src.contains(&needle),
+                "cursor file {name} is not under ingest-cursors/"
+            );
+        }
+
+        let root = tempfile::tempdir().expect("tempdir");
+        let data_dir = root.path().join("daemon-data");
+        let (ag, oc, hermes, codex) = write_sources(root.path()).expect("fixtures");
+        let _env = RestoreEnv::set(&[
+            ("ANTIGRAVITY_BRAIN_DIR", ag.as_path()),
+            ("OPENCODE_DB_PATH", oc.as_path()),
+            ("HERMES_SESSIONS_DIR", hermes.as_path()),
+            ("CODEX_SESSIONS_DIR", codex.as_path()),
+        ]);
+
+        let embedder = std::sync::Arc::new(NoopEmbedder);
+        let store = InMemoryMemoryStore::new();
+        let first = build_session_importers(&data_dir, embedder.clone());
+        let ag1 = first.antigravity.sync(&store).await.expect("ag pass 1");
+        let oc1 = first.opencode.sync(&store).await.expect("oc pass 1");
+        let he1 = first.hermes.sync(&store).await.expect("hermes pass 1");
+        let cx1 = first.codex.sync(&store).await.expect("codex pass 1");
+        assert!(ag1.read >= 1 && oc1.read >= 1 && he1.read >= 1 && cx1.read >= 1);
+        assert!(
+            oc1.message_rows >= 1,
+            "the first pass must read message parts"
+        );
+        let cursor_dir = data_dir.join("ingest-cursors");
+        for name in [
+            "antigravity.json",
+            "opencode.json",
+            "hermes.json",
+            "codex.json",
+        ] {
+            let path = cursor_dir.join(name);
+            assert!(
+                path.is_file() && path.starts_with(root.path()),
+                "cursor {} must be a file inside the tempdir",
+                path.display()
+            );
+        }
+        let before = stored(&store).await;
+        assert!(
+            before.iter().all(|n| *n > 0),
+            "first pass imported nothing: {before:?}"
+        );
+        drop(first);
+
+        let second = build_session_importers(&data_dir, embedder);
+        let ag2 = second.antigravity.sync(&store).await.expect("ag pass 2");
+        let oc2 = second.opencode.sync(&store).await.expect("oc pass 2");
+        let he2 = second.hermes.sync(&store).await.expect("hermes pass 2");
+        let cx2 = second.codex.sync(&store).await.expect("codex pass 2");
+        assert_eq!(
+            (
+                ag2.read,
+                ag2.records,
+                oc2.read,
+                oc2.records,
+                oc2.message_rows
+            ),
+            (0, 0, 0, 0, 0),
+            "antigravity/opencode second pass read new data"
+        );
+        assert_eq!(
+            (he2.read, he2.records, cx2.read, cx2.records),
+            (0, 0, 0, 0),
+            "hermes/codex second pass read new data"
+        );
+        assert!(ag2.skipped >= 1 && oc2.skipped >= 1 && he2.skipped >= 1 && cx2.skipped >= 1);
+        assert_eq!(
+            stored(&store).await,
+            before,
+            "second pass imported new rows"
         );
     }
 }
