@@ -2724,3 +2724,277 @@ async fn auth_defaults_stdio_run_command_not_gated() {
         assert!(!err.to_string().starts_with("Forbidden:"), "{err}");
     }
 }
+
+fn memory_write_claims(
+    subject: &str,
+    role: crate::security::auth::UserRole,
+) -> crate::security::auth::Claims {
+    crate::security::auth::Claims::new(
+        subject.to_string(),
+        format!("{subject}@example.invalid"),
+        role,
+        chrono::Duration::minutes(5),
+    )
+}
+
+struct MemoryWriteRpm {
+    previous: Option<std::ffi::OsString>,
+}
+
+impl MemoryWriteRpm {
+    fn set(value: &str) -> Self {
+        let previous = std::env::var_os("XAVIER_MEMORY_WRITE_RPM");
+        std::env::set_var("XAVIER_MEMORY_WRITE_RPM", value);
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        Self { previous }
+    }
+}
+
+impl Drop for MemoryWriteRpm {
+    fn drop(&mut self) {
+        match self.previous.take() {
+            Some(value) => std::env::set_var("XAVIER_MEMORY_WRITE_RPM", value),
+            None => std::env::remove_var("XAVIER_MEMORY_WRITE_RPM"),
+        }
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+    }
+}
+
+async fn call_memory_write(
+    state: &AppState,
+    workspace: &WorkspaceContext,
+    role: crate::security::auth::UserRole,
+    caller_key: &str,
+    name: &str,
+    arguments: Value,
+) -> anyhow::Result<Value> {
+    let claims = memory_write_claims(caller_key, role);
+    super::tools_memory::with_memory_write_caller_key(
+        caller_key.to_string(),
+        super::tools_memory::with_mcp_caller(
+            super::tools_memory::McpCaller {
+                clearance: crate::security::clearance::role_clearance(role),
+                space: None,
+            },
+            super::server::handle_tool_call(
+                state.clone(),
+                workspace.clone(),
+                Some(&claims),
+                name,
+                arguments,
+            ),
+        ),
+    )
+    .await
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_save_user_top_secret_denied() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+    let err = call_memory_write(
+        &state,
+        &workspace,
+        crate::security::auth::UserRole::User,
+        "mcp-save-user-high",
+        "memory_save",
+        json!({"text": "A useful project note.", "metadata": {"clearance": "top_secret"}}),
+    )
+    .await
+    .expect_err("user memory_save above the caller ceiling");
+    assert!(err.to_string().contains("clearance"), "{err}");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_save_user_internal_allowed() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+    call_memory_write(
+        &state,
+        &workspace,
+        crate::security::auth::UserRole::User,
+        "mcp-save-user-internal",
+        "memory_save",
+        json!({"text": "A useful project note.", "metadata": {"clearance": "internal"}}),
+    )
+    .await
+    .expect("user memory_save at internal");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_save_admin_top_secret_allowed() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+    call_memory_write(
+        &state,
+        &workspace,
+        crate::security::auth::UserRole::Admin,
+        "mcp-save-admin-high",
+        "memory_save",
+        json!({"text": "A useful project note.", "metadata": {"clearance": "top_secret"}}),
+    )
+    .await
+    .expect("admin memory_save at top_secret");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_create_memory_user_top_secret_denied() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+    let err = call_memory_write(
+        &state,
+        &workspace,
+        crate::security::auth::UserRole::User,
+        "mcp-create-user-high",
+        "create_memory",
+        json!({
+            "path": "notes/mcp-high",
+            "content": "A useful project note.",
+            "metadata": {"clearance": "top_secret"}
+        }),
+    )
+    .await
+    .expect_err("user create_memory above the caller ceiling");
+    assert!(err.to_string().contains("clearance"), "{err}");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_save_fragment_user_top_secret_denied() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+    let err = call_memory_write(
+        &state,
+        &workspace,
+        crate::security::auth::UserRole::User,
+        "mcp-fragment-user-high",
+        "save_fragment",
+        json!({
+            "agent_id": "agent-1",
+            "content": "A useful project note.",
+            "metadata": {"clearance": "top_secret"}
+        }),
+    )
+    .await
+    .expect_err("user save_fragment above the caller ceiling");
+    assert!(err.to_string().contains("clearance"), "{err}");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_write_rate_third_denied() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("2");
+    let (state, workspace) = test_state().await;
+    let role = crate::security::auth::UserRole::User;
+    let key = "mcp-rate-one";
+    for _ in 0..2 {
+        call_memory_write(
+            &state,
+            &workspace,
+            role,
+            key,
+            "memory_save",
+            json!({"text": "A useful project note.", "metadata": {"clearance": "internal"}}),
+        )
+        .await
+        .expect("write inside the budget");
+    }
+    let err = call_memory_write(
+        &state,
+        &workspace,
+        role,
+        key,
+        "memory_save",
+        json!({"text": "A useful project note.", "metadata": {"clearance": "internal"}}),
+    )
+    .await
+    .expect_err("third write");
+    assert!(
+        err.to_string().to_lowercase().contains("rate limit"),
+        "{err}"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_write_rate_independent_callers() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("2");
+    let (state, workspace) = test_state().await;
+    let role = crate::security::auth::UserRole::User;
+    let note = json!({"text": "A useful project note.", "metadata": {"clearance": "internal"}});
+    for _ in 0..2 {
+        call_memory_write(
+            &state,
+            &workspace,
+            role,
+            "mcp-rate-a",
+            "memory_save",
+            note.clone(),
+        )
+        .await
+        .expect("caller a inside budget");
+        call_memory_write(
+            &state,
+            &workspace,
+            role,
+            "mcp-rate-b",
+            "memory_save",
+            note.clone(),
+        )
+        .await
+        .expect("caller b inside budget");
+    }
+    let err_a = call_memory_write(
+        &state,
+        &workspace,
+        role,
+        "mcp-rate-a",
+        "memory_save",
+        note.clone(),
+    )
+    .await
+    .expect_err("caller a third write");
+    let err_b = call_memory_write(&state, &workspace, role, "mcp-rate-b", "memory_save", note)
+        .await
+        .expect_err("caller b third write");
+    assert!(
+        err_a.to_string().to_lowercase().contains("rate limit"),
+        "{err_a}"
+    );
+    assert!(
+        err_b.to_string().to_lowercase().contains("rate limit"),
+        "{err_b}"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_write_rate_disabled() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("0");
+    let (state, workspace) = test_state().await;
+    let role = crate::security::auth::UserRole::User;
+    for _ in 0..5 {
+        call_memory_write(
+            &state,
+            &workspace,
+            role,
+            "mcp-rate-off",
+            "memory_save",
+            json!({"text": "A useful project note.", "metadata": {"clearance": "internal"}}),
+        )
+        .await
+        .expect("disabled limit accepts the write");
+    }
+}

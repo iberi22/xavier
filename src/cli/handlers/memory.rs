@@ -566,8 +566,16 @@ pub async fn get_handler(
 }
 
 /// Add handler.
+#[allow(clippy::too_many_arguments)]
 pub async fn add_handler(
     State(state): State<CliState>,
+    requester: Option<Extension<xavier::security::clearance::ClearanceLevel>>,
+    caller: Option<
+        Extension<xavier::adapters::inbound::http::middleware::rate_limit::MemoryWriteCallerKey>,
+    >,
+    session: Option<Extension<crate::cli::http_setup::SessionInfo>>,
+    claims: Option<Extension<xavier::security::auth::Claims>>,
+    client: Option<axum::Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
     space: Option<Extension<SpaceContext>>,
     workspace: Option<Extension<WorkspaceContext>>,
     axum::Json(payload): axum::Json<AddPayload>,
@@ -580,6 +588,41 @@ pub async fn add_handler(
         Ok(s) => s,
         Err(resp) => return resp,
     };
+    let session = session.as_ref().map(|s| &s.0);
+    let caller_key = caller.map(|c| c.0 .0).unwrap_or_else(|| {
+        xavier::adapters::inbound::http::middleware::rate_limit::memory_write_caller_key(
+            session
+                .and_then(|s| s.api_token.as_ref())
+                .map(|t| t.id.as_str()),
+            session
+                .and_then(|s| s.lease.as_ref())
+                .map(|l| l.agent_id.as_str()),
+            claims.as_ref().map(|c| c.0.sub.as_str()),
+            client.map(|extension| extension.0 .0),
+        )
+    });
+    // The per-caller budget is consumed before clearance is evaluated.
+    // A write that later fails clearance still counts. That order is accepted.
+    if let Err(retry) =
+        xavier::adapters::inbound::http::middleware::rate_limit::check_memory_write_rate(
+            &caller_key,
+        )
+    {
+        let mut response = json_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            serde_json::json!({"status": "error", "message": "Memory write rate limit exceeded"}),
+        );
+        response.headers_mut().insert(
+            axum::http::header::RETRY_AFTER,
+            retry
+                .as_secs()
+                .max(1)
+                .to_string()
+                .parse()
+                .expect("numeric retry interval"),
+        );
+        return response;
+    }
     let sec_result = state
         .security
         .process_input(&payload.content)
@@ -705,8 +748,22 @@ pub async fn add_handler(
         } else {
             None
         },
-    )
-    .unwrap_or_else(|_| serde_json::json!({"kind": "Context", "namespace": "Global"}));
+    );
+    let normalized_metadata = normalized_metadata
+        .unwrap_or_else(|_| serde_json::json!({"kind": "Context", "namespace": "Global"}));
+    let effective_clearance =
+        xavier::security::clearance::level_from_metadata(&normalized_metadata);
+    let ceiling = requester
+        .map(|level| level.0)
+        .unwrap_or_else(xavier::security::clearance::default_clearance);
+    if let Err(message) =
+        xavier::security::clearance::check_write_clearance(effective_clearance, ceiling)
+    {
+        return json_response(
+            StatusCode::FORBIDDEN,
+            serde_json::json!({"status": "error", "message": message}),
+        );
+    }
 
     info!(
         "Add memory request: path={}, content_len={}",
