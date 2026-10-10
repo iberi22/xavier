@@ -285,7 +285,7 @@ pub(crate) async fn handle_space_token(
             chrono::Duration::hours(1),
         ));
     req.extensions_mut().insert(auth);
-    next.run(req).await
+    next.run(with_memory_write_caller(req)).await
 }
 
 /// Maloca read paths that carry personal user content and therefore need a
@@ -386,7 +386,7 @@ pub async fn auth_middleware(
         || path == "/node/founder/status"
         || path == "/v1/node/founder/status"
     {
-        return next.run(req).await;
+        return next.run(with_memory_write_caller(req)).await;
     }
 
     let expected_token = match resolve_http_token() {
@@ -450,7 +450,7 @@ pub async fn auth_middleware(
                 xavier::security::auth::UserRole::Admin,
                 chrono::Duration::hours(1),
             ));
-        return next.run(req).await;
+        return next.run(with_memory_write_caller(req)).await;
     }
 
     // 1b. Space-scoped tokens (WP-13l). Terminal: a token with this prefix is
@@ -487,7 +487,7 @@ pub async fn auth_middleware(
                     xavier::security::auth::UserRole::User,
                     chrono::Duration::hours(1),
                 ));
-            return next.run(req).await;
+            return next.run(with_memory_write_caller(req)).await;
         }
     }
 
@@ -513,7 +513,7 @@ pub async fn auth_middleware(
                 xavier::security::auth::UserRole::User,
                 chrono::Duration::hours(1),
             ));
-        return next.run(req).await;
+        return next.run(with_memory_write_caller(req)).await;
     }
 
     // 4. Check Persistent API Tokens
@@ -545,7 +545,7 @@ pub async fn auth_middleware(
                     xavier::security::auth::UserRole::User,
                     chrono::Duration::hours(1),
                 ));
-            return next.run(req).await;
+            return next.run(with_memory_write_caller(req)).await;
         }
     }
 
@@ -568,7 +568,7 @@ pub async fn auth_middleware(
                 lease: None,
             });
             req.extensions_mut().insert(claims);
-            return next.run(req).await;
+            return next.run(with_memory_write_caller(req)).await;
         }
     }
 
@@ -576,6 +576,30 @@ pub async fn auth_middleware(
         StatusCode::UNAUTHORIZED,
         serde_json::json!({"status":"error","message":"Unauthorized"}),
     )
+}
+
+fn with_memory_write_caller(mut req: Request<Body>) -> Request<Body> {
+    use xavier::adapters::inbound::http::middleware::rate_limit::{
+        memory_write_caller_key, MemoryWriteCallerKey,
+    };
+    let session = req.extensions().get::<SessionInfo>();
+    let claims = req.extensions().get::<xavier::security::auth::Claims>();
+    let ip = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|c| c.0);
+    let key = memory_write_caller_key(
+        session
+            .and_then(|s| s.api_token.as_ref())
+            .map(|t| t.id.as_str()),
+        session
+            .and_then(|s| s.lease.as_ref())
+            .map(|l| l.agent_id.as_str()),
+        claims.map(|c| c.sub.as_str()),
+        ip,
+    );
+    req.extensions_mut().insert(MemoryWriteCallerKey(key));
+    req
 }
 
 #[derive(Clone, Debug)]
@@ -1094,7 +1118,6 @@ mod space_token_tests {
         (state, dir)
     }
 
-    /// Restores `XAVIER_TOKEN` on drop so a failing test cannot leak state.
     struct TokenGuard(Option<String>);
 
     impl TokenGuard {
@@ -1139,6 +1162,299 @@ mod space_token_tests {
             call(&app, "POST", "/memory/add", ROOT).await,
             StatusCode::OK
         );
+    }
+
+    struct EnvRestore {
+        key: &'static str,
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl EnvRestore {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prev = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            match self.prev.take() {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    fn write_subject(label: &str) -> String {
+        format!("{label}-{}", uuid::Uuid::new_v4())
+    }
+
+    async fn memory_write_response(
+        app: &Router,
+        endpoint: &str,
+        subject: &str,
+        role: xavier::security::auth::UserRole,
+        path: &str,
+        clearance: &str,
+    ) -> Response {
+        let mut request = Request::builder()
+            .method("POST")
+            .uri(endpoint)
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "path": path, "content": "A useful project note.",
+                    "metadata": {"clearance": clearance}
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(xavier::security::clearance::role_clearance(role));
+        request
+            .extensions_mut()
+            .insert(xavier::security::auth::Claims::new(
+                subject.to_string(),
+                "test@example.invalid".to_string(),
+                role,
+                chrono::Duration::minutes(1),
+            ));
+        app.clone().oneshot(request).await.unwrap()
+    }
+
+    fn memory_write_router(state: CliState) -> Router {
+        Router::new()
+            .route(
+                "/v1/memories",
+                axum::routing::post(crate::cli::handlers::memory::add_handler),
+            )
+            .route(
+                "/memory/add",
+                axum::routing::post(crate::cli::handlers::memory::add_handler),
+            )
+            .with_state(state)
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn memory_write_clearance_hardened() {
+        xavier::isolate_test_process!();
+        use xavier::security::auth::UserRole;
+        let _rpm = EnvRestore::set("XAVIER_MEMORY_WRITE_RPM", "600");
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        let (state, _tmp) = test_state().await;
+        let app = memory_write_router(state);
+        for endpoint in ["/v1/memories", "/memory/add"] {
+            let tag = endpoint.trim_start_matches('/').replace('/', "-");
+            assert_eq!(
+                memory_write_response(
+                    &app,
+                    endpoint,
+                    &write_subject(&format!("high-{tag}")),
+                    UserRole::User,
+                    "notes/high",
+                    "top_secret"
+                )
+                .await
+                .status(),
+                StatusCode::FORBIDDEN
+            );
+            assert_eq!(
+                memory_write_response(
+                    &app,
+                    endpoint,
+                    &write_subject(&format!("default-{tag}")),
+                    UserRole::User,
+                    "notes/default",
+                    "internal"
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+            assert_eq!(
+                memory_write_response(
+                    &app,
+                    endpoint,
+                    &write_subject(&format!("admin-{tag}")),
+                    UserRole::Admin,
+                    "notes/admin",
+                    "top_secret"
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+            assert_eq!(
+                memory_write_response(
+                    &app,
+                    endpoint,
+                    &write_subject(&format!("segment-{tag}")),
+                    UserRole::User,
+                    "segments/seg-admin/note",
+                    "internal"
+                )
+                .await
+                .status(),
+                StatusCode::FORBIDDEN,
+                "a user writing under seg-admin stays forbidden after metadata normalization"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn memory_write_clearance_production_router() {
+        xavier::isolate_test_process!();
+        let _rpm = EnvRestore::set("XAVIER_MEMORY_WRITE_RPM", "600");
+        let _routes = EnvRestore::set("XAVIER_REQUIRED_CLEARANCE_ROUTES", r#"{"routes":[]}"#);
+        let _secret = EnvRestore::set("XAVIER_JWT_SECRET", "memory-write-production-router-secret");
+        let _token = EnvRestore::set("XAVIER_TOKEN", "memory-write-production-root-token");
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        let (state, _tmp) = test_state().await;
+        let protected = crate::cli::server::memory_routes()
+            .merge(crate::cli::server::memory_large_body_routes())
+            .layer(axum::middleware::from_fn(
+                xavier::adapters::inbound::http::middleware::clearance::clearance_session_middleware,
+            ))
+            .layer(from_fn_with_state(state.clone(), auth_middleware));
+        let app = Router::new().merge(protected).with_state(state);
+        let user = xavier::security::auth::User::new(
+            "user@example.invalid".to_string(),
+            "User".to_string(),
+            xavier::security::auth::UserRole::User,
+        );
+        let jwt =
+            xavier::security::auth::generate_jwt(&user, b"memory-write-production-router-secret")
+                .expect("user jwt");
+        assert_eq!(
+            production_memory_write(&app, "/v1/memories", &jwt, "notes/prod-high", "top_secret")
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            production_memory_write(&app, "/memory/add", &jwt, "notes/prod-ok", "internal")
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            production_memory_write(
+                &app,
+                "/v1/memories",
+                &jwt,
+                "segments/seg-admin/note",
+                "internal"
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    async fn production_memory_write(
+        app: &Router,
+        endpoint: &str,
+        jwt: &str,
+        path: &str,
+        clearance: &str,
+    ) -> Response {
+        let request = Request::builder()
+            .method("POST")
+            .uri(endpoint)
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {jwt}"))
+            .body(Body::from(
+                serde_json::json!({
+                    "path": path,
+                    "content": "A useful project note.",
+                    "metadata": {"clearance": clearance}
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        app.clone().oneshot(request).await.unwrap()
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn memory_write_rate_hardened() {
+        xavier::isolate_test_process!();
+        use xavier::security::auth::UserRole;
+        let _rpm = EnvRestore::set("XAVIER_MEMORY_WRITE_RPM", "2");
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        let (state, _tmp) = test_state().await;
+        let app = memory_write_router(state);
+        let subject = write_subject("rate");
+        for endpoint in ["/v1/memories", "/memory/add"] {
+            assert_eq!(
+                memory_write_response(
+                    &app,
+                    endpoint,
+                    &subject,
+                    UserRole::User,
+                    "notes/rate",
+                    "internal"
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+        }
+        let response = memory_write_response(
+            &app,
+            "/v1/memories",
+            &subject,
+            UserRole::User,
+            "notes/rate",
+            "internal",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(
+            response
+                .headers()
+                .get("retry-after")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .parse::<u64>()
+                .unwrap()
+                > 0
+        );
+        assert_eq!(
+            memory_write_response(
+                &app,
+                "/v1/memories",
+                &write_subject("rate-other"),
+                UserRole::User,
+                "notes/other",
+                "internal"
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        std::env::set_var("XAVIER_MEMORY_WRITE_RPM", "0");
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        for _ in 0..3 {
+            assert_eq!(
+                memory_write_response(
+                    &app,
+                    "/memory/add",
+                    &subject,
+                    UserRole::User,
+                    "notes/disabled",
+                    "internal"
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+        }
     }
 
     async fn echo(req: Request<Body>) -> Response {
