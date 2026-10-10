@@ -10,14 +10,10 @@ use super::plans::{Plan, PlanLimits, SubscriptionStatus};
 /// Encode an `application/x-www-form-urlencoded` body.
 ///
 /// The workspace builds reqwest with `default-features = false` (no `form`
-/// support), so this uses the already-direct `urlencoding` dependency
-/// instead of `RequestBuilder::form`.
+/// support), so this reuses the RFC 3986 encoder already shared with the OAuth
+/// token requests instead of `RequestBuilder::form`.
 fn form_body(params: &[(&str, &str)]) -> String {
-    params
-        .iter()
-        .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
-        .collect::<Vec<_>>()
-        .join("&")
+    crate::auth2::oauth::form_urlencode(params)
 }
 
 /// Stripe API client
@@ -610,6 +606,21 @@ mod tests {
             "line_items%5B0%5D%5Bprice%5D=price_1"
         );
         assert_eq!(form_body(&[]), "");
+    }
+
+    #[test]
+    fn form_body_matches_the_shared_oauth_encoder() {
+        // `form_body` must not fork its own encoding: it delegates to the
+        // encoder used for OAuth form bodies (same RFC 3986 unreserved set).
+        let params = [
+            ("customer", "cus_1"),
+            ("payment_method_types[]", "card"),
+            ("metadata[workspace_id]", "ws 9/1"),
+        ];
+        assert_eq!(
+            form_body(&params),
+            crate::auth2::oauth::form_urlencode(&params)
+        );
     }
 
     #[test]
