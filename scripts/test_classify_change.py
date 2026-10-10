@@ -26,7 +26,7 @@ class T(unittest.TestCase):
   ]
   for P,l,a,L,dr,bin,emp,E_c,E_ld in cases:
    with self.subTest(P=P,l=l,a=a,L=L,dr=dr,bin=bin,emp=emp):
-    r = c.cmp(P,l,a,L,dr,bin,emp)
+    r = c.compute_classification(P,l,a,L,dr,bin,emp)
     self.assertEqual(r["class"], E_c)
     self.assertEqual(r["label_downgrade_attempted"], E_ld)
 
