@@ -59,4 +59,4 @@
 - examples
 
 ---
-*Provenance: KSM commit 56c1af0; guardrails.json sha256:f6f4adacc9b5615138ec400ec34a68998282c1108d35dde4439095ea1721d77d (6 families); defensive_auditor rules: 13. Deterministic: reruns on the same tree and context produce byte-identical output. Contains no code excerpts.*
+*Provenance: KSM commit 04f0bbe; guardrails.json sha256:d1edb59fc8d746ff2f64a5217beabef72b6d364f71ec443559a40af7a428ac84 (6 families); defensive_auditor rules: 13. Deterministic: reruns on the same tree and context produce byte-identical output. Contains no code excerpts.*
