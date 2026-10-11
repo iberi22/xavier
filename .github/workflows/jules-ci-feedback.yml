@@ -8,7 +8,7 @@ on:
 permissions:
   pull-requests: write
   actions: read
-  contents: read
+  contents: write
   issues: write
 
 jobs:
@@ -38,6 +38,9 @@ jobs:
           echo "Inspecting run $RUN_ID for branch $HEAD_BRANCH..."
           if [ "$HEAD_BRANCH" = "main" ] && [ "$RUN_EVENT" = "push" ] && [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
             bash scripts/main-incident-gh.sh
+            if [ "$CONCLUSION" = "failure" ]; then
+              python3 scripts/main-failure-triage.py --sha "$HEAD_SHA" --workflow "$WORKFLOW_NAME" || true
+            fi
             exit 0
           fi
 
