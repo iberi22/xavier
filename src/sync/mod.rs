@@ -5,5 +5,6 @@
 pub mod chunks;
 pub mod manifest;
 pub mod transport;
+pub mod xavier_cloud;
 
 pub use transport::SyncTransport;
