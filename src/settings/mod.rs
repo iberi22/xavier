@@ -226,7 +226,6 @@ pub mod tests {
                 let lower = key.to_ascii_uppercase();
                 if lower.starts_with("XAVIER_")
                     || lower.starts_with("PGHEART_")
-                    || lower == "STRIPE_SECRET_KEY"
                     || lower == "OPENAI_API_KEY"
                 {
                     saved_vars.insert(key, val);
@@ -246,7 +245,6 @@ pub mod tests {
                 let lower = key.to_ascii_uppercase();
                 if (lower.starts_with("XAVIER_")
                     || lower.starts_with("PGHEART_")
-                    || lower == "STRIPE_SECRET_KEY"
                     || lower == "OPENAI_API_KEY")
                     && !self.saved_vars.contains_key(&key)
                 {
@@ -577,7 +575,7 @@ pub mod tests {
 
         // Clean env
         for (key, _) in std::env::vars() {
-            if key.starts_with("XAVIER_") || key == "STRIPE_SECRET_KEY" {
+            if key.starts_with("XAVIER_") {
                 std::env::remove_var(&key);
             }
         }

@@ -15,7 +15,7 @@ use xavier::settings::XavierSettings;
 
 const BRICK_WARNING: &str = "\
 CRITICAL — BRICK RISK: Losing ≥2 of 3 Shamir shares (or the BIP39 mnemonic) permanently \
-bricks this node. There is NO central recovery, NO Stripe reset, NO support backdoor. \
+bricks this node. There is NO central recovery, NO provider reset, NO support backdoor. \
 Store shares offline in separate locations before clearing the screen.";
 
 /// Handle `xavier node …`.
@@ -137,7 +137,7 @@ async fn cmd_create(
     let pin = resolve_pin_for_create(pin)?;
     let device_key = parse_device_key(device_key_hex.as_deref())?;
 
-    eprintln!("Generating BIP39-24 node identity (offline, no Stripe, no central login)…");
+    eprintln!("Generating BIP39-24 node identity (offline, no central login)…");
     let bundle = NodeBootstrap::create(passphrase.as_deref(), &pin, device_key.as_ref())?;
     let pub_id = PublicNodeIdentity::from_keys(&bundle.keys);
 

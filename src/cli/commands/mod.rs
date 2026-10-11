@@ -16,7 +16,6 @@
 
 pub mod airgap;
 pub mod benchmark_runner;
-pub mod billing;
 pub mod cleanup;
 pub mod code;
 pub mod data_commons;

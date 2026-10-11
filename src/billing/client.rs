@@ -29,7 +29,7 @@ pub const CLOUD_URL_ENVS: [&str; 2] = ["PGHEART_URL", "XAVIER_PGHEART_URL"];
 pub const CLOUD_TOKEN_ENVS: [&str; 2] = ["PGHEART_TOKEN", "XAVIER_PGHEART_TOKEN"];
 
 /// Where the billing client sends its requests.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct BillingEndpoints {
     /// swal-billing base URL (no trailing slash).
     pub billing_url: String,
@@ -37,6 +37,19 @@ pub struct BillingEndpoints {
     pub cloud_url: String,
     /// Tenant API key for xavier-cloud, if configured.
     pub cloud_token: Option<String>,
+}
+
+impl fmt::Debug for BillingEndpoints {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BillingEndpoints")
+            .field("billing_url", &self.billing_url)
+            .field("cloud_url", &self.cloud_url)
+            .field(
+                "cloud_token",
+                &self.cloud_token.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 fn first_non_empty(lookup: &dyn Fn(&str) -> Option<String>, keys: &[&str]) -> Option<String> {
@@ -257,10 +270,44 @@ pub struct CloudUsage {
 }
 
 /// Client for swal-billing and xavier-cloud.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BillingClient {
     http: reqwest::Client,
     endpoints: BillingEndpoints,
+}
+
+impl fmt::Debug for BillingClient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BillingClient")
+            .field("endpoints", &self.endpoints)
+            .finish_non_exhaustive()
+    }
+}
+
+fn secure_url(raw: &str, service: &'static str) -> Result<reqwest::Url, BillingClientError> {
+    let url = reqwest::Url::parse(raw).map_err(|_| BillingClientError::InvalidResponse {
+        service,
+        detail: "invalid URL".to_string(),
+    })?;
+    let loopback = match url.host() {
+        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    };
+    if url.host().is_none()
+        || !(url.scheme() == "https" || (url.scheme() == "http" && loopback))
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(BillingClientError::InvalidResponse {
+            service,
+            detail:
+                "URL must use HTTPS (HTTP is allowed only for loopback hosts), without credentials"
+                    .to_string(),
+        });
+    }
+    Ok(url)
 }
 
 const SWAL_BILLING: &str = "swal-billing";
@@ -383,32 +430,44 @@ impl BillingClient {
         };
         match status {
             200..=299 => match field("url") {
-                Some(url) => Ok(CheckoutOutcome::Url { url }),
+                Some(url) => {
+                    secure_url(&url, SWAL_BILLING)?;
+                    Ok(CheckoutOutcome::Url { url })
+                }
                 None => Err(BillingClientError::InvalidResponse {
                     service: SWAL_BILLING,
                     detail: "checkout succeeded without a `url`".to_string(),
                 }),
             },
             409 => Ok(CheckoutOutcome::NotAvailable {
-                plan: field("plan").unwrap_or_else(|| req.plan.clone()),
-                status: field("status").unwrap_or_else(|| "not_available".to_string()),
-                message: field("message"),
+                plan: req.plan.clone(),
+                status: field("status")
+                    .filter(|status| {
+                        matches!(
+                            status.as_str(),
+                            "available" | "waitlist" | "coming_soon" | "contact"
+                        )
+                    })
+                    .unwrap_or_else(|| "not_available".to_string()),
+                message: None,
             }),
             501 => Ok(CheckoutOutcome::NotConfigured {
-                message: field("error").unwrap_or_else(|| "checkout not configured".to_string()),
+                message: "checkout not configured".to_string(),
             }),
             400 => match error_field(&body).as_deref() {
                 Some("unknown plan") => Err(BillingClientError::UnknownPlan {
                     plan: req.plan.clone(),
                 }),
-                Some(other) => Err(BillingClientError::BadRequest {
-                    message: other.to_string(),
-                }),
-                None => Err(BillingClientError::BadRequest {
-                    message: truncate(&body),
+                _ => Err(BillingClientError::BadRequest {
+                    message: "checkout request rejected (HTTP 400)".to_string(),
                 }),
             },
-            _ => Err(generic_status_error(SWAL_BILLING, &url, status, &body)),
+            _ => Err(generic_status_error(
+                SWAL_BILLING,
+                &url,
+                status,
+                "response body withheld",
+            )),
         }
     }
 
@@ -420,8 +479,17 @@ impl BillingClient {
             .as_deref()
             .ok_or(BillingClientError::MissingToken)?;
         let url = format!("{}/v1/cloud/usage", self.endpoints.cloud_url);
-        let resp = self
-            .http
+        secure_url(&url, XAVIER_CLOUD)?;
+        // Do not forward credentials through redirects to an unchecked URL.
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|_| BillingClientError::InvalidResponse {
+                service: XAVIER_CLOUD,
+                detail: "cannot initialize HTTP client".to_string(),
+            })?;
+        let resp = http
             .get(&url)
             .bearer_auth(token)
             .send()
@@ -446,6 +514,123 @@ impl BillingClient {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn billing_debug_redacts_cloud_token() {
+        let endpoints = endpoints(
+            "http://localhost:8787",
+            "https://cloud.test",
+            Some("debug-secret"),
+        );
+        let endpoints_debug = format!("{endpoints:?}");
+        let client_debug = format!("{:?}", client(endpoints));
+        for debug in [endpoints_debug, client_debug] {
+            assert!(debug.contains("<redacted>"));
+            assert!(!debug.contains("debug-secret"));
+        }
+    }
+
+    #[test]
+    fn secure_urls_allow_https_and_http_loopback_only() {
+        for url in [
+            "https://pay.test/session",
+            "http://localhost:8787/x",
+            "http://127.0.0.2/x",
+            "http://[::1]/x",
+        ] {
+            assert!(secure_url(url, SWAL_BILLING).is_ok());
+        }
+        for url in [
+            "http://pay.test/session",
+            "ftp://localhost/x",
+            "javascript:alert(1)",
+            "https://user:pass@pay.test/x",
+            "http://localhost.evil.test/x",
+            "/relative",
+        ] {
+            assert!(secure_url(url, SWAL_BILLING).is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn checkout_rejects_insecure_payment_url() {
+        let mut server = mockito::Server::new_async().await;
+        let m = server
+            .mock("POST", "/v1/xavier/checkout")
+            .with_status(200)
+            .with_body(r#"{"url":"http://pay.test/session"}"#)
+            .create_async()
+            .await;
+        let err = client(endpoints(&server.url(), "http://unused", None))
+            .checkout(&CheckoutRequest {
+                plan: "pro".into(),
+                tenant: None,
+                email: None,
+            })
+            .await
+            .unwrap_err();
+        m.assert_async().await;
+        assert!(matches!(err, BillingClientError::InvalidResponse { .. }));
+        assert!(!err.to_string().contains("pay.test"));
+    }
+
+    #[tokio::test]
+    async fn checkout_errors_withhold_response_bodies() {
+        let mut server = mockito::Server::new_async().await;
+        let c = client(endpoints(&server.url(), "http://unused", None));
+        for status in [400, 401, 403, 404, 409, 500, 501] {
+            let m = server.mock("POST", "/v1/xavier/checkout")
+                .with_status(status)
+                .with_body(r#"{"error":"private-checkout-secret","url":"https://pay.test/private-checkout-secret","message":"private-checkout-secret","plan":"private-checkout-secret","status":"private-checkout-secret"}"#)
+                .create_async().await;
+            let out = c
+                .checkout(&CheckoutRequest {
+                    plan: "pro".into(),
+                    tenant: None,
+                    email: None,
+                })
+                .await;
+            m.assert_async().await;
+            assert!(!format!("{out:?}").contains("private-checkout-secret"));
+            m.remove_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn usage_refuses_insecure_cloud_url() {
+        let err = client(endpoints(
+            "http://unused",
+            "http://cloud.test",
+            Some("test-key"),
+        ))
+        .cloud_usage()
+        .await
+        .unwrap_err();
+        assert!(matches!(err, BillingClientError::InvalidResponse { .. }));
+    }
+
+    #[tokio::test]
+    async fn usage_does_not_follow_redirects() {
+        let mut server = mockito::Server::new_async().await;
+        let m = server
+            .mock("GET", "/v1/cloud/usage")
+            .with_status(302)
+            .with_header("location", &format!("{}/redirected", server.url()))
+            .create_async()
+            .await;
+        let redirected = server
+            .mock("GET", "/redirected")
+            .expect(0)
+            .create_async()
+            .await;
+        let err = client(endpoints("http://unused", &server.url(), Some("test-key")))
+            .cloud_usage()
+            .await
+            .unwrap_err();
+        assert!(matches!(err, BillingClientError::Http { status: 302, .. }));
+        m.assert_async().await;
+        redirected.assert_async().await;
+    }
 
     fn endpoints(billing: &str, cloud: &str, token: Option<&str>) -> BillingEndpoints {
         BillingEndpoints {
@@ -593,7 +778,7 @@ mod tests {
             CheckoutOutcome::NotAvailable {
                 plan: "fundador".into(),
                 status: "waitlist".into(),
-                message: Some("Fundador está en lista de espera.".into()),
+                message: None,
             }
         );
     }
@@ -678,13 +863,13 @@ mod tests {
         assert_eq!(
             c.checkout(&req("bad-email")).await.unwrap_err(),
             BillingClientError::BadRequest {
-                message: "invalid email".into()
+                message: "checkout request rejected (HTTP 400)".into()
             }
         );
         assert_eq!(
             c.checkout(&req("nc")).await.unwrap(),
             CheckoutOutcome::NotConfigured {
-                message: "polar checkout not configured".into()
+                message: "checkout not configured".into()
             }
         );
         assert_eq!(

@@ -58,13 +58,15 @@ async fn checkout(
         Some(t) => Some(t),
         None if client.endpoints().cloud_token.is_some() => match client.cloud_usage().await {
             Ok(u) => Some(u.tenant),
-            Err(e) => {
-                eprintln!("note: checkout sent without tenant ({e})");
-                None
-            }
+            Err(e) => return Err(anyhow!("cannot resolve checkout tenant: {e}")),
         },
         None => None,
     };
+    if let Some(p) = Plan::from_catalog_id(&plan) {
+        if !p.is_purchasable() {
+            eprintln!("warning: plan '{}' is not purchasable in the vendored catalog; checkout availability is determined by swal-billing", p.catalog_id());
+        }
+    }
     let req = CheckoutRequest {
         plan,
         tenant,
@@ -218,9 +220,11 @@ pub fn render_checkout(o: &CheckoutOutcome) -> String {
             message,
         } => {
             let mut s = match status.as_str() {
-                "available" => {
+                "available" if Plan::from_catalog_id(plan)
+                    .is_some_and(|p| p.monthly_price_cents() == Some(0)) => {
                     format!("Plan '{plan}' is free and needs no checkout. Nothing was charged.")
                 }
+                "available" => format!("Plan '{plan}' has no checkout available. No payment was created and nothing was charged."),
                 other => {
                     let why = match other {
                         "waitlist" => "it is on the waitlist",
@@ -280,6 +284,126 @@ pub fn render_status(u: &CloudUsage, source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_client(url: &str) -> BillingClient {
+        BillingClient::new(
+            reqwest::Client::new(),
+            BillingEndpoints {
+                billing_url: url.into(),
+                cloud_url: url.into(),
+                cloud_token: Some("test-key".into()),
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn billing_checkout_failed_tenant_lookup_never_posts() {
+        for status in [401, 403, 404] {
+            let mut server = mockito::Server::new_async().await;
+            let usage = server
+                .mock("GET", "/v1/cloud/usage")
+                .with_status(status)
+                .create_async()
+                .await;
+            let post = server
+                .mock("POST", "/v1/xavier/checkout")
+                .with_status(200)
+                .with_body(r#"{"url":"https://pay.test/session"}"#)
+                .expect(0)
+                .create_async()
+                .await;
+            let result =
+                checkout(&test_client(&server.url()), "pro".into(), None, None, false).await;
+            post.assert_async().await;
+            usage.assert_async().await;
+            assert!(result.is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn billing_checkout_offline_tenant_lookup_never_posts() {
+        let mut server = mockito::Server::new_async().await;
+        let post = server
+            .mock("POST", "/v1/xavier/checkout")
+            .expect(0)
+            .create_async()
+            .await;
+        let mut endpoints = test_client(&server.url()).endpoints().clone();
+        endpoints.cloud_url = "http://127.0.0.1:0".into();
+        let client = BillingClient::new(reqwest::Client::new(), endpoints);
+        assert!(checkout(&client, "pro".into(), None, None, false)
+            .await
+            .is_err());
+        post.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn billing_checkout_explicit_tenant_skips_lookup() {
+        let mut server = mockito::Server::new_async().await;
+        let usage = server
+            .mock("GET", "/v1/cloud/usage")
+            .expect(0)
+            .create_async()
+            .await;
+        let post = server
+            .mock("POST", "/v1/xavier/checkout")
+            .match_body(mockito::Matcher::Json(
+                serde_json::json!({"plan":"pro","tenant":"explicit"}),
+            ))
+            .with_status(409)
+            .with_body(r#"{"plan":"pro","status":"coming_soon"}"#)
+            .create_async()
+            .await;
+        checkout(
+            &test_client(&server.url()),
+            "pro".into(),
+            None,
+            Some("explicit".into()),
+            false,
+        )
+        .await
+        .unwrap();
+        usage.assert_async().await;
+        post.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn billing_checkout_uses_resolved_tenant() {
+        let mut server = mockito::Server::new_async().await;
+        let usage = server
+            .mock("GET", "/v1/cloud/usage")
+            .with_status(200)
+            .with_body(r#"{"tenant":"resolved","bytes":0,"quota":1000}"#)
+            .create_async()
+            .await;
+        let post = server
+            .mock("POST", "/v1/xavier/checkout")
+            .match_body(mockito::Matcher::Json(
+                serde_json::json!({"plan":"pro","tenant":"resolved"}),
+            ))
+            .with_status(409)
+            .with_body(r#"{"plan":"pro","status":"coming_soon"}"#)
+            .create_async()
+            .await;
+        checkout(&test_client(&server.url()), "pro".into(), None, None, false)
+            .await
+            .unwrap();
+        usage.assert_async().await;
+        post.assert_async().await;
+    }
+
+    #[test]
+    fn billing_checkout_available_paid_plan_is_not_free() {
+        for plan in ["pro", "empresa", "unknown"] {
+            let text = render_checkout(&CheckoutOutcome::NotAvailable {
+                plan: plan.into(),
+                status: "available".into(),
+                message: None,
+            });
+            assert!(!text.contains("free"));
+            assert!(text.contains("nothing was charged"));
+        }
+    }
 
     fn catalog() -> PlansResponse {
         serde_json::from_str(include_str!("../../billing/catalog.v1.json")).unwrap()
