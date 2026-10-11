@@ -12,6 +12,8 @@
 use anyhow::Result;
 use regex::RegexSet;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use tracing::{info, warn};
 
@@ -19,6 +21,9 @@ use super::skill_controller::composer::{
     self, CompositionInput, CompositionScope, Evidence, SkillEntry,
 };
 use super::skill_controller::policy::{SecretFinding, SECRET_CLASSES};
+use super::skill_controller::telemetry::{
+    Outcome, SkillStage, TelemetryError, TelemetryWriter, UsageEvent,
+};
 use super::skill_registry::SkillRegistry;
 use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::virtual_memory::{MemoryReference, VirtualMemory};
@@ -201,6 +206,65 @@ const SKILL_DISPATCH_FETCH: usize = 10;
 /// The maximum number of skill descriptions to inject into the Tier 1 prompt.
 const MAX_TIER1_SKILLS: usize = 20;
 
+/// Failures while accepting an explicit harness acknowledgment.
+#[derive(Debug, thiserror::Error)]
+pub enum SkillUsageError {
+    #[error("only invoked and completed stages are harness acknowledgments")]
+    NotAnAcknowledgment,
+    #[error(transparent)]
+    Telemetry(#[from] TelemetryError),
+    #[error("skill usage database error: {0}")]
+    Database(#[from] rusqlite::Error),
+}
+
+/// Record an idempotent harness acknowledgment. Callers should use spawn_blocking.
+pub fn record_ack(db_path: &Path, event: &UsageEvent) -> Result<Outcome, SkillUsageError> {
+    if !matches!(event.stage, SkillStage::Invoked | SkillStage::Completed) {
+        return Err(SkillUsageError::NotAnAcknowledgment);
+    }
+    let conn = rusqlite::Connection::open(db_path)?;
+    crate::storage::pragma::apply_acquire_pragmas(&conn)?;
+    let writer = TelemetryWriter::new(&conn);
+    writer.ensure_schema()?;
+    Ok(writer.record(event, false)?)
+}
+
+fn emit_events(db: PathBuf, events: Vec<UsageEvent>) -> tokio::task::JoinHandle<()> {
+    tokio::task::spawn_blocking(move || {
+        let write = || -> Result<(), SkillUsageError> {
+            let conn = rusqlite::Connection::open(db)?;
+            crate::storage::pragma::apply_acquire_pragmas(&conn)?;
+            let writer = TelemetryWriter::new(&conn);
+            writer.ensure_schema()?;
+            for event in events {
+                if let Err(error) = writer.record(&event, false) {
+                    tracing::debug!(%error, "skill dispatch: telemetry event dropped");
+                }
+            }
+            Ok(())
+        };
+        if let Err(error) = write() {
+            tracing::debug!(%error, "skill dispatch: telemetry unavailable");
+        }
+    })
+}
+
+fn dispatch_event(request: &SkillDispatchRequest, skill: &str, stage: SkillStage) -> UsageEvent {
+    let task_hash = crate::crypto::hex_encode(Sha256::digest(request.task.as_bytes()));
+    let task_key = &task_hash[..16];
+    let event_id = crate::crypto::hex_encode(Sha256::digest(
+        format!("{task_key}:{skill}:{}", stage.as_str()).as_bytes(),
+    ));
+    UsageEvent::new(
+        event_id,
+        request.project.as_deref().unwrap_or("default"),
+        task_key,
+        "xavier-dispatch",
+        skill,
+        stage,
+    )
+}
+
 /// The dispatcher that ties the registry, memory, and retrieval together.
 pub struct SkillDispatcher {
     registry: SkillRegistry,
@@ -208,6 +272,7 @@ pub struct SkillDispatcher {
     /// Read ceiling applied to matched skills. `None` keeps legacy callers
     /// unfiltered; MCP sets it from the authenticated caller.
     requester_clearance: Option<ClearanceLevel>,
+    telemetry_db: Option<PathBuf>,
 }
 
 impl SkillDispatcher {
@@ -217,12 +282,19 @@ impl SkillDispatcher {
             registry,
             memory,
             requester_clearance: None,
+            telemetry_db: None,
         }
     }
 
     /// Apply the requester's clearance ceiling to matched skills.
     pub fn with_clearance(mut self, clearance: ClearanceLevel) -> Self {
         self.requester_clearance = Some(clearance);
+        self
+    }
+
+    /// Enable best-effort lifecycle telemetry without waiting for persistence.
+    pub fn with_telemetry_db(mut self, path: PathBuf) -> Self {
+        self.telemetry_db = Some(path);
         self
     }
 
@@ -345,7 +417,7 @@ impl SkillDispatcher {
             "Skill dispatched"
         );
 
-        Ok(SkillDispatchResult {
+        let result = SkillDispatchResult {
             skill_name: skill.name,
             skill_description: skill.description,
             confidence,
@@ -358,7 +430,20 @@ impl SkillDispatcher {
             },
             estimated_savings_pct,
             hidden_by_clearance,
-        })
+        };
+        if let Some(db) = &self.telemetry_db {
+            let mut events: Vec<_> = matches
+                .iter()
+                .map(|(_, skill)| dispatch_event(request, &skill.name, SkillStage::Selected))
+                .collect();
+            events.push(dispatch_event(
+                request,
+                &result.skill_name,
+                SkillStage::Delivered,
+            ));
+            drop(emit_events(db.clone(), events));
+        }
+        Ok(result)
     }
 
     /// Gather scoped evidence for the task.
@@ -485,6 +570,217 @@ impl SkillDispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn telemetry_fixture(root: &Path) -> (SkillDispatcher, SkillDispatchRequest) {
+        let skills = root.join("skills");
+        std::fs::create_dir(&skills).unwrap();
+        std::fs::write(
+            skills.join("SKILL.md"),
+            "---\nname: trace-audit\ndescription: \"Audit the failed traces of a run\"\n---\n\nContent",
+        )
+        .unwrap();
+        let mut registry = SkillRegistry::new(vec![skills]);
+        registry.reindex().await.unwrap();
+        (
+            SkillDispatcher::new(registry, None),
+            SkillDispatchRequest {
+                task: "audit the failed traces".to_string(),
+                model_hint: None,
+                max_tokens: Some(4000),
+                project: Some("ws-test".to_string()),
+            },
+        )
+    }
+
+    fn stage_count(conn: &rusqlite::Connection, stage: SkillStage) -> u64 {
+        conn.query_row(
+            "SELECT count(*) FROM skill_usage_events WHERE stage = ?1",
+            [stage.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn dispatch_telemetry_failure_leaves_result_unchanged() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (dispatcher, request) = telemetry_fixture(tmp.path()).await;
+        let expected = dispatcher.dispatch(&request).await.unwrap();
+        assert_eq!(expected.skill_name, "trace-audit");
+        let blocker = tmp.path().join("regular-file");
+        std::fs::write(&blocker, "not a directory").unwrap();
+        let db = blocker.join("usage.db");
+        let actual = dispatcher
+            .with_telemetry_db(db.clone())
+            .dispatch(&request)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(actual).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+        emit_events(
+            db,
+            vec![dispatch_event(
+                &request,
+                "trace-audit",
+                SkillStage::Selected,
+            )],
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn emit_selected_delivered_has_unknown_ack_coverage_and_no_task_text() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, request) = telemetry_fixture(tmp.path()).await;
+        let db = tmp.path().join("usage.db");
+        let selected = dispatch_event(&request, "trace-audit", SkillStage::Selected);
+        let delivered = dispatch_event(&request, "trace-audit", SkillStage::Delivered);
+        assert_eq!(selected.event_id.len(), 64);
+        assert_eq!(selected.task_id.len(), 16);
+        assert!(selected
+            .event_id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+        assert_eq!(selected.workspace_id, "ws-test");
+        assert_eq!(selected.tool, "xavier-dispatch");
+        assert_eq!(
+            selected.event_id,
+            dispatch_event(&request, "trace-audit", SkillStage::Selected).event_id
+        );
+        assert_ne!(selected.event_id, delivered.event_id);
+        emit_events(db.clone(), vec![selected, delivered])
+            .await
+            .unwrap();
+        let conn = rusqlite::Connection::open(db).unwrap();
+        assert_eq!(TelemetryWriter::new(&conn).count().unwrap(), 2);
+        assert_eq!(stage_count(&conn, SkillStage::Selected), 1);
+        assert_eq!(stage_count(&conn, SkillStage::Delivered), 1);
+        assert_eq!(stage_count(&conn, SkillStage::Invoked), 0);
+        assert_eq!(stage_count(&conn, SkillStage::Completed), 0);
+        let mut stmt = conn.prepare("SELECT * FROM skill_usage_events").unwrap();
+        let columns = stmt.column_count();
+        let mut rows = stmt.query([]).unwrap();
+        while let Some(row) = rows.next().unwrap() {
+            for column in 0..columns {
+                if let rusqlite::types::ValueRef::Text(value) = row.get_ref(column).unwrap() {
+                    assert!(!std::str::from_utf8(value).unwrap().contains(&request.task));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn record_ack_is_idempotent_for_invoked_and_completed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("usage.db");
+        for stage in [SkillStage::Invoked, SkillStage::Completed] {
+            let event = UsageEvent::new(
+                stage.as_str(),
+                "ws-test",
+                "task-key",
+                "harness",
+                "trace-audit",
+                stage,
+            );
+            assert_eq!(record_ack(&db, &event).unwrap().affected, 1);
+            assert_eq!(record_ack(&db, &event).unwrap().affected, 0);
+        }
+        let conn = rusqlite::Connection::open(db).unwrap();
+        assert_eq!(TelemetryWriter::new(&conn).count().unwrap(), 2);
+        assert_eq!(stage_count(&conn, SkillStage::Invoked), 1);
+        assert_eq!(stage_count(&conn, SkillStage::Completed), 1);
+        assert_eq!(stage_count(&conn, SkillStage::Selected), 0);
+        assert_eq!(stage_count(&conn, SkillStage::Delivered), 0);
+    }
+
+    #[test]
+    fn record_ack_rejects_selected_and_delivered() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("usage.db");
+        for stage in [SkillStage::Selected, SkillStage::Delivered] {
+            let event = UsageEvent::new(
+                stage.as_str(),
+                "ws-test",
+                "task-key",
+                "harness",
+                "trace-audit",
+                stage,
+            );
+            assert!(matches!(
+                record_ack(&db, &event),
+                Err(SkillUsageError::NotAnAcknowledgment)
+            ));
+        }
+        assert!(!db.exists(), "rejection must precede opening the database");
+    }
+
+    #[test]
+    fn dispatch_does_not_wait_for_a_saturated_blocking_queue() {
+        let tmp = tempfile::tempdir().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .max_blocking_threads(1)
+            .build()
+            .unwrap();
+        let (dispatcher, request) = runtime.block_on(telemetry_fixture(tmp.path()));
+        let expected = runtime.block_on(dispatcher.dispatch(&request)).unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let blocker = runtime.spawn_blocking(move || {
+            started_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        });
+        started_rx.recv().unwrap();
+        let db = tmp.path().join("usage.db");
+        let dispatcher = dispatcher.with_telemetry_db(db.clone());
+        let actual = runtime.block_on(async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                dispatcher.dispatch(&request),
+            )
+            .await
+        });
+        let persisted_before_release = db.exists();
+        release_tx.send(()).unwrap();
+        runtime.block_on(blocker).unwrap();
+        assert!(!persisted_before_release);
+        assert_eq!(
+            serde_json::to_value(actual.unwrap().unwrap()).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+        drop(runtime);
+    }
+
+    #[tokio::test]
+    async fn dispatch_schedules_selected_and_delivered_events() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (dispatcher, request) = telemetry_fixture(tmp.path()).await;
+        let db = tmp.path().join("usage.db");
+        let result = dispatcher
+            .with_telemetry_db(db.clone())
+            .dispatch(&request)
+            .await
+            .unwrap();
+        assert_eq!(result.skill_name, "trace-audit");
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if let Some(conn) = rusqlite::Connection::open(&db)
+                    .ok()
+                    .filter(|conn| TelemetryWriter::new(conn).count().ok() == Some(2))
+                {
+                    assert_eq!(stage_count(&conn, SkillStage::Selected), 1);
+                    assert_eq!(stage_count(&conn, SkillStage::Delivered), 1);
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
 
     #[test]
     fn context_pack_serializes() {
