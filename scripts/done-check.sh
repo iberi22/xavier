@@ -121,11 +121,15 @@ if [ "$BUNDLE_TYPE" = "task" ]; then
         add_check "sha" "false" "stale SHA ($BUNDLE_SHA != $HEAD_SHA)"
     fi
 
-    if jq -e 'if (has("changed_files") and (.changed_files | type == "array") and (.changed_files | length) > 0) then [.changed_files[] | select(endswith(".md") or startswith("docs/"))] | length == (.changed_files | length) else false end' "$BUNDLE_FILE" >/dev/null 2>&1; then
-        DOCS_ONLY=true
-    else
+    DOCS_ONLY=true
+    if ! git diff --name-only "${BASE_SHA:-origin/main}...$HEAD_SHA" > .changed_files.tmp 2>/dev/null; then
+        DOCS_ONLY=false
+    elif [ ! -s .changed_files.tmp ]; then
+        DOCS_ONLY=false
+    elif grep -qvE '(\.md$|^docs/)' .changed_files.tmp; then
         DOCS_ONLY=false
     fi
+    rm -f .changed_files.tmp
 
     if jq -e '.commands | any(contains("cargo test"))' "$BUNDLE_FILE" >/dev/null; then
         add_check "tests" "true" "Cargo test command observed"
