@@ -853,7 +853,7 @@ Xavier desktop app DEBE ofrecer instaladores one-click para usuarios no técnico
 - **Docs:** Issue #1892, Issue #1895
 
 ### Description
-Soporte de arquitectura híbrida SWAL en Cloudflare: frontend `panel-ui` en Cloudflare Pages (`panel.xavier.swal.dev`) y persistencia serverless para el tier Socio SWAL ($9/mes) mapeando vectores a Cloudflare Vectorize, embeddings en Workers AI y metadatos en Cloudflare D1 con cifrado E2E.
+Soporte de arquitectura híbrida SWAL en Cloudflare: frontend `panel-ui` en Cloudflare Pages (`panel.xavier.swal.dev`) y persistencia serverless para el plan Respaldo de Xavier Cloud (10 USD/mes o 100 USD/año según el catálogo canónico v1, `iberi22/xavier-cloud` → `plans/catalog.v1.json`; reemplaza al antiguo tier Socio SWAL de 9 USD) mapeando vectores a Cloudflare Vectorize, embeddings en Workers AI y metadatos en Cloudflare D1 con cifrado E2E.
 
 ### Acceptance criteria
 - [ ] `panel-ui/wrangler.toml` configurado para Cloudflare Pages SPA
