@@ -72,6 +72,16 @@ pub use xavier::auth2::auth_routes;
 
 pub static START_TIME: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
+pub(crate) fn skill_api_routes() -> Router<CliState> {
+    Router::new()
+        .route(
+            "/api/skill/dispatch",
+            post(xavier::api::skills::dispatch_skill),
+        )
+        .route("/api/skill/list", get(xavier::api::skills::list_skills))
+        .route("/api/skill/audit", get(xavier::api::skills::audit_skills))
+}
+
 /// Handler for Prometheus metrics endpoint
 pub async fn metrics_handler() -> axum::response::Response {
     use axum::response::IntoResponse;
@@ -1326,11 +1336,7 @@ pub async fn start_http_server(
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
         .route("/session/compact", post(session_compact_handler))
-        .route(
-            "/api/skill/dispatch",
-            post(xavier::api::skills::dispatch_skill),
-        )
-        .route("/api/skill/list", get(xavier::api::skills::list_skills))
+        .merge(skill_api_routes())
         .route("/skills", get(xavier::api::skills::list_skills))
         .route(
             "/api/memory/health",
