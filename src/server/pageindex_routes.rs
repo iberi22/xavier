@@ -418,7 +418,7 @@ mod tests {
     #[tokio::test]
     async fn test_pageindex_routes_search_get_and_post() {
         let a_rw = app(Some(UserRole::User));
-        let body = json!({"name": "guide", "content": "# One\nalpha\n## Two\nzebra bands\n", "format": "markdown"});
+        let body = json!({"name": "guide", "content": "# One\nalpha\n## Two\nzebra stripes\n", "format": "markdown"});
         let (st, v) = send(a_rw.clone(), "POST", "/documents", Some(body)).await;
         assert_eq!(st, StatusCode::OK, "{v}");
 

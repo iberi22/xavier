@@ -128,7 +128,7 @@ mod tests {
         let admin = claims(UserRole::Admin);
         let put = json!({
             "doc_name": "mcp-search",
-            "content": "# One\nalpha text\n## Two\nzebra bands\n",
+            "content": "# One\nalpha text\n## Two\nzebra stripes\n",
             "format": "markdown"
         });
         handle_tool_call(

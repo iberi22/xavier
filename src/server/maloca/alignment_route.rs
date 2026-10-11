@@ -81,12 +81,12 @@ pub fn get_canonical_goals() -> Vec<AlignmentGoal> {
         },
         AlignmentGoal {
             id: 4,
-            title: "No Centralized Paywalls".to_string(),
+            title: "No Stripe Paywalls".to_string(),
             category: "Monetization".to_string(),
-            description: "Pro features and node capabilities are unlocked via active SWAL Node identity rather than centralized payment gateways (No centralized paywalls).".to_string(),
+            description: "Pro features and node capabilities are unlocked via active SWAL Node identity rather than centralized payment gateways (No Stripe paywalls).".to_string(),
             verification_criteria: vec![
                 "Node activation validated via cryptographic keypair proof".to_string(),
-                "Zero centralized payment SDKs in production dependencies".to_string(),
+                "Zero Stripe, PayPal, or centralized payment SDKs in production dependencies".to_string(),
             ],
         },
         AlignmentGoal {
@@ -198,10 +198,10 @@ pub fn perform_alignment_audit() -> AlignmentAuditResponse {
         },
         ChecklistBreakdown {
             rule_id: "SWAL-G04".to_string(),
-            title: "No Centralized Paywall Bypass".to_string(),
+            title: "No Stripe Paywall Bypass".to_string(),
             passed: true,
             score: 100,
-            details: "Node identity vault active; zero SaaS paywall dependencies.".to_string(),
+            details: "Node identity vault active; zero Stripe/SaaS paywall dependencies.".to_string(),
         },
         ChecklistBreakdown {
             rule_id: "SWAL-G05".to_string(),
@@ -331,12 +331,12 @@ mod tests {
         assert_eq!(local_first.title, "Local-First Runtimes");
         assert!(!local_first.verification_criteria.is_empty());
 
-        let paywall_goal = goals
+        let stripe_goal = goals
             .iter()
             .find(|g| g.id == 4)
             .expect("Goal 4 should exist");
-        assert_eq!(paywall_goal.title, "No Centralized Paywalls");
-        assert!(paywall_goal.description.contains("centralized"));
+        assert_eq!(stripe_goal.title, "No Stripe Paywalls");
+        assert!(stripe_goal.description.contains("Stripe"));
     }
 
     #[test]
