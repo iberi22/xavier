@@ -1,0 +1,34 @@
+description: Rust memory runtime for AI agents (HTTP REST API, MCP server, CLI, P2P mesh between nodes, chat gateways) with SQLite-backed vector stores, at-rest encryption and a TypeScript panel-ui
+untrusted_inputs:
+  - HTTP REST API on :8006 (src/api, src/server: v1_api, auth_routes, pageindex, training, docbot routes); token, JWT and OAuth auth in src/auth2
+  - MCP over HTTP/SSE (src/server/mcp) and MCP stdio (src/server/mcp_stdio.rs, 'xavier mcp')
+  - P2P mesh peers (src/mesh, src/espacio/p2p.rs, NAT traversal in src/mesh/p2p): messages from other nodes are untrusted
+  - Chat gateways (src/gateways: telegram_docbot, whatsapp; src/telegram)
+  - Documents, repositories and archives ingested for indexing (src/documents, src/codebase, src/pageindex_glue)
+  - panel-ui browser input served under :8006/panel
+trusted:
+  - The node operator, its configuration files and environment variables
+  - Local SQLite stores written by the node itself
+components_most:
+  - src/auth2 and src/middleware (authentication and authorization)
+  - src/api and src/server (HTTP and MCP surface)
+  - src/mesh and src/espacio (peer-to-peer input, replication)
+  - src/crypto, src/keystore, src/node_identity, src/secrets (key handling and at-rest encryption)
+  - src/codebase and src/documents (parsing of untrusted content)
+components_least:
+  - benches, examples, docs, installer, scripts (developer tooling)
+  - panel-ui (TypeScript UI; scanned only as the HTTP client of the API)
+exercise:
+  - cargo build, then 'xavier http' with XAVIER_TOKEN set; readiness at GET /ready
+  - cargo test --offline --lib -- --test-threads=1 (all 3662 lib tests pass offline; some tests are flaky in parallel)
+  - "'xavier mcp' starts the MCP stdio server"
+leave_alone:
+  - target
+  - node_modules
+  - panel-ui/node_modules
+  - data
+  - vendor
+  - scripts
+  - benches
+  - examples
+severity_overrides: {"auth bypass on the HTTP or MCP API": "critical", "remote code or command execution from API, MCP, mesh or gateway input": "critical", "memory corruption in unsafe code reachable from network input": "critical", "denial of service from an authenticated client": "medium", "issues requiring a malicious local operator or config file": "out of scope"}
