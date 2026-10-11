@@ -231,6 +231,12 @@ pub fn record_ack(db_path: &Path, event: &UsageEvent) -> Result<Outcome, SkillUs
 
 fn emit_events(db: PathBuf, events: Vec<UsageEvent>) -> tokio::task::JoinHandle<()> {
     tokio::task::spawn_blocking(move || {
+        if let Some(parent) = db.parent() {
+            if let Err(error) = std::fs::create_dir_all(parent) {
+                tracing::debug!(%error, "skill dispatch: telemetry directory unavailable");
+                return;
+            }
+        }
         let write = || -> Result<(), SkillUsageError> {
             let conn = rusqlite::Connection::open(db)?;
             crate::storage::pragma::apply_acquire_pragmas(&conn)?;
@@ -599,6 +605,24 @@ mod tests {
             |row| row.get(0),
         )
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn skill_usage_dispatch_creates_parent_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = temp.path().join("nested/skill_controller/usage.sqlite3");
+        let event = UsageEvent::new(
+            "evt-parent",
+            "ws",
+            "task-id",
+            "harness",
+            "demo",
+            SkillStage::Selected,
+        );
+        emit_events(db.clone(), vec![event]).await.unwrap();
+        let summary = crate::api::skills::usage_summary_blocking(&db).unwrap();
+        assert_eq!(summary["skills"][0]["selected"], 1);
+        assert_eq!(summary["skills"][0]["invocation_coverage"], "unknown");
     }
 
     #[tokio::test]

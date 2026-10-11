@@ -556,6 +556,18 @@ fn render_rollback_report(report: &xavier::context::RollbackReport) -> serde_jso
 /// `crate::cli::handlers::skills`, so no new network mutation route is added (D6).
 async fn handle_skills_command(cmd: enums::SkillsCommand) -> Result<()> {
     match cmd {
+        enums::SkillsCommand::Usage => {
+            let summary = tokio::task::spawn_blocking(|| {
+                xavier::api::skills::usage_summary_blocking(
+                    &xavier::api::skills::skill_usage_db_path(),
+                )
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("skill usage task failed: {e}"))?
+            .map_err(|e| anyhow::anyhow!(e))?;
+            println!("{}", serde_json::to_string_pretty(&summary)?);
+            Ok(())
+        }
         enums::SkillsCommand::Audit { manifest } => {
             let report = tokio::task::spawn_blocking(move || {
                 xavier::api::skills::audit_manifest_blocking(std::path::Path::new(&manifest))
@@ -653,10 +665,33 @@ mod skills_command_tests {
             .find(|c| c.get_name() == "skills")
             .expect("skills subcommand is registered");
         let names: Vec<&str> = skills.get_subcommands().map(|c| c.get_name()).collect();
+        assert!(names.contains(&"usage"), "missing usage: {names:?}");
         assert!(names.contains(&"audit"), "missing audit: {names:?}");
         assert!(names.contains(&"plan"), "missing plan: {names:?}");
         assert!(names.contains(&"apply"), "missing apply: {names:?}");
         assert!(names.contains(&"rollback"), "missing rollback: {names:?}");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skills_usage_reads_locally_without_creating_db() {
+        let tmp = TempDir::new().unwrap();
+        let previous = std::env::var_os("XAVIER_DATA_DIR");
+        struct Restore(Option<std::ffi::OsString>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => std::env::set_var("XAVIER_DATA_DIR", value),
+                    None => std::env::remove_var("XAVIER_DATA_DIR"),
+                }
+            }
+        }
+        let _restore = Restore(previous);
+        std::env::set_var("XAVIER_DATA_DIR", tmp.path());
+        handle_skills_command(enums::SkillsCommand::Usage)
+            .await
+            .unwrap();
+        assert!(!xavier::api::skills::skill_usage_db_path().exists());
     }
 
     fn write_package(source: &Path, name: &str) {

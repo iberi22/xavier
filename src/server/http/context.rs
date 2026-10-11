@@ -128,6 +128,23 @@ fn compact_skill_instructions(instructions: String, remaining_budget: usize) -> 
     }
 }
 
+fn fusion_composition_document(
+    session_id: &str,
+    composition: String,
+    remaining_budget: usize,
+) -> Option<ContextDocument> {
+    let tokens = crate::context::token_estimate::estimate_tokens(&composition)
+        .max(composition.split_whitespace().count());
+    if composition.is_empty() || tokens > remaining_budget {
+        return None;
+    }
+    Some(
+        ContextDocument::new("task-composition", session_id, "context", composition)
+            .with_token_count(tokens)
+            .with_metadata(serde_json::json!({ "is_external": true })),
+    )
+}
+
 /// V1 context regenerate.
 pub async fn v1_context_regenerate(
     Extension(workspace): Extension<WorkspaceContext>,
@@ -227,17 +244,26 @@ pub async fn v1_context_regenerate(
             let memory = workspace.workspace.memory.clone();
             let dispatcher = SkillDispatcher::new(registry, Some(memory));
 
+            let selected_tokens: usize = selected_docs.iter().map(|d| d.token_count).sum();
+            let remaining_budget = token_budget.saturating_sub(selected_tokens);
             let dispatch_request = SkillDispatchRequest {
                 task: latest_prompt.to_string(),
                 model_hint: None,
-                max_tokens: Some(token_budget),
+                max_tokens: Some(remaining_budget),
                 project: None,
             };
 
             if let Ok(result) = dispatcher.dispatch(&dispatch_request).await {
                 if result.confidence >= FUSION_SKILL_CONFIDENCE_THRESHOLD {
-                    let selected_tokens: usize = selected_docs.iter().map(|d| d.token_count).sum();
-                    let remaining_budget = token_budget.saturating_sub(selected_tokens);
+                    let mut remaining_budget = remaining_budget;
+                    if let Some(doc) = fusion_composition_document(
+                        &payload.session_id,
+                        result.context_pack.composition,
+                        remaining_budget,
+                    ) {
+                        remaining_budget = remaining_budget.saturating_sub(doc.token_count);
+                        injected_memories.push(doc);
+                    }
 
                     if !result.context_pack.system_instructions.is_empty() {
                         let instructions = result.context_pack.system_instructions;
@@ -247,27 +273,16 @@ pub async fn v1_context_regenerate(
                             injected_skills.push(compacted);
                         }
                     }
-
-                    for mem_ref in result.context_pack.relevant_memories {
-                        let doc = ContextDocument::new(
-                            mem_ref.id.clone(),
-                            &payload.session_id,
-                            "system",
-                            mem_ref.summary,
-                        )
-                        .with_metadata(serde_json::json!({
-                            "path": mem_ref.path,
-                            "is_external": true,
-                        }));
-                        injected_memories.push(doc);
-                    }
                 }
             }
         }
     }
 
     // 4. Build optimized context
-    let builder_config = ContextBuilderConfig::default();
+    let builder_config = ContextBuilderConfig {
+        enable_compression: level != ContextLevel::Maximum,
+        ..ContextBuilderConfig::default()
+    };
     let builder = ContextBuilder::new(builder_config);
 
     let context_string = builder.build(level, &selected_docs, &injected_memories, &injected_skills);
@@ -556,6 +571,65 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_fusion_evidence_preserves_quotes_and_never_uses_system_role() {
+        use crate::context::skill_controller::composer::{
+            self, CompositionInput, CompositionScope, Evidence,
+        };
+        let composition = composer::compose(
+            &CompositionScope::new("ws-fusion", None).expect("scope"),
+            &CompositionInput {
+                task_id: "fusion".to_string(),
+                task: "Design distributed mesh architecture".to_string(),
+                skills: vec![],
+                evidence: vec![Evidence::new(
+                    "m-fusion",
+                    "ws-fusion",
+                    "memory",
+                    &"ordinary evidence\nquoted continuation\n".repeat(20),
+                )],
+                memory_available: true,
+                graph_revision: None,
+            },
+            1000,
+        )
+        .expect("composition");
+        let doc = fusion_composition_document("session", composition.markdown.clone(), 1000)
+            .expect("injected evidence");
+        assert_ne!(
+            doc.role, "system",
+            "untrusted evidence must never be system-role"
+        );
+        assert_eq!(doc.content, composition.markdown);
+        let builder = ContextBuilder::new(ContextBuilderConfig {
+            enable_compression: false,
+            ..Default::default()
+        });
+        let output = builder.build(ContextLevel::Maximum, &[], &[doc], &[]);
+        assert!(output.contains(&composition.markdown));
+        assert!(fusion_composition_document("session", composition.markdown, 1).is_none());
+    }
+
+    #[test]
+    fn test_fusion_minimal_medium_remain_byte_identical() {
+        let docs = vec![ContextDocument::new(
+            "m",
+            "session",
+            "user",
+            "Design distributed mesh architecture",
+        )];
+        for level in [ContextLevel::Minimal, ContextLevel::Medium] {
+            let before =
+                ContextBuilder::new(ContextBuilderConfig::default()).build(level, &docs, &[], &[]);
+            let after = ContextBuilder::new(ContextBuilderConfig {
+                enable_compression: level != ContextLevel::Maximum,
+                ..Default::default()
+            })
+            .build(level, &docs, &[], &[]);
+            assert_eq!(before.as_bytes(), after.as_bytes());
+        }
+    }
+
     fn env_lock() -> &'static tokio::sync::Mutex<()> {
         static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
         &ENV_LOCK
@@ -654,7 +728,7 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn test_fusion_e2e_seeded_thread_injects_skill() {
-        let (workspace, _home, _root, prev_home) = fusion_test_workspace(
+        let (workspace, home, root, prev_home) = fusion_test_workspace(
             "mesh-architect",
             "Design distributed mesh consensus protocols and architecture",
         )
@@ -682,6 +756,12 @@ mod tests {
             .expect("seed message");
 
         let context = regenerate_context(workspace, &thread.id, "deep").await;
+        for path in [home.path(), root.path()] {
+            assert!(!path.join(".agents").exists());
+            assert!(!path.join(".claude").exists());
+        }
+        assert!(context.contains("--- BEGIN UNTRUSTED EVIDENCE task"));
+        assert!(context.contains("--- END UNTRUSTED EVIDENCE ---"));
         restore_home(prev_home);
         assert!(
             context.contains("# Available Skills"),
