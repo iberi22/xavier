@@ -1479,6 +1479,41 @@ An LLM-free harness SHALL measure page-range hit-rate@k and MRR for DocBot, tree
 - [ ] `test_eval_report_compares_docbot_tree_hybrid` green (deterministic, no network)
 - [ ] Spec records measured hit@1/hit@3/MRR per arm
 
+---
+
+## REQ-085: Autonomous Delivery Pipeline (verifiable ship/show/ask + DONE)
+
+- **Category:** Process
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Files:** `docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md`, `docs/design/trunk-based/02-AUTONOMOUS-PIPELINE.md`, `docs/design/trunk-based/03-DONE-PROTOCOL.md`, `docs/adr/ADR-035-trunk-based-ship-show-ask.md`
+- **Features:** `feat-autonomous-delivery`
+
+### Description
+
+Every delivery increment SHALL be governed by an evidence-gated pipeline in which `DONE` is a
+computed verdict for an immutable SHA, never a checkbox or agent assertion. Each of the eight
+stages writes an accepted evidence record tied to `session_id`, feature/task ID, base/head SHA,
+timestamp, backend and artifact/URL; the next stage reads the predecessor's record, not the
+agent's prose. `flow:ship`/`flow:show`/`flow:ask` is the minimum review-timing class computed
+from the change's paths and diff, defaulting to Ask for unknown or mixed paths; verification
+strength is independent of the class. A rollback revert PR always requires guardian evidence
+and pre-merge panel review and never auto-merges, as does any outward-publishing change. The
+`DONE` verdict is computed by `scripts/done-check.sh` from one JSON evidence bundle and it
+never edits the feature ledger; only `scripts/verify-pipeline.sh` promotes status after
+executed tests. Design: `docs/design/trunk-based/01-DESIGN.md`, `02-AUTONOMOUS-PIPELINE.md`,
+`03-DONE-PROTOCOL.md`; policy: `docs/adr/ADR-035-trunk-based-ship-show-ask.md`.
+
+### Acceptance criteria
+
+- [ ] Missing, stale or SHA-mismatched stage evidence blocks the next stage's advance
+- [ ] An Ask-class change requires two independent model approvals, neither of them the author
+- [ ] A rollback revert PR or outward-publishing change never auto-merges without guardian evidence and current panel approval
+- [ ] Label class is the computed minimum from paths and diff; a downgrading label is not a green check
+- [ ] `done-check.sh` computes DONE from the evidence bundle at `head_sha` and never edits the ledger; promotion only follows a green `verify-pipeline.sh` run after executed tests
+
+---
+
 *WAVE-10 (2026-09-21): REQ-060..065 added (skill-injection wave: scan-paths, semantic-rank, loader-fate, fusion-gates, MCP-tools, ledger-docs). Implemented live: registry scans canonical store, cosine rank w/ keyword tiebreak, fusion gate 0.5 + ack-gate, MCP dispatch/list tools. Measured: Recall@3 0.950 / MRR 0.950 (20-query offline eval), live E2E post 0.2.5 restart. Full `verify-pipeline` green deferred: pre-existing zero-match filters outside the wave need ledger-wide cleanup (see rescan report).*
 
 *Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence. REQ-047 added 2026-09-05 for RTK Kernel CLI Proxy. WAVE-8 2026-09-12: REQ-048..052 added (HumanChallenge curation pipeline, introspection mode, privacy pipeline, enterprise ZDR, informed consent). Module: humanchallenge + data_commons + enterprise + panel-ui. WAVE-9 (2026-09-18): REQ-053..059 added (ripwire+graphify extraction O1-O7: honest-confidence, language-registry, blast-testgate, incremental-ids, budget-query, pagerank-router, contracts-arch; US-101..US-114; specs docs/features/specs/FEATURE-feat-cg-*.md; doc docs/EXTRACTION-RIPWIRE-GRAPHIFY.md; ADR-032/033).*
