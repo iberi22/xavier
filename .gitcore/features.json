@@ -3390,6 +3390,22 @@
       "req_ids": [
         "REQ-085"
       ]
+    },
+    "chore-oss-scanner-enrollment": {
+      "id": "chore-oss-scanner-enrollment",
+      "name": "OSS Scanner enrolment files (build/scan configuration only)",
+      "category": "process",
+      "status": "in_progress",
+      "progress_pct": 90,
+      "description": "Configuration for Anthropic's OSS Scanner (github.com/anthropics/oss-scanner): .oss-scanner/Dockerfile builds /src with network (cargo fetch, debug build, test --no-run) so the scanner can build and test offline; .oss-scanner/threat_model.md is generated deterministically by kernel-security-memory scripts/oss_scanner/threat_model.py from .oss-scanner/ksm-context.yaml plus KSM evidence. No Rust/TS code changes (feature freeze respected).",
+      "steps": [
+        "Dockerfile follows the scanner contract (COPY . /src) and is built the way the scanner does it (clean clone, root .dockerignore removed)",
+        "Offline verification: docker run --network none -> cargo build --offline && cargo test --offline --no-run && a hermetic lib-test subset",
+        "Regenerate threat_model.md with KSM when ksm-context.yaml or the code layout changes (--check detects drift)",
+        "Enrolment PR to anthropics/oss-scanner only after the owner provides a public security contact"
+      ],
+      "passes": false,
+      "notes": "Validated: project.yaml for xavier passes the upstream tools/validate.py (check_project) from oss-scanner 2cef161; KSM defensive_auditor on src/ reports 0 findings after the Rust unsafe-only rule fix (previously 11 false positives). Scanner-like build (clean clone, root .dockerignore removed as tools/check_build.py does): docker build OK (~16 min, image 32.5 GB, debug target dir). Inside --network none with a login shell: cargo build --offline OK, cargo test --offline --no-run OK, cargo test --offline --lib -- --test-threads=1: 3662 passed, 0 failed, 1 ignored (351 s). In parallel (--test-threads=4) 1-4 different tests fail per run and each passes alone: flaky under parallelism (seen: tools_secrets temp-file cleanup, connection_manager fd/eviction counts, conversations_db CRUD, qmd bus quota). Stabilizing them is follow-up work. Status moves to stable after the enrolment PR to anthropics/oss-scanner (needs an owner-provided public security contact)."
     }
   },
   "verification_commands": {
