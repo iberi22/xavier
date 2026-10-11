@@ -1189,6 +1189,69 @@ mod space_token_tests {
         );
     }
 
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_audit_authenticated_returns_redacted_report() {
+        xavier::isolate_test_process!();
+        let (state, _tmp) = test_state().await;
+        let fixture = tempfile::tempdir().unwrap();
+        let sources = fixture.path().join("sources");
+        let targets = fixture.path().join("targets");
+        let package = sources.join("demo");
+        std::fs::create_dir_all(&package).unwrap();
+        std::fs::create_dir_all(&targets).unwrap();
+        let skill = package.join("SKILL.md");
+        const MARKER: &str = "UNIQUE-BODY-MARKER-7f3a";
+        std::fs::write(&skill, format!("---\nname: demo\n---\n{MARKER}\n")).unwrap();
+        let manifest = fixture.path().join("manifest.toml");
+        std::fs::write(
+            &manifest,
+            format!(
+                r#"version = 1
+[sources]
+fixture = "{}"
+[[targets]]
+id = "fixture"
+root = "{}"
+tools = ["codex"]
+mode = "symlink"
+[[placements]]
+source = "fixture"
+targets = ["fixture"]
+path = "demo"
+name = "demo"
+"#,
+                sources.display(),
+                targets.display()
+            ),
+        )
+        .unwrap();
+        let _token = TokenGuard::set(ROOT);
+        let _manifest = EnvRestore::set("XAVIER_SKILL_MANIFEST", manifest.to_str().unwrap());
+        let app = crate::cli::server::skill_api_routes()
+            .layer(from_fn_with_state(state.clone(), auth_middleware))
+            .with_state(state);
+        let status = call(&app, "GET", "/api/skill/audit", "").await;
+        assert!(matches!(
+            status,
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+        ));
+        let before = [&skill, &manifest].map(|path| std::fs::read(path).unwrap());
+        let (status, body) = send(&app, "GET", "/api/skill/audit", ROOT, Hdr::Bearer, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["packages_audited"], 1);
+        let findings = body["findings"].as_array().unwrap();
+        assert!(!findings.is_empty());
+        for finding in findings {
+            for field in ["rule", "severity", "package", "location", "detail"] {
+                assert!(finding[field].is_string(), "missing string field: {field}");
+            }
+        }
+        assert!(!serde_json::to_string(&body).unwrap().contains(MARKER));
+        let after = [&skill, &manifest].map(|path| std::fs::read(path).unwrap());
+        assert_eq!(before, after, "audit must leave fixture files unchanged");
+    }
+
     struct EnvRestore {
         key: &'static str,
         prev: Option<std::ffi::OsString>,
