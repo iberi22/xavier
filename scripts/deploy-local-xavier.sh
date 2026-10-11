@@ -59,8 +59,25 @@ rollback() {
     log "rollback done — previous binary restored"
 }
 
-# 2. Incremental release build with the local embedding backend compiled in
-# The flock is held from here through the install in step 3: the whole
+# 2. Retain the previous binary for the independent watchdog (G9/R07), before any install.
+# Idempotent: a no-op when the retained binary is already the current one. The
+# watchdog (scripts/guardian/local-watchdog.sh) can restore it without this script.
+# The state dir is resolved exactly like the watchdog does (fixed default, never
+# XDG_STATE_HOME) so the deploy and the guardian timer share one state dir.
+GUARDIAN_STATE="${XAVIER_GUARDIAN_STATE:-$HOME/.local/state/xavier-guardian}"
+GUARDIAN_LOCK="$GUARDIAN_STATE/guardian.lock"
+GUARDIAN="$REPO/scripts/guardian/local-watchdog.sh"
+if [ -f "$GUARDIAN" ]; then
+    if XAVIER_GUARDIAN_STATE="$GUARDIAN_STATE" bash "$GUARDIAN" retain --bin "$BIN_DST" \
+        --state-dir "$GUARDIAN_STATE" --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --apply >>"$LOG" 2>&1; then
+        log "watchdog retained previous binary (checksum-verified)"
+    else
+        log "WARN: watchdog retain failed — see $LOG (restore path unavailable)"
+    fi
+fi
+
+# 3. Incremental release build with the local embedding backend compiled in
+# The flock is held from here through the install in step 4: the whole
 # build+copy is one critical section, so two trees never interleave builds
 # into the shared TARGET_DIR and the binary copied below is the one built here.
 exec 9>"$LOCK_FILE"
@@ -101,15 +118,20 @@ else
     log "WARN: no build stamp $STAMP_FILE — cannot prove the binary matches HEAD; deploying anyway"
 fi
 
-# 3. Install + restart. Stop FIRST, then install via atomic rename:
+# 4. Install + restart. Stop FIRST, then install via atomic rename:
 # `cp` over the path fails with ETXTBSY whenever another process holds the inode
 # (xavier mcp from the Antigravity IDE), which is a hard failure under set -e.
+# The guardian watchdog takes the same lock (G9/R07) around its restore, so a
+# deploy and a health check never swap $BIN_DST at the same time.
+mkdir -p "$GUARDIAN_STATE"
+exec 8>"$GUARDIAN_LOCK" || fail "cannot open guardian lock: $GUARDIAN_LOCK"
+flock -w 120 8 || fail "guardian lock busy for 120s (another deploy or a watchdog restore) — nothing installed"
 systemctl --user stop xavier.service && log "service stopped for install"
 sleep 2
 cp "$BIN_SRC" "$BIN_DST.new" && mv -f "$BIN_DST.new" "$BIN_DST" && log "installed $BIN_DST (atomic)"
 systemctl --user start xavier.service && log "service started"
 
-# 4. Health gate: 200, up to 300s of retries (fresh start warms a 1GB+ codegraph).
+# 5. Health gate: 200, up to 300s of retries (fresh start warms a 1GB+ codegraph).
 # Rollback on failure.
 log "waiting for health gate..."
 for i in $(seq 1 100); do

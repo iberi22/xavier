@@ -1,0 +1,20 @@
+[Unit]
+Description=Xavier previous-binary watchdog (G9/R07)
+Documentation=file://@REPO@/docs/design/trunk-based/07-ROLLBACK-GUARDIAN.md
+After=xavier.service
+# The state dir is fixed (not XDG_STATE_HOME) so the timer, `install` and the
+# deploy script all resolve the same one.
+Environment=XAVIER_GUARDIAN_STATE=%h/.local/state/xavier-guardian
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/scripts/guardian/local-watchdog.sh check --apply
+# The watchdog is independent of the shipping deploy path: it only restores the
+# retained checksum-verified previous binary and never rewinds runtime data.
+# Install stays disabled until the owner reviews it: see the install command in
+# scripts/guardian/local-watchdog.sh (requires XAVIER_GUARDIAN_ACCEPTED=1).
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=journal
+StandardError=journal
