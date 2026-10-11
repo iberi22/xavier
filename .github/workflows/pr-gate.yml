@@ -51,3 +51,26 @@ jobs:
         continue-on-error: true
         run: |
           bash scripts/ci-local.sh
+
+  task-evidence-check:
+    name: Task Evidence Check
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check Evidence Bundle
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          FILE=$(echo "$PR_BODY" | grep -oE '^\.gitcore/[A-Za-z0-9._/-]+\.json$' | head -1 || true)
+          if [ -n "$FILE" ]; then
+            if [ -f "$FILE" ]; then
+              EXPECTED_SHA=${{ github.event.pull_request.head.sha }} bash scripts/done-check.sh "$FILE"
+            else
+              echo "::error::Bundle file $FILE not found"
+              (cat /dev/null && exit 1)
+            fi
+          else
+            echo "::notice::No task evidence bundle path provided in PR body"
+            (cat /dev/null && exit 1)
+          fi
