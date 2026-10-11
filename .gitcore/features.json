@@ -3391,6 +3391,21 @@
         "REQ-085"
       ]
     },
+    "feat-code-graph-fingerprint": {
+      "id": "feat-code-graph-fingerprint",
+      "name": "code-graph fingerprint (ksm-sfp/1) for the KSM vulnerability atlas",
+      "category": "code-graph",
+      "status": "in_progress",
+      "progress_pct": 80,
+      "description": "Owner-requested (2026-10-11): `code-graph fingerprint <FILE> [--lang] [--ranges]` prints per-function structural fingerprints (hashed syntax-tree 3-grams, 64-value MinHash, calls with argument variables, guard conditions with their variables, variable lines; no source text). Contract: kernel-security-memory docs/design/VULN-ATLAS.md section 1. KSM CI builds code-graph at a pinned Xavier commit to fingerprint fix commits; the `ksm scan` CLI uses it to compare local code with vulnerable/fixed versions. C/C++ preprocessor conditionals are neutralised (first branch, #else for #if 0) with line numbers preserved, because tree-sitter split curl's do_SOCKS5 into fake `if` definitions.",
+      "steps": [
+        "Subcommand + module behind native-parsers (done)",
+        "Golden/hash-rule tests + preprocessor test (done, 11 pass)",
+        "Pin the merged commit in KSM fingerprints.yml",
+        "Next (separate change): Xavier MCP tool that loads the KSM bundle and runs the matcher on the indexed project"
+      ],
+      "verification": "cargo test -p code-graph --test fingerprint; cargo clippy -p code-graph --all-targets -- -D warnings"
+    },
     "chore-oss-scanner-enrollment": {
       "id": "chore-oss-scanner-enrollment",
       "name": "OSS Scanner enrolment files (build/scan configuration only)",

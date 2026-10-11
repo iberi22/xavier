@@ -11,6 +11,8 @@ pub mod confidence;
 pub mod contracts;
 pub mod db;
 pub mod debug;
+#[cfg(feature = "native-parsers")]
+pub mod fingerprint;
 // pub mod impact;
 pub mod indexer;
 pub mod language;
