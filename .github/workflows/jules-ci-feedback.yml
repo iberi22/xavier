@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Extract Failed Logs and Notify PR
         env:
@@ -29,10 +31,11 @@ jobs:
           RUN_URL: ${{ github.event.workflow_run.html_url }}
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
         run: |
           echo "Inspecting run $RUN_ID for branch $HEAD_BRANCH..."
           if [ "$HEAD_BRANCH" = "main" ]; then
-            bash scripts/main-incident.sh
+            bash scripts/main-incident-gh.sh
             exit 0
           fi
 
