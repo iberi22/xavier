@@ -157,5 +157,65 @@ class TestRustImpact(unittest.TestCase):
         result = self.run_script(["--paths"], check=False)
         self.assertNotEqual(result.returncode, 0)
 
+    def test_skip_rust_for_docs_only(self):
+        result = self.run_script(["--paths", "docs/README.md"])
+        out = json.loads(result.stdout)
+        self.assertTrue(out.get("skip_rust"))
+        self.assertEqual(out["packages"], [])
+        self.assertEqual(result.returncode, 0)
+
+    def test_skip_rust_for_md_files(self):
+        result = self.run_script(["--paths", "README.md", "nested/README.md"])
+        out = json.loads(result.stdout)
+        self.assertTrue(out.get("skip_rust"))
+
+    def test_skip_rust_for_panel_ui(self):
+        result = self.run_script(["--paths", "panel-ui/src/main/lib/anything.ts"])
+        out = json.loads(result.stdout)
+        self.assertTrue(out.get("skip_rust"))
+
+    def test_skip_rust_for_issue_template(self):
+        result = self.run_script(["--paths", ".github/ISSUE_TEMPLATE/bug.md"])
+        out = json.loads(result.stdout)
+        self.assertTrue(out.get("skip_rust"))
+
+    def test_not_skip_for_app_tauri(self):
+        result = self.run_script(["--paths", "panel-ui/src-tauri/src/main.rs"])
+        out = json.loads(result.stdout)
+        self.assertFalse(out.get("skip_rust", False))
+        self.assertFalse(out.get("fallback", True))
+        names = [p["name"] for p in out["packages"]]
+        self.assertIn("app", names)
+
+    def test_mixed_docs_and_src_is_not_skip(self):
+        result = self.run_script(["--paths", "docs/x.md", "src/main.rs"])
+        out = json.loads(result.stdout)
+        self.assertFalse(out.get("skip_rust", False))
+        self.assertTrue(out.get("fallback", False))
+
+    def test_mixed_docs_and_src_nine(self):
+        result = self.run_script(["--paths", "docs/README.md", "panel-ui/src/App.tsx", ".github/ISSUE_TEMPLATE/x.md", "src/main.rs"])
+        out = json.loads(result.stdout)
+        self.assertFalse(out.get("skip_rust", False))
+        self.assertTrue(out.get("fallback", False))
+
+    def test_mixed_docs_and_src_ten(self):
+        result = self.run_script(["--paths", "docs/README.md", "panel-ui/src/App.tsx", ".github/ISSUE_TEMPLATE/x.md", "panel-ui/src-tauri/src/main.rs"])
+        out = json.loads(result.stdout)
+        self.assertFalse(out.get("skip_rust", False))
+        self.assertTrue(out.get("fallback", False))
+
+    def test_unknown_top_level_is_fallback(self):
+        result = self.run_script(["--paths", "unknown.toml"])
+        out = json.loads(result.stdout)
+        self.assertFalse(out.get("skip_rust", False))
+        self.assertTrue(out["fallback"])
+
+    def test_mixed_docs_and_ci_is_fallback(self):
+        result = self.run_script(["--paths", "docs/x.md", ".github/workflows/ci.yml"])
+        out = json.loads(result.stdout)
+        self.assertFalse(out.get("skip_rust", False))
+        self.assertTrue(out["fallback"])
+
 if __name__ == '__main__':
     unittest.main()
