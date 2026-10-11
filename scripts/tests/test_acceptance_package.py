@@ -1,179 +1,137 @@
-import unittest
+import importlib.util
+from io import StringIO
 import os
 import sys
 import tempfile
-import importlib.util
-from io import StringIO
+import unittest
+from unittest.mock import patch
 
 class TestAcceptancePackage(unittest.TestCase):
-    def setUp(self):
-        script_dir = os.path.dirname(os.path.dirname(__file__))
-        script_path = os.path.join(script_dir, "acceptance-package.py")
-        spec = importlib.util.spec_from_file_location("acceptance_package", script_path)
-        self.module = importlib.util.module_from_spec(spec)
-        sys.modules["acceptance_package"] = self.module
-        spec.loader.exec_module(self.module)
+    @classmethod
+    def setUpClass(cls):
+        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "acceptance-package.py")
+        spec = importlib.util.spec_from_file_location("acceptance_package", path)
+        cls.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.mod)
 
-    def tearDown(self):
-        if "acceptance_package" in sys.modules:
-            del sys.modules["acceptance_package"]
-
-    def create_mock_runners(self, gh_responses=None, git_responses=None):
-        if gh_responses is None:
-            gh_responses = {}
-        if git_responses is None:
-            git_responses = {}
-
-        def mock_gh_runner(cmd):
-            cmd_str = " ".join(cmd)
-            for k, v in gh_responses.items():
-                if k in cmd_str:
+    def run_main(self, gh_res=None, git_res=None, sha="abcdef1234567890", out=None, apply=False):
+        gh_map = gh_res or {}
+        git_map = git_res or {}
+        def mock_gh(cmd):
+            s = " ".join(cmd)
+            for k, v in gh_map.items():
+                if k in s:
                     if isinstance(v, Exception):
                         raise v
                     return v
             return []
-
-        def mock_git_runner(cmd):
-            cmd_str = " ".join(cmd)
-            for k, v in git_responses.items():
-                if k in cmd_str:
+        def mock_git(cmd):
+            s = " ".join(cmd)
+            for k, v in git_map.items():
+                if k in s:
                     return v
             return ""
 
-        return mock_gh_runner, mock_git_runner
+        args = type("Args", (), {"sha": sha, "out": out, "apply": apply})()
+        with patch("sys.stdout", new_callable=StringIO) as out_buf:
+            self.mod.main(args, mock_gh, mock_git)
+            return out_buf.getvalue()
 
-    def test_ready_for_acceptance(self):
-        gh_responses = {
-            "gh pr list": [{"body": "## Changes\nSome change\n## Trial steps\nStep 1\n## Results\nSuccess\n## Risks\nNone\n## Links\nNone", "title": "Test PR"}],
-            "gh run list": [{"status": "completed", "conclusion": "success", "name": "CI"}],
-            "gh issue list": [],
-            "gh api": ""
-        }
-        git_responses = {
-            "rev-parse HEAD": "abcdef1234567890",
-            "describe --tags": "v1.0.0"
-        }
+    def test_acceptance_cases(self):
+        pr_std = [{"body": "## Changes\nSome change\n## Trial steps\nStep 1\n## Results\nSuccess\n## Risks\nNone\n## Links\nNone", "title": "Test PR"}]
+        run_ok = [{"status": "completed", "conclusion": "success", "name": "CI"}]
 
-        mock_gh_runner, mock_git_runner = self.create_mock_runners(gh_responses, git_responses)
+        # 1. ready_for_acceptance
+        with self.subTest("ready_for_acceptance"):
+            out = self.run_main(
+                gh_res={"gh pr list": pr_std, "gh run list": run_ok, "gh issue list": [], "gh api": ""},
+                git_res={"rev-parse HEAD": "abcdef1234567890", "describe --tags": "v1.0.0"}
+            )
+            self.assertIn("READY_FOR_ACCEPTANCE", out)
+            self.assertIn("All checks passed.", out)
+            self.assertIn("v1.0.0", out)
+            self.assertIn("git revert abcdef1234567890", out)
 
-        class MockArgs:
-            sha = "abcdef1234567890"
-            out = None
+        # 2. not_ready_ci_failed
+        with self.subTest("not_ready_ci_failed"):
+            out = self.run_main(
+                gh_res={"gh pr list": [{"body": "## Changes\nSome change\n## Trial steps\nStep 1\n## Results\nSuccess", "title": "Test PR"}],
+                        "gh run list": [{"status": "completed", "conclusion": "failure", "name": "CI"}],
+                        "gh issue list": [], "gh api": ""}
+            )
+            self.assertIn("NOT_READY", out)
+            self.assertIn("CI run 'CI' failed or was cancelled.", out)
 
-        # Capture stdout
-        from io import StringIO
-        import sys
-        from unittest.mock import patch
+        # 3. not_ready_open_incident
+        with self.subTest("not_ready_open_incident"):
+            out = self.run_main(
+                gh_res={"gh pr list": [{"body": "## Changes\nSome change\n## Trial steps\nStep 1\n## Results\nSuccess", "title": "Test PR"}],
+                        "gh run list": run_ok,
+                        "gh issue list": [{"body": "<!-- tbd-incident sha=abcdef1 workflow=CI -->"}],
+                        "gh api": ""}
+            )
+            self.assertIn("NOT_READY", out)
+            self.assertIn("Open tbd-incident issues exist for this SHA", out)
 
-        with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
-            self.module.main(MockArgs(), mock_gh_runner, mock_git_runner)
-            output = mock_stdout.getvalue()
+        # 4. broken_link
+        with self.subTest("broken_link"):
+            out = self.run_main(
+                gh_res={"gh pr list": [{"body": "## Changes\nC\n## Trial steps\nT\n## Results\nR\n## Links\n[bad](https://github.com/iberi22/xavier/issues/999999999)", "title": "Test PR"}],
+                        "gh run list": run_ok, "gh issue list": [],
+                        "gh api https://github.com/iberi22/xavier/issues/999999999": Exception("Failed")}
+            )
+            self.assertIn("NOT_READY", out)
+            self.assertIn("Broken links found: https://github.com/iberi22/xavier/issues/999999999", out)
 
-        self.assertIn("READY_FOR_ACCEPTANCE", output)
-        self.assertIn("All checks passed.", output)
-        self.assertIn("v1.0.0", output)
-        self.assertIn("git revert abcdef1234567890", output)
+        # 5. new_headings_pr_body
+        with self.subTest("new_headings_pr_body"):
+            out = self.run_main(
+                gh_res={"gh pr list": [{"body": "## What changed\nNew feature changes\n## How it was tested\nRan unit tests\n## Risks\nNone",
+                                        "title": "Test PR", "url": "https://github.com/iberi22/xavier/pull/123"}],
+                        "gh run list": [{"status": "completed", "conclusion": "success", "name": "CI", "url": "https://github.com/iberi22/xavier/actions/runs/456"}],
+                        "gh issue list": [], "gh api": ""}
+            )
+            self.assertIn("READY_FOR_ACCEPTANCE", out)
+            self.assertIn("## Changes\nNew feature changes", out)
+            self.assertIn("## Trial steps\nRan unit tests", out)
+            self.assertIn("## Results\nRan unit tests", out)
 
-    def test_not_ready_ci_failed(self):
-        gh_responses = {
-            "gh pr list": [{"body": "## Changes\nSome change\n## Trial steps\nStep 1\n## Results\nSuccess", "title": "Test PR"}],
-            "gh run list": [{"status": "completed", "conclusion": "failure", "name": "CI"}],
-            "gh issue list": [],
-            "gh api": ""
-        }
-        mock_gh_runner, mock_git_runner = self.create_mock_runners(gh_responses)
+        # 6. rollback_merge_commit_and_single_parent
+        with self.subTest("rollback_merge_commit_and_single_parent"):
+            base_gh = {"gh pr list": [{"body": "## Changes\nC\n## Trial steps\nT\n## Results\nR", "title": "Test PR"}],
+                       "gh run list": run_ok, "gh issue list": [], "gh api": ""}
+            out_merge = self.run_main(gh_res=base_gh, git_res={"rev-list --parents": "commit_sha parent_sha1 parent_sha2"}, sha="commit_sha")
+            self.assertIn("git revert -m 1 commit_sha", out_merge)
+            out_single = self.run_main(gh_res=base_gh, git_res={"rev-list --parents": "commit_sha parent_sha1"}, sha="commit_sha")
+            self.assertIn("git revert commit_sha", out_single)
+            self.assertNotIn("git revert -m 1 commit_sha", out_single)
 
-        class MockArgs:
-            sha = "abcdef1234567890"
-            out = None
-
-        from unittest.mock import patch
-        with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
-            self.module.main(MockArgs(), mock_gh_runner, mock_git_runner)
-            output = mock_stdout.getvalue()
-
-        self.assertIn("NOT_READY", output)
-        self.assertIn("CI run 'CI' failed or was cancelled.", output)
-
-    def test_not_ready_open_incident(self):
-        gh_responses = {
-            "gh pr list": [{"body": "## Changes\nSome change\n## Trial steps\nStep 1\n## Results\nSuccess", "title": "Test PR"}],
-            "gh run list": [{"status": "completed", "conclusion": "success", "name": "CI"}],
-            "gh issue list": [{"body": "<!-- tbd-incident sha=abcdef1 workflow=CI -->"}],
-            "gh api": ""
-        }
-        mock_gh_runner, mock_git_runner = self.create_mock_runners(gh_responses)
-
-        class MockArgs:
-            sha = "abcdef1234567890"
-            out = None
-
-        from unittest.mock import patch
-        with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
-            self.module.main(MockArgs(), mock_gh_runner, mock_git_runner)
-            output = mock_stdout.getvalue()
-
-        self.assertIn("NOT_READY", output)
-        self.assertIn("Open tbd-incident issues exist for this SHA", output)
+        # 7. links_listed
+        with self.subTest("links_listed"):
+            out = self.run_main(
+                gh_res={"gh pr list": [{"body": "## Changes\nC\n## Trial steps\nT\n## Results\nR", "title": "Test PR", "url": "https://github.com/iberi22/xavier/pull/2933"}],
+                        "gh run list": [{"status": "completed", "conclusion": "success", "name": "Build", "url": "https://github.com/iberi22/xavier/actions/runs/1001"},
+                                        {"status": "completed", "conclusion": "success", "name": "Test", "url": "https://github.com/iberi22/xavier/actions/runs/1002"}],
+                        "gh issue list": [], "gh api": ""}
+            )
+            self.assertIn("## Links\n- PR: https://github.com/iberi22/xavier/pull/2933\n- CI (Build): https://github.com/iberi22/xavier/actions/runs/1001\n- CI (Test): https://github.com/iberi22/xavier/actions/runs/1002", out)
 
     def test_file_writing(self):
-        gh_responses = {
-            "gh pr list": [{"body": "## Changes\nC\n## Trial steps\nT\n## Results\nR", "title": "Test PR"}],
-            "gh run list": [{"status": "completed", "conclusion": "success", "name": "CI"}],
-            "gh issue list": [],
-            "gh api": ""
-        }
-        mock_gh_runner, mock_git_runner = self.create_mock_runners(gh_responses)
-
+        gh = {"gh pr list": [{"body": "## Changes\nC\n## Trial steps\nT\n## Results\nR", "title": "Test PR"}],
+              "gh run list": [{"status": "completed", "conclusion": "success", "name": "CI"}],
+              "gh issue list": [], "gh api": ""}
         with tempfile.TemporaryDirectory() as temp_dir:
             out_file = os.path.join(temp_dir, "output.md")
-
-            class MockArgsDryRun:
-                sha = "abcdef1234567890"
-                out = out_file
-                apply = False
-
-            from unittest.mock import patch
-            with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
-                self.module.main(MockArgsDryRun(), mock_gh_runner, mock_git_runner)
-                output = mock_stdout.getvalue()
-                self.assertIn("DRY-RUN:", output)
+            out = self.run_main(gh_res=gh, out=out_file, apply=False)
+            self.assertIn("DRY-RUN:", out)
             self.assertFalse(os.path.exists(out_file) and os.path.getsize(out_file) > 0)
 
-            class MockArgsApply:
-                sha = "abcdef1234567890"
-                out = out_file
-                apply = True
-
-            self.module.main(MockArgsApply(), mock_gh_runner, mock_git_runner)
-
+            self.run_main(gh_res=gh, out=out_file, apply=True)
             self.assertTrue(os.path.exists(out_file))
             with open(out_file, "r", encoding="utf-8") as f:
                 content = f.read()
                 self.assertIn("READY_FOR_ACCEPTANCE", content)
                 self.assertIn("## Changes\nC", content)
 
-    def test_broken_link(self):
-        gh_responses = {
-            "gh pr list": [{"body": "## Changes\nC\n## Trial steps\nT\n## Results\nR\n## Links\n[bad](https://github.com/iberi22/xavier/issues/999999999)", "title": "Test PR"}],
-            "gh run list": [{"status": "completed", "conclusion": "success", "name": "CI"}],
-            "gh issue list": [],
-            "gh api https://github.com/iberi22/xavier/issues/999999999": Exception("Failed")
-        }
-        mock_gh_runner, mock_git_runner = self.create_mock_runners(gh_responses)
-
-        class MockArgs:
-            sha = "abcdef1234567890"
-            out = None
-
-        from unittest.mock import patch
-        with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
-            self.module.main(MockArgs(), mock_gh_runner, mock_git_runner)
-            output = mock_stdout.getvalue()
-
-        self.assertIn("NOT_READY", output)
-        self.assertIn("Broken links found: https://github.com/iberi22/xavier/issues/999999999", output)
-
-if __name__ == '__main__':
-    from io import StringIO
+if __name__ == "__main__":
     unittest.main()
