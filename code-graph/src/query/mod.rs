@@ -529,18 +529,22 @@ impl QueryEngine {
         };
         let mut result = self.db.find_symbols(query, fetch_limit)?;
 
-        // Narrow filter gate: filter WHERE name LIKE '%query%' COLLATE NOCASE
-        // or matching stable_id to drop generic false positives (e.g. imports)
+        // Narrow filter gate: keep a candidate when EVERY whitespace-separated
+        // query token is a substring of the symbol name (or stable_id),
+        // case-insensitively. Single-token queries behave as before.
         let q_trimmed = query.trim();
         if !q_trimmed.is_empty() {
-            let q_lower = q_trimmed.to_lowercase();
+            let tokens: Vec<String> = q_trimmed
+                .split_whitespace()
+                .map(|t| t.to_lowercase())
+                .collect();
             result.symbols.retain(|sym| {
-                let name_matches = sym.name.to_lowercase().contains(&q_lower);
-                let id_matches = sym
-                    .stable_id
-                    .as_deref()
-                    .is_some_and(|id| id.to_lowercase().contains(&q_lower));
-                name_matches || id_matches
+                let name_lower = sym.name.to_lowercase();
+                let id_lower = sym.stable_id.as_deref().map(|id| id.to_lowercase());
+                tokens.iter().all(|tok| {
+                    name_lower.contains(tok)
+                        || id_lower.as_deref().is_some_and(|id| id.contains(tok))
+                })
             });
             result.symbols.truncate(limit);
             result.total = result.symbols.len();
@@ -1767,5 +1771,27 @@ mod inline_typed_cycle_tests {
         );
         // Over-fetch keeps the real hub visible behind a page of noise.
         assert!(names.contains(&"Service"), "real hubs survive: {names:?}");
+    }
+
+    #[test]
+    fn test_search_multi_word_requires_every_token() {
+        let db = CodeGraphDB::in_memory().expect("in-memory db");
+        db.insert_symbol(&mk_sym("calculate_total", "/src/calc.rs"))
+            .expect("sym1");
+        db.insert_symbol(&mk_sym("calculate_running_total", "/src/calc.rs"))
+            .expect("sym2");
+        db.insert_symbol(&mk_sym("total_cost", "/src/calc.rs"))
+            .expect("sym3");
+
+        let query = QueryEngine::new(Arc::new(db));
+        let res = query.search("calculate total", 10).expect("search");
+        let names: Vec<&str> = res.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"calculate_total"), "{names:?}");
+        assert!(names.contains(&"calculate_running_total"), "{names:?}");
+        assert!(!names.contains(&"total_cost"), "{names:?}");
+
+        // Single-token behaviour unchanged.
+        let res = query.search("calculate", 10).expect("search");
+        assert_eq!(res.symbols.len(), 2);
     }
 }
