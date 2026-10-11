@@ -6,6 +6,10 @@
 
 use axum::{extract::Extension, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+use crate::context::skill_controller::state::{Journal, JournalAction};
 
 use crate::workspace::WorkspaceContext;
 
@@ -240,8 +244,52 @@ pub fn audit_report_json(report: &AuditReport) -> serde_json::Value {
     })
 }
 
+fn recorded_hashes(journal_dir: &Path) -> HashMap<PathBuf, String> {
+    if !journal_dir.exists() {
+        return HashMap::new();
+    }
+    let transactions = match Journal::new(journal_dir.to_path_buf())
+        .and_then(|journal| journal.committed_transactions())
+    {
+        Ok(transactions) => transactions,
+        Err(error) => {
+            tracing::debug!(%error, "Could not read skill projection journal");
+            return HashMap::new();
+        }
+    };
+    let mut hashes = HashMap::new();
+    for transaction in transactions {
+        for entry in transaction.entries {
+            if let (JournalAction::LinkSymlink { source }, Some(hash)) =
+                (entry.action, entry.owned_hash)
+            {
+                let Ok(source) = source.canonicalize() else {
+                    continue;
+                };
+                let recorded = hashes
+                    .entry(source)
+                    .or_insert((transaction.updated_at, hash.clone()));
+                if transaction.updated_at > recorded.0 {
+                    *recorded = (transaction.updated_at, hash);
+                }
+            }
+        }
+    }
+    hashes
+        .into_iter()
+        .map(|(source, (_, hash))| (source, hash))
+        .collect()
+}
+
 pub fn audit_manifest_blocking(
     manifest_path: &std::path::Path,
+) -> Result<serde_json::Value, String> {
+    audit_manifest_with_journal(manifest_path, &Journal::default_dir())
+}
+
+fn audit_manifest_with_journal(
+    manifest_path: &Path,
+    journal_dir: &Path,
 ) -> Result<serde_json::Value, String> {
     let content = std::fs::read_to_string(manifest_path).map_err(|e| e.to_string())?;
     let manifest = SkillManifest::from_toml(&content).map_err(|e| e.to_string())?;
@@ -270,12 +318,17 @@ pub fn audit_manifest_blocking(
             .collect(),
     };
 
+    let hashes = recorded_hashes(journal_dir);
     let packages: Vec<AuditedPackage> = manifest
         .placements
         .iter()
         .map(|p| AuditedPackage {
             placement: p.clone(),
-            recorded_hash: None,
+            recorded_hash: roots
+                .sources
+                .get(&p.source)
+                .and_then(|root| root.join(&p.path).canonicalize().ok())
+                .and_then(|path| hashes.get(&path).cloned()),
         })
         .collect();
 
@@ -329,6 +382,276 @@ mod tests {
     use std::sync::Arc;
     use tower::ServiceExt;
 
+    struct AuditFixture {
+        temp: tempfile::TempDir,
+        manifest: PathBuf,
+        package: PathBuf,
+        journal_dir: PathBuf,
+    }
+
+    impl AuditFixture {
+        fn new() -> Self {
+            let temp = tempfile::tempdir().unwrap();
+            let sources = temp.path().join("sources");
+            let targets = temp.path().join("targets");
+            let package = sources.join("demo");
+            std::fs::create_dir_all(&package).unwrap();
+            std::fs::create_dir_all(&targets).unwrap();
+            std::fs::write(
+                package.join("SKILL.md"),
+                "---\nname: demo\ndescription: Fixture skill\n---\nOriginal instructions\n",
+            )
+            .unwrap();
+            let manifest = temp.path().join("manifest.toml");
+            std::fs::write(
+                &manifest,
+                format!(
+                    r#"version = 1
+[sources]
+fixture = "{}"
+[[targets]]
+id = "fixture"
+root = "{}"
+tools = ["codex"]
+mode = "symlink"
+[[placements]]
+source = "fixture"
+targets = ["fixture"]
+path = "demo"
+name = "demo"
+"#,
+                    sources.display(),
+                    targets.display()
+                ),
+            )
+            .unwrap();
+            let journal_dir = temp.path().join("journal");
+            Self {
+                temp,
+                manifest,
+                package,
+                journal_dir,
+            }
+        }
+
+        fn project(&self) {
+            use crate::context::skill_controller::backup::BackupKind;
+            use crate::context::skill_controller::plan::hash_package;
+            use crate::context::skill_controller::policy::RootKind;
+            use crate::context::skill_controller::state::JournalEntry;
+
+            let manifest =
+                SkillManifest::from_toml(&std::fs::read_to_string(&self.manifest).unwrap())
+                    .unwrap();
+            let policy = SkillFsPolicy::new(
+                &[self.temp.path().join("sources")],
+                &[self.temp.path().join("targets")],
+            )
+            .unwrap();
+            let dir = policy.authorize(RootKind::Source, &self.package).unwrap();
+            let hash = hash_package(&dir, &manifest.placements[0]).unwrap().hash;
+            let journal = Journal::new(self.journal_dir.clone()).unwrap();
+            journal
+                .begin_transaction("projection", vec![], false)
+                .unwrap();
+            journal
+                .record_entry(
+                    "projection",
+                    JournalEntry {
+                        target_path: self.temp.path().join("targets/demo"),
+                        action: JournalAction::LinkSymlink {
+                            source: self.package.clone(),
+                        },
+                        prior_state: BackupKind::Absent,
+                        owned_hash: Some(hash),
+                    },
+                    false,
+                )
+                .unwrap();
+            journal.commit_transaction("projection", false).unwrap();
+        }
+
+        fn audit(&self) -> serde_json::Value {
+            audit_manifest_with_journal(&self.manifest, &self.journal_dir).unwrap()
+        }
+
+        fn edit(&self) {
+            std::fs::write(
+                self.package.join("SKILL.md"),
+                "---\nname: demo\ndescription: Fixture skill\n---\nChanged instructions\n",
+            )
+            .unwrap();
+        }
+    }
+
+    fn has_hash_drift(report: &serde_json::Value) -> bool {
+        report["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| finding["rule"] == "skill.projection.hash_drift")
+    }
+
+    fn snapshot_files(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+        let mut files = std::collections::BTreeMap::new();
+        for entry in std::fs::read_dir(root).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                files.extend(snapshot_files(&path));
+            } else {
+                files.insert(path.clone(), std::fs::read(path).unwrap());
+            }
+        }
+        files
+    }
+
+    #[test]
+    fn test_audit_projected_package_without_hash_drift() {
+        let fixture = AuditFixture::new();
+        fixture.project();
+        assert!(!has_hash_drift(&fixture.audit()));
+    }
+
+    #[test]
+    fn test_audit_edited_projected_package_reports_hash_drift() {
+        let fixture = AuditFixture::new();
+        fixture.project();
+        fixture.edit();
+        assert!(has_hash_drift(&fixture.audit()));
+    }
+
+    #[test]
+    fn test_audit_never_projected_package_has_no_hash_drift() {
+        let fixture = AuditFixture::new();
+        Journal::new(fixture.journal_dir.clone()).unwrap();
+        fixture.edit();
+        assert!(!has_hash_drift(&fixture.audit()));
+    }
+
+    #[test]
+    fn test_audit_missing_journal_does_not_create_directory() {
+        let fixture = AuditFixture::new();
+        assert!(!fixture.journal_dir.exists());
+        assert!(!has_hash_drift(&fixture.audit()));
+        assert!(!fixture.journal_dir.exists());
+    }
+
+    #[test]
+    fn test_audit_preserves_journal_and_fixture_bytes() {
+        let fixture = AuditFixture::new();
+        fixture.project();
+        fixture.edit();
+        let before = snapshot_files(fixture.temp.path());
+        assert!(has_hash_drift(&fixture.audit()));
+        assert_eq!(before, snapshot_files(fixture.temp.path()));
+    }
+
+    #[test]
+    fn test_recorded_hashes_uses_latest_updated_committed_symlink() {
+        use crate::context::skill_controller::backup::BackupKind;
+        use crate::context::skill_controller::state::JournalEntry;
+
+        let fixture = AuditFixture::new();
+        let journal = Journal::new(fixture.journal_dir.clone()).unwrap();
+        for (id, created_at, updated_at, hash, committed) in [
+            ("latest", 1, 20, "latest-hash", true),
+            ("older", 2, 10, "older-hash", true),
+            ("pending", 3, 30, "pending-hash", false),
+        ] {
+            let entry = JournalEntry {
+                target_path: fixture.temp.path().join("targets/demo"),
+                action: JournalAction::LinkSymlink {
+                    source: fixture.package.join("../demo"),
+                },
+                prior_state: BackupKind::Absent,
+                owned_hash: Some(hash.to_string()),
+            };
+            journal.begin_transaction(id, vec![entry], false).unwrap();
+            let mut tx = if committed {
+                journal.commit_transaction(id, false).unwrap()
+            } else {
+                journal.get_transaction(id).unwrap().unwrap()
+            };
+            tx.created_at = created_at;
+            tx.updated_at = updated_at;
+            std::fs::write(
+                journal.transactions_dir().join(format!("{id}.json")),
+                serde_json::to_vec(&tx).unwrap(),
+            )
+            .unwrap();
+        }
+        let ignored = vec![
+            JournalEntry {
+                target_path: fixture.temp.path().join("targets/demo"),
+                action: JournalAction::WriteCopy {
+                    source: fixture.package.clone(),
+                    hash: "file-hash".into(),
+                },
+                prior_state: BackupKind::Absent,
+                owned_hash: Some("copy-hash".into()),
+            },
+            JournalEntry {
+                target_path: fixture.temp.path().join("targets/demo"),
+                action: JournalAction::LinkSymlink {
+                    source: fixture.package.clone(),
+                },
+                prior_state: BackupKind::Absent,
+                owned_hash: None,
+            },
+        ];
+        journal
+            .begin_transaction("ignored", ignored, false)
+            .unwrap();
+        journal.commit_transaction("ignored", false).unwrap();
+        assert_eq!(
+            recorded_hashes(&fixture.journal_dir),
+            HashMap::from([(
+                fixture.package.canonicalize().unwrap(),
+                "latest-hash".to_string()
+            ),])
+        );
+    }
+
+    #[tokio::test]
+    async fn test_audit_hash_drift_blocking_and_endpoint_match() {
+        let _lock = crate::context::skill_registry::env_lock().lock().await;
+        let fixture = tokio::task::spawn_blocking(|| {
+            let mut fixture = AuditFixture::new();
+            fixture.journal_dir = fixture.temp.path().join("data/skill_controller");
+            fixture.project();
+            fixture.edit();
+            fixture
+        })
+        .await
+        .unwrap();
+        let _env_guard = EnvGuard::isolate(fixture.temp.path());
+        std::env::set_var("XAVIER_SKILL_MANIFEST", &fixture.manifest);
+        let manifest = fixture.manifest.clone();
+        let expected =
+            tokio::task::spawn_blocking(move || audit_manifest_blocking(&manifest).unwrap())
+                .await
+                .unwrap();
+        assert!(has_hash_drift(&expected));
+        let response = audit_skills().await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let actual: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_audit_journal_error_keeps_hash_unknown() {
+        let fixture = AuditFixture::new();
+        std::fs::write(&fixture.journal_dir, "not a directory").unwrap();
+        assert!(!has_hash_drift(&fixture.audit()));
+        assert_eq!(
+            std::fs::read(&fixture.journal_dir).unwrap(),
+            b"not a directory"
+        );
+    }
+
     /// Saves the previous `HOME` and `XAVIER_SKILL_STORE` values and restores both
     /// on drop, so a failing assertion unwinds without leaking either override into
     /// sibling tests of this binary.
@@ -336,6 +659,7 @@ mod tests {
         home: Option<String>,
         skill_store: Option<String>,
         skill_manifest: Option<std::ffi::OsString>,
+        data_dir: Option<std::ffi::OsString>,
     }
 
     impl EnvGuard {
@@ -347,12 +671,14 @@ mod tests {
                 home: std::env::var("HOME").ok(),
                 skill_store: std::env::var("XAVIER_SKILL_STORE").ok(),
                 skill_manifest: std::env::var_os("XAVIER_SKILL_MANIFEST"),
+                data_dir: std::env::var_os("XAVIER_DATA_DIR"),
             };
             let empty_store = temp_dir.join("empty_store");
             if !empty_store.exists() {
                 std::fs::create_dir_all(&empty_store)
                     .expect("empty skill store should be creatable");
             }
+            std::env::set_var("XAVIER_DATA_DIR", temp_dir.join("data"));
             std::env::set_var("HOME", temp_dir);
             std::env::set_var("XAVIER_SKILL_STORE", &empty_store);
             guard
@@ -361,6 +687,10 @@ mod tests {
 
     impl Drop for EnvGuard {
         fn drop(&mut self) {
+            match self.data_dir.take() {
+                Some(value) => std::env::set_var("XAVIER_DATA_DIR", value),
+                None => std::env::remove_var("XAVIER_DATA_DIR"),
+            }
             match self.skill_manifest.take() {
                 Some(value) => std::env::set_var("XAVIER_SKILL_MANIFEST", value),
                 None => std::env::remove_var("XAVIER_SKILL_MANIFEST"),
