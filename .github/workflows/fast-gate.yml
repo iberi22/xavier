@@ -15,6 +15,15 @@ jobs:
       - name: Remote Security Job
         run: bash scripts/check-secrets.sh
 
+      - name: Classify change (report-only)
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "::notice::classify=$(python3 scripts/classify-change.py --base "$BASE_SHA" --head "$HEAD_SHA" || true)"
+          echo "::notice::rust-impact=$(python3 scripts/rust-impact.py --base "$BASE_SHA" --head "$HEAD_SHA" || true)"
+
       - name: Summary Check
         if: always()
         run: echo "Always-present summary check completed"
