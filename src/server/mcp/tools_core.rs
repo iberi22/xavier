@@ -320,10 +320,6 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
                     "crypt_passphrase_backed_up": {
                         "type": "boolean",
                         "description": "Operator assertion: is the rclone crypt passphrase stored outside this host? Omit to report it as unverified."
-                    },
-                    "recovery_dir": {
-                        "type": "string",
-                        "description": "Optional override of the recovery directory (defaults to $XAVIER_RECOVERY_DIR or ~/.xavier/recovery)"
                     }
                 }
             }),
@@ -407,7 +403,7 @@ fn espacio_manager_for_root() -> anyhow::Result<std::sync::Arc<crate::espacio::S
 pub async fn handle_core_tool(
     _state: AppState,
     workspace: WorkspaceContext,
-    _claims: Option<&crate::security::auth::Claims>,
+    claims: Option<&crate::security::auth::Claims>,
     name: &str,
     arguments: Value,
 ) -> anyhow::Result<Value> {
@@ -1199,10 +1195,13 @@ pub async fn handle_core_tool(
             let crypt = arguments
                 .get("crypt_passphrase_backed_up")
                 .and_then(|v| v.as_bool());
-            let store = match arguments.get("recovery_dir").and_then(|v| v.as_str()) {
-                Some(dir) if !dir.trim().is_empty() => crate::recovery::RecoveryStore::at(dir),
-                _ => crate::recovery::RecoveryStore::from_env_or_default(),
-            };
+            use crate::security::auth::Permission;
+            if !claims.is_some_and(|c| c.role.can_edit_config()) {
+                return Err(anyhow::anyhow!(
+                    "Forbidden: Insufficient permissions to execute tool 'recovery_status'"
+                ));
+            }
+            let store = crate::recovery::RecoveryStore::from_env_or_default();
 
             use crate::memory::sqlite_vec_store::at_rest::{
                 peek_record_key_with_source, KeySource,
@@ -1279,7 +1278,7 @@ fn drive_connect_status_report() -> serde_json::Value {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A fresh, empty vault under a tempdir: no keyring, no real `~/.xavier`.
@@ -1334,6 +1333,110 @@ mod tests {
             crate::security::auth::UserRole::Admin,
             chrono::Duration::hours(1),
         )
+    }
+
+    /// Puts `XAVIER_RECOVERY_DIR` where a test says, and puts the previous value
+    /// back when it drops — including when the test body unwinds after a failed
+    /// assertion. A hand-rolled restore at the end of the body silently leaks a
+    /// tempdir path into the next test of the serialised suite.
+    pub(crate) struct RecoveryDirGuard {
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl RecoveryDirGuard {
+        pub(crate) fn at(dir: &std::path::Path) -> Self {
+            let previous = std::env::var_os("XAVIER_RECOVERY_DIR");
+            std::env::set_var("XAVIER_RECOVERY_DIR", dir);
+            Self { previous }
+        }
+    }
+
+    impl Drop for RecoveryDirGuard {
+        fn drop(&mut self) {
+            match self.previous.as_ref() {
+                Some(previous) => std::env::set_var("XAVIER_RECOVERY_DIR", previous),
+                None => std::env::remove_var("XAVIER_RECOVERY_DIR"),
+            }
+        }
+    }
+
+    fn admin_claims() -> crate::security::auth::Claims {
+        crate::security::auth::Claims::new(
+            "operator".to_string(),
+            "local@xavier".to_string(),
+            crate::security::auth::UserRole::Admin,
+            chrono::Duration::hours(1),
+        )
+    }
+
+    /// `recovery_status` reports the CONFIGURED recovery directory, never a
+    /// caller-supplied one: the override argument is gone from the schema and
+    /// the store is resolved from `XAVIER_RECOVERY_DIR`.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn recovery_status_uses_configured_recovery_dir() {
+        crate::isolate_test_process!();
+        let configured = tempfile::tempdir().expect("tempdir");
+        let caller = tempfile::tempdir().expect("tempdir");
+        let _guard = RecoveryDirGuard::at(configured.path());
+        crate::recovery::RecoveryStore::at(configured.path())
+            .write_kcv(&[7; 32])
+            .expect("seed kcv");
+
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let claims = admin_claims();
+        let output = handle_core_tool(
+            state,
+            workspace,
+            Some(&claims),
+            "recovery_status",
+            json!({
+                "recovery_dir": caller.path(),
+                "crypt_passphrase_backed_up": true
+            }),
+        )
+        .await
+        .expect("admin status");
+
+        assert_eq!(output["structuredContent"]["kcvPresent"], true);
+        assert_eq!(output["structuredContent"]["cryptPassphraseBackedUp"], true);
+
+        let schema = crate::server::mcp::server::get_xavier_tools()
+            .into_iter()
+            .find(|t| t.name == "recovery_status")
+            .expect("recovery_status advertised")
+            .input_schema;
+        assert!(schema["properties"].get("recovery_dir").is_none());
+    }
+
+    /// The guard's whole point: an unwinding body still restores the variable.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn recovery_dir_guard_restores_on_panic() {
+        crate::isolate_test_process!();
+        let configured = tempfile::tempdir().expect("tempdir");
+        let scratch = tempfile::tempdir().expect("tempdir");
+        let _guard = RecoveryDirGuard::at(configured.path());
+        let previous = std::env::var_os("XAVIER_RECOVERY_DIR");
+
+        fn set_then_unwind(dir: &std::path::Path) {
+            let _guard = RecoveryDirGuard::at(dir);
+            panic!("the guard must still be dropped on unwind");
+        }
+
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            set_then_unwind(scratch.path());
+        }));
+        std::panic::set_hook(hook);
+
+        assert!(outcome.is_err(), "the body did unwind");
+        assert_eq!(
+            std::env::var_os("XAVIER_RECOVERY_DIR"),
+            previous,
+            "guard must restore the previous value even when the body panics"
+        );
     }
 
     /// The espacio tools use the daemon's shared, persisted manager, need the

@@ -67,13 +67,20 @@ pub async fn handle_tool_call(
     name: &str,
     arguments: Value,
 ) -> anyhow::Result<Value> {
-    if claims.is_none() && matches!(name, "secret_lend" | "secret_exec") {
+    if claims.is_none() && name != "health_check" {
         return Err(anyhow::anyhow!(
             "Forbidden: Insufficient permissions for anonymous role to execute tool '{name}'"
         ));
     }
 
     if let Some(claims) = claims {
+        if claims.sub == crate::server::mcp_stdio::STDIO_LOCAL_SUBJECT
+            && matches!(name, "secret_lend" | "secret_exec")
+        {
+            return Err(anyhow::anyhow!(
+                "Forbidden: Insufficient permissions for local identity to execute tool '{name}'"
+            ));
+        }
         let role = &claims.role;
         use crate::security::auth::Permission;
         match name {
