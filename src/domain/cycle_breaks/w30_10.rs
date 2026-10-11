@@ -79,7 +79,9 @@ pub fn build_fts_query(query: &str) -> Option<String> {
                 if escaped.is_empty() {
                     None
                 } else {
-                    Some(format!("{escaped}*"))
+                    // Inspired by fsearch (MIT, noahdunnagan/fsearch): query terms are
+                    // emitted as literal quoted phrases, so FTS5 never parses punctuation.
+                    Some(format!("\"{escaped}\"*"))
                 }
             })
             .collect::<Vec<_>>()
@@ -378,12 +380,77 @@ mod tests {
     fn fts_query_expands_code_and_escapes_punctuation() {
         assert_eq!(
             build_fts_query("getUser src/main.rs"),
-            Some("getUser* OR src/main.rs* OR get* OR user* OR src* OR main* OR rs*".to_string())
+            Some(
+                "\"getUser\"* OR \"src/main.rs\"* OR \"get\"* OR \"user\"* OR \"src\"* OR \"main\"* OR \"rs\"*"
+                    .to_string()
+            )
         );
         assert_eq!(
             build_fts_query("issue:#42"),
-            Some("issue42* OR issue* OR 42*".to_string())
+            Some("\"issue42\"* OR \"issue\"* OR \"42\"*".to_string())
         );
+    }
+
+    #[test]
+    fn fts_query_quotes_cannot_break_out_of_phrase() {
+        // Quotes are stripped by the character filter, so every term stays one balanced phrase.
+        assert_eq!(
+            build_fts_query("a\"b OR c"),
+            Some("\"OR\"* OR \"or\"*".to_string())
+        );
+        let out = build_fts_query("x\"y\" OR \"z").unwrap();
+        assert_eq!(
+            out.matches('"').count() % 2,
+            0,
+            "unbalanced quotes in {out:?}"
+        );
+    }
+
+    #[test]
+    fn fts_query_is_valid_fts5_for_punctuated_tokens() {
+        let docs = [
+            "src/main.rs",
+            "sqlite-vec",
+            "v0.4.1",
+            "INC-4821",
+            "getUserName",
+            "issue #42",
+        ];
+        let queries = [
+            "src/main.rs",
+            "sqlite-vec",
+            "v0.4.1",
+            "INC-4821",
+            "getUser",
+            "issue:#42",
+        ];
+        for tokenizer in ["unicode61", "porter unicode61"] {
+            let conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE t USING fts5(c, tokenize='{tokenizer}');"
+            ))
+            .expect("create fts5 table");
+            for doc in docs {
+                conn.execute("INSERT INTO t(c) VALUES (?1)", [doc])
+                    .expect("insert doc");
+            }
+            for query in queries {
+                let fts = build_fts_query(query).unwrap();
+                let count: i64 = conn
+                    .query_row(
+                        "SELECT count(*) FROM t WHERE t MATCH ?1",
+                        [fts.as_str()],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or_else(|err| {
+                        panic!("[{tokenizer}] query {query:?} -> {fts:?} is invalid: {err}")
+                    });
+                assert!(
+                    count >= 1,
+                    "[{tokenizer}] query {query:?} -> {fts:?} matched {count} rows"
+                );
+            }
+        }
     }
 
     #[test]
