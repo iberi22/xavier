@@ -580,6 +580,11 @@ pub enum RepoConfigCommand {
 /// Subcommands for the skill controller's plan/apply/rollback workflow (D4, D6, D14).
 #[derive(Subcommand, Debug, Clone)]
 pub enum SkillsCommand {
+    /// Run a read-only drift audit of skill packages (D02)
+    Audit {
+        #[arg(long)]
+        manifest: String,
+    },
     /// Build a projection plan from a manifest; writes nothing (D4)
     Plan {
         /// Path to the skill manifest TOML
