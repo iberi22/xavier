@@ -1,3 +1,5 @@
+//! Exact Google Drive scope profiles for recovery commands.
+
 use crate::drive::DriveScopes;
 
 /// Drive scope profile for recovery commands.
@@ -31,16 +33,8 @@ impl DriveScopeProfile {
     /// Whether a set of granted scopes satisfies this profile.
     pub fn is_satisfied_by(&self, granted: &[String]) -> bool {
         match self {
-            Self::Backup => granted.iter().any(|s| {
-                s == DriveScopes::BACKUP
-                    || s == "https://www.googleapis.com/auth/drive.file"
-                    || s.ends_with("/drive.file")
-            }),
-            Self::Full => granted.iter().any(|s| {
-                s == DriveScopes::FULL
-                    || s == "https://www.googleapis.com/auth/drive"
-                    || s.ends_with("/auth/drive")
-            }),
+            Self::Backup => granted.iter().any(|s| s == DriveScopes::BACKUP),
+            Self::Full => granted.iter().any(|s| s == DriveScopes::FULL),
         }
     }
 }
@@ -81,27 +75,21 @@ mod tests {
     }
 
     #[test]
-    fn backup_satisfied_by_exact_and_suffix() {
+    fn backup_requires_exact_scope() {
         let profile = DriveScopeProfile::Backup;
         assert!(profile.is_satisfied_by(&[DriveScopes::BACKUP.to_string()]));
-        assert!(
-            profile.is_satisfied_by(&["https://www.googleapis.com/auth/drive.file".to_string()])
-        );
-        assert!(profile.is_satisfied_by(&["something/drive.file".to_string()]));
-        assert!(!profile.is_satisfied_by(&["https://www.googleapis.com/auth/drive".to_string()]));
+        assert!(!profile.is_satisfied_by(&["something/drive.file".to_string()]));
+        assert!(!profile.is_satisfied_by(&[DriveScopes::FULL.to_string()]));
     }
 
     #[test]
-    fn full_satisfied_by_exact_and_suffix() {
+    fn full_requires_exact_scope() {
         let profile = DriveScopeProfile::Full;
         assert!(profile.is_satisfied_by(&[DriveScopes::FULL.to_string()]));
-        assert!(profile.is_satisfied_by(&["https://www.googleapis.com/auth/drive".to_string()]));
-        assert!(
-            !profile.is_satisfied_by(&["https://www.googleapis.com/auth/drive.file".to_string()])
-        );
+        assert!(!profile.is_satisfied_by(&["something/auth/drive".to_string()]));
+        assert!(!profile.is_satisfied_by(&[DriveScopes::BACKUP.to_string()]));
     }
 
-    #[test]
     #[test]
     fn disconnect_removes_stored_credential_and_returns_ok() {
         let dir = tempfile::tempdir().unwrap();
@@ -112,7 +100,10 @@ mod tests {
         // A direct mock of `drive_disconnect` behavior: calling `remove` when file does not exist
         // is idempotent and succeeds.
         let res = store.remove();
-        assert!(res.is_ok(), "disconnect is idempotent and returns Ok when file does not exist");
+        assert!(
+            res.is_ok(),
+            "disconnect is idempotent and returns Ok when file does not exist"
+        );
 
         // Provide a valid fake credential file
         let creds = crate::drive::DriveCredentials {

@@ -1998,12 +1998,6 @@ pub enum RecoveryCommand {
     },
     /// Report the Google Drive connection used for encrypted backups.
     Drive,
-    /// Connect Google Drive for recovery backups.
-    Connect {
-        /// Request full drive scope instead of just drive.file (opt-in).
-        #[arg(long)]
-        full_scope: bool,
-    },
     /// Disconnect the local Google Drive credential.
     Disconnect,
 }
