@@ -9,8 +9,28 @@ import urllib.request
 from datetime import datetime, timezone
 import tempfile
 
+def ensure_gh_token():
+    """Ensures GH_TOKEN is set, falling back to git credential helper if needed."""
+    if not os.environ.get("GH_TOKEN") and not os.environ.get("GITHUB_TOKEN"):
+        try:
+            res = subprocess.run(
+                ["git", "credential", "fill"],
+                input="protocol=https\nhost=github.com\n",
+                capture_output=True,
+                text=True,
+            )
+            for line in res.stdout.splitlines():
+                if line.startswith("password="):
+                    token = line.split("=", 1)[1].strip()
+                    if token:
+                        os.environ["GH_TOKEN"] = token
+                        break
+        except Exception:
+            pass
+
 def default_gh_runner(cmd):
     """Executes a gh command and parses JSON output if applicable."""
+    ensure_gh_token()
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         if result.stdout.strip() == "":
@@ -78,9 +98,9 @@ def main(args, gh_runner=default_gh_runner, git_runner=default_git_runner):
     pr = pr_data[0] if pr_data else None
 
     body = pr["body"] if pr else ""
-    changes = extract_section(body, "Changes")
-    trial_steps = extract_section(body, "Trial steps")
-    results = extract_section(body, "Results")
+    changes = extract_section(body, "Changes") or extract_section(body, "What changed")
+    trial_steps = extract_section(body, "Trial steps") or extract_section(body, "How it was tested")
+    results = extract_section(body, "Results") or extract_section(body, "How it was tested")
     risks = extract_section(body, "Risks")
     links_text = extract_section(body, "Links")
 
@@ -103,14 +123,33 @@ def main(args, gh_runner=default_gh_runner, git_runner=default_git_runner):
                 open_incidents_for_sha.append(inc)
 
     # Determine rollbacks
-    source_rollback = f"git revert {sha}" if len(sha) >= 7 else "git revert <merge_commit_sha>"
+    parents_line = git_runner(["git", "rev-list", "--parents", "-n", "1", sha])
+    parent_count = len(parents_line.split()) - 1 if parents_line else 0
+    if parent_count > 1:
+        source_rollback = f"git revert -m 1 {sha}"
+    elif len(sha) >= 7:
+        source_rollback = f"git revert {sha}"
+    else:
+        source_rollback = "git revert <merge_commit_sha>"
     prev_tag = git_runner(["git", "describe", "--tags", "--abbrev=0", f"{sha}^"])
     deployed_rollback = prev_tag if prev_tag else "unknown"
 
-    # Link validation
+    # Gather and validate links
+    link_items = []
+    if pr and pr.get("url"):
+        link_items.append(f"- PR: {pr['url']}")
+    for r in runs:
+        if r.get("url"):
+            name = r.get("name") or "CI Run"
+            link_items.append(f"- CI ({name}): {r['url']}")
+    if links_text:
+        link_items.append(links_text)
+
+    all_links_content = "\n".join(link_items) if link_items else ""
+
     broken_links = []
     # Find markdown links [text](url) or bare urls
-    link_urls = re.findall(r'\[.*?\]\((https?://.*?)\)|(https?://[^\s]+)', links_text)
+    link_urls = re.findall(r'\[.*?\]\((https?://.*?)\)|(https?://[^\s]+)', all_links_content)
     link_urls = [u[0] if u[0] else u[1] for u in link_urls if u[0] or u[1]]
 
     for url in link_urls:
@@ -159,7 +198,7 @@ def main(args, gh_runner=default_gh_runner, git_runner=default_git_runner):
     markdown += f"## Rollback\n"
     markdown += f"### Source rollback\n`{source_rollback}`\n\n"
     markdown += f"### Deployed binary / tag rollback\n`{deployed_rollback}`\n\n"
-    markdown += f"## Links\n{links_text or 'N/A'}\n\n"
+    markdown += f"## Links\n{all_links_content or 'N/A'}\n\n"
     markdown += f"## Decision\n**{decision}**\n\n{decision_details}\n"
 
     # Write output
