@@ -1,88 +1,38 @@
 #!/bin/bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NOTIFY_PY="${GUARDIAN_NOTIFY_PY:-$SCRIPT_DIR/guardian/notify.py}"
+REPO=${GITHUB_REPOSITORY:-iberi22/xavier}
 
-SHA=""
-RUN_URL=""
-STATE_FILE="${GUARDIAN_STATE:-$HOME/.xavier/guardian/incidents.json}"
-JSON_OUT=0
+gh label create main-red --color B60205 --description "CI failing on main" 2>/dev/null || true
 
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    --sha)
-      SHA="$2"
-      shift 2
-      ;;
-    --run-url)
-      RUN_URL="$2"
-      shift 2
-      ;;
-    --state)
-      STATE_FILE="$2"
-      shift 2
-      ;;
-    --json)
-      JSON_OUT=1
-      shift
-      ;;
-    *)
-      echo "Malformed arguments" >&2
-      exit 2
-      ;;
-  esac
-done
+if [ "$CONCLUSION" = "failure" ]; then
+  # Check if there is already an open incident for this SHA
+  EXISTING_ISSUE=$(gh issue list --label "main-red" --state open --search "in:title \"$HEAD_SHA\"" --json number -q '.[0].number')
 
-if [[ -z "$SHA" || -z "$RUN_URL" ]]; then
-  echo "Malformed arguments" >&2
-  exit 2
-fi
+  if [ -n "$EXISTING_ISSUE" ] && [ "$EXISTING_ISSUE" != "null" ]; then
+    echo "Found existing incident #$EXISTING_ISSUE. Adding comment..."
+    gh issue comment "$EXISTING_ISSUE" --body "Repeated failure on main in run $RUN_ID. See: $RUN_URL"
+  else
+    echo "Creating new incident..."
+    OWNER=$(gh api repos/$REPO/commits/$HEAD_SHA --jq '.author.login' 2>/dev/null || echo "Unknown")
 
-OPENED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    BODY="CI failed on main in run $RUN_ID.
+Owner: @$OWNER
+Run URL: $RUN_URL
+Fix/revert tracking: Please link a green SHA or PR to fix this."
 
-# incident_key is "<target_id>:<deployment_id>", so the failing SHA is the
-# deployment_id and each SHA dedupes to one IncidentRecord. severity must be a
-# contract value ("critical"|"warning"|"info"), never "incident".
-EVENT_JSON=$(jq -n \
-  --arg target "main-ci" \
-  --arg sha "$SHA" \
-  --arg url "$RUN_URL" \
-  --arg at "$OPENED_AT" \
-  '{
-    target_id: $target,
-    deployment_id: $sha,
-    kind: "release_tag",
-    severity: "critical",
-    state: "open",
-    opened_at: $at,
-    evidence: {failing_sha: $sha, run_url: $url, opened_at: $at}
-  }')
+    gh issue create --title "CI Failure on main: $HEAD_SHA" --body "$BODY" --label "main-red"
+  fi
+elif [ "$CONCLUSION" = "success" ]; then
+  OPEN_ISSUES=$(gh issue list --label "main-red" --state open --json number -q '.[].number')
 
-export GUARDIAN_STATE="$STATE_FILE"
-
-INCIDENT_KEY="main-ci:$SHA"
-if [[ -f "$STATE_FILE" ]]; then
-  if jq -e --arg key "$INCIDENT_KEY" \
-      'if type == "array" then any(.[]; .incident_key == $key) else (.incident_key == $key) end' \
-      "$STATE_FILE" >/dev/null 2>&1; then
-    if [[ $JSON_OUT -eq 1 ]]; then
-      echo '{"status": "deduplicated"}'
-    fi
-    exit 0
+  if [ -n "$OPEN_ISSUES" ] && [ "$OPEN_ISSUES" != "null" ]; then
+    for ISSUE in $OPEN_ISSUES; do
+      if [ -n "$ISSUE" ] && [ "$ISSUE" != "null" ]; then
+        echo "Closing incident #$ISSUE with green run from SHA $HEAD_SHA..."
+        gh issue comment "$ISSUE" --body "Fixed by green run $RUN_ID at $HEAD_SHA. See: $RUN_URL"
+        gh issue close "$ISSUE"
+      fi
+    done
   fi
 fi
-
-EVENT_FILE=$(mktemp)
-trap 'rm -f "${EVENT_FILE:-}"' EXIT
-printf '%s' "$EVENT_JSON" > "$EVENT_FILE"
-
-# notify.py takes the event as a file positional and --state; it never reads stdin.
-if [[ $JSON_OUT -eq 1 ]]; then
-  python3 "$NOTIFY_PY" "$EVENT_FILE" --state "$STATE_FILE" --json
-  echo '{"status": "recorded"}'
-else
-  python3 "$NOTIFY_PY" "$EVENT_FILE" --state "$STATE_FILE"
-fi
-
-exit 0
