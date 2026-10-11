@@ -38,6 +38,19 @@ The rollback guardian sends a review notification with target, detected fault, e
 
 Before enabling any target, rehearse a failed smoke, sustained error signal, false alarm, missing known-good artifact, rollback failure and guardian outage in a nonproduction target. Verify that only the intended version changes, the owner receives both notifications, and a schema/security case escalates without rollback. Repeat after recovery-mechanism changes and periodically thereafter. Report per target: time to detect, time from detection to guardian decision, rollback time, **production MTTR** from first confirmed bad production signal to restored healthy service, false-positive rollbacks, failed rollbacks and unresolved incidents. Keep this production MTTR separate from GitHub integration MTTR (`00-ANALYSIS.md:47-54`).
 
+## Drill evidence and production MTTR
+
+Before enabling any target for automation, run offline rollback drills
+in a nonproduction setting to ensure safety. The offline drills must
+simulate a failed smoke, sustained error signal, false alarm, missing
+known-good artifact, rollback failure, and guardian outage scenarios.
+The offline runner emits `first_bad_signal_at` and calculates metrics per target including time to detect,
+detection-to-decision time, rollback time, **production MTTR**,
+false positives, failed rollbacks, and unresolved incidents.
+Production MTTR tracks only restored targets and excludes GitHub integration MTTR.
+Throughout all drills and metric gathering, actual recovery activation
+strictly remains owner-authorized.
+
 ## Machine-readable inventory
 
 The production targets and their known-good records are managed via a machine-readable JSON inventory, validated by `scripts/guardian/targets.py`. This validator is the only gate that may mark a target as promotable. An unknown target or one that fails validation will unconditionally remain disabled, enforcing that we never promote an untracked or incorrectly configured asset.
