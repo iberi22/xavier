@@ -1,0 +1,20 @@
+name: Fast Gate (Shadow)
+
+on:
+  pull_request:
+    branches: [main, 'sprint/**']
+
+jobs:
+  shadow-gate:
+    name: Shadow Fast Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Remote Security Job
+        run: bash scripts/check-secrets.sh
+
+      - name: Summary Check
+        if: always()
+        run: echo "Always-present summary check completed"
