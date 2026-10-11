@@ -1998,4 +1998,6 @@ pub enum RecoveryCommand {
     },
     /// Report the Google Drive connection used for encrypted backups.
     Drive,
+    /// Disconnect the local Google Drive credential.
+    Disconnect,
 }
