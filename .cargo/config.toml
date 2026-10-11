@@ -6,6 +6,10 @@
 # CARGO_TARGET_DIR en su shell (ver shell.nix).
 
 # [target.x86_64-unknown-linux-gnu]
+# NOTE (build-speed Phase 0): mold is NEVER forced here. Local devs may not
+# have mold installed; CI sets `-C link-arg=-fuse-ld=mold` via the workflow
+# env RUSTFLAGS (see .github/workflows/ci.yml) after rui314/setup-mold.
+# Local opt-in: RUSTFLAGS="-C link-arg=-fuse-ld=mold" cargo build
 # rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 
 [net]
