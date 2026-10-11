@@ -556,6 +556,16 @@ fn render_rollback_report(report: &xavier::context::RollbackReport) -> serde_jso
 /// `crate::cli::handlers::skills`, so no new network mutation route is added (D6).
 async fn handle_skills_command(cmd: enums::SkillsCommand) -> Result<()> {
     match cmd {
+        enums::SkillsCommand::Audit { manifest } => {
+            let report = tokio::task::spawn_blocking(move || {
+                xavier::api::skills::audit_manifest_blocking(std::path::Path::new(&manifest))
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("audit task failed: {e}"))?
+            .map_err(|e| anyhow::anyhow!(e))?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            Ok(())
+        }
         enums::SkillsCommand::Plan { manifest } => {
             let manifest = read_skill_manifest(manifest).await?;
             let (roots, policy) = skill_roots_and_policy(&manifest)?;
@@ -643,6 +653,7 @@ mod skills_command_tests {
             .find(|c| c.get_name() == "skills")
             .expect("skills subcommand is registered");
         let names: Vec<&str> = skills.get_subcommands().map(|c| c.get_name()).collect();
+        assert!(names.contains(&"audit"), "missing audit: {names:?}");
         assert!(names.contains(&"plan"), "missing plan: {names:?}");
         assert!(names.contains(&"apply"), "missing apply: {names:?}");
         assert!(names.contains(&"rollback"), "missing rollback: {names:?}");
@@ -666,6 +677,40 @@ mod skills_command_tests {
             source.display(),
             target.display(),
         )
+    }
+
+    #[tokio::test]
+    async fn skills_audit_reports_without_writing_and_rejects_missing_manifest() {
+        let tmp = TempDir::new().expect("tmp");
+        let source = tmp.path().join("store");
+        let target = tmp.path().join("tools/skills");
+        fs::create_dir_all(&target).expect("mkdir target");
+        write_package(&source, "demo");
+        let manifest_path = tmp.path().join("manifest.toml");
+        let manifest = manifest_toml(&source, &target);
+        fs::write(&manifest_path, &manifest).expect("write manifest");
+        let skill_path = source.join("demo/SKILL.md");
+        let before = fs::read(&skill_path).expect("read skill");
+        handle_skills_command(enums::SkillsCommand::Audit {
+            manifest: manifest_path.to_string_lossy().into_owned(),
+        })
+        .await
+        .expect("audit");
+        assert_eq!(fs::read(&skill_path).expect("read skill"), before);
+        assert_eq!(
+            fs::read_to_string(&manifest_path).expect("read manifest"),
+            manifest
+        );
+        assert_eq!(fs::read_dir(&target).expect("read target").count(), 0);
+        assert!(handle_skills_command(enums::SkillsCommand::Audit {
+            manifest: tmp
+                .path()
+                .join("missing.toml")
+                .to_string_lossy()
+                .into_owned(),
+        })
+        .await
+        .is_err());
     }
 
     #[tokio::test]

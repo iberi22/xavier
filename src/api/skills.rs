@@ -9,6 +9,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::workspace::WorkspaceContext;
 
+use crate::context::skill_controller::audit::{
+    audit_packages, AuditReport, AuditedPackage, Severity,
+};
+use crate::context::{SkillFsPolicy, SkillManifest, SkillResolvedRoots};
+
 // ---------------------------------------------------------------------------
 // POST /api/skill/dispatch
 // ---------------------------------------------------------------------------
@@ -202,6 +207,110 @@ pub async fn list_skills(Extension(workspace): Extension<WorkspaceContext>) -> i
     }))
 }
 
+// ---------------------------------------------------------------------------
+// GET /api/skill/audit
+// ---------------------------------------------------------------------------
+
+pub fn audit_report_json(report: &AuditReport) -> serde_json::Value {
+    serde_json::json!({
+        "packages_audited": report.packages_audited,
+        "bytes_scanned": report.bytes_scanned,
+        "truncated": report.truncated,
+        "findings": report.findings.iter().map(|f| {
+            serde_json::json!({
+                "rule": f.rule.id,
+                "severity": match f.severity {
+                    Severity::Info => "info",
+                    Severity::Warning => "warning",
+                    Severity::Error => "error",
+                },
+                "package": f.package,
+                "location": f.location,
+                "detail": f.detail,
+            })
+        }).collect::<Vec<_>>(),
+        "proposals": report.proposals.iter().map(|p| {
+            serde_json::json!({
+                "rule": p.rule.id,
+                "package": p.package,
+                "path": p.path,
+                "diff": p.diff,
+            })
+        }).collect::<Vec<_>>(),
+    })
+}
+
+pub fn audit_manifest_blocking(
+    manifest_path: &std::path::Path,
+) -> Result<serde_json::Value, String> {
+    let content = std::fs::read_to_string(manifest_path).map_err(|e| e.to_string())?;
+    let manifest = SkillManifest::from_toml(&content).map_err(|e| e.to_string())?;
+
+    let sources: Vec<std::path::PathBuf> = manifest
+        .sources
+        .values()
+        .map(std::path::PathBuf::from)
+        .collect();
+    let targets: Vec<std::path::PathBuf> = manifest
+        .targets
+        .iter()
+        .map(|t| std::path::PathBuf::from(&t.root))
+        .collect();
+    let policy = SkillFsPolicy::new(&sources, &targets).map_err(|e| e.to_string())?;
+    let roots = SkillResolvedRoots {
+        sources: manifest
+            .sources
+            .iter()
+            .map(|(id, dir)| (id.clone(), std::path::PathBuf::from(dir)))
+            .collect(),
+        targets: manifest
+            .targets
+            .iter()
+            .map(|t| (t.id.clone(), std::path::PathBuf::from(&t.root)))
+            .collect(),
+    };
+
+    let packages: Vec<AuditedPackage> = manifest
+        .placements
+        .iter()
+        .map(|p| AuditedPackage {
+            placement: p.clone(),
+            recorded_hash: None,
+        })
+        .collect();
+
+    let report = audit_packages(&policy, &roots, &packages).map_err(|e| e.to_string())?;
+
+    Ok(audit_report_json(&report))
+}
+
+pub async fn audit_skills() -> axum::response::Response {
+    let path_str = std::env::var("XAVIER_SKILL_MANIFEST").unwrap_or_default();
+    let path_str = path_str.trim();
+    if path_str.is_empty() {
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "no skill manifest configured"})),
+        )
+            .into_response();
+    }
+    let path = std::path::PathBuf::from(path_str);
+
+    match tokio::task::spawn_blocking(move || audit_manifest_blocking(&path)).await {
+        Ok(Ok(json)) => (axum::http::StatusCode::OK, Json(json)).into_response(),
+        Ok(Err(msg)) => (
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({"error": msg})),
+        )
+            .into_response(),
+        Err(_) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "audit task failed"})),
+        )
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,6 +335,7 @@ mod tests {
     struct EnvGuard {
         home: Option<String>,
         skill_store: Option<String>,
+        skill_manifest: Option<std::ffi::OsString>,
     }
 
     impl EnvGuard {
@@ -236,6 +346,7 @@ mod tests {
             let guard = Self {
                 home: std::env::var("HOME").ok(),
                 skill_store: std::env::var("XAVIER_SKILL_STORE").ok(),
+                skill_manifest: std::env::var_os("XAVIER_SKILL_MANIFEST"),
             };
             let empty_store = temp_dir.join("empty_store");
             if !empty_store.exists() {
@@ -250,6 +361,10 @@ mod tests {
 
     impl Drop for EnvGuard {
         fn drop(&mut self) {
+            match self.skill_manifest.take() {
+                Some(value) => std::env::set_var("XAVIER_SKILL_MANIFEST", value),
+                None => std::env::remove_var("XAVIER_SKILL_MANIFEST"),
+            }
             for (key, previous) in [
                 ("HOME", self.home.take()),
                 ("XAVIER_SKILL_STORE", self.skill_store.take()),
@@ -436,5 +551,97 @@ Follow these steps to analyze memory and debug issues.
         assert!(context_pack["relevant_memories"].is_array());
         assert!(context_pack["prior_decisions"].is_array());
         assert_eq!(context_pack["total_tokens"], 0);
+    }
+
+    #[tokio::test]
+    async fn test_audit_manifest_blocking_and_endpoint() {
+        let _lock = crate::context::skill_registry::env_lock().lock().await;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _env_guard = EnvGuard::isolate(temp_dir.path());
+
+        let sources_dir = temp_dir.path().join("sources");
+        let targets_dir = temp_dir.path().join("targets");
+        let package_dir = sources_dir.join("demo");
+        std::fs::create_dir_all(&package_dir).unwrap();
+        std::fs::create_dir_all(&targets_dir).unwrap();
+
+        let skill_md_path = package_dir.join("SKILL.md");
+        let content = "---\nname: demo\n---\nbody";
+        let before_content = content.as_bytes().to_vec();
+        std::fs::write(&skill_md_path, content).unwrap();
+
+        let manifest_path = temp_dir.path().join("manifest.toml");
+        let manifest_content = format!(
+            r#"version = 1
+
+[sources]
+test_source = "{}"
+
+[[targets]]
+id = "test_target"
+root = "{}"
+tools = ["codex"]
+mode = "symlink"
+
+[[placements]]
+source = "test_source"
+targets = ["test_target"]
+path = "demo"
+name = "demo"
+"#,
+            sources_dir.display(),
+            targets_dir.display()
+        );
+        std::fs::write(&manifest_path, &manifest_content).unwrap();
+        let before_files = vec![
+            (skill_md_path.clone(), before_content),
+            (manifest_path.clone(), manifest_content.into_bytes()),
+        ];
+
+        let result = audit_manifest_blocking(&manifest_path).unwrap();
+        let findings = result.get("findings").unwrap().as_array().unwrap();
+        assert!(
+            !findings.is_empty(),
+            "Expected findings due to missing description"
+        );
+
+        std::env::set_var(
+            "XAVIER_SKILL_MANIFEST",
+            format!("  {}  ", manifest_path.display()),
+        );
+        let app = Router::new().route("/api/skill/audit", get(audit_skills));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/skill/audit")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (parts, body) = resp.into_parts();
+        assert_eq!(parts.status, StatusCode::OK);
+
+        let body_bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+        let endpoint_findings = json.get("findings").unwrap().as_array().unwrap();
+        assert_eq!(findings, endpoint_findings);
+
+        for (path, bytes) in before_files {
+            assert_eq!(std::fs::read(path).unwrap(), bytes);
+        }
+        assert_eq!(std::fs::read_dir(&targets_dir).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_audit_skills_unset_manifest_returns_404() {
+        let _lock = crate::context::skill_registry::env_lock().lock().await;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _env_guard = EnvGuard::isolate(temp_dir.path());
+        std::env::remove_var("XAVIER_SKILL_MANIFEST");
+        let resp_not_found = audit_skills().await;
+        let (parts_not_found, _) = resp_not_found.into_parts();
+        assert_eq!(parts_not_found.status, StatusCode::NOT_FOUND);
     }
 }
