@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       protobuf-compiler libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Login shells (bash -l) reset PATH from /etc/profile; keep cargo/rustc reachable there too.
+RUN printf 'export PATH=/usr/local/cargo/bin:$PATH\n' > /etc/profile.d/cargo.sh
+
 # Scanner contract: the checkout lives inside the image, at /src.
 COPY . /src
 WORKDIR /src
