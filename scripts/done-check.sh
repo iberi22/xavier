@@ -99,7 +99,7 @@ add_check() {
     fi
 }
 
-HEAD_SHA=$(git rev-parse HEAD)
+HEAD_SHA="${EXPECTED_SHA:-$(git rev-parse HEAD)}"
 
 if [ "$BUNDLE_TYPE" = "task" ]; then
     if jq -e '(.declared_files | sort) == (.changed_files | sort)' "$BUNDLE_FILE" >/dev/null; then
@@ -121,8 +121,20 @@ if [ "$BUNDLE_TYPE" = "task" ]; then
         add_check "sha" "false" "stale SHA ($BUNDLE_SHA != $HEAD_SHA)"
     fi
 
+    DOCS_ONLY=true
+    if ! git diff --name-only "${BASE_SHA:-origin/main}...$HEAD_SHA" > .changed_files.tmp 2>/dev/null; then
+        DOCS_ONLY=false
+    elif [ ! -s .changed_files.tmp ]; then
+        DOCS_ONLY=false
+    elif grep -qvE '(\.md$|^docs/)' .changed_files.tmp; then
+        DOCS_ONLY=false
+    fi
+    rm -f .changed_files.tmp
+
     if jq -e '.commands | any(contains("cargo test"))' "$BUNDLE_FILE" >/dev/null; then
         add_check "tests" "true" "Cargo test command observed"
+    elif [ "$DOCS_ONLY" = "true" ]; then
+        add_check "tests" "true" "Docs-only task (tests skipped)"
     else
         add_check "tests" "false" "Zero tests observed (missing cargo test)"
     fi

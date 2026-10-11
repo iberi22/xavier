@@ -462,11 +462,47 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # Shadow for now: becomes blocking after the known pre-existing ledger failure is reconciled
-    continue-on-error: true
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@v7
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
       - name: Run Full Ledger
-        run: bash scripts/verify-pipeline.sh
+        run: bash scripts/verify-pipeline.sh > ledger.log 2>&1 || (cat ledger.log && exit 1)
+      - name: Upload Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ledger-logs
+          path: ledger.log
+
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs:
+      - changes
+      - rust-test
+      - rust-integration
+      - espacio-tests
+      - secret-scan
+      - frontend-build-audit
+      - version-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate status
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          RUST_EXPECTED: ${{ needs.changes.outputs.rust }}
+          RUST_RESULT: ${{ needs.rust-test.result }}
+        run: |
+          if echo "$NEEDS_JSON" | jq -e '. | to_entries | any(.value.result == "failure" or .value.result == "cancelled")' >/dev/null; then
+            echo "::error::One or more required jobs failed or were cancelled."
+            exit 1
+          fi
+
+          if [ "$RUST_EXPECTED" = "true" ] && [ "$RUST_RESULT" = "skipped" ]; then
+            echo "::error::rust-test was skipped but rust changes were detected."
+            exit 1
+          fi
+
+          echo "✅ All required jobs passed or were legitimately skipped."
