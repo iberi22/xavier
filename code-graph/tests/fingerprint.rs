@@ -305,3 +305,15 @@ fn c_preprocessor_split_else_if_keeps_function_whole() {
     assert_eq!(callees, vec!["memset"]);
     assert_eq!(pick["calls"][0]["line"].as_u64().unwrap(), 20);
 }
+
+#[test]
+fn c_preprocessor_zero_conditions_with_comments_parens_and_elif() {
+    let fp = fingerprint_source(
+        &fixture("preproc_zero.c"),
+        Language::C,
+        "preproc_zero.c",
+        &[],
+    );
+    let names: Vec<String> = fp.functions.iter().map(|f| f.name.clone()).collect();
+    assert_eq!(names, vec!["live_a".to_string(), "live_b".to_string()]);
+}
