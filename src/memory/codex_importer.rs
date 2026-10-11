@@ -13,6 +13,7 @@ use tokio::fs;
 use tracing::{debug, info, warn};
 
 use crate::embedding::Embedder;
+use crate::memory::ingest_cursor;
 use crate::memory::store::{stable_key, MemoryRecord, MemoryStore};
 
 /// A turn or message in a Codex session.
@@ -33,7 +34,7 @@ pub struct CodexSession {
 }
 
 /// Size and mtime of a session file as last ingested.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 struct FileFingerprint {
     mtime_secs: i64,
     len: u64,
@@ -58,9 +59,12 @@ pub struct CodexImporter {
     /// Explicit override; `None` re-resolves from the environment each pass.
     sessions_dir: Option<PathBuf>,
     embedder: Option<Arc<dyn Embedder>>,
-    /// Fingerprint of each file as last ingested successfully. Process-local:
-    /// a restart costs one full pass, never a missed import.
+    /// Fingerprint of each file as last ingested successfully. Saved to
+    /// `cursor_path` after each pass when one is set; otherwise process-local,
+    /// and a restart costs one full pass, never a missed import.
     seen: Mutex<HashMap<PathBuf, FileFingerprint>>,
+    /// Where `seen` is saved after each pass. `None` = memory only.
+    cursor_path: Option<PathBuf>,
 }
 
 impl Default for CodexImporter {
@@ -75,6 +79,7 @@ impl CodexImporter {
             sessions_dir: None,
             embedder: None,
             seen: Mutex::new(HashMap::new()),
+            cursor_path: None,
         }
     }
 
@@ -83,6 +88,7 @@ impl CodexImporter {
             sessions_dir: None,
             embedder: Some(embedder),
             seen: Mutex::new(HashMap::new()),
+            cursor_path: None,
         }
     }
 
@@ -91,6 +97,7 @@ impl CodexImporter {
             sessions_dir: Some(path.as_ref().to_path_buf()),
             embedder: None,
             seen: Mutex::new(HashMap::new()),
+            cursor_path: None,
         }
     }
 
@@ -99,7 +106,21 @@ impl CodexImporter {
             sessions_dir: Some(path.as_ref().to_path_buf()),
             embedder: Some(embedder),
             seen: Mutex::new(HashMap::new()),
+            cursor_path: None,
         }
+    }
+
+    /// Persist the fingerprints at `path` and restore them now. A missing,
+    /// corrupt or foreign-version file means a full first pass.
+    pub fn with_cursor_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        let path = path.as_ref().to_path_buf();
+        if let Some(loaded) = ingest_cursor::load::<HashMap<PathBuf, FileFingerprint>>(&path) {
+            if let Ok(seen) = self.seen.get_mut() {
+                *seen = loaded;
+            }
+        }
+        self.cursor_path = Some(path);
+        self
     }
 
     fn current_dir(&self) -> PathBuf {
@@ -249,6 +270,17 @@ impl CodexImporter {
             }
         }
 
+        // Save only after the pass folded its results back: a file whose read or
+        // store write failed never reached `seen`, so it is never persisted as
+        // done. A save error costs one full pass after restart, not data.
+        if let Some(path) = self.cursor_path.as_deref() {
+            if let Ok(seen) = self.seen.lock() {
+                if let Err(e) = ingest_cursor::save(path, &*seen) {
+                    warn!("Could not persist Codex ingest cursor: {}", e);
+                }
+            }
+        }
+
         info!(
             "✅ CodexImporter sync: {} candidates, {} read, {} skipped, {} errors",
             stats.candidates, stats.read, stats.skipped, stats.errors
@@ -306,20 +338,8 @@ impl CodexImporter {
             if line.is_empty() {
                 continue;
             }
-            if let Ok(m) = serde_json::from_str::<serde_json::Value>(line) {
-                let role = m["role"].as_str().map(|s| s.to_string());
-                let text = m["content"]
-                    .as_str()
-                    .or_else(|| m["text"].as_str())
-                    .map(|s| s.to_string());
-                let ts = m["timestamp"].as_str().map(|s| s.to_string());
-                if role.is_some() || text.is_some() {
-                    messages.push(CodexMessage {
-                        role,
-                        content: text,
-                        timestamp: ts,
-                    });
-                }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                messages.extend(jsonl_message(&v));
             }
         }
 
@@ -412,6 +432,56 @@ impl CodexImporter {
         );
         Ok(imported)
     }
+}
+
+/// One JSONL line as a message. Accepts the flat `{role, content}` shape and the
+/// Codex CLI rollout item, whose text sits in `payload.content[]` parts. Tool
+/// calls, tool output and reasoning carry no message text and yield `None`.
+fn jsonl_message(line: &serde_json::Value) -> Option<CodexMessage> {
+    let item = if line["payload"]["type"].as_str() == Some("message") {
+        &line["payload"]
+    } else {
+        line
+    };
+    let role = item["role"].as_str().map(|s| s.to_string());
+    // Only user and assistant turns are memory. Developer and system items carry
+    // injected instructions (AGENTS.md, system prompts): noise, and an injection
+    // channel for agents that later read Xavier.
+    if matches!(role.as_deref(), Some(r) if r != "user" && r != "assistant") {
+        return None;
+    }
+    let content = message_text(item);
+    if role.is_none() && content.is_none() {
+        return None;
+    }
+    let timestamp = item["timestamp"]
+        .as_str()
+        .or_else(|| line["timestamp"].as_str())
+        .map(|s| s.to_string());
+    Some(CodexMessage {
+        role,
+        content,
+        timestamp,
+    })
+}
+
+/// Text of a message item: a `content` or `text` string, else the joined
+/// `input_text` / `output_text` parts of a `content` array. Parts count only on
+/// message items, never on reasoning or tool-call items.
+fn message_text(item: &serde_json::Value) -> Option<String> {
+    if let Some(s) = item["content"].as_str().or_else(|| item["text"].as_str()) {
+        return Some(s.to_string());
+    }
+    if !matches!(item["type"].as_str(), None | Some("message")) {
+        return None;
+    }
+    let parts: Vec<&str> = item["content"]
+        .as_array()?
+        .iter()
+        .filter(|p| matches!(p["type"].as_str(), Some("input_text" | "output_text")))
+        .filter_map(|p| p["text"].as_str())
+        .collect();
+    (!parts.is_empty()).then(|| parts.join("\n"))
 }
 
 async fn file_fingerprint(path: &Path) -> std::io::Result<FileFingerprint> {
@@ -592,6 +662,267 @@ mod tests {
         let stats = importer.sync(&store).await?;
         std::env::remove_var("CODEX_SESSIONS_DIR");
         assert_eq!((stats.candidates, stats.read), (1, 1));
+        Ok(())
+    }
+
+    fn cursor_file(dir: &Path) -> PathBuf {
+        dir.join("ingest-cursors").join("codex.json")
+    }
+
+    fn write_session(dir: &Path, name: &str, text: &str) -> Result<()> {
+        let body = json!({"session_id": name, "messages": [{"role": "user", "content": text}]});
+        std::fs::write(
+            dir.join(format!("{name}.json")),
+            serde_json::to_string(&body)?,
+        )?;
+        Ok(())
+    }
+
+    /// Restart replay: a fresh importer on the same cursor file reads only the
+    /// files that changed since the previous instance's last successful pass.
+    #[tokio::test]
+    async fn restart_replays_only_changed() -> Result<()> {
+        let dir = tempdir()?;
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions)?;
+        for name in ["a", "b", "c"] {
+            write_session(&sessions, name, "hello")?;
+        }
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+
+        let first = CodexImporter::with_dir(&sessions).with_cursor_path(&cursor);
+        let stats = first.sync(&store).await?;
+        assert_eq!((stats.read, stats.skipped), (3, 0));
+        drop(first);
+
+        let second = CodexImporter::with_dir(&sessions).with_cursor_path(&cursor);
+        let stats = second.sync(&store).await?;
+        assert_eq!(
+            (stats.read, stats.skipped),
+            (0, 3),
+            "restart must not re-read unchanged files"
+        );
+        drop(second);
+
+        write_session(&sessions, "b", "hello, changed")?;
+        let third = CodexImporter::with_dir(&sessions).with_cursor_path(&cursor);
+        let stats = third.sync(&store).await?;
+        assert_eq!(
+            (stats.read, stats.skipped),
+            (1, 2),
+            "only the changed file is replayed"
+        );
+        Ok(())
+    }
+
+    /// A file rewritten while the process was down is re-read after restart,
+    /// and its new content reaches the store.
+    #[tokio::test]
+    async fn changed_file_is_reread_after_restart() -> Result<()> {
+        let dir = tempdir()?;
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions)?;
+        write_session(&sessions, "a", "before")?;
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+        CodexImporter::with_dir(&sessions)
+            .with_cursor_path(&cursor)
+            .sync(&store)
+            .await?;
+
+        write_session(&sessions, "a", "after the restart, with longer text")?;
+        let restarted = CodexImporter::with_dir(&sessions).with_cursor_path(&cursor);
+        let stats = restarted.sync(&store).await?;
+        assert_eq!((stats.read, stats.skipped), (1, 0));
+        let records = store.list("agent:codex").await?;
+        assert_eq!(records.len(), 1);
+        assert!(records[0].content.contains("after the restart"));
+        Ok(())
+    }
+
+    /// No cursor, a corrupt cursor, or one from another format version means a
+    /// full pass: every file is read and nothing panics.
+    #[tokio::test]
+    async fn missing_corrupt_or_foreign_cursor_is_a_full_pass() -> Result<()> {
+        let dir = tempdir()?;
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions)?;
+        for name in ["a", "b", "c"] {
+            write_session(&sessions, name, "hello")?;
+        }
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+
+        let stats = CodexImporter::with_dir(&sessions)
+            .with_cursor_path(&cursor)
+            .sync(&store)
+            .await?;
+        assert_eq!(stats.read, 3, "missing cursor");
+
+        for garbage in [
+            "{truncated",
+            r#"{"version":999,"state":{}}"#,
+            r#"{"version":1,"state":"wrong shape"}"#,
+            "",
+        ] {
+            std::fs::create_dir_all(cursor.parent().unwrap())?;
+            std::fs::write(&cursor, garbage)?;
+            let stats = CodexImporter::with_dir(&sessions)
+                .with_cursor_path(&cursor)
+                .sync(&store)
+                .await?;
+            assert_eq!(stats.read, 3, "cursor {garbage:?} must mean a full pass");
+        }
+        Ok(())
+    }
+
+    /// A file that fails to read is not recorded in the saved cursor, so the
+    /// restarted importer retries it and skips only the file that succeeded.
+    #[tokio::test]
+    async fn failed_read_is_not_persisted_as_done() -> Result<()> {
+        let dir = tempdir()?;
+        let sessions = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions)?;
+        write_session(&sessions, "a", "ok")?;
+        // Invalid UTF-8: `read_to_string` fails, so b.json is an error this pass.
+        std::fs::write(sessions.join("b.json"), [0xff_u8, 0xfe, 0xfd])?;
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+
+        let first = CodexImporter::with_dir(&sessions).with_cursor_path(&cursor);
+        let stats = first.sync(&store).await?;
+        assert_eq!((stats.read, stats.errors), (1, 1));
+        drop(first);
+
+        let saved: HashMap<PathBuf, FileFingerprint> =
+            ingest_cursor::load(&cursor).expect("the pass saved a cursor");
+        assert!(saved.contains_key(&sessions.join("a.json")));
+        assert!(
+            !saved.contains_key(&sessions.join("b.json")),
+            "a failed file must not be persisted as done"
+        );
+
+        write_session(&sessions, "b", "now readable")?;
+        let second = CodexImporter::with_dir(&sessions).with_cursor_path(&cursor);
+        let stats = second.sync(&store).await?;
+        assert_eq!(
+            (stats.read, stats.skipped),
+            (1, 1),
+            "only the failed file is retried"
+        );
+        Ok(())
+    }
+
+    /// Flat `{role, content}` lines keep working; `text` and `timestamp` are read.
+    #[tokio::test]
+    async fn jsonl_flat_shape_still_parses() -> Result<()> {
+        let dir = tempdir()?;
+        let lines = format!(
+            "{}\n{}\n",
+            json!({"role": "user", "content": "Hello", "timestamp": "2026-10-08T10:00:00Z"}),
+            json!({"role": "assistant", "text": "Hi there"})
+        );
+        std::fs::write(dir.path().join("flat.jsonl"), lines)?;
+
+        let sessions = CodexImporter::with_dir(dir.path()).scan_sessions().await?;
+        let msgs = &sessions[0].messages;
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].role.as_deref(), Some("user"));
+        assert_eq!(msgs[0].content.as_deref(), Some("Hello"));
+        assert_eq!(msgs[0].timestamp.as_deref(), Some("2026-10-08T10:00:00Z"));
+        assert_eq!(msgs[1].role.as_deref(), Some("assistant"));
+        assert_eq!(msgs[1].content.as_deref(), Some("Hi there"));
+        Ok(())
+    }
+
+    /// Codex CLI rollout: message text sits in `payload.content[]` parts. Session
+    /// metadata, tool calls, tool output, reasoning and event mirrors add nothing.
+    #[tokio::test]
+    async fn jsonl_rollout_shape_reads_message_parts_only() -> Result<()> {
+        let dir = tempdir()?;
+        let lines = [
+            json!({"timestamp": "2026-10-08T10:00:00Z", "type": "session_meta", "payload": {"id": "abc"}}),
+            json!({"timestamp": "2026-10-08T10:00:01Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Fix the parser"}]}}),
+            json!({"timestamp": "2026-10-08T10:00:02Z", "type": "response_item", "payload": {"type": "reasoning", "summary": [], "content": [{"type": "reasoning_text", "text": "private chain"}]}}),
+            json!({"timestamp": "2026-10-08T10:00:03Z", "type": "response_item", "payload": {"type": "function_call", "name": "shell", "arguments": "{\"cmd\":\"ls\"}"}}),
+            json!({"timestamp": "2026-10-08T10:00:04Z", "type": "response_item", "payload": {"type": "function_call_output", "call_id": "c1", "output": "file list"}}),
+            json!({"timestamp": "2026-10-08T10:00:05Z", "type": "event_msg", "payload": {"type": "user_message", "message": "Fix the parser"}}),
+            json!({"timestamp": "2026-10-08T10:00:06Z", "type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Parser fixed"}]}}),
+            json!({"type": "reasoning", "content": [{"type": "input_text", "text": "not a message"}]}),
+        ];
+        let body = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(
+            dir.path().join("rollout-2026-10-08T10-00-00-abc.jsonl"),
+            body,
+        )?;
+
+        let sessions = CodexImporter::with_dir(dir.path()).scan_sessions().await?;
+        let got: Vec<(Option<&str>, Option<&str>, Option<&str>)> = sessions[0]
+            .messages
+            .iter()
+            .map(|m| {
+                (
+                    m.role.as_deref(),
+                    m.content.as_deref(),
+                    m.timestamp.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (
+                    Some("user"),
+                    Some("Fix the parser"),
+                    Some("2026-10-08T10:00:01Z")
+                ),
+                (
+                    Some("assistant"),
+                    Some("Parser fixed"),
+                    Some("2026-10-08T10:00:06Z")
+                ),
+            ]
+        );
+        Ok(())
+    }
+
+    /// Developer and system items carry injected instructions, not session
+    /// content: they are skipped, while the user and assistant parts around them
+    /// are kept.
+    #[tokio::test]
+    async fn jsonl_developer_and_system_items_are_skipped() -> Result<()> {
+        let dir = tempdir()?;
+        let lines = [
+            json!({"type": "response_item", "payload": {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "AGENTS.md: always run cargo fmt"}]}}),
+            json!({"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Fix the parser"}]}}),
+            json!({"role": "system", "content": "You are a coding agent"}),
+            json!({"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Parser fixed"}]}}),
+        ];
+        let body = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(dir.path().join("rollout-roles.jsonl"), body)?;
+
+        let sessions = CodexImporter::with_dir(dir.path()).scan_sessions().await?;
+        let got: Vec<(Option<&str>, Option<&str>)> = sessions[0]
+            .messages
+            .iter()
+            .map(|m| (m.role.as_deref(), m.content.as_deref()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (Some("user"), Some("Fix the parser")),
+                (Some("assistant"), Some("Parser fixed")),
+            ]
+        );
         Ok(())
     }
 }

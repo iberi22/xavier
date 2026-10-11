@@ -327,6 +327,26 @@ impl MemoryStore for VecSqliteMemoryStore {
         Ok(results)
     }
 
+    /// Distinct workspace ids present in the store. The trait default returns
+    /// an empty list, which made every whole-store consumer (sync manifest,
+    /// cloud backup) silently see "no memories" on this backend.
+    async fn list_workspaces(&self) -> Result<Vec<String>> {
+        self.conn_provider
+            .with_conn(&self.project_id, |conn| {
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT DISTINCT workspace_id FROM {} ORDER BY workspace_id",
+                    TABLE_MEMORIES
+                ))?;
+                let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+                let mut ids = Vec::new();
+                for row in rows {
+                    ids.push(row?);
+                }
+                Ok(ids)
+            })
+            .await
+    }
+
     async fn list_filtered(
         &self,
         workspace_id: &str,

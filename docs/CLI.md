@@ -985,25 +985,22 @@ Detect removable USB storage devices and show mount points and capacity.
 
 ### `xavier airgap pack`
 
-Pack a file, directory, or database backup into an encrypted capsule.
-
-| Flag | Default | Description |
-|---|---|---|
-| `-i, --input <path>` | required | File or directory to pack. |
-| `-o, --output <path>` | `<input>.swal_capsule` | Output capsule file path. |
-| `-p, --passphrase <text>` | prompt | Passphrase; prompted interactively when omitted. |
-| `-k, --kind <kind>` | inferred from the input | `file`, `directory`, `db_backup`, `memory_dump`, `secrets_vault`. |
-| `--author <name>` | `$USER` / `xavier-node` | Author or operator identity tag. |
+Capsule creation is disabled pending a format redesign. The subcommand remains parseable and exits non-zero; see [the capsule protocol](ARCHITECTURE/AIRGAP_CAPSULE_PROTOCOL.md).
 
 ### `xavier airgap unpack`
 
-Unpack an encrypted capsule to a destination directory.
+Decrypt and authenticate an existing capsule in memory before writing its contents. Single-file capsules write only to a user-selected output path or a name derived from the capsule file path; header filenames are display metadata only.
 
 | Flag | Default | Description |
 |---|---|---|
 | `-c, --capsule <path>` | required | Path to the `.swal_capsule` file. |
-| `-o, --output-dir <path>` | required | Destination directory. |
-| `-p, --passphrase <text>` | prompt | Passphrase; prompted interactively when omitted. |
+| `--output <file>` | none | Explicit relative output file for a single-file capsule; mutually exclusive with `--output-dir`. |
+| `-o, --output-dir <path>` | none | Relative destination directory. Single files use `<capsule-file-stem>.out` inside an existing directory. Directory capsules require a new directory created by unpack. |
+| `--passphrase-file <path>` | prompt | Read the passphrase from a file; otherwise prompt interactively. |
+
+Choose exactly one destination option. Absolute output paths, `..` components, symlinks, existing destination files, protected Xavier key areas, and `record.key`/`master.key` names (matched case-insensitively) are refused. Unpack also refuses to run when the home directory cannot be resolved, because the `~/.xavier` key area cannot then be checked. Directory entries must remain within the new extraction directory and obey the same key-name and symlink restrictions. There is no overwrite option. Passphrases on argv (`-p`/`--passphrase`) are not accepted.
+
+Capsule key derivation uses Argon2id with 19,456 KiB memory, 2 iterations, and parallelism 1. These parameters are pinned in the code and do not change with dependency updates.
 
 ### `xavier airgap inspect`
 
@@ -1016,7 +1013,7 @@ Inspect the unencrypted header metadata of a capsule.
 
 ```bash
 xavier airgap detect
-xavier airgap pack --input ./backup.db --kind db_backup
+xavier airgap unpack --capsule ./backup.db.swal_capsule --output ./restored.db --passphrase-file ./capsule-passphrase.txt
 xavier airgap inspect --capsule ./backup.db.swal_capsule --json
 ```
 
@@ -1100,7 +1097,7 @@ xavier users totp-enroll --email admin@example.com
 | `xavier scan <subcommand>` | `system` (`-f, --format`, `-d, --detailed`) and `security` (`-f, --format`). |
 | `xavier task <subcommand>` | `list` (`-p`, `-s`, `--search`, `-f`), `create <title>` (`-p`, `-d`), `run <id>`, `move <id> <status>`. |
 | `xavier agent <subcommand>` | `scan`, `index`, `push`, `pull`, `chat`, `converse` — IDE agent session import. `index` also takes `--codex`, `--jules`, `--antigravity`, `--opencode`. |
-| `xavier cloud <subcommand>` | `status`, `set-backend <backend>`, `sync`, `verify` — each with `--json`. |
+| `xavier cloud <subcommand>` | `status`, `set-backend <backend>`, `backup` (alias `sync`: client-side encrypted upload of every memory to Xavier Cloud, needs `PGHEART_URL`/`PGHEART_TOKEN` and `XAVIER_CLOUD_BACKUP_PASSPHRASE`), `restore [--instance]`, `verify [--deep]` (manifest, packs present, tenant usage) — each with `--json`. |
 | `xavier plugin <subcommand>` | `install <name>`, `list`. |
 | `xavier mini-expert <subcommand>` | `add` (`--name`, `--segment`, `--domain`, `--language`, `--clearance`, `--source-dataset`, `--model-gguf-path`, `--provider`, `--endpoint`, `--version`, `--metrics-file`, `--candidate`; all stored in the SQLite registry), `list`, `activate <name> <version>`, `retire <name> [--version]`, `serve` (`--name`; makes sure active experts exist in Ollama, whose address comes from `XAVIER_LOCAL_LLM_URL`; `--port` is rejected). Only `local`/`ollama` providers are served by the expert router and `ask_expert`; other providers are honoured only by the legacy HTTP invoke route. `XAVIER_EXPERT_THRESHOLD` is clamped to [-1, 1] (NaN/inf use the default 0.6). |
 | `xavier node <subcommand>` | SWAL node identity: `create`, `recover`, `status`, `anchor`, `anchor-pack`. |
