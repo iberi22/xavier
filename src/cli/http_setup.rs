@@ -1164,6 +1164,31 @@ mod space_token_tests {
         );
     }
 
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_audit_requires_auth_and_configured_manifest() {
+        xavier::isolate_test_process!();
+        let (state, _tmp) = test_state().await;
+        let _token = TokenGuard::set(ROOT);
+        let _manifest = EnvRestore {
+            key: "XAVIER_SKILL_MANIFEST",
+            prev: std::env::var_os("XAVIER_SKILL_MANIFEST"),
+        };
+        std::env::remove_var("XAVIER_SKILL_MANIFEST");
+        let app = crate::cli::server::skill_api_routes()
+            .layer(from_fn_with_state(state.clone(), auth_middleware))
+            .with_state(state);
+        let status = call(&app, "GET", "/api/skill/audit", "").await;
+        assert!(matches!(
+            status,
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+        ));
+        assert_eq!(
+            call(&app, "GET", "/api/skill/audit", ROOT).await,
+            StatusCode::NOT_FOUND
+        );
+    }
+
     struct EnvRestore {
         key: &'static str,
         prev: Option<std::ffi::OsString>,
