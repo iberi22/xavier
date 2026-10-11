@@ -228,13 +228,15 @@ pub fn neutralize_preprocessor(source: &str) -> String {
                 .collect();
             match word.as_str() {
                 "if" | "ifdef" | "ifndef" => {
-                    let rest = directive[word.len()..].trim();
-                    let taken = !(word == "if" && rest == "0");
+                    let rest = &directive[word.len()..];
+                    let taken = !(word == "if" && is_constant_false(rest));
                     stack.push((active, taken, taken));
                 }
                 "elif" | "elifdef" | "elifndef" => {
                     if let Some(top) = stack.last_mut() {
-                        let take = !top.2;
+                        let rest = &directive[word.len()..];
+                        let constant_false = word == "elif" && is_constant_false(rest);
+                        let take = !top.2 && !constant_false;
                         top.1 = take;
                         top.2 |= take;
                     }
@@ -259,6 +261,34 @@ pub fn neutralize_preprocessor(source: &str) -> String {
         out.push_str(eol);
     }
     out
+}
+
+/// `0` as a preprocessor condition, allowing comments, parentheses and
+/// integer suffixes (`0 /* off */`, `(0)`, `0L`).
+fn is_constant_false(condition: &str) -> bool {
+    let mut text = condition;
+    if let Some(i) = text.find("//") {
+        text = &text[..i];
+    }
+    let mut cleaned = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("/*") {
+        cleaned.push_str(&rest[..start]);
+        match rest[start + 2..].find("*/") {
+            Some(end) => rest = &rest[start + 2 + end + 2..],
+            None => {
+                rest = "";
+                break;
+            }
+        }
+    }
+    cleaned.push_str(rest);
+    let mut expr = cleaned.trim();
+    while let Some(inner) = expr.strip_prefix('(').and_then(|e| e.strip_suffix(')')) {
+        expr = inner.trim();
+    }
+    let expr = expr.trim_end_matches(['u', 'U', 'l', 'L']);
+    expr == "0"
 }
 
 /// Hash rule for one token window: first 8 hex chars of the SHA-256 of the
