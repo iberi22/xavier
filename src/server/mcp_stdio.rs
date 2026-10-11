@@ -29,7 +29,7 @@ pub async fn run_stdio_loop(state: AppState, workspace: WorkspaceContext) -> Res
             Err(_) => continue,
         };
 
-        let Some(response) = dispatch_mcp_value(state.clone(), workspace.clone(), None, payload)
+        let Some(response) = dispatch_stdio_value(state.clone(), workspace.clone(), payload)
             .await
             .ok()
             .flatten()
@@ -44,4 +44,21 @@ pub async fn run_stdio_loop(state: AppState, workspace: WorkspaceContext) -> Res
     }
 
     Ok(())
+}
+
+/// Subject of the local stdio identity; it carries no root credential.
+pub(crate) const STDIO_LOCAL_SUBJECT: &str = "stdio_local";
+
+pub(crate) async fn dispatch_stdio_value(
+    state: AppState,
+    workspace: WorkspaceContext,
+    payload: serde_json::Value,
+) -> Result<Option<serde_json::Value>, String> {
+    let claims = crate::security::auth::Claims::new(
+        STDIO_LOCAL_SUBJECT.to_string(),
+        "local@xavier".to_string(),
+        crate::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    );
+    dispatch_mcp_value(state, workspace, Some(&claims), payload).await
 }

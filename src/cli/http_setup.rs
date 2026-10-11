@@ -399,6 +399,13 @@ pub async fn auth_middleware(
         }
     };
 
+    if expected_token.trim().is_empty() {
+        return json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({"status":"error","message":"Security token not configured"}),
+        );
+    }
+
     let provided_token = req
         .headers()
         .get("X-Xavier-Token")
@@ -1087,6 +1094,53 @@ mod space_token_tests {
         (state, dir)
     }
 
+    /// Restores `XAVIER_TOKEN` on drop so a failing test cannot leak state.
+    struct TokenGuard(Option<String>);
+
+    impl TokenGuard {
+        fn set(value: &str) -> Self {
+            let prev = std::env::var("XAVIER_TOKEN").ok();
+            std::env::set_var("XAVIER_TOKEN", value);
+            Self(prev)
+        }
+    }
+
+    impl Drop for TokenGuard {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(v) => std::env::set_var("XAVIER_TOKEN", v),
+                None => std::env::remove_var("XAVIER_TOKEN"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn http_auth_requires_configured_token() {
+        xavier::isolate_test_process!();
+        let (state, _tmp) = test_state().await;
+        let _guard = TokenGuard::set("");
+        assert!(resolve_http_token().unwrap().is_empty());
+        let app = Router::new()
+            .fallback(any(echo))
+            .layer(from_fn_with_state(state, auth_middleware));
+        for header in [
+            None,
+            Some(("X-Xavier-Token", "")),
+            Some(("Authorization", "Bearer ")),
+        ] {
+            let (status, body) = send(&app, "POST", "/memory/add", "", Hdr::XToken, header).await;
+            assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(body["message"], "Security token not configured");
+        }
+        assert_eq!(call(&app, "GET", "/health", "").await, StatusCode::OK);
+        std::env::set_var("XAVIER_TOKEN", ROOT);
+        assert_eq!(
+            call(&app, "POST", "/memory/add", ROOT).await,
+            StatusCode::OK
+        );
+    }
+
     async fn echo(req: Request<Body>) -> Response {
         let ctx = req.extensions().get::<SpaceContext>().cloned();
         let claims = req
@@ -1212,6 +1266,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn real_middleware_accepts_both_header_forms_and_keeps_branch_order() {
         let f = fixture().await;
         for hdr in [Hdr::Bearer, Hdr::XToken] {
@@ -1244,6 +1299,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn space_token_is_403_on_workspace_global_memory_and_mcp_routes() {
         // Routes NOT audited as space-scoped (WP-13m) stay refused for every role.
         let f = fixture().await;
@@ -1288,6 +1344,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn claims_never_exceed_user_and_reader_is_readonly() {
         let f = fixture().await;
         let cases = [
@@ -1316,6 +1373,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn token_of_a_is_403_on_b_and_unknown_sub_paths_are_403() {
         let f = fixture().await;
         for (m, p) in [
@@ -1360,6 +1418,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn space_header_mismatch_is_403() {
         let f = fixture().await;
         let (st, _) = send(
@@ -1385,6 +1444,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn sensitive_and_admin_routes_are_403_even_for_space_admin() {
         let f = fixture().await;
         let mut toks = vec![f.admin_a.clone()];
@@ -1413,6 +1473,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn bad_tokens_are_401() {
         let f = fixture().await;
         let good = "A".repeat(43);
@@ -1456,6 +1517,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn without_a_space_manager_every_xsp_token_is_401() {
         let f = fixture().await;
         for hdr in [Hdr::Bearer, Hdr::XToken] {
@@ -1471,6 +1533,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn deleted_space_invalidates_its_tokens() {
         let f = fixture().await;
         f.manager.delete(OWN).await.unwrap();
@@ -1481,6 +1544,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn roles_gate_read_and_delete_on_the_own_space() {
         let f = fixture().await;
         let reader = issue(&f, OWN, "rita", SpaceRole::Reader);
@@ -1620,6 +1684,7 @@ mod space_token_tests {
     ];
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn maloca_legacy_personal_reads_require_auth() {
         std::env::set_var("XAVIER_TOKEN", ROOT);
         let (state, _tmp) = test_state().await;
@@ -1656,6 +1721,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn maloca_personal_reads_require_auth_and_public_reads_do_not() {
         let (app, _tmp) = maloca_app().await;
         for path in PROTECTED_READS {
@@ -1692,6 +1758,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn maloca_personal_reads_accept_readonly_jwt() {
         let (app, _tmp) = maloca_app().await;
         let secret = "maloca-priv-test-secret-0123456789";
