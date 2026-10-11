@@ -215,6 +215,10 @@ async fn search_excludes_noise_namespaces_by_default() {
     let app = Router::new()
         .route("/memory/add", post(add_handler))
         .route("/memory/search", post(search_handler))
+        // Writes require the caller clearance that production derives from the authenticated session.
+        .layer(axum::Extension(
+            xavier::security::clearance::ClearanceLevel::TopSecret,
+        ))
         .with_state(state.clone());
 
     seed_noise_and_relevant_docs(&app).await;
@@ -267,6 +271,9 @@ async fn search_include_activity_opts_back_in() {
     let app = Router::new()
         .route("/memory/add", post(add_handler))
         .route("/memory/search", post(search_handler))
+        .layer(axum::Extension(
+            xavier::security::clearance::ClearanceLevel::TopSecret,
+        ))
         .with_state(state.clone());
 
     seed_noise_and_relevant_docs(&app).await;
@@ -307,6 +314,9 @@ async fn add_then_get_by_path_round_trips() {
     let app = Router::new()
         .route("/memory/add", post(add_handler))
         .route("/memory/get", get(get_handler))
+        .layer(axum::Extension(
+            xavier::security::clearance::ClearanceLevel::TopSecret,
+        ))
         .with_state(state.clone());
 
     let path = "decisions/swal-network/2026-09-24-auditoria-gaps-test";
