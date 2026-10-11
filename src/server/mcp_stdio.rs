@@ -60,5 +60,24 @@ pub(crate) async fn dispatch_stdio_value(
         crate::security::auth::UserRole::Admin,
         chrono::Duration::hours(1),
     );
-    dispatch_mcp_value(state, workspace, Some(&claims), payload).await
+    // The local stdio identity carries no space token, so its ceiling is the
+    // role clearance the HTTP transport would apply to the same claims.
+    let caller = crate::server::mcp::tools_memory::McpCaller {
+        space: None,
+        clearance: crate::security::clearance::role_clearance(claims.role),
+    };
+    let write_key = crate::adapters::inbound::http::middleware::rate_limit::memory_write_caller_key(
+        None,
+        None,
+        Some(claims.sub.as_str()),
+        None,
+    );
+    crate::server::mcp::tools_memory::with_memory_write_caller_key(
+        write_key,
+        crate::server::mcp::tools_memory::with_mcp_caller(
+            caller,
+            dispatch_mcp_value(state, workspace, Some(&claims), payload),
+        ),
+    )
+    .await
 }

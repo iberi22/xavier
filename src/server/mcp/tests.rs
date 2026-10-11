@@ -2725,6 +2725,106 @@ async fn auth_defaults_stdio_run_command_not_gated() {
     }
 }
 
+/// Text payload of a stdio `tools/call` response, or `None` when the call
+/// reported an error.
+async fn stdio_tool_text(
+    state: &AppState,
+    workspace: &WorkspaceContext,
+    id: u64,
+    name: &str,
+    arguments: Value,
+) -> Option<String> {
+    let response = crate::server::mcp_stdio::dispatch_stdio_value(
+        state.clone(),
+        workspace.clone(),
+        json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {
+            "name": name, "arguments": arguments
+        }}),
+    )
+    .await
+    .expect("stdio dispatch")
+    .expect("stdio response");
+    assert!(response.get("error").is_none(), "{response}");
+    if response["result"]["isError"] == true {
+        return None;
+    }
+    Some(
+        response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string(),
+    )
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn auth_defaults_stdio_memory_write_default_clearance_persists() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+
+    // A record that declares no clearance defaults to `Internal`, which the
+    // local Admin identity (`role_clearance(Admin) = TopSecret`) may write.
+    let saved = stdio_tool_text(
+        &state,
+        &workspace,
+        1,
+        "memory_save",
+        json!({"text": "stdio default clearance note", "namespace": "stdio-default"}),
+    )
+    .await
+    .expect("stdio memory_save of a default-clearance record");
+    assert!(saved.contains("Memory saved. id="), "{saved}");
+
+    let created = stdio_tool_text(
+        &state,
+        &workspace,
+        2,
+        "create_memory",
+        json!({"path": "stdio/default-note", "content": "stdio create default note"}),
+    )
+    .await
+    .expect("stdio create_memory of a default-clearance record");
+    assert!(!created.is_empty(), "{created}");
+
+    // Persistence: read the saved record back through the same transport.
+    let found = stdio_tool_text(
+        &state,
+        &workspace,
+        3,
+        "memory_search",
+        json!({"query": "stdio default clearance", "namespace": "stdio-default"}),
+    )
+    .await
+    .expect("stdio memory_search after the write");
+    assert!(found.contains("stdio default clearance note"), "{found}");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn auth_defaults_stdio_memory_write_top_secret_follows_admin_ceiling() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+
+    // The stdio identity is Admin, whose ceiling is `role_clearance(Admin) =
+    // TopSecret`: a TopSecret record is at the ceiling and must be accepted.
+    let saved = stdio_tool_text(
+        &state,
+        &workspace,
+        1,
+        "memory_save",
+        json!({
+            "text": "stdio top secret note",
+            "namespace": "stdio-top-secret",
+            "metadata": {"clearance": "top_secret"}
+        }),
+    )
+    .await
+    .expect("Admin may write at the TopSecret ceiling");
+    assert!(saved.contains("Memory saved. id="), "{saved}");
+}
+
 fn memory_write_claims(
     subject: &str,
     role: crate::security::auth::UserRole,
