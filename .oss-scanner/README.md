@@ -7,4 +7,5 @@ Enrolment files for Anthropic's OSS Scanner (https://github.com/anthropics/oss-s
   regenerate (`--check` detects drift).
 
 Verify like the scanner: clone, delete .dockerignore, `docker build -f .oss-scanner/Dockerfile .`,
-then `docker run --rm --network none <image> bash -lc 'cd /src && cargo build --offline'`.
+then `docker run --rm --network none <image> bash -lc 'cd /src && cargo build --offline && cargo test --offline --lib -- --test-threads=1'`
+(3662 lib tests pass offline single-threaded; a few are flaky when run in parallel).
