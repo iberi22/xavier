@@ -274,4 +274,56 @@ else
     echo "Test 11 skipped: scripts/atlas-review-adapter.sh (PR 2889) not in this worktree"
 fi
 
+
+# Test 12: Docs-only check with git diff
+cat << JSON > no_test_docs.json
+{
+  "task_id": "1",
+  "worktree": "$WORKTREE",
+  "claim_file": "$CLAIM_FILE",
+  "sha": "$HEAD_SHA",
+  "declared_files": ["README.md", "docs/index.md"],
+  "changed_files": ["README.md", "docs/index.md"],
+  "changed_lines": 10,
+  "scans": {"secret_scan": "pass"},
+  "commands": ["echo hi"],
+  "atlas": {"passed": true, "dod_complete": true, "evidence_count": 1},
+  "review": {"verdict": "approve", "subject_sha": "$HEAD_SHA", "backend": "modelA", "executor": "modelB"}
+}
+JSON
+
+# Make git diff return something that is docs-only
+export BASE_SHA=$(git rev-parse HEAD~0 2>/dev/null || git rev-parse HEAD)
+touch README.md
+git add README.md
+git commit -m "docs" >/dev/null 2>&1
+export HEAD_SHA=$(git rev-parse HEAD)
+export BASE_SHA=$(git rev-parse HEAD~1)
+jq --arg sha "$HEAD_SHA" '.sha = $sha | .review.subject_sha = $sha' no_test_docs.json > tmp.json && mv tmp.json no_test_docs.json
+
+if ! bash "$DONE_CHECK" no_test_docs.json --json > docs.out; then
+    echo "Test 12 failed: Docs-only without cargo test should pass"
+    cat docs.out
+    exit 1
+fi
+if ! grep -q '"done":true' docs.out; then
+    echo "Test 12 failed: Docs-only not done"
+    cat docs.out
+    exit 1
+fi
+
+# Test 13: Bundle claims docs-only but diff contains src/
+touch src_file.rs
+git add src_file.rs
+git commit -m "src" >/dev/null 2>&1
+export HEAD_SHA=$(git rev-parse HEAD)
+export BASE_SHA=$(git rev-parse HEAD~1)
+jq --arg sha "$HEAD_SHA" '.sha = $sha | .review.subject_sha = $sha' no_test_docs.json > tmp.json && mv tmp.json no_test_docs.json
+
+if bash "$DONE_CHECK" no_test_docs.json --json >/dev/null 2>&1; then
+    echo "Test 13 failed: Bundle with src/ changes without cargo test should fail"
+    exit 1
+fi
+
+
 echo "All tests passed"
