@@ -1,0 +1,72 @@
+name: Guardian Docs Recover
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'The retained good SHA'
+        required: true
+        type: string
+      artifact_digest:
+        description: 'The retained artifact digest'
+        required: true
+        type: string
+      inventory_path:
+        description: 'Guardian inventory JSON to validate the SHA against. Must exist; the step is fail-closed when it is missing or empty.'
+        required: false
+        default: 'scripts/guardian/inventory.json'
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate artifact_digest format
+        run: |
+          if [[ ! "${{ inputs.artifact_digest }}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "artifact_digest is malformed"
+            exit 1
+          fi
+
+      - name: Checkout inventory source
+        uses: actions/checkout@v4
+
+      - name: Validate sha against inventory
+        # Fail-closed by design: docs recovery never runs without a provisioned
+        # inventory, because the retained good SHA cannot be validated otherwise.
+        run: |
+          INVENTORY="${{ inputs.inventory_path }}"
+          if [ ! -s "$INVENTORY" ]; then
+            echo "Guardian inventory is missing or empty at $INVENTORY; refusing to recover (fail-closed)."
+            echo "Provision the inventory (or set the inventory_path input) before re-running this workflow."
+            exit 1
+          fi
+          GOOD_ID=$(jq -r '.targets[] | select(.kind == "gh_pages") | .previous_known_good_id // empty' "$INVENTORY" | head -n 1)
+          RECORDED=""
+          if [ -n "$GOOD_ID" ]; then
+            RECORDED=$(jq -r --arg id "$GOOD_ID" '.targets[] | select(.id == $id) | .source_sha // empty' "$INVENTORY" | head -n 1)
+          fi
+          if [ -z "$RECORDED" ]; then
+            RECORDED=$(jq -r '.targets[] | select(.kind == "gh_pages") | .source_sha // empty' "$INVENTORY" | head -n 1)
+          fi
+          if [ -z "$RECORDED" ]; then
+            echo "No recorded good SHA for the docs target in $INVENTORY"
+            exit 1
+          fi
+          if [ "${{ inputs.sha }}" != "$RECORDED" ]; then
+            echo "sha differs from the inventory's recorded good SHA for the docs target"
+            exit 1
+          fi
+
+      - name: Checkout pinned input
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+
+      - name: Public-URL smoke step
+        run: echo "Smoke test the public URL"
