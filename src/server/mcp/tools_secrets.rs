@@ -657,11 +657,16 @@ pub mod tests {
         );
     }
 
-    /// Number of leftover `xavier_exec_stdout_*` files sitting in the system
-    /// temp dir, used to prove cleanup on a path that never spawns a child (so
-    /// there is no child-printed path to assert against directly).
-    fn count_temp_stdout_files() -> usize {
-        std::fs::read_dir(std::env::temp_dir())
+    /// Number of leftover `xavier_exec_stdout_*` files sitting in `dir`, used
+    /// to prove cleanup on a path that never spawns a child (so there is no
+    /// child-printed path to assert against directly).
+    ///
+    /// The dir is a parameter, never `std::env::temp_dir()`: the exec path
+    /// resolves the system temp dir, which nextest processes share, so sibling
+    /// secret_exec tests momentarily own such files there and the before/after
+    /// delta raced (K1 nextest flake).
+    fn count_temp_stdout_files(dir: &std::path::Path) -> usize {
+        std::fs::read_dir(dir)
             .map(|entries| {
                 entries
                     .filter_map(|entry| entry.ok())
@@ -677,6 +682,38 @@ pub mod tests {
             .unwrap_or(0)
     }
 
+    /// A private temp dir plus a `TMPDIR` override pointing at it, so the exec
+    /// path under test and [`count_temp_stdout_files`] agree on a directory no
+    /// other test process can touch. Restores the previous `TMPDIR` on drop.
+    struct PrivateTempDir {
+        previous: Option<std::ffi::OsString>,
+        dir: tempfile::TempDir,
+    }
+
+    impl PrivateTempDir {
+        fn new() -> Self {
+            // Created BEFORE the override, so the override cannot decide where
+            // the sandbox itself lands.
+            let dir = tempfile::tempdir().expect("private temp dir for exec stdout files");
+            let previous = std::env::var_os("TMPDIR");
+            std::env::set_var("TMPDIR", dir.path());
+            Self { previous, dir }
+        }
+
+        fn path(&self) -> &std::path::Path {
+            self.dir.path()
+        }
+    }
+
+    impl Drop for PrivateTempDir {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(p) => std::env::set_var("TMPDIR", p),
+                None => std::env::remove_var("TMPDIR"),
+            }
+        }
+    }
+
     /// Exercises the genuine `Err(err) => { drop(stdout_guard); ... }` branch of
     /// `handle_secrets_tool`: a secret name absent from the vault fails inside
     /// `run_with_secret` before any child ever spawns, so this is not the
@@ -684,7 +721,8 @@ pub mod tests {
     #[tokio::test]
     async fn test_secret_exec_temp_file_removed_on_error() {
         let f = Fixture::new();
-        let before = count_temp_stdout_files();
+        let tmp = PrivateTempDir::new();
+        let before = count_temp_stdout_files(tmp.path());
         let args = json!({
             "secret_name": "MCP_SECRET_ABSENT_FROM_VAULT_FOR_ERROR_TEST",
             "command": "true",
@@ -704,7 +742,7 @@ pub mod tests {
         assert_eq!(structured["revoked"], true);
 
         assert_eq!(
-            count_temp_stdout_files(),
+            count_temp_stdout_files(tmp.path()),
             before,
             "temporary stdout file must be removed on the genuine Err(...) exit path"
         );

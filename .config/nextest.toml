@@ -11,3 +11,10 @@ retries = 1
 [[profile.ci.overrides]]
 filter = "test(schema_impl) or test(embedding_provider_mode)"
 test-threads = "1"
+
+# NO override needed for codegraph_sidecar / tools_secrets secret_exec / wal_streamer
+# stress tests: their cross-test races under process-per-test parallelism are fixed
+# in code (private CARGO_TARGET_DIR/HOME/PATH/cwd for the sidecar mock-download
+# test, XAVIER_INSIDE_TEST=1 for the lib-test binary, a private TMPDIR for the
+# exec temp-file count, busy_timeout=5000 on the stress writers). Do not
+# re-introduce per-test serialization here without re-measuring.
