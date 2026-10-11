@@ -62,6 +62,7 @@
 pub mod credentials;
 pub mod device_flow;
 pub mod rclone;
+pub mod scope;
 
 pub use credentials::{DriveCredentialStore, DriveCredentials, DriveScopes, TokenKind};
 pub use device_flow::{DeviceCode, DriveAuthClient, OAuthTransport, TokenResponse};
