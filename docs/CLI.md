@@ -220,7 +220,11 @@ Asks swal-billing for a checkout (`POST /v1/xavier/checkout`). The tenant is the
 one xavier-cloud reports for `PGHEART_TOKEN`, unless `--tenant` is given. While
 a plan is on the waitlist, coming soon or contact-only, swal-billing answers 409
 and the CLI explains that nothing was charged. If a plan is on sale, the CLI
-prints the payment link.
+prints the payment link. With a configured cloud token, a failed tenant lookup
+stops checkout unless `--tenant` was given explicitly. The CLI warns when the
+vendored catalog does not mark the plan as purchasable. Payment links and
+cloud URLs receiving a Bearer token must use HTTPS; HTTP is allowed only for
+loopback hosts. Checkout error response bodies are withheld.
 
 ### `xavier billing status [--json]` (default for `xavier billing`)
 
