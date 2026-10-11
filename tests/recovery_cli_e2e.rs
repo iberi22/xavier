@@ -50,7 +50,12 @@ impl Harness {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
+        self.run_with_input(args, None)
+    }
+
+    fn run_with_input(&self, args: &[&str], input: Option<&str>) -> Output {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_xavier"));
+        command
             .env_clear()
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
             .env("HOME", self.path("home"))
@@ -65,11 +70,38 @@ impl Harness {
                 format!("unix:path={}", self.path("nobus").display()),
             )
             .current_dir(self.tmp.path())
-            .stdin(Stdio::null())
+            .stdin(if input.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .args(["recovery"])
-            .args(args)
-            .output()
-            .unwrap();
+            .args(args);
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            unsafe {
+                command.pre_exec(|| {
+                    if libc::setsid() == -1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+        }
+        let mut child = command.spawn().unwrap();
+        if let Some(input) = input {
+            use std::io::Write;
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(input.as_bytes())
+                .unwrap();
+        }
+        let output = child.wait_with_output().unwrap();
         assert!(
             !text(&output).contains(&hex_encode(self.key)),
             "key leaked in CLI output"
@@ -224,7 +256,7 @@ fn mnemonic_cli_roundtrip_status_and_idempotent_restore() {
     h.readable(record, &content);
     let again = h.fail(&["unseal", "--mnemonic", "--words-file", arg(&words)]);
     assert!(text(&again).contains("target_exists"));
-    h.fail(&["restore", "--key-hex", &hex_encode(h.key)]);
+    h.fail(&["restore", "--key-file", arg(&h.key_path())]);
     assert_eq!(fs::read(h.key_path()).unwrap(), h.key_bytes);
 }
 
@@ -501,4 +533,61 @@ fn failed_seal_installation_leaves_no_words_file_or_sidecars() {
     );
     assert!(seal.is_dir());
     assert_eq!(fs::read_dir(h.path("recovery")).unwrap().count(), 1);
+}
+
+#[test]
+#[serial_test::serial]
+fn mnemonic_sealing_requires_private_delivery_without_tty() {
+    let h = Harness::new();
+    let output = h.fail(&["seal", "--mnemonic"]);
+    assert!(text(&output).contains("--words-out"));
+    assert_eq!(fs::read_dir(h.path("recovery")).unwrap().count(), 0);
+    assert!(!text(&output).contains("WRITE THESE"));
+}
+
+#[test]
+#[serial_test::serial]
+fn seal_refuses_missing_words_delivery_before_passphrase_prompt() {
+    let h = Harness::new();
+    let output = h.fail(&["seal", "--mnemonic", "--passphrase"]);
+    let out = text(&output);
+    assert!(out.contains("--words-out"), "{out}");
+    assert!(!out.contains("cannot read passphrase"), "{out}");
+    assert_eq!(fs::read_dir(h.path("recovery")).unwrap().count(), 0);
+}
+
+#[test]
+#[serial_test::serial]
+fn restore_reads_key_file_or_stdin_without_printing_key() {
+    let h = Harness::new();
+    let (record, content) = h.encrypted_record();
+    RecoveryStore::at(h.path("recovery"))
+        .write_kcv(&h.key)
+        .unwrap();
+    let input = h.path("input.key");
+    fs::write(&input, format!("{}\r\n", hex_encode(h.key))).unwrap();
+    fs::remove_file(h.key_path()).unwrap();
+    h.ok(&["restore", "--key-file", arg(&input)]);
+    h.readable(record.clone(), &content);
+    fs::remove_file(h.key_path()).unwrap();
+    let output = h.run_with_input(
+        &["restore", "--key-file", "-"],
+        Some(&format!("{}\n", hex_encode(h.key))),
+    );
+    assert!(output.status.success(), "{}", text(&output));
+    h.readable(record, &content);
+    h.fail(&["restore", "--key-hex", &hex_encode(h.key)]);
+}
+
+#[test]
+#[serial_test::serial]
+fn restore_requires_kcv_before_installing_key() {
+    let h = Harness::new();
+    let input = h.path("input.key");
+    fs::write(&input, &h.key_bytes).unwrap();
+    fs::remove_file(h.key_path()).unwrap();
+    let output = h.fail(&["restore", "--key-file", arg(&input)]);
+    assert!(text(&output).to_lowercase().contains("kcv"));
+    assert!(!h.key_path().exists());
+    assert_eq!(fs::read_dir(h.path("recovery")).unwrap().count(), 0);
 }

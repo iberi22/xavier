@@ -272,6 +272,45 @@ pub fn memory_large_body_routes() -> Router<CliState> {
         .route("/memory/export-pack", post(export_pack_handler))
 }
 
+/// Initialize the node master key (OS keyring first, then the encrypted
+/// fallback file `~/.xavier/master.key`, minting only when neither exists).
+///
+/// MUST run before anything creates a file under the node data dir: the
+/// keystore guard refuses to mint a key once that directory holds node
+/// material (`node/record.key`, or a `vec-store.sqlite3*` /
+/// `memory-store.sqlite3*` store), because a freshly minted key could not read
+/// whatever is already sealed there. That check is what makes a reinstall or a
+/// lost keyring fail closed instead of silently re-encrypting a live node, and
+/// it stays exactly as strict as before: only the *order* changes.
+pub(crate) fn init_node_master_key() -> Result<xavier::keystore::MasterKeyManager> {
+    xavier::keystore::MasterKeyManager::load_or_init()
+}
+
+/// Open the node's memory store, with the node master key already in place.
+///
+/// This is the daemon's store-opening ORDER as one function, because the order
+/// is load-bearing. `VecSqliteMemoryStore::new` creates
+/// `<data>/vec-store.sqlite3` while opening its pool, so initializing the key
+/// afterwards made a fresh install with no keyring available (headless CI, a
+/// scrubbed temp `HOME`) see the store file this very process had just created
+/// and conclude the node already existed: the key was never minted and boot
+/// died with "existing node data found in <data dir>" before `/health` ever
+/// answered.
+///
+/// Key first is what fixes it: an empty data dir mints normally, and a data dir
+/// that was already populated still fails closed (now before a single byte is
+/// written into it). Later callers — `AuthDb::new` through the secrets vault,
+/// and espacio's `MasterNodeKek` — re-enter `load_or_init` and adopt the key
+/// that is now on disk, so the key is initialized once and reused, never minted
+/// twice.
+pub(crate) async fn open_node_memory_store(
+    config: VecSqliteStoreConfig,
+) -> Result<(VecSqliteMemoryStore, xavier::keystore::MasterKeyManager)> {
+    let master_key = init_node_master_key()?;
+    let store = VecSqliteMemoryStore::new(config).await?;
+    Ok((store, master_key))
+}
+
 /// Refuse to serve HTTP without a configured token.
 fn ensure_http_token_configured(token: &str) -> Result<()> {
     if token.trim().is_empty() {
@@ -442,7 +481,15 @@ pub async fn start_http_server(
     // VecSqliteMemoryStore::new registers sqlite-vec (vec_f32) via sqlite3_auto_extension
     // *before* opening its hashed pool. Do not open the vec pool earlier or connections
     // will lack vec_f32 and memory/add will 500.
-    let mut store_inner = VecSqliteMemoryStore::new(config.clone()).await?;
+    //
+    // Opened through [`open_node_memory_store`], not directly, because the node
+    // master key has to exist before the store file it is going to sit next to;
+    // that function keeps the vec pool exactly where it is.
+    let (mut store_inner, node_master_key) = open_node_memory_store(config.clone()).await?;
+    info!(
+        kcv = %node_master_key.kcv_hex(),
+        "node master key ready before opening the memory store"
+    );
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
     store_inner.set_event_tx(event_tx);
     let store = Arc::new(store_inner);
@@ -2765,6 +2812,172 @@ mod ingestion_wiring_tests {
             guard,
             first_sync,
             release
+        );
+    }
+}
+
+#[cfg(test)]
+mod startup_order_tests {
+    //! The daemon's startup order, exercised as the real sequence instead of the
+    //! real daemon: a fresh install (temp `HOME` and empty data dir, so no OS
+    //! keyring entry is reachable) must mint the node master key and open the
+    //! memory store. Regression guard for the boot loop where the store file
+    //! was created before the key, so the keystore guard read this process's own
+    //! `vec-store.sqlite3` as prior node data and refused to mint.
+
+    use super::{init_node_master_key, open_node_memory_store};
+    use std::path::{Path, PathBuf};
+    use xavier::memory::sqlite_vec_store::VecSqliteMemoryStore;
+    use xavier::memory::sqlite_vec_store::VecSqliteStoreConfig;
+    use xavier::memory::store::MemoryStore;
+
+    /// Puts back every variable a test here overwrote, so the sandbox cannot
+    /// leak into the rest of the suite.
+    struct EnvGuard {
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl EnvGuard {
+        fn capture(vars: &[&'static str]) -> Self {
+            Self {
+                saved: vars
+                    .iter()
+                    .map(|var| (*var, std::env::var_os(var)))
+                    .collect(),
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (var, value) in &self.saved {
+                match value {
+                    Some(value) => std::env::set_var(var, value),
+                    None => std::env::remove_var(var),
+                }
+            }
+        }
+    }
+
+    /// A fresh install: a temp `HOME` (nothing of the developer's `~/.xavier`)
+    /// with the session bus pointed at a socket that does not exist, so the OS
+    /// keyring is unreachable exactly as in the scrubbed child environment the
+    /// espacio e2e spawns, over an empty data dir. Returns the data dir, the
+    /// store path and the env guard.
+    fn fresh_install(root: &Path) -> (PathBuf, PathBuf, EnvGuard) {
+        let guard = EnvGuard::capture(&[
+            "HOME",
+            "XAVIER_DATA_DIR",
+            "XAVIER_MEMORY_VEC_PATH",
+            "DBUS_SESSION_BUS_ADDRESS",
+        ]);
+        let data = root.join("data");
+        std::fs::create_dir_all(&data).expect("create the data dir");
+        let store_path = data.join("vec-store.sqlite3");
+        std::env::set_var("HOME", root);
+        std::env::set_var("XAVIER_DATA_DIR", &data);
+        std::env::set_var("XAVIER_MEMORY_VEC_PATH", &store_path);
+        // No keyring: an address with no socket behind it cannot be connected to.
+        std::env::set_var(
+            "DBUS_SESSION_BUS_ADDRESS",
+            "unix:path=/nonexistent/xavier-test-no-session-bus",
+        );
+        (data, store_path, guard)
+    }
+
+    /// Whether the OS keyring holds an entry for this node's master key. When it
+    /// does, `load_or_init` returns it before the guard is ever consulted, so
+    /// the ordering is unobservable and there is nothing to assert.
+    fn keyring_holds_the_master_key() -> bool {
+        matches!(
+            xavier::keystore::MasterKeyManager::load_existing(),
+            Ok(Some(_))
+        )
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_fresh_install_mints_the_key_before_the_store_file_exists() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (data, store_path, _guard) = fresh_install(tmp.path());
+        assert!(
+            std::fs::read_dir(&data)
+                .expect("read the data dir")
+                .next()
+                .is_none(),
+            "precondition: the data dir must start empty"
+        );
+        if keyring_holds_the_master_key() {
+            eprintln!(
+                "skipping: the OS keyring holds this node's master key, so the \
+                 keystore guard is bypassed by design and the order is unobservable"
+            );
+            return;
+        }
+
+        let (store, master_key) = open_node_memory_store(VecSqliteStoreConfig::from_env())
+            .await
+            .expect("a fresh install must mint the master key and open the store");
+
+        assert!(store_path.exists(), "the memory store file must exist");
+        let key_file = tmp.path().join(".xavier").join("master.key");
+        assert!(
+            key_file.exists(),
+            "a fresh install with no keyring must mint ~/.xavier/master.key"
+        );
+        // Every later key consumer (AuthDb's secrets vault, espacio's
+        // MasterNodeKek) re-enters load_or_init: it must adopt the key that is
+        // now on disk instead of minting a second one or tripping the guard.
+        let reloaded = init_node_master_key().expect("the minted key must reload");
+        assert_eq!(reloaded.kcv_hex(), master_key.kcv_hex());
+        assert!(
+            !store
+                .health()
+                .await
+                .expect("the store must answer")
+                .is_empty(),
+            "the store must be usable after the key is in place"
+        );
+    }
+
+    /// The bug itself, reproduced without the daemon: with the store opened
+    /// first, the guard must still refuse — a store that predates the key is
+    /// exactly the case fail-closed exists for, and this test is what keeps the
+    /// ordering above from being "fixed" by weakening that guard.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_store_file_that_predates_the_key_still_fails_closed() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (_data, store_path, _guard) = fresh_install(tmp.path());
+        if keyring_holds_the_master_key() {
+            eprintln!("skipping: the OS keyring bypasses the guard by design");
+            return;
+        }
+
+        VecSqliteMemoryStore::new(VecSqliteStoreConfig::from_env())
+            .await
+            .expect("the store opens on its own");
+        assert!(store_path.exists());
+        assert!(
+            std::fs::metadata(&store_path)
+                .expect("stat the store")
+                .len()
+                > 0,
+            "the store file is not empty, so an empty-file exemption could not hide this"
+        );
+
+        let err = match init_node_master_key() {
+            Ok(_) => panic!("the guard must refuse to mint a key next to an existing store"),
+            Err(e) => e,
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("existing node data found"),
+            "unexpected error: {msg}"
+        );
+        assert!(
+            !tmp.path().join(".xavier").join("master.key").exists(),
+            "no master key may be minted next to a store that already exists"
         );
     }
 }

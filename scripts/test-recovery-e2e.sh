@@ -118,6 +118,9 @@ echo "sandbox : $SANDBOX"
 step "0. capacidades del binario"
 if ! run help recovery --help; then ko "xavier recovery --help" "$LOG/help.log"; exit 1; fi
 run seal-help recovery seal --help
+run restore-help recovery restore --help
+HAS_KEY_FILE=0
+grep -q -- '--key-file' "$LOG/restore-help.log" && HAS_KEY_FILE=1
 HAS_WORDS_OUT=0; HAS_PASS_FILE=0
 grep -q -- '--words-out' "$LOG/seal-help.log" && HAS_WORDS_OUT=1
 grep -q -- '--passphrase-file' "$LOG/seal-help.log" && HAS_PASS_FILE=1
@@ -137,13 +140,17 @@ printf 'otra frase que no es 999\n' > "$W/pass-wrong.txt"
 printf 'corta\n' > "$W/pass-short.txt"
 
 step "1. seal (no interactivo)"
-if [ "$NEW" = 1 ]; then
+if [ "$HAS_WORDS_OUT" = 1 ]; then
   run seal-m recovery seal --mnemonic --words-out "$W/words.txt"
   check "seal --mnemonic --words-out sale con 0" '[ $RC -eq 0 ]' "$LOG/seal-m.log"
   check "archivo de palabras 0600" '[ "$(mode "$W/words.txt")" = 600 ]'
   check "archivo de palabras con 24 palabras" '[ "$(wc -w < "$W/words.txt")" -eq 24 ]'
-  run seal-p recovery seal --passphrase --passphrase-file "$W/pass-crlf.txt"
-  check "seal --passphrase --passphrase-file (CRLF) sale con 0" '[ $RC -eq 0 ]' "$LOG/seal-p.log"
+  if [ "$HAS_PASS_FILE" = 1 ]; then
+    run seal-p recovery seal --passphrase --passphrase-file "$W/pass-crlf.txt"
+    check "seal --passphrase --passphrase-file (CRLF) sale con 0" '[ $RC -eq 0 ]' "$LOG/seal-p.log"
+  else
+    skip "seal --passphrase-file (el binario no lo soporta)"
+  fi
   check "seal no creó master.key en HOME (no acuña ni escribe keyring)" '[ ! -e "$H/.xavier/master.key" ]'
 else
   run seal-m recovery seal --mnemonic
@@ -217,8 +224,13 @@ check "sin archivos .candidate sobrantes" 'no_candidates "$D" "$R"'
 step "7. restore idempotente: repetir no cambia nada"
 run unseal-again recovery unseal --mnemonic --words-file "$W/words.txt"
 check "segundo unseal rechazado (target_exists)" '[ $RC -ne 0 ] && grep -q target_exists "$LOG/unseal-again.log"' "$LOG/unseal-again.log"
-run restore-again recovery restore --key-hex "$KEY"
-check "restore --key-hex con clave presente rechazado" '[ $RC -ne 0 ]' "$LOG/restore-again.log"
+if [ "$HAS_KEY_FILE" = 1 ]; then
+  printf '%s\n' "$KEY" > "$W/restore.key"
+  run restore-again recovery restore --key-file "$W/restore.key"
+else
+  run restore-again recovery restore --key-hex "$KEY"
+fi
+check "restore con clave presente rechazado" '[ $RC -ne 0 ]' "$LOG/restore-again.log"
 check "record.key sin cambios" '[ "$(sha "$KEYFILE")" = "$KEY_SHA" ]'
 check "sin archivos .candidate sobrantes" 'no_candidates "$D" "$R"'
 
