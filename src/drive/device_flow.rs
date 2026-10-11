@@ -76,6 +76,11 @@ pub struct DeviceCode {
 impl DeviceCode {
     /// Generate a fresh state + PKCE S256 pair for a loopback redirect.
     pub fn generate(loopback_port: u16) -> Self {
+        Self::generate_with_scopes(loopback_port, DriveScopes::REQUESTED)
+    }
+
+    /// Generate a one-shot request with explicitly selected scopes.
+    pub fn generate_with_scopes(loopback_port: u16, scopes: &[&str]) -> Self {
         let mut verifier_bytes = [0u8; 32];
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut verifier_bytes);
         let mut state_bytes = [0u8; 16];
@@ -92,10 +97,7 @@ impl DeviceCode {
             // guidance require the IP literal so the redirect cannot be
             // hijacked via DNS.
             redirect_uri: format!("http://127.0.0.1:{loopback_port}"),
-            scopes: DriveScopes::REQUESTED
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            scopes: scopes.iter().map(|s| s.to_string()).collect(),
         }
     }
 
