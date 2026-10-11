@@ -118,6 +118,11 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
                 "properties": {}
             }),
         },
+        MCPTool {
+            name: "xavier_skill_usage".to_string(),
+            description: "Read skill lifecycle counts and harness acknowledgment coverage".to_string(),
+            input_schema: json!({"type": "object", "properties": {}}),
+        },
     ]
 }
 
@@ -439,7 +444,8 @@ pub async fn handle_context_tool(
             let registry = build_skill_registry(Path::new(&workspace.workspace_id)).await;
             let memory = workspace.workspace.memory.clone();
             let dispatcher = SkillDispatcher::new(registry, Some(memory))
-                .with_clearance(super::tools_memory::caller_clearance());
+                .with_clearance(super::tools_memory::caller_clearance())
+                .with_telemetry_db(crate::api::skills::skill_usage_db_path());
             match dispatcher
                 .dispatch(&SkillDispatchRequest {
                     task: task.to_string(),
@@ -475,6 +481,23 @@ pub async fn handle_context_tool(
                         "confidence": 0.0,
                         "error": format!("{e}"),
                     }))?,
+                    true,
+                ),
+            }
+        }
+        "xavier_skill_usage" => {
+            let summary = tokio::task::spawn_blocking(|| {
+                crate::api::skills::usage_summary_blocking(
+                    &crate::api::skills::skill_usage_db_path(),
+                )
+            })
+            .await?;
+            match summary {
+                Ok(summary) => {
+                    super::server::mcp_text_result(serde_json::to_string_pretty(&summary)?, false)
+                }
+                Err(error) => super::server::mcp_text_result(
+                    serde_json::to_string(&json!({"error": error}))?,
                     true,
                 ),
             }
@@ -575,6 +598,76 @@ mod tests {
             .as_str()
             .expect("mcp text content");
         serde_json::from_str(text).expect("tool payload is JSON")
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_usage_cli_rest_mcp_agree() {
+        let _home = IsolatedHome::acquire().await;
+        let temp = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("XAVIER_DATA_DIR");
+        struct Restore(Option<std::ffi::OsString>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => std::env::set_var("XAVIER_DATA_DIR", value),
+                    None => std::env::remove_var("XAVIER_DATA_DIR"),
+                }
+            }
+        }
+        let _restore = Restore(previous);
+        std::env::set_var("XAVIER_DATA_DIR", temp.path());
+        let db = crate::api::skills::skill_usage_db_path();
+        crate::api::skills::seed_usage_fixture(&db);
+        let cli = crate::api::skills::usage_summary_blocking(&db).unwrap();
+        let response = crate::api::skills::skill_usage().await;
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 65536)
+            .await
+            .unwrap();
+        let rest: Value = serde_json::from_slice(&body).unwrap();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let claims = crate::security::auth::Claims::new(
+            "fixture-reader".into(),
+            "fixture@example.invalid".into(),
+            crate::security::auth::UserRole::Readonly,
+            chrono::Duration::hours(1),
+        );
+        let listing = super::super::session::dispatch_mcp_value(
+            state.clone(),
+            workspace.clone(),
+            Some(&claims),
+            json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(listing.get("error").is_none());
+        let tool = listing["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "xavier_skill_usage")
+            .unwrap();
+        assert_eq!(
+            tool["inputSchema"],
+            json!({"type": "object", "properties": {}})
+        );
+        let response = super::super::session::dispatch_mcp_value(
+            state,
+            workspace,
+            Some(&claims),
+            json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "xavier_skill_usage", "arguments": {}}}),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(response.get("error").is_none(), "{response}");
+        let output = &response["result"];
+        assert_eq!(output["isError"], false);
+        assert_eq!(cli, rest);
+        assert_eq!(cli, mcp_payload(output));
     }
 
     /// Skill names of a listing payload, sorted.

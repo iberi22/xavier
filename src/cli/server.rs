@@ -79,6 +79,7 @@ pub(crate) fn skill_api_routes() -> Router<CliState> {
             post(xavier::api::skills::dispatch_skill),
         )
         .route("/api/skill/list", get(xavier::api::skills::list_skills))
+        .route("/api/skill/usage", get(xavier::api::skills::skill_usage))
         .route("/api/skill/audit", get(xavier::api::skills::audit_skills))
 }
 

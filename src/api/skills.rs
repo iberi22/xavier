@@ -78,7 +78,8 @@ pub async fn dispatch_skill(
     let workspace_root = std::path::PathBuf::from(&workspace.workspace_id);
     let registry = SkillRegistry::build_skill_registry(&workspace_root).await;
     let memory = workspace.workspace.memory.clone();
-    let dispatcher = SkillDispatcher::new(registry, Some(memory));
+    let dispatcher =
+        SkillDispatcher::new(registry, Some(memory)).with_telemetry_db(skill_usage_db_path());
 
     let dispatch_request = SkillDispatchRequest {
         task: request.task,
@@ -209,6 +210,79 @@ pub async fn list_skills(Extension(workspace): Extension<WorkspaceContext>) -> i
         "count": skills.len(),
         "skills": skills
     }))
+}
+
+/// Dedicated skill telemetry database, separate from the memory store.
+pub fn skill_usage_db_path() -> PathBuf {
+    Journal::default_dir().join("usage.sqlite3")
+}
+
+/// Read only aggregate lifecycle counts; dispatch alone is not proof of use.
+pub fn usage_summary_blocking(db: &Path) -> Result<serde_json::Value, String> {
+    use crate::context::skill_controller::telemetry::RetentionPolicy;
+    let retention_days = match RetentionPolicy::default_policy() {
+        RetentionPolicy::Expire { max_age_days } => Some(max_age_days),
+        RetentionPolicy::KeepForever => None,
+    };
+    let mut skills = Vec::new();
+    let conn =
+        match rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        {
+            Ok(conn) => Some(conn),
+            Err(_) if !db.try_exists().map_err(|e| e.to_string())? => None,
+            Err(error) => return Err(error.to_string()),
+        };
+    if let Some(conn) = conn {
+        let mut stmt = conn
+            .prepare(
+                "SELECT skill_name, SUM(stage = 'selected'), SUM(stage = 'delivered'),
+                    SUM(stage = 'invoked'), SUM(stage = 'completed')
+             FROM skill_usage_events GROUP BY skill_name ORDER BY skill_name",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                let invoked: u64 = row.get(3)?;
+                let completed: u64 = row.get(4)?;
+                Ok(serde_json::json!({
+                    "skill_name": row.get::<_, String>(0)?,
+                    "selected": row.get::<_, u64>(1)?,
+                    "delivered": row.get::<_, u64>(2)?,
+                    "invoked": invoked,
+                    "completed": completed,
+                    "invocation_coverage": if invoked > 0 || completed > 0 {
+                        "observed"
+                    } else {
+                        "unknown"
+                    },
+                }))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            skills.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+    Ok(serde_json::json!({
+        "retention_days": retention_days,
+        "skills": skills,
+        "note": "dispatch is not proof of use; unknown means no harness acknowledgment",
+    }))
+}
+
+pub async fn skill_usage() -> axum::response::Response {
+    match tokio::task::spawn_blocking(|| usage_summary_blocking(&skill_usage_db_path())).await {
+        Ok(Ok(summary)) => (axum::http::StatusCode::OK, Json(summary)).into_response(),
+        Ok(Err(error)) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": error})),
+        )
+            .into_response(),
+        Err(_) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "skill usage task failed"})),
+        )
+            .into_response(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -365,6 +439,52 @@ pub async fn audit_skills() -> axum::response::Response {
 }
 
 #[cfg(test)]
+pub(crate) fn seed_usage_fixture(db: &Path) {
+    use crate::context::skill_controller::telemetry::{SkillStage, TelemetryWriter, UsageEvent};
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let conn = rusqlite::Connection::open(db).unwrap();
+    let writer = TelemetryWriter::new(&conn);
+    writer.ensure_schema().unwrap();
+    for (id, skill, stage) in [
+        ("evt-z", "z-selected", SkillStage::Selected),
+        ("evt-a", "a-invoked", SkillStage::Selected),
+        ("evt-d", "a-invoked", SkillStage::Delivered),
+    ] {
+        writer
+            .record(
+                &UsageEvent::new(
+                    id,
+                    "fixture-workspace",
+                    "private-task-id",
+                    "fixture-harness",
+                    skill,
+                    stage,
+                ),
+                false,
+            )
+            .unwrap();
+    }
+    drop(conn);
+    for (id, stage) in [
+        ("evt-i", SkillStage::Invoked),
+        ("evt-c", SkillStage::Completed),
+    ] {
+        crate::context::skill_dispatcher::record_ack(
+            db,
+            &UsageEvent::new(
+                id,
+                "fixture-workspace",
+                "private-task-id",
+                "fixture-harness",
+                "a-invoked",
+                stage,
+            ),
+        )
+        .unwrap();
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::agents::RuntimeConfig;
@@ -381,6 +501,111 @@ mod tests {
     };
     use std::sync::Arc;
     use tower::ServiceExt;
+
+    #[test]
+    fn skill_usage_counts_coverage_and_redaction() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = temp.path().join("usage.sqlite3");
+        seed_usage_fixture(&db);
+        let before = std::fs::read(&db).unwrap();
+        let summary = usage_summary_blocking(&db).unwrap();
+        assert_eq!(summary["retention_days"], 30);
+        assert_eq!(
+            summary["skills"],
+            serde_json::json!([
+                {"skill_name": "a-invoked", "selected": 1, "delivered": 1,
+                 "invoked": 1, "completed": 1, "invocation_coverage": "observed"},
+                {"skill_name": "z-selected", "selected": 1, "delivered": 0,
+                 "invoked": 0, "completed": 0, "invocation_coverage": "unknown"},
+            ])
+        );
+        let output = summary.to_string();
+        for private in [
+            "private-task-id",
+            "fixture-workspace",
+            "fixture-harness",
+            "evt-",
+            "task text must not leak",
+            temp.path().to_str().unwrap(),
+        ] {
+            assert!(!output.contains(private), "leaked fixture field");
+        }
+        assert_eq!(std::fs::read(&db).unwrap(), before);
+    }
+
+    #[test]
+    fn skill_usage_invoked_ack_changes_unknown_to_observed() {
+        use crate::context::skill_controller::telemetry::{
+            SkillStage, TelemetryWriter, UsageEvent,
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let db = temp.path().join("usage.sqlite3");
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let writer = TelemetryWriter::new(&conn);
+        writer.ensure_schema().unwrap();
+        writer
+            .record(
+                &UsageEvent::new(
+                    "selected",
+                    "ws",
+                    "private-task",
+                    "harness",
+                    "demo",
+                    SkillStage::Selected,
+                ),
+                false,
+            )
+            .unwrap();
+        drop(conn);
+        let selected = usage_summary_blocking(&db).unwrap();
+        assert_eq!(selected["skills"][0]["invocation_coverage"], "unknown");
+        crate::context::skill_dispatcher::record_ack(
+            &db,
+            &UsageEvent::new(
+                "ack",
+                "ws",
+                "private-task",
+                "harness",
+                "demo",
+                SkillStage::Invoked,
+            ),
+        )
+        .unwrap();
+        let invoked = usage_summary_blocking(&db).unwrap();
+        assert_eq!(invoked["skills"][0]["invoked"], 1);
+        assert_eq!(invoked["skills"][0]["completed"], 0);
+        assert_eq!(invoked["skills"][0]["invocation_coverage"], "observed");
+    }
+
+    #[test]
+    fn skill_usage_missing_db_stays_absent() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = temp.path().join("missing/usage.sqlite3");
+        let summary = usage_summary_blocking(&db).unwrap();
+        assert_eq!(summary["skills"], serde_json::json!([]));
+        assert_eq!(summary["retention_days"], 30);
+        assert!(!db.exists());
+        assert!(!db.parent().unwrap().exists());
+        let db = temp.path().join("usage.sqlite3");
+        assert_eq!(usage_summary_blocking(&db).unwrap(), summary);
+        assert!(!db.exists());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_usage_invalid_db_returns_500() {
+        let _lock = crate::context::skill_registry::env_lock().lock().await;
+        let temp = tempfile::tempdir().unwrap();
+        let _env = EnvGuard::isolate(temp.path());
+        let db = skill_usage_db_path();
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        std::fs::write(&db, "invalid SQLite fixture").unwrap();
+        assert!(usage_summary_blocking(&db).is_err());
+        assert_eq!(
+            skill_usage().await.status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
 
     struct AuditFixture {
         temp: tempfile::TempDir,
