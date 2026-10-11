@@ -198,18 +198,18 @@ jobs:
           shared-key: ci-safe-test
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
       - name: Run Lib Tests
-        # Use 1 thread: tests in `src/memory/sqlite_vec_store/schema_impl.rs`
-        # that mutate global ENV (`XAVIER_EMBEDDING_PROVIDER_MODE`,
-        # `OPENAI_API_KEY`) cannot be parallelised across processes — the
-        # `#[serial]`/`ENV_LOCK` mutex lives per-process and does not
-        # coordinate cross-process. With 4 threads, 4 of those tests
-        # deterministically fail (`left:0 right:1`). As of 2026-10 the serial run
-        # takes ~556 s for 3,458 tests and is the CI critical path. Phase 1 of the
-        # build-speed plan moves this to cargo-nextest (process-per-test,
-        # isolate_test_process! sandbox); until then keep 1 thread.
+        # Use process-per-test isolation (cargo-nextest). Tests in `src/memory/sqlite_vec_store/schema_impl.rs`
+        # that mutate global ENV (`XAVIER_EMBEDDING_PROVIDER_MODE`, `OPENAI_API_KEY`)
+        # cannot be parallelised in-process. This is now handled by `[profile.ci.overrides]` in `.config/nextest.toml`.
+        # As of local measurement 2026-10-10, 3,494 lib tests run in 157 s with nextest vs 480 s serial.
         # See commit message for full rationale and reproduction log.
-        run: cargo test --package xavier --lib --features ci-safe -- --test-threads=1
+        run: cargo nextest run -p xavier --features ci-safe --lib --profile ci
 
   # Job: Test-write tripwire
   # `scripts/check-test-writes.sh` is the guard that keeps the suite from
