@@ -51,3 +51,26 @@ jobs:
         continue-on-error: true
         run: |
           bash scripts/ci-local.sh
+
+  task-evidence-check:
+    name: Task Evidence Check
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check Evidence Bundle
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          FILE=$(echo "$PR_BODY" | grep -oE '^\.gitcore/[A-Za-z0-9._/-]+\.json$' | head -1 || true)
+          if [ -n "$FILE" ]; then
+            if [ -f "$FILE" ]; then
+              bash scripts/done-check.sh "$FILE" || echo "::notice::SHADOW: script returned non-zero"
+            else
+              echo "::notice::SHADOW: would fail — Bundle file $FILE not found"
+            fi
+          else
+            echo "::notice::SHADOW: would fail — no bundle"
+          fi
