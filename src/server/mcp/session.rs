@@ -309,6 +309,10 @@ pub async fn mcp_post_handler(
     State(state): State<AppState>,
     Extension(workspace): Extension<WorkspaceContext>,
     claims: Option<Extension<crate::security::auth::Claims>>,
+    write_caller: Option<
+        Extension<crate::adapters::inbound::http::middleware::rate_limit::MemoryWriteCallerKey>,
+    >,
+    client: Option<Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -356,7 +360,28 @@ pub async fn mcp_post_handler(
 
     let claims_ref = claims.as_ref().map(|c| &c.0);
     let _ = manager.transition_state(session_id, McpSessionState::Streaming);
-    let result = dispatch_mcp_value(state, workspace, claims_ref, payload).await;
+    let write_key = write_caller.map(|Extension(key)| key.0).unwrap_or_else(|| {
+        crate::adapters::inbound::http::middleware::rate_limit::memory_write_caller_key(
+            None,
+            None,
+            claims_ref.map(|c| c.sub.as_str()),
+            client.map(|extension| extension.0 .0),
+        )
+    });
+    let caller = super::tools_memory::McpCaller {
+        space: None,
+        clearance: claims_ref
+            .map(|c| crate::security::clearance::role_clearance(c.role))
+            .unwrap_or(crate::security::clearance::ClearanceLevel::Unclassified),
+    };
+    let result = super::tools_memory::with_memory_write_caller_key(
+        write_key,
+        super::tools_memory::with_mcp_caller(
+            caller,
+            dispatch_mcp_value(state, workspace, claims_ref, payload),
+        ),
+    )
+    .await;
     let _ = manager.transition_state(session_id, McpSessionState::Connected);
 
     let active_session_id = if session_id == "default" {
@@ -783,12 +808,16 @@ fn error_response(id: Option<Value>, code: i32, message: String) -> Option<MCPRe
 
 fn classify_mcp_error(err: anyhow::Error) -> MCPError {
     let message = err.to_string();
-    let code = if message.contains("Security policy violation")
+    let code = if message.contains("Memory clearance exceeds caller clearance")
+        || message.contains("Security policy violation")
         || message.contains("blocked by security policy")
         || message.contains("Forbidden")
         || message.contains("Insufficient permissions")
     {
         XAVIER_ERROR_SECURITY
+    } else if message.contains("Memory write rate limit exceeded") {
+        // types.rs has no rate-limit code. The message stays; the code stays internal.
+        XAVIER_ERROR_INTERNAL
     } else if message.contains("Missing")
         || message.contains("must be")
         || message.contains("Invalid")

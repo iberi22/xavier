@@ -49,6 +49,7 @@ fn space_tool_gate(
 }
 
 /// Handler for POST /mcp/tools/call
+#[allow(clippy::too_many_arguments)]
 pub async fn mcp_tools_call_handler(
     State(state): State<CliState>,
     Extension(workspace): Extension<WorkspaceContext>,
@@ -56,6 +57,10 @@ pub async fn mcp_tools_call_handler(
     root: Option<Extension<xavier::adapters::inbound::http::routes::RootCredential>>,
     space: Option<Extension<xavier::espacio::tokens::SpaceContext>>,
     requester: Option<Extension<xavier::security::clearance::ClearanceLevel>>,
+    write_caller: Option<
+        Extension<xavier::adapters::inbound::http::middleware::rate_limit::MemoryWriteCallerKey>,
+    >,
+    client: Option<Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
     Json(payload): Json<McpToolCallPayload>,
 ) -> axum::response::Response {
     use xavier::server::mcp::server::{handle_tool_call, with_root_credential};
@@ -96,18 +101,29 @@ pub async fn mcp_tools_call_handler(
         space: space.as_ref().map(|e| e.0.clone()),
         clearance: requester
             .map(|Extension(level)| level)
-            .unwrap_or_else(xavier::security::clearance::default_clearance),
+            .unwrap_or(xavier::security::clearance::ClearanceLevel::Unclassified),
     };
-    match xavier::server::mcp::tools_memory::with_mcp_caller(
-        caller,
-        with_root_credential(
-            root.is_some() && space.is_none(),
-            handle_tool_call(
-                app_state,
-                workspace,
-                claims_ref,
-                &payload.name,
-                payload.arguments,
+    let write_key = write_caller.map(|Extension(key)| key.0).unwrap_or_else(|| {
+        xavier::adapters::inbound::http::middleware::rate_limit::memory_write_caller_key(
+            None,
+            None,
+            claims_ref.map(|c| c.sub.as_str()),
+            client.map(|extension| extension.0 .0),
+        )
+    });
+    match xavier::server::mcp::tools_memory::with_memory_write_caller_key(
+        write_key,
+        xavier::server::mcp::tools_memory::with_mcp_caller(
+            caller,
+            with_root_credential(
+                root.is_some() && space.is_none(),
+                handle_tool_call(
+                    app_state,
+                    workspace,
+                    claims_ref,
+                    &payload.name,
+                    payload.arguments,
+                ),
             ),
         ),
     )
@@ -116,10 +132,14 @@ pub async fn mcp_tools_call_handler(
         Ok(result) => (StatusCode::OK, Json(result)).into_response(),
         Err(e) => {
             let message = e.to_string();
-            let code = if message.contains("Security policy violation")
+            let code = if message.contains("Memory clearance exceeds caller clearance")
+                || message.contains("Security policy violation")
                 || message.contains("blocked by security policy")
             {
                 xavier::server::mcp::types::XAVIER_ERROR_SECURITY
+            } else if message.contains("Memory write rate limit exceeded") {
+                // types.rs has no rate-limit code. The message stays; the code stays internal.
+                xavier::server::mcp::types::XAVIER_ERROR_INTERNAL
             } else if message.contains("Missing")
                 || message.contains("must be")
                 || message.contains("Invalid")

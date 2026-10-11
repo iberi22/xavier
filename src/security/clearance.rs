@@ -10,6 +10,18 @@ pub fn can_access(requester: ClearanceLevel, doc: ClearanceLevel) -> bool {
     requester >= doc
 }
 
+/// Validate the effective clearance of a new record against the caller ceiling.
+pub fn check_write_clearance(
+    effective: ClearanceLevel,
+    ceiling: ClearanceLevel,
+) -> Result<(), &'static str> {
+    if effective > ceiling {
+        Err("Memory clearance exceeds caller clearance")
+    } else {
+        Ok(())
+    }
+}
+
 /// Returns default clearance level assigned to a given user role.
 pub fn role_clearance(role: UserRole) -> ClearanceLevel {
     match role {
@@ -200,6 +212,18 @@ impl ClearanceEnforcer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_write_clearance_respects_ceiling() {
+        for ceiling in ALL_LEVELS {
+            for effective in ALL_LEVELS {
+                assert_eq!(
+                    check_write_clearance(effective, ceiling).is_ok(),
+                    effective <= ceiling
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_clearance_ordering() {

@@ -24,6 +24,7 @@ pub struct McpCaller {
 
 tokio::task_local! {
     static MCP_CALLER: McpCaller;
+    static MEMORY_WRITE_CALLER_KEY: String;
 }
 
 /// Run `fut` with `caller` as the identity of the MCP call. Without it,
@@ -32,16 +33,58 @@ pub async fn with_mcp_caller<F: std::future::Future>(caller: McpCaller, fut: F) 
     MCP_CALLER.scope(caller, fut).await
 }
 
+pub async fn with_memory_write_caller_key<F: std::future::Future>(
+    key: String,
+    fut: F,
+) -> F::Output {
+    MEMORY_WRITE_CALLER_KEY.scope(key, fut).await
+}
+
+pub(crate) fn memory_write_caller_key(claims: Option<&crate::security::auth::Claims>) -> String {
+    MEMORY_WRITE_CALLER_KEY
+        .try_with(Clone::clone)
+        .unwrap_or_else(|_| {
+            claims
+                .map(|c| format!("subject:{}", c.sub))
+                .unwrap_or_else(|| "ip:unknown".to_string())
+        })
+}
+
+fn validate_memory_write_clearance(
+    workspace: &WorkspaceContext,
+    path: &str,
+    metadata: &Value,
+    typed: Option<&TypedMemoryPayload>,
+) -> anyhow::Result<()> {
+    let effective =
+        crate::memory::schema::resolve_metadata(path, metadata, &workspace.workspace_id, typed)?
+            .clearance;
+    crate::security::clearance::check_write_clearance(effective, caller_clearance())
+        .map_err(anyhow::Error::msg)
+}
+
+fn typed_write_clearance(
+    arguments: &Value,
+) -> anyhow::Result<Option<crate::security::clearance::ClearanceLevel>> {
+    arguments
+        .get("clearance")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(Into::into)
+}
+
 fn mcp_caller() -> Option<McpCaller> {
     MCP_CALLER.try_with(|c| c.clone()).ok()
 }
 
-/// Clearance ceiling of the current MCP call. Without a caller identity it
-/// falls back to the configured default, the same ceiling REST reads apply.
+/// Clearance ceiling of the current MCP call. Without a caller identity the
+/// ceiling is the lowest level: a request whose identity could not be
+/// established must not inherit the configurable default.
 pub fn caller_clearance() -> crate::security::clearance::ClearanceLevel {
     mcp_caller()
         .map(|c| c.clearance)
-        .unwrap_or_else(crate::security::clearance::default_clearance)
+        .unwrap_or(crate::security::clearance::ClearanceLevel::Unclassified)
 }
 
 const MEMORYFRAGMENT_MAX_LIMIT: usize = 100;
@@ -847,11 +890,14 @@ async fn handle_create_memory(
 
     let typed_payload = Some(TypedMemoryPayload {
         kind,
+        clearance: typed_write_clearance(arguments)?,
         evidence_kind,
         namespace,
         provenance,
         ..Default::default()
     });
+
+    validate_memory_write_clearance(workspace, path, &metadata, typed_payload.as_ref())?;
 
     // Ingest immediately with an empty vector (fast path response under 500ms)
     let doc_id = workspace
@@ -932,6 +978,9 @@ async fn handle_save_fragment(
     let unique_id = Ulid::new().to_string();
     let path = format!("gestalt/{}/{}/{}", agent_id, context, unique_id);
     let mut metadata = serde_json::json!({ "gestalt_context": context, "importance": importance });
+    if let Some(clearance) = arguments.get("metadata").and_then(|m| m.get("clearance")) {
+        metadata["clearance"] = clearance.clone();
+    }
     if !tags.is_empty() {
         metadata["tags"] = serde_json::json!(tags);
     }
@@ -947,6 +996,7 @@ async fn handle_save_fragment(
 
     let typed = Some(TypedMemoryPayload {
         kind: Some(MemoryKind::Document),
+        clearance: typed_write_clearance(arguments)?,
         evidence_kind: Some(EvidenceKind::Observation),
         namespace: Some(MemoryNamespace {
             agent_id: Some(agent_id.to_string()),
@@ -962,6 +1012,7 @@ async fn handle_save_fragment(
         ..Default::default()
     });
 
+    validate_memory_write_clearance(workspace, &path, &metadata, typed.as_ref())?;
     workspace
         .workspace
         .ingest_typed(path, content, metadata, typed, None, false)
@@ -999,6 +1050,7 @@ async fn handle_memory_save(
 
     let typed = Some(TypedMemoryPayload {
         kind: Some(MemoryKind::Document),
+        clearance: typed_write_clearance(arguments)?,
         evidence_kind: Some(EvidenceKind::Observation),
         namespace: namespace.clone(),
         provenance: Some(MemoryProvenance {
@@ -1009,6 +1061,7 @@ async fn handle_memory_save(
         ..Default::default()
     });
 
+    validate_memory_write_clearance(workspace, &path, &metadata, typed.as_ref())?;
     let doc_id = workspace
         .workspace
         .ingest_typed(path, text.to_string(), metadata, typed, None, false)
