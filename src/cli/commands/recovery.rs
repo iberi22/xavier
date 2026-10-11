@@ -77,6 +77,7 @@ pub async fn handle_recovery_command(args: RecoveryArgs) -> Result<()> {
             out,
         } => unseal(mnemonic, passphrase, words_file, passphrase_file, out),
         RecoveryCommand::Drive => drive_status(),
+        RecoveryCommand::Disconnect => drive_disconnect(),
     }
 }
 
@@ -412,6 +413,18 @@ fn restore(key_hex: &str, kcv_hex: Option<&str>) -> Result<()> {
             bail!("restore refused ({reason}); the existing key was left untouched")
         }
     }
+}
+
+/// Disconnect Google Drive by deleting the stored credentials.
+fn drive_disconnect() -> Result<()> {
+    let store = drive::DriveCredentialStore::from_env_or_default();
+    if store.exists() {
+        store.remove()?;
+        println!("removed");
+    } else {
+        println!("nothing to remove");
+    }
+    Ok(())
 }
 
 /// Read-only Drive connection status. Never prints a token.
