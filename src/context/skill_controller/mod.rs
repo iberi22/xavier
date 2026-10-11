@@ -1,4 +1,5 @@
 pub mod backup;
+pub mod composer;
 pub mod manifest;
 pub mod plan;
 pub mod planner;
