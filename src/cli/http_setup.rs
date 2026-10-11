@@ -1252,6 +1252,28 @@ name = "demo"
         assert_eq!(before, after, "audit must leave fixture files unchanged");
     }
 
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_usage_authenticated_route_is_read_only() {
+        xavier::isolate_test_process!();
+        let (state, _tmp) = test_state().await;
+        let fixture = tempfile::tempdir().unwrap();
+        let _data = EnvRestore::set("XAVIER_DATA_DIR", fixture.path().to_str().unwrap());
+        let _token = TokenGuard::set(ROOT);
+        let app = crate::cli::server::skill_api_routes()
+            .layer(from_fn_with_state(state.clone(), auth_middleware))
+            .with_state(state);
+        let status = call(&app, "GET", "/api/skill/usage", "").await;
+        assert!(matches!(
+            status,
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+        ));
+        let (status, body) = send(&app, "GET", "/api/skill/usage", ROOT, Hdr::Bearer, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["skills"], serde_json::json!([]));
+        assert!(!xavier::api::skills::skill_usage_db_path().exists());
+    }
+
     struct EnvRestore {
         key: &'static str,
         prev: Option<std::ffi::OsString>,
