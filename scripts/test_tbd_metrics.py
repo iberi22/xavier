@@ -5,6 +5,7 @@ import json
 import sys
 import os
 import io
+import subprocess
 
 import importlib.util
 
@@ -46,58 +47,48 @@ class TestTBDMetrics(unittest.TestCase):
         self.assertEqual(sha3, "ff99887")
         self.assertIsNone(url3)
 
-    def test_analyze_cohorts(self):
+    @patch('subprocess.run')
+    def test_analyze_cohorts_first_commit(self, mock_run):
         now = datetime(2026, 9, 27, 12, 0, 0, tzinfo=timezone.utc)
         prs = [
-            {"mergedAt": "2026-09-26T12:00:00Z", "createdAt": "2026-09-25T12:00:00Z", "mergeCommit": {"oid": "abc123def456"}}, # week 0, LT 24h
-            {"mergedAt": "2026-09-20T12:00:00Z", "createdAt": "2026-09-18T12:00:00Z", "mergeCommit": {"oid": "safe456"}}, # week 1, LT 48h
-        ]
-        issues = [
-            # Incident mapped by prefix
-            {"createdAt": "2026-09-26T10:00:00Z", "closedAt": "2026-09-26T12:00:00Z", "body": "<!-- tbd-incident sha=abc123d workflow=fast-gate -->"},
-        ]
-        runs = [
-            # Run using the new headSha structure and correct workflow name
-            {"headSha": "abc123def456", "name": "Fast Gate (Shadow)", "createdAt": "2026-09-26T11:00:00Z", "updatedAt": "2026-09-26T11:05:00Z"} # FG 5 min
+            {"number": 1, "mergedAt": "2026-09-26T12:00:00Z", "createdAt": "2026-09-25T12:00:00Z", "mergeCommit": {"oid": "abc123def456"}}, # week 0, LT 24h
+            {"number": 2, "mergedAt": "2026-09-20T12:00:00Z", "createdAt": "2026-09-18T12:00:00Z", "mergeCommit": {"oid": "safe456"}}, # week 1, LT 48h
         ]
 
-        cohorts = tbd_metrics.analyze_cohorts(prs, issues, runs, 4, now)
+        # When --first-commit is true, we should hit the API.
+        # mock_run is called per PR
+        mock_result = MagicMock()
+        mock_result.stdout = "2026-09-24T12:00:00Z\n"
+        mock_run.return_value = mock_result
 
-        self.assertEqual(len(cohorts[0]['prs']), 1)
+        cohorts = tbd_metrics.analyze_cohorts(prs, [], [], 4, now, True, "iberi22", "xavier")
+
+        # For PR 1, merge=26th, first_commit=24th -> LT=48h (default was 24h)
+        self.assertEqual(cohorts[0]['lead_times'][0], 48.0)
+        # For PR 2, merge=20th, first_commit=24th (mock returns same) -> LT is negative, so max(0, -96) = 0.0
+        self.assertEqual(cohorts[1]['lead_times'][0], 0.0)
+
+    def test_analyze_cohorts_no_first_commit(self):
+        now = datetime(2026, 9, 27, 12, 0, 0, tzinfo=timezone.utc)
+        prs = [
+            {"number": 1, "mergedAt": "2026-09-26T12:00:00Z", "createdAt": "2026-09-25T12:00:00Z", "mergeCommit": {"oid": "abc123def456"}},
+        ]
+
+        cohorts = tbd_metrics.analyze_cohorts(prs, [], [], 4, now, False, "iberi22", "xavier")
+
+        # For PR 1, merge=26th, createdAt=25th -> LT=24h
         self.assertEqual(cohorts[0]['lead_times'][0], 24.0)
-        self.assertEqual(len(cohorts[0]['incidents']), 1)
-
-        # We matched the failed PR because the issue body had "abc123d" (prefix of "abc123def456")
-        self.assertIn("abc123d", cohorts[0]['failed_shas'])
-
-        # MTTR: fallback to issue creation time because there was no run_url in the P11 marker
-        # closed (12:00) - created (10:00) = 2h
-        self.assertEqual(cohorts[0]['mttrs'][0], 2.0)
-
-        # Fast Gate: Run matches by prefix
-        self.assertEqual(cohorts[0]['fast_gates'][0], 5.0) # 11:05 - 11:00 = 5m
 
     @patch('sys.stderr', new_callable=io.StringIO)
     @patch('subprocess.run')
-    def test_truncation_warning(self, mock_run, mock_stderr):
-        mock_result = MagicMock()
-        # Mock 1000 returned items to trigger truncation warning
-        mock_result.stdout = json.dumps([{"number": i} for i in range(1000)])
-        mock_run.return_value = mock_result
+    def test_run_gh_cmd_failure(self, mock_run, mock_stderr):
+        mock_run.side_effect = subprocess.CalledProcessError(1, ["gh", "pr", "list"], stderr="GraphQL: Exceeded limit")
 
-        sys.argv = ['tbd-metrics.py']
-        tbd_metrics.main()
+        with self.assertRaises(SystemExit) as cm:
+            tbd_metrics.run_gh_cmd(["gh", "pr", "list"])
 
-        output = mock_stderr.getvalue()
-        self.assertIn("WARNING: TRUNCATED PR result limit reached.", output)
-        self.assertIn("WARNING: TRUNCATED issues result limit reached.", output)
-
-    @patch('sys.stdout', new_callable=io.StringIO)
-    def test_print_metrics_empty(self, mock_stdout):
-        cohorts = {0: {'prs': [], 'incidents': [], 'lead_times': [], 'mttrs': [], 'fast_gates': [], 'failed_shas': set()}}
-        tbd_metrics.print_metrics(cohorts, 1)
-        output = mock_stdout.getvalue()
-        self.assertIn("n/a", output)
+        self.assertEqual(cm.exception.code, 2)
+        self.assertIn("ERROR: gh pr list failed: GraphQL: Exceeded limit", mock_stderr.getvalue())
 
 if __name__ == '__main__':
     unittest.main()

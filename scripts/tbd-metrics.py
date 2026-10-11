@@ -7,8 +7,16 @@ import sys
 from datetime import datetime, timezone, timedelta
 
 def run_gh_cmd(cmd):
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return json.loads(result.stdout)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        # return empty string if no output to avoid JSON parse error, or parse JSON
+        if result.stdout.strip() == "":
+            return None
+        return json.loads(result.stdout)
+    except subprocess.CalledProcessError as e:
+        stderr_first_line = e.stderr.strip().split('\n')[0] if e.stderr else "Unknown error"
+        print(f"ERROR: {' '.join(cmd)} failed: {stderr_first_line}", file=sys.stderr)
+        sys.exit(2)
 
 def parse_time(ts):
     if not ts:
@@ -49,18 +57,18 @@ def extract_incident_data(issue_body):
     run_url = run_url_match.group(1) if run_url_match else None
     return sha, run_url
 
-def extract_pr_first_commit(pr_commits):
-    if not pr_commits:
-        return None
-    # Assuming pr_commits is ordered, first commit is at index 0.
-    if isinstance(pr_commits, list) and len(pr_commits) > 0:
-        commit_date = pr_commits[0].get('commit', {}).get('author', {}).get('date')
-        if not commit_date:
-            commit_date = pr_commits[0].get('authoredDate') # gh pr view json output
-        return parse_time(commit_date)
+def fetch_first_commit_date(repo_owner, repo_name, pr_number):
+    cmd = ["gh", "api", f"repos/{repo_owner}/{repo_name}/pulls/{pr_number}/commits?per_page=1", "--jq", ".[0].commit.author.date"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        date_str = result.stdout.strip()
+        if date_str:
+            return parse_time(date_str)
+    except Exception:
+        pass
     return None
 
-def analyze_cohorts(prs, issues, runs_data, weeks, now):
+def analyze_cohorts(prs, issues, runs_data, weeks, now, use_first_commit, repo_owner, repo_name):
     cohorts = {i: {'prs': [], 'incidents': [], 'lead_times': [], 'mttrs': [], 'fast_gates': [], 'failed_shas': set()} for i in range(weeks)}
 
     # Map run data for fast lookup by URL or SHA
@@ -76,8 +84,6 @@ def analyze_cohorts(prs, issues, runs_data, weeks, now):
             sha = run.get('headSha') or run.get('head_sha')
             name = run.get('name', '')
 
-            # Workflow name logic per feedback: match Exact 'Fast Gate (Shadow)'
-            # Or assume the gh query handled it, but let's be safe.
             if sha and name == 'Fast Gate (Shadow)':
                 if sha not in fast_gate_runs_by_sha:
                     fast_gate_runs_by_sha[sha] = []
@@ -111,17 +117,6 @@ def analyze_cohorts(prs, issues, runs_data, weeks, now):
                 mttr = (closed_at - start_time).total_seconds() / 3600.0
                 cohorts[week]['mttrs'].append(max(0, mttr))
 
-    # Helper to check if a commit sha matches any failed sha
-    def is_failed_sha(commit_sha, failed_shas):
-        if not commit_sha:
-            return False
-        commit_sha = commit_sha.lower()
-        for f_sha in failed_shas:
-            # Match if it's an exact match or if f_sha is a 7+ char prefix
-            if len(f_sha) >= 7 and commit_sha.startswith(f_sha):
-                return True
-        return False
-
     # Process PRs for lead time, CFR, and fast gate
     for pr in prs:
         merged_at = parse_time(pr.get('mergedAt'))
@@ -131,11 +126,14 @@ def analyze_cohorts(prs, issues, runs_data, weeks, now):
         if 0 <= week < weeks:
             cohorts[week]['prs'].append(pr)
 
-            # Lead Time: first commit to merge
-            first_commit_time = extract_pr_first_commit(pr.get('commits'))
-            # Fallback to PR created at if commits aren't available
+            # Lead Time: defaults to PR createdAt, optionally use first commit
             created_at = parse_time(pr.get('createdAt'))
-            start_time = first_commit_time if first_commit_time else created_at
+            start_time = created_at
+
+            if use_first_commit and repo_owner and repo_name and 'number' in pr:
+                first_commit_time = fetch_first_commit_date(repo_owner, repo_name, pr['number'])
+                if first_commit_time:
+                    start_time = first_commit_time
 
             if start_time:
                 lead_time = (merged_at - start_time).total_seconds() / 3600.0
@@ -203,9 +201,18 @@ def print_metrics(cohorts, weeks):
 
         print(f"{w:<6} | {n_prs:<4} | {n_inc:<9} | {cfr_str:<6} | {format_metric(lt_p50):<9} | {format_metric(lt_p90):<9} | {format_metric(mttr_p50):<11} | {format_metric(mttr_p90):<11} | {format_metric(fg_p50):<9} | {format_metric(fg_p90):<9}")
 
+def get_repo_info():
+    try:
+        result = subprocess.run(["gh", "repo", "view", "--json", "owner,name"], capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        return data.get('owner', {}).get('login'), data.get('name')
+    except Exception:
+        return None, None
+
 def main():
-    parser = argparse.ArgumentParser(description="Report weekly GitHub flow metrics")
+    parser = argparse.ArgumentParser(description="Report weekly GitHub flow metrics. Lead time defaults to PR createdAt to mergedAt.")
     parser.add_argument("--weeks", type=int, default=4, help="Number of weeks to report")
+    parser.add_argument("--first-commit", action="store_true", help="Fetch first commit date for lead time instead of using PR created at")
     parser.add_argument("--mock-prs", type=str, help="Mock PR JSON file")
     parser.add_argument("--mock-issues", type=str, help="Mock Issues JSON file")
     parser.add_argument("--mock-runs", type=str, help="Mock Workflow Runs JSON file")
@@ -219,22 +226,29 @@ def main():
 
     date_filter = (now - timedelta(days=args.weeks * 7)).strftime("%Y-%m-%d")
 
+    repo_owner, repo_name = None, None
+    if args.first_commit and not args.mock_prs:
+        repo_owner, repo_name = get_repo_info()
+
     if args.mock_prs:
         with open(args.mock_prs) as f:
             prs = json.load(f)
     else:
-        prs = run_gh_cmd(["gh", "pr", "list", "--state", "merged", "--search", f"merged:>={date_filter}", "--limit", "1000", "--json", "number,mergedAt,createdAt,labels,body,commits,mergeCommit,headRefOid"])
-        if len(prs) >= 1000:
+        prs = run_gh_cmd(["gh", "pr", "list", "--state", "merged", "--search", f"merged:>={date_filter}", "--limit", "1000", "--json", "number,mergedAt,createdAt,labels,mergeCommit,headRefOid"])
+        if prs and len(prs) >= 1000:
             print("WARNING: TRUNCATED PR result limit reached.", file=sys.stderr)
+        elif prs is None:
+            prs = []
 
     if args.mock_issues:
         with open(args.mock_issues) as f:
             issues = json.load(f)
     else:
-        # For issues we might just stick with limit 1000 without date filter on createdAt, but we'll add date filter to be safe.
         issues = run_gh_cmd(["gh", "issue", "list", "--label", "tbd-incident", "--state", "all", "--search", f"created:>={date_filter}", "--limit", "1000", "--json", "number,createdAt,closedAt,state,body"])
-        if len(issues) >= 1000:
+        if issues and len(issues) >= 1000:
             print("WARNING: TRUNCATED issues result limit reached.", file=sys.stderr)
+        elif issues is None:
+            issues = []
 
     if args.mock_runs:
         with open(args.mock_runs) as f:
@@ -243,12 +257,15 @@ def main():
         try:
             # Only querying runs after the date filter and specifically for the fast-gate workflow
             runs_data = run_gh_cmd(["gh", "run", "list", "--workflow", "fast-gate.yml", "--created", f">={date_filter}", "--limit", "1000", "--json", "databaseId,name,headSha,url,createdAt,updatedAt,conclusion"])
-            if len(runs_data) >= 1000:
+            if runs_data and len(runs_data) >= 1000:
                 print("WARNING: TRUNCATED workflow runs result limit reached.", file=sys.stderr)
-        except Exception:
+            elif runs_data is None:
+                runs_data = []
+        except Exception: # Normally run_gh_cmd will sys.exit on error, but we want to fail fast.
             runs_data = []
+            pass
 
-    cohorts = analyze_cohorts(prs, issues, runs_data, args.weeks, now)
+    cohorts = analyze_cohorts(prs, issues, runs_data, args.weeks, now, args.first_commit, repo_owner, repo_name)
     print_metrics(cohorts, args.weeks)
 
 if __name__ == "__main__":
