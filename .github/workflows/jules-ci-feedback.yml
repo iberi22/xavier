@@ -14,7 +14,7 @@ permissions:
 jobs:
   notify-jules-on-failure:
     name: Trigger Jules Auto-Fix on CI Failure
-    if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.head_branch == 'main' }}
+    if: ${{ github.event.workflow_run.conclusion == 'failure' || (github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -32,9 +32,11 @@ jobs:
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
         run: |
           echo "Inspecting run $RUN_ID for branch $HEAD_BRANCH..."
-          if [ "$HEAD_BRANCH" = "main" ]; then
+          if [ "$HEAD_BRANCH" = "main" ] && [ "$RUN_EVENT" = "push" ] && [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
             bash scripts/main-incident-gh.sh
             exit 0
           fi

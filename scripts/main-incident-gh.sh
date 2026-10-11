@@ -15,10 +15,27 @@ TITLE="main red: $WORKFLOW_NAME @ $SHORT_SHA"
 MARKER="<!-- tbd-incident sha=$HEAD_SHA workflow=$WORKFLOW_NAME -->"
 
 if [ "$CONCLUSION" = "failure" ]; then
-  # Dedupe on the full SHA embedded in the body marker (search body)
-  EXISTING_ISSUE=$(gh issue list --label "tbd-incident" --state open --search "in:body \"$MARKER\"" --json number -q '.[0].number')
+  # Dedupe by listing issues and selecting locally with jq
+  OPEN_ISSUES=$(gh issue list --label "tbd-incident" --state open --limit 200 --json number,body)
+  EXISTING_ISSUE=""
 
-  if [ -n "$EXISTING_ISSUE" ] && [ "$EXISTING_ISSUE" != "null" ]; then
+  if [ "$OPEN_ISSUES" != "[]" ] && [ -n "$OPEN_ISSUES" ]; then
+    NUMBERS=$(echo "$OPEN_ISSUES" | jq -r '.[].number')
+    for NUMBER in $NUMBERS; do
+      BODY=$(echo "$OPEN_ISSUES" | jq -r ".[] | select(.number == $NUMBER) | .body")
+      if [[ "$BODY" =~ \<!--\ tbd-incident\ sha=([a-zA-Z0-9]+)\ workflow=(.+)\ --\> ]]; then
+        ISSUE_SHA="${BASH_REMATCH[1]}"
+        ISSUE_WF="${BASH_REMATCH[2]}"
+
+        if [[ "$ISSUE_SHA" == "$HEAD_SHA" ]] && [[ "$ISSUE_WF" == "$WORKFLOW_NAME" ]]; then
+          EXISTING_ISSUE="$NUMBER"
+          break
+        fi
+      fi
+    done
+  fi
+
+  if [ -n "$EXISTING_ISSUE" ]; then
     echo "Found existing incident #$EXISTING_ISSUE. Adding comment..."
     gh issue comment "$EXISTING_ISSUE" --body "Repeated failure on main in run $RUN_ID. See: $RUN_URL"
   else
@@ -35,7 +52,7 @@ $MARKER"
     gh issue create --title "$TITLE" --body "$BODY" --label "tbd-incident"
   fi
 elif [ "$CONCLUSION" = "success" ]; then
-  OPEN_ISSUES=$(gh issue list --label "tbd-incident" --state open --json number,body)
+  OPEN_ISSUES=$(gh issue list --label "tbd-incident" --state open --limit 200 --json number,body)
 
   if [ "$OPEN_ISSUES" != "[]" ] && [ -n "$OPEN_ISSUES" ]; then
     NUMBERS=$(echo "$OPEN_ISSUES" | jq -r '.[].number')
