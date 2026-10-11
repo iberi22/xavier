@@ -56,21 +56,24 @@ pub struct PeerRegistry {
 /// Exposes honest maturity percentages and feature presence flags.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MeshMaturityReport {
-    /// HTTP mesh transport: fully functional for handshakes, manifests, chunks sync, session sharing.
+    /// Whether HTTP mesh routes are enabled by the accepted license.
     pub http_transport: bool,
     pub http_transport_percent: u8,
-    /// libp2p transport: legacy/broken in current build, superseded by Iroh.
+    /// Deprecated libp2p stub: always false with zero percent.
     pub libp2p: bool,
     pub libp2p_percent: u8,
-    /// Mesh access control lists (ACL): fully functional.
+    /// Whether the typed ACL loads successfully and contains at least one entry.
     pub acl: bool,
     pub acl_percent: u8,
-    /// Tokenomics: XP-based placeholder/mock system is present.
+    /// Checked tokenomics engine presence; unchecked reports false/0.
     pub tokenomics: bool,
     pub tokenomics_percent: u8,
-    /// On-chain governance (DAO): not implemented/unsupported.
+    /// Checked governance capability; unchecked reports false/0.
     pub onchain_gov: bool,
     pub onchain_gov_percent: u8,
+    /// True when all inputs were checked; false permits partial checked values.
+    #[serde(default)]
+    pub measured: bool,
 }
 
 /// Metrics for a single peer node.

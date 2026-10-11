@@ -14,6 +14,7 @@ use tracing::{debug, info, warn};
 
 use crate::embedding::Embedder;
 use crate::kernel::filters::strip_ansi;
+use crate::memory::ingest_cursor;
 use crate::memory::store::{stable_key, MemoryRecord, MemoryStore};
 
 /// A single turn in an Antigravity conversation.
@@ -37,12 +38,25 @@ pub struct AntigravitySession {
 /// The importer skips a transcript whose fingerprint is unchanged, so an idle
 /// corpus costs one `stat` per session and no transcript read at all. Deciding
 /// whether to re-read must never require reading.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TranscriptFingerprint {
     /// Whole seconds of the modification time. Second resolution is
     /// deliberate: nanoseconds would miss a rewrite landing in the same tick.
     pub mtime_secs: i64,
     pub len: u64,
+}
+
+/// Persisted form of the cursor: transcript fingerprints keyed by path.
+///
+/// One file per importer, `<root>/ingest-cursors/antigravity.json`, written
+/// through [`crate::memory::ingest_cursor`], which owns the atomic replace and
+/// the format-version check. Unlike OpenCode's watermark there is no
+/// lower-bound timestamp to clamp: `is_unchanged` compares an exact
+/// fingerprint, so a future mtime can only ever match the very file it was
+/// recorded from and never hides another transcript.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+struct CursorState {
+    seen: HashMap<PathBuf, TranscriptFingerprint>,
 }
 
 /// What one `sync` pass did.
@@ -70,9 +84,11 @@ pub struct AntigravityImporter {
     embedder: Option<Arc<dyn Embedder>>,
     /// Fingerprint of each transcript as last ingested, keyed by path.
     ///
-    /// Process-local by design: a restart costs one full pass, which is the
-    /// same as the pre-cursor behaviour, never a missed import.
+    /// Persisted when a cursor path is configured; without one it is
+    /// process-local and a restart costs one full pass, never a missed import.
     seen: Mutex<HashMap<PathBuf, TranscriptFingerprint>>,
+    /// Where the cursor is saved after each successful pass. `None` = memory only.
+    cursor_path: Option<PathBuf>,
 }
 
 impl Default for AntigravityImporter {
@@ -87,6 +103,7 @@ impl AntigravityImporter {
             brain_dir: None,
             embedder: None,
             seen: Mutex::new(HashMap::new()),
+            cursor_path: None,
         }
     }
 
@@ -100,6 +117,7 @@ impl AntigravityImporter {
             brain_dir: Some(path.as_ref().to_path_buf()),
             embedder: None,
             seen: Mutex::new(HashMap::new()),
+            cursor_path: None,
         }
     }
 
@@ -108,7 +126,22 @@ impl AntigravityImporter {
             brain_dir: Some(path.as_ref().to_path_buf()),
             embedder: Some(embedder),
             seen: Mutex::new(HashMap::new()),
+            cursor_path: None,
         }
+    }
+
+    /// Persist the cursor at `path` and restore it now, so a restart replays
+    /// only what changed. A missing, corrupt or foreign-version file means a
+    /// full first pass (see [`crate::memory::ingest_cursor::load`]).
+    pub fn with_cursor_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        let path = path.as_ref().to_path_buf();
+        if let Some(loaded) = ingest_cursor::load::<CursorState>(&path) {
+            if let Ok(mut state) = self.seen.lock() {
+                *state = loaded.seen;
+            }
+        }
+        self.cursor_path = Some(path);
+        self
     }
 
     fn current_dir(&self) -> PathBuf {
@@ -405,6 +438,10 @@ impl AntigravityImporter {
             *state = seen;
         }
 
+        // Save only after the pass folded its results back: a failed read or
+        // store write never reaches `seen`, so it is never persisted as done.
+        self.save_cursor();
+
         stats.records = stats.store_writes;
         stats.had_skips = stats.skipped > 0;
         info!(
@@ -412,6 +449,26 @@ impl AntigravityImporter {
             stats.candidates, stats.read, stats.skipped, stats.records, stats.store_reads
         );
         Ok(stats)
+    }
+
+    /// Persist the cursor, when one is configured. Never fails the pass: a
+    /// save error costs a full pass after restart, not data.
+    fn save_cursor(&self) {
+        let Some(path) = self.cursor_path.as_deref() else {
+            return;
+        };
+        let snapshot = self
+            .seen
+            .lock()
+            .map(|state| CursorState {
+                seen: state.clone(),
+            })
+            .ok();
+        if let Some(snapshot) = snapshot {
+            if let Err(e) = ingest_cursor::save(path, &snapshot) {
+                warn!("Could not persist Antigravity ingest cursor: {}", e);
+            }
+        }
     }
 
     /// Reconciliation escape hatch: re-read every transcript, cursor ignored.
@@ -765,6 +822,164 @@ mod tests {
         assert_eq!(forced.len(), 1);
         assert_eq!(embedder.calls.load(Ordering::SeqCst), 1);
 
+        Ok(())
+    }
+
+    // ── Persisted cursor tests ─────────────────────────────────────────
+    // These build a NEW instance on the same cursor file, which is the shape
+    // of a process restart. The in-memory-only tests above cannot see the
+    // difference; these fail if the cursor is not loaded back at construction.
+
+    fn cursor_file(dir: &std::path::Path) -> PathBuf {
+        dir.join("ingest-cursors").join("antigravity.json")
+    }
+
+    /// Paths the cursor recorded as ingested, read straight from the JSON.
+    async fn persisted_seen(cursor: &std::path::Path) -> Vec<String> {
+        let bytes = fs::read(cursor).await.expect("cursor file must exist");
+        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("cursor json");
+        json["state"]["seen"]
+            .as_object()
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Restart replay: a fresh instance on the same cursor file reads only what
+    /// changed since the previous instance's last successful pass.
+    #[tokio::test]
+    async fn restart_replays_only_changed() -> Result<()> {
+        let dir = tempdir()?;
+        write_session(dir.path(), "sess_a", &["first"]).await?;
+        write_session(dir.path(), "sess_b", &["second"]).await?;
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+
+        let first = AntigravityImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        assert_eq!(first.sync(&store).await?.read, 2);
+        drop(first);
+
+        let second = AntigravityImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        let stats = second.sync(&store).await?;
+        assert_eq!(
+            stats.read, 0,
+            "restart must not re-read unchanged transcripts"
+        );
+        assert_eq!(stats.skipped, 2);
+        assert_eq!(
+            stats.store_reads, 0,
+            "skipped restart must not touch the store"
+        );
+        drop(second);
+
+        // Rewrite one transcript with different content. The length changes, so
+        // the second-resolution mtime cannot mask the edit.
+        write_session(dir.path(), "sess_b", &["second", "and more"]).await?;
+
+        let third = AntigravityImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        let stats = third.sync(&store).await?;
+        assert_eq!(stats.read, 1, "only the modified transcript is replayed");
+        assert_eq!(stats.skipped, 1);
+        Ok(())
+    }
+
+    /// Missing, corrupt or foreign-version cursor: full pass, no panic.
+    #[tokio::test]
+    async fn missing_corrupt_or_foreign_cursor_is_a_full_pass() -> Result<()> {
+        let dir = tempdir()?;
+        write_session(dir.path(), "sess_a", &["a"]).await?;
+        write_session(dir.path(), "sess_b", &["b"]).await?;
+        write_session(dir.path(), "sess_c", &["c"]).await?;
+        let cursor = cursor_file(dir.path());
+
+        // Missing: no cursor file exists yet.
+        let store = InMemoryMemoryStore::new();
+        let importer = AntigravityImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        assert_eq!(importer.sync(&store).await?.read, 3, "missing cursor");
+
+        fs::create_dir_all(cursor.parent().expect("cursor parent")).await?;
+        for garbage in ["{truncated", r#"{"version":999,"state":{"seen":{}}}"#, ""] {
+            fs::write(&cursor, garbage).await?;
+            let store = InMemoryMemoryStore::new();
+            let importer = AntigravityImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+            let stats = importer.sync(&store).await?;
+            assert_eq!(
+                stats.read, 3,
+                "garbage cursor {:?} must mean a full pass",
+                garbage
+            );
+        }
+        Ok(())
+    }
+
+    /// A transcript whose read fails is never persisted as ingested: the cursor
+    /// keeps no fingerprint for it, and the next restart retries exactly it.
+    #[tokio::test]
+    async fn failed_read_is_not_persisted_and_is_retried_after_restart() -> Result<()> {
+        let dir = tempdir()?;
+        write_session(dir.path(), "sess_a", &["good"]).await?;
+        // A directory where the transcript should be makes the read fail.
+        let broken = dir
+            .path()
+            .join("sess_b")
+            .join(".system_generated")
+            .join("logs")
+            .join("transcript.jsonl");
+        fs::create_dir_all(&broken).await?;
+
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+
+        let first = AntigravityImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        let stats = first.sync(&store).await?;
+        assert_eq!(stats.candidates, 2);
+        assert_eq!(stats.read, 1, "only the readable transcript is imported");
+        drop(first);
+
+        let seen = persisted_seen(&cursor).await;
+        assert_eq!(seen.len(), 1, "the failed transcript must not be persisted");
+        assert!(
+            !seen.iter().any(|p| p.contains("sess_b")),
+            "cursor recorded the failed transcript: {:?}",
+            seen
+        );
+
+        // Heal the transcript; the restart must retry it and skip the good one.
+        fs::remove_dir_all(&broken).await?;
+        write_session(dir.path(), "sess_b", &["healed"]).await?;
+
+        let second = AntigravityImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        let stats = second.sync(&store).await?;
+        assert_eq!(stats.read, 1, "the failed transcript must be retried");
+        assert_eq!(stats.skipped, 1);
+        Ok(())
+    }
+
+    /// A transcript rewritten between restarts is re-read: the persisted
+    /// fingerprint, not the in-memory map, is what decides the skip.
+    #[tokio::test]
+    async fn changed_transcript_is_reread_after_restart() -> Result<()> {
+        let dir = tempdir()?;
+        write_session(dir.path(), "sess_a", &["one"]).await?;
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+
+        let first = AntigravityImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        assert_eq!(first.sync(&store).await?.read, 1);
+        drop(first);
+
+        let unchanged = AntigravityImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        assert_eq!(unchanged.sync(&store).await?.read, 0);
+        drop(unchanged);
+
+        write_session(dir.path(), "sess_a", &["one", "two", "three"]).await?;
+
+        let third = AntigravityImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        let stats = third.sync(&store).await?;
+        assert_eq!(
+            stats.read, 1,
+            "a grown transcript must be re-read after restart"
+        );
+        assert_eq!(stats.skipped, 0);
         Ok(())
     }
 }

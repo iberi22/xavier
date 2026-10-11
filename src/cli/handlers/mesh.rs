@@ -1429,7 +1429,18 @@ pub async fn v1_mesh_status_handler() -> impl IntoResponse {
             .into_response();
     }
 
-    Json(MeshMaturityReport::default()).into_response()
+    // The license gate above passed, so derive from live settings and flags.
+    Json(MeshMaturityReport::from_checks(
+        &xavier::mesh::maturity::MeshMaturityChecks {
+            http_routes_enabled: settings.license.mesh_accepted,
+            acl_loaded: xavier::mesh::maturity::acl_store_loaded(),
+            // No runtime engine to probe: unmeasured, not claimed.
+            tokenomics_engine_present: None,
+            // Governance is unchecked; feature presence is not a capability check.
+            onchain_gov_present: None,
+        },
+    ))
+    .into_response()
 }
 
 /// Remove peer handler.

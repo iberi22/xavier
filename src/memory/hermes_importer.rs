@@ -4,12 +4,14 @@
 
 use anyhow::Result;
 use rusqlite::{Connection, OpenFlags};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
 use crate::embedding::Embedder;
+use crate::memory::ingest_cursor;
 use crate::memory::schema::MemoryLevel;
 use crate::memory::store::{stable_key, MemoryRecord, MemoryStore};
 use std::sync::Arc;
@@ -20,7 +22,7 @@ use std::sync::Arc;
 /// idle corpus costs one `stat` per file and no store access at all. This is
 /// what keeps the background ingestion loop off the store: deciding whether to
 /// re-read a file must not require reading it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileFingerprint {
     /// Whole seconds of the modification time. Second resolution is
     /// deliberate: nanoseconds would miss a rewrite that lands in the same
@@ -44,6 +46,15 @@ pub struct IngestStats {
     pub had_skips: bool,
 }
 
+/// Cursor state. Persisted when a cursor path is configured; without one it
+/// is process-local and a restart costs one full pass, never a missed import.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+struct CursorState {
+    /// Fingerprint of each file as last ingested, keyed by path.
+    /// `HashMap<PathBuf, _>` serialises as a JSON object.
+    seen: HashMap<PathBuf, FileFingerprint>,
+}
+
 pub struct HermesImporter {
     /// Explicit directory override. `None` means "resolve from the environment
     /// on every pass", so a directory that appears after daemon start (or an
@@ -52,6 +63,8 @@ pub struct HermesImporter {
     embedder: Option<Arc<dyn Embedder>>,
     /// Fingerprint of each file as last ingested, keyed by path.
     seen: std::sync::Mutex<HashMap<PathBuf, FileFingerprint>>,
+    /// Where the cursor is saved after each successful pass. `None` = memory only.
+    cursor_path: Option<PathBuf>,
 }
 
 impl HermesImporter {
@@ -60,6 +73,7 @@ impl HermesImporter {
             sessions_dir: None,
             embedder: None,
             seen: std::sync::Mutex::new(HashMap::new()),
+            cursor_path: None,
         }
     }
 
@@ -68,7 +82,21 @@ impl HermesImporter {
             sessions_dir: Some(path.as_ref().to_path_buf()),
             embedder: None,
             seen: std::sync::Mutex::new(HashMap::new()),
+            cursor_path: None,
         }
+    }
+
+    /// Persist the cursor at `path` and restore it now. A missing, corrupt
+    /// or foreign-version file means a full first pass.
+    pub fn with_cursor_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        let path = path.as_ref().to_path_buf();
+        if let Some(loaded) = ingest_cursor::load::<CursorState>(&path) {
+            if let Ok(mut seen) = self.seen.lock() {
+                *seen = loaded.seen;
+            }
+        }
+        self.cursor_path = Some(path);
+        self
     }
 
     pub fn with_embedder(mut self, embedder: Arc<dyn Embedder>) -> Self {
@@ -213,6 +241,21 @@ impl HermesImporter {
 
         stats.records = imported_records.len();
         stats.had_skips = stats.skipped > 0;
+        // Save only after the pass folded its results back: a failed read or
+        // store write never reaches `seen`, so it is never persisted as done.
+        // A save error costs a full pass after restart, not data.
+        if let Some(path) = self.cursor_path.as_deref() {
+            let snapshot = self
+                .seen
+                .lock()
+                .map(|s| CursorState { seen: s.clone() })
+                .ok();
+            if let Some(snapshot) = snapshot {
+                if let Err(e) = ingest_cursor::save(path, &snapshot) {
+                    warn!("Could not persist Hermes ingest cursor: {}", e);
+                }
+            }
+        }
         info!(
             "✅ HermesImporter: {} read, {} skipped, {} records",
             stats.read, stats.skipped, stats.records
@@ -824,6 +867,131 @@ mod tests {
             "force must actually query the store, otherwise the counter proves nothing"
         );
 
+        Ok(())
+    }
+
+    fn cursor_file(dir: &Path) -> PathBuf {
+        dir.join("ingest-cursors").join("hermes.json")
+    }
+
+    /// Restart replay: a fresh instance on the same cursor file reads only
+    /// what changed since the previous instance's last successful pass.
+    #[tokio::test]
+    async fn restart_replays_only_changed() -> Result<()> {
+        let dir = tempdir()?;
+        write_json_sessions(dir.path(), 3)?;
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+
+        let first = HermesImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        let stats = first.sync(&store).await?;
+        assert_eq!(stats.read, 3);
+        drop(first);
+
+        let second = HermesImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        let stats = second.sync(&store).await?;
+        assert_eq!(stats.read, 0, "restart must not re-read unchanged files");
+        assert_eq!(stats.skipped, 3);
+        assert_eq!(stats.store_reads, 0);
+        Ok(())
+    }
+
+    /// Corrupt or foreign-version cursor: full pass, no panic.
+    #[tokio::test]
+    async fn corrupt_cursor_means_full_pass() -> Result<()> {
+        let dir = tempdir()?;
+        write_json_sessions(dir.path(), 3)?;
+        let cursor = cursor_file(dir.path());
+        std::fs::create_dir_all(cursor.parent().unwrap())?;
+
+        for garbage in ["{truncated", r#"{"version":999,"state":{}}"#, ""] {
+            std::fs::write(&cursor, garbage)?;
+            let store = InMemoryMemoryStore::new();
+            let importer = HermesImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+            let stats = importer.sync(&store).await?;
+            assert_eq!(
+                stats.read, 3,
+                "garbage cursor {:?} must mean a full pass",
+                garbage
+            );
+        }
+        Ok(())
+    }
+
+    /// A pass with a failing file must not persist it as seen. After restart
+    /// the failed file is retried, and only it.
+    #[tokio::test]
+    async fn failed_pass_is_not_persisted() -> Result<()> {
+        let dir = tempdir()?;
+        write_json_sessions(dir.path(), 2)?;
+        // Broken JSON: the stat succeeds but the parse fails, so the file is
+        // never marked as seen and must never reach the cursor file.
+        std::fs::write(dir.path().join("broken.json"), "{not valid json")?;
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+
+        let first = HermesImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        let stats = first.sync(&store).await?;
+        assert_eq!(stats.read, 2);
+        drop(first);
+
+        let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&cursor)?)?;
+        let seen = saved["state"]["seen"]
+            .as_object()
+            .expect("cursor must hold a seen map");
+        assert_eq!(seen.len(), 2, "only the successful files are persisted");
+        assert!(
+            seen.keys().all(|k| !k.contains("broken")),
+            "the failed file must not be persisted as seen"
+        );
+
+        // Fix the file; the restart replays only it.
+        let body = serde_json::json!({
+            "session_id": "s-fixed",
+            "request": { "body": { "model": "m", "messages": [
+                { "role": "user", "content": "fixed content here" },
+            ]}}
+        });
+        std::fs::write(
+            dir.path().join("broken.json"),
+            serde_json::to_string(&body)?,
+        )?;
+
+        let second = HermesImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        let stats = second.sync(&store).await?;
+        assert_eq!(stats.read, 1, "only the failed file is retried");
+        assert_eq!(stats.skipped, 2);
+        Ok(())
+    }
+
+    /// A file whose content changed is re-read after restart, even though the
+    /// cursor was restored from disk.
+    #[tokio::test]
+    async fn changed_file_is_reread_after_restart() -> Result<()> {
+        let dir = tempdir()?;
+        write_json_sessions(dir.path(), 2)?;
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+
+        let first = HermesImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        first.sync(&store).await?;
+        drop(first);
+
+        // Longer content guarantees a new fingerprint (len differs) even
+        // within the same mtime second.
+        let body = serde_json::json!({
+            "session_id": "s0",
+            "request": { "body": { "model": "m", "messages": [
+                { "role": "user", "content": "brand new content that is much longer than before" },
+            ]}}
+        });
+        std::fs::write(dir.path().join("s0.json"), serde_json::to_string(&body)?)?;
+
+        let second = HermesImporter::with_dir(dir.path()).with_cursor_path(&cursor);
+        let stats = second.sync(&store).await?;
+        assert_eq!(stats.read, 1, "only the changed file is re-read");
+        assert_eq!(stats.skipped, 1, "the untouched file is skipped");
+        assert!(stats.store_reads > 0, "the changed file is queried");
         Ok(())
     }
 }
