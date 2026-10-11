@@ -30,7 +30,7 @@
 
 ## How to exercise it
 - cargo build, then 'xavier http' with XAVIER_TOKEN set; readiness at GET /ready
-- cargo test --lib for unit tests (hermetic subset runs offline)
+- cargo test --offline --lib -- --test-threads=1 (all 3662 lib tests pass offline; some tests are flaky in parallel)
 - 'xavier mcp' starts the MCP stdio server
 
 ## How you rate severity
@@ -59,4 +59,4 @@
 - examples
 
 ---
-*Provenance: KSM commit 4978627; guardrails.json sha256:f6f4adacc9b5615138ec400ec34a68998282c1108d35dde4439095ea1721d77d (6 families); defensive_auditor rules: 13. Deterministic: reruns on the same tree and context produce byte-identical output. Contains no code excerpts.*
+*Provenance: KSM commit 56c1af0; guardrails.json sha256:f6f4adacc9b5615138ec400ec34a68998282c1108d35dde4439095ea1721d77d (6 families); defensive_auditor rules: 13. Deterministic: reruns on the same tree and context produce byte-identical output. Contains no code excerpts.*

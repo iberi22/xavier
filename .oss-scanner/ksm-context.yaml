@@ -20,7 +20,7 @@ components_least:
   - panel-ui (TypeScript UI; scanned only as the HTTP client of the API)
 exercise:
   - cargo build, then 'xavier http' with XAVIER_TOKEN set; readiness at GET /ready
-  - cargo test --lib for unit tests (hermetic subset runs offline)
+  - cargo test --offline --lib -- --test-threads=1 (all 3662 lib tests pass offline; some tests are flaky in parallel)
   - "'xavier mcp' starts the MCP stdio server"
 leave_alone:
   - target
