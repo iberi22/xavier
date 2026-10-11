@@ -29,12 +29,12 @@ impl CloudPeer {
             .pgheart
             .url
             .clone()
-            .context("XAVIER_PGHEART_URL not set")?;
+            .context("PGHEART_URL (or XAVIER_PGHEART_URL) not set")?;
         let key = settings
             .pgheart
             .token
             .clone()
-            .context("XAVIER_PGHEART_TOKEN not set")?;
+            .context("PGHEART_TOKEN (or XAVIER_PGHEART_TOKEN) not set")?;
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))

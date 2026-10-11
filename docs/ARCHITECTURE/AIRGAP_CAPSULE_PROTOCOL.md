@@ -11,53 +11,53 @@ The **Xavier Air-Gap Capsule Protocol** provides a sovereign, air-gapped mechani
 - **Tampering & Bit-Flipping:** An attacker modifies ciphertext bytes in an attempt to manipulate decrypted memory or trigger deserialization vulnerabilities.
 
 ### Security Guarantees
-1. **Authenticated Encryption (AEAD):** AES-256-GCM guarantees both confidentiality and ciphertext integrity. Any altered byte fails decryption immediately.
-2. **Memory-Hard Key Derivation:** Argon2id with 64 MB of RAM and 3 iterations protects user passphrases against parallelized GPU cracking.
-3. **Targeted Node Locking (Zero-Knowledge Transport):** Optionally encrypts the payload using ephemeral X25519 ECDH key agreement with the destination node's public identity. Only the designated Xavier node can unlock the capsule, even if the physical USB is compromised.
-4. **Header Transparency & Safe Inspection:** Capsule metadata (ID, version, creation timestamp, payload kind, recipient node ID) can be inspected without exposing the payload or requiring the passphrase.
+1. **Authenticated Encryption (AEAD):** AES-256-GCM guarantees both confidentiality and ciphertext integrity. Ciphertext authentication completes before output is written.
+2. **Memory-Hard Key Derivation:** Argon2id uses 19,456 KiB memory, 2 iterations, and parallelism 1 to derive a 256-bit key from the passphrase. These parameters are pinned in the code.
+3. **Header Transparency & Safe Inspection:** Capsule metadata (version, creation timestamp, payload kind, author) can be inspected without exposing the payload or requiring the passphrase.
 
 ---
 
 ## 2. Binary Capsule Structure
 
-Each `.swal_capsule` file adheres to the following byte layout:
+The existing version-1 `.swal_capsule` format consists of:
 
-```
-+------------------+-------------------+--------------------+-----------------------+
-| Magic Bytes (8B) | Version (2B)      | Header Length (4B) | Encrypted Header JSON |
-| "SWALCAPS"       | 0x0001            | Big-Endian u32     | (Plaintext Metadata)  |
-+------------------+-------------------+--------------------+-----------------------+
-| Salt (16B)       | Nonce / IV (12B)  | Ciphertext (N B)   | Poly1305 / GCM Tag    |
-| Argon2id Salt    | AES-GCM Nonce     | Compressed Payload | 16-byte Auth Tag      |
-+------------------+-------------------+--------------------+-----------------------+
-```
+1. The 8-byte magic value `SWALCAPS`.
+2. A 4-byte little-endian header length.
+3. Plaintext JSON metadata of the declared length.
+4. AES-256-GCM ciphertext, including its authentication tag.
 
 ### Metadata Fields
-- `capsule_id`: ULID or UUIDv4 identifying the capsule run.
+
 - `version`: Protocol version (currently `1`).
-- `payload_kind`: One of `keys`, `knowledge_rag`, `model_weights`, `generic`.
-- `created_at`: ISO 8601 UTC timestamp.
-- `recipient_node`: Optional Ed25519/X25519 public key of the destination Xavier node.
-- `filename_hint`: Original filename or logical directory descriptor.
-- `uncompressed_len`: Length of the plaintext before optional Zstd compression.
+- `payload_kind`: `single_file`, `directory_archive`, `database_backup`, `memory_dump`, or `secrets_vault`.
+- `original_filename`: Display metadata only; never an output path.
+- `author`: Operator identity tag.
+- `created_at`: UTC timestamp.
+- `salt`: Hex-encoded 16-byte Argon2id salt.
+- `nonce`: Hex-encoded 12-byte AES-GCM nonce.
+- `ciphertext_length`: Length of the encrypted payload, including its authentication tag.
+
+Inspection validates salt and nonce dimensions and returns an error for invalid metadata.
 
 ---
 
 ## 3. Cryptographic Lifecycle
 
 ### Packaging (`pack`)
-1. Plaintext payload is ingested (single file, tarball archive, or memory snapshot).
-2. If targeted to a node, an ephemeral X25519 keypair is generated and shared secret derived via Diffie-Hellman.
-3. Otherwise, Argon2id derives a 256-bit symmetric key from user passphrase and a cryptographically secure 16-byte random salt.
-4. Payload is encrypted via AES-256-GCM with a 12-byte random nonce.
-5. The container is written atomically to the destination path on the USB device.
+
+Capsule creation is disabled pending a format redesign. `xavier airgap pack` remains parseable but exits non-zero without creating a capsule.
 
 ### Unpacking (`unpack`)
-1. Magic bytes (`SWALCAPS`) and version are validated.
-2. Header metadata is deserialized.
-3. Decryption key is derived via Argon2id using the header's salt, or reconstructed via node private key.
-4. AES-256-GCM verifies authentication tag; fails atomically if corrupt.
-5. Plaintext is restored directly into target directory or memory.
+
+1. Magic bytes, version, and header metadata are validated.
+2. Argon2id derives the key using the capsule salt and the supplied passphrase.
+3. AES-256-GCM decryption and authentication complete in memory before any output is written.
+4. The user-selected output path is validated. Header filenames may be displayed in sanitized form but never determine a filesystem path.
+5. Single-file payloads are written to a new file. Directory archives are validated and extracted only into a new directory created by unpack.
+
+Output paths must be relative and contain no `..` components. Symlinks and existing destination files are refused, as are protected Xavier key areas and `record.key`/`master.key` names (matched case-insensitively). Unpack refuses to run when the home directory cannot be resolved. Directory entries must remain within the extraction directory, must not be symlinks, and must not use protected key names. Files are created without overwriting existing files. There is no overwrite option.
+
+Passphrases come from `--passphrase-file` or an interactive prompt. `-p`/`--passphrase` arguments are not accepted.
 
 ---
 
@@ -69,22 +69,9 @@ xavier airgap detect
 ```
 Scans `/sys/block` and mount points to identify connected removable flash media and available storage.
 
-### Packaging a Capsule
-```bash
-# Packaging wallet keys with passphrase
-xavier airgap pack \
-  --input ~/.xavier/vault/cold_keys.json \
-  --output /media/usb/backup.swal_capsule \
-  --kind keys \
-  --passphrase "CorrectHorseBatteryStaple#2026"
+### Capsule Creation
 
-# Packaging private RAG dataset for a specific legal node
-xavier airgap pack \
-  --input ./contracts_archive.tar.gz \
-  --output /media/usb/contracts.swal_capsule \
-  --kind knowledge \
-  --target-node "xav_pub_8f29ab01..."
-```
+`xavier airgap pack` is disabled pending a format redesign.
 
 ### Inspecting Capsule Metadata
 ```bash
@@ -92,9 +79,14 @@ xavier airgap inspect --capsule /media/usb/backup.swal_capsule
 ```
 
 ### Unpacking a Capsule
+
+For a single-file capsule, select an explicit output file:
+
 ```bash
 xavier airgap unpack \
-  --capsule /media/usb/backup.swal_capsule \
-  --output-dir ~/.xavier/vault/restored/ \
-  --passphrase "CorrectHorseBatteryStaple#2026"
+  --capsule ./backup.swal_capsule \
+  --output ./restored-backup.json \
+  --passphrase-file ./capsule-passphrase.txt
 ```
+
+Alternatively, `--output-dir ./restored` uses `<capsule-file-stem>.out` inside an existing directory for single-file capsules. Directory capsules require `--output-dir` naming a new directory created by unpack. Omit `--passphrase-file` to use the interactive prompt.
