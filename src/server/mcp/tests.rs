@@ -2998,3 +2998,25 @@ async fn mcp_memory_write_rate_disabled() {
         .expect("disabled limit accepts the write");
     }
 }
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_write_without_caller_clearance_fails_closed() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+    let claims = memory_write_claims("mcp-no-caller", crate::security::auth::UserRole::Admin);
+    let err = super::tools_memory::with_memory_write_caller_key(
+        "mcp-no-caller".to_string(),
+        super::server::handle_tool_call(
+            state.clone(),
+            workspace.clone(),
+            Some(&claims),
+            "memory_save",
+            json!({"text": "A useful project note.", "metadata": {"clearance": "internal"}}),
+        ),
+    )
+    .await
+    .expect_err("a call without a caller identity must not inherit the default ceiling");
+    assert!(err.to_string().contains("clearance"), "{err}");
+}

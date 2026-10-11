@@ -78,12 +78,13 @@ fn mcp_caller() -> Option<McpCaller> {
     MCP_CALLER.try_with(|c| c.clone()).ok()
 }
 
-/// Clearance ceiling of the current MCP call. Without a caller identity it
-/// falls back to the configured default, the same ceiling REST reads apply.
+/// Clearance ceiling of the current MCP call. Without a caller identity the
+/// ceiling is the lowest level: a request whose identity could not be
+/// established must not inherit the configurable default.
 pub fn caller_clearance() -> crate::security::clearance::ClearanceLevel {
     mcp_caller()
         .map(|c| c.clearance)
-        .unwrap_or_else(crate::security::clearance::default_clearance)
+        .unwrap_or(crate::security::clearance::ClearanceLevel::Unclassified)
 }
 
 const MEMORYFRAGMENT_MAX_LIMIT: usize = 100;
