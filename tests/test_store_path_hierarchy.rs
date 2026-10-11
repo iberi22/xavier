@@ -96,6 +96,10 @@ async fn test_path_stored_verbatim() {
     let state = create_test_cli_state(&temp).await;
     let app = Router::new()
         .route("/memory/add", post(add_handler))
+        // Writes require the caller clearance that production derives from the authenticated session.
+        .layer(axum::Extension(
+            xavier::security::clearance::ClearanceLevel::TopSecret,
+        ))
         .with_state(state.clone());
 
     let canonical_path = "hermes/2026-08-17/categoría/diseño.md";
@@ -139,6 +143,9 @@ async fn test_path_traversal_blocked() {
     let state = create_test_cli_state(&temp).await;
     let app = Router::new()
         .route("/memory/add", post(add_handler))
+        .layer(axum::Extension(
+            xavier::security::clearance::ClearanceLevel::TopSecret,
+        ))
         .with_state(state.clone());
 
     let traversal_paths = vec![
@@ -190,6 +197,9 @@ async fn test_nul_byte_injection_blocked() {
     let state = create_test_cli_state(&temp).await;
     let app = Router::new()
         .route("/memory/add", post(add_handler))
+        .layer(axum::Extension(
+            xavier::security::clearance::ClearanceLevel::TopSecret,
+        ))
         .with_state(state.clone());
 
     let payload = serde_json::json!({
@@ -233,6 +243,9 @@ async fn test_valid_nested_directory_paths() {
     let state = create_test_cli_state(&temp).await;
     let app = Router::new()
         .route("/memory/add", post(add_handler))
+        .layer(axum::Extension(
+            xavier::security::clearance::ClearanceLevel::TopSecret,
+        ))
         .with_state(state.clone());
 
     let valid_paths = vec![
@@ -275,6 +288,9 @@ async fn test_path_hierarchy_queries() {
     let app = Router::new()
         .route("/memory/add", post(add_handler))
         .route("/memory/search", post(search_handler))
+        .layer(axum::Extension(
+            xavier::security::clearance::ClearanceLevel::TopSecret,
+        ))
         .with_state(state.clone());
 
     // Add multiple files in hierarchy
