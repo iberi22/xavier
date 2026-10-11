@@ -10,6 +10,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_TARGET_DIR: target
+  # Build-speed Phase 0: mold is enabled ONLY here in CI (after the
+  # rui314/setup-mold steps install it). Never force it in
+  # .cargo/config.toml so local devs without mold keep building.
+  RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
 
 jobs:
   # Path filtering to avoid running slow Rust builds on frontend/docs-only PRs
@@ -19,6 +23,7 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      embedding: ${{ steps.filter.outputs.embedding }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -46,6 +51,13 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'package.json'
               - '.github/workflows/ci.yml'
+            # Build-speed Phase 0: the local-gllm embedding backend is the
+            # riskiest dep change, so it gets its own check job below, gated
+            # on exactly the inputs that can affect it.
+            embedding:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'src/embedding/**'
 
   # Job 1: Rust Format Check
   rust-fmt:
@@ -82,11 +94,14 @@ jobs:
         with:
           components: clippy
 
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
-
-      - name: Run Cargo Check
-        run: cargo check --package xavier --all-targets --features ci-safe
+        with:
+          shared-key: ci-safe-clippy
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run Clippy
         run: cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings
@@ -107,11 +122,47 @@ jobs:
         with:
           toolchain: "1.94"
 
+      # The workflow-level RUSTFLAGS forces `-fuse-ld=mold`, so this job must
+      # install mold too or every link fails with "cannot find 'ld'"
+      # (see the mold step in rust-clippy / rust-local-gllm-check).
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
 
       - name: Run Cargo Check on MSRV
         run: cargo check --package xavier --all-targets --features ci-safe
+
+  # Job 2b: local-gllm embedding backend check (build-speed Phase 0)
+  # The candle removal is the riskiest dep change in this phase, and the
+  # default/ci-safe feature sets never compile the gllm backend. Run only
+  # when Cargo.toml, Cargo.lock or src/embedding/** change (see the
+  # `embedding` paths-filter in the `changes` job above).
+  rust-local-gllm-check:
+    name: Rust local-gllm Check
+    needs: changes
+    if: needs.changes.outputs.embedding == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-safe-gllm
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Check local-gllm backend
+        run: cargo check -p xavier --features local-gllm
 
   # Job 3: Parallel Rust Tests
   rust-test:
@@ -127,6 +178,9 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
       - name: Configure Swap Space
         run: |
           if ! swapon --show | grep -q "/swapfile"; then
@@ -140,6 +194,9 @@ jobs:
 
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-safe-test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run Lib Tests
         # Use 1 thread: tests in `src/memory/sqlite_vec_store/schema_impl.rs`
@@ -147,9 +204,10 @@ jobs:
         # `OPENAI_API_KEY`) cannot be parallelised across processes — the
         # `#[serial]`/`ENV_LOCK` mutex lives per-process and does not
         # coordinate cross-process. With 4 threads, 4 of those tests
-        # deterministically fail (`left:0 right:1`). Tests are fast enough
-        # that 1 thread (~100s) is acceptable; CI wall-time cost is minimal
-        # vs the engineering cost of refactoring every test to use TempEnv.
+        # deterministically fail (`left:0 right:1`). As of 2026-10 the serial run
+        # takes ~556 s for 3,458 tests and is the CI critical path. Phase 1 of the
+        # build-speed plan moves this to cargo-nextest (process-per-test,
+        # isolate_test_process! sandbox); until then keep 1 thread.
         # See commit message for full rationale and reproduction log.
         run: cargo test --package xavier --lib --features ci-safe -- --test-threads=1
 
@@ -176,8 +234,14 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-safe-test
+          save-if: false
 
       - name: Audit every test/bench root installs the sandbox
         run: |
@@ -211,8 +275,14 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-safe-test
+          save-if: false
 
       - name: Run Observability Contract Tests
         # 1 thread, same reason as `rust-test`: several suites mutate global ENV
@@ -256,8 +326,14 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-safe-test
+          save-if: false
 
       - name: Run Espacios isolation, encryption, links and auth-gate tests
         # 1 thread: these suites mutate global ENV (see `rust-test`).
@@ -379,3 +455,18 @@ jobs:
             python3 -c "import json, sys; data=json.load(open('/tmp/preflight.json')); sys.exit(0 if data.get('ready') else 1)"
           fi
 
+
+  # Job 6: Full Ledger Verification on main
+  ledger-verification:
+    name: Full Ledger Verification
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Shadow for now: becomes blocking after the known pre-existing ledger failure is reconciled
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Full Ledger
+        run: bash scripts/verify-pipeline.sh

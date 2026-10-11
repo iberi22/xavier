@@ -311,6 +311,16 @@ pub(crate) async fn open_node_memory_store(
     Ok((store, master_key))
 }
 
+/// Refuse to serve HTTP without a configured token.
+fn ensure_http_token_configured(token: &str) -> Result<()> {
+    if token.trim().is_empty() {
+        return Err(anyhow!(
+            "XAVIER_TOKEN is not configured; refusing to start the HTTP server without a token"
+        ));
+    }
+    Ok(())
+}
+
 /// Importers owned by one process of the periodic ingestion loop.
 ///
 /// Built once, outside the cycle loop. Each cursor file is
@@ -394,6 +404,7 @@ pub async fn start_http_server(
     let bind_addr = format!("{}:{}", bind_host, port);
     info!("Starting Xavier HTTP server on {}", bind_addr);
     let token = resolve_http_token()?;
+    ensure_http_token_configured(&token)?;
     std::env::set_var("XAVIER_TOKEN", &token);
 
     let cm = ConnectionManager::global();
@@ -2968,6 +2979,24 @@ mod startup_order_tests {
             !tmp.path().join(".xavier").join("master.key").exists(),
             "no master key may be minted next to a store that already exists"
         );
+    }
+}
+
+#[cfg(test)]
+mod ensure_http_token_tests {
+    use super::ensure_http_token_configured;
+
+    #[test]
+    fn ensure_http_token_rejects_empty_and_whitespace() {
+        xavier::isolate_test_process!();
+        assert!(ensure_http_token_configured("").is_err());
+        assert!(ensure_http_token_configured("  \t\n").is_err());
+    }
+
+    #[test]
+    fn ensure_http_token_accepts_present() {
+        xavier::isolate_test_process!();
+        assert!(ensure_http_token_configured("a-token").is_ok());
     }
 }
 

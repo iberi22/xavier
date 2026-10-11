@@ -213,7 +213,7 @@ mod tests {
         let res = handle_tool_call(
             state,
             workspace,
-            None,
+            Some(&admin),
             TOOL_GET_PAGES,
             json!({"doc_name": "mcp-guide", "pages": "1"}),
         )
