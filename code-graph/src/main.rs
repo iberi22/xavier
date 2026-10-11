@@ -233,6 +233,73 @@ fn validate_path(base: &Path, requested: &str) -> Result<PathBuf, String> {
 }
 
 // ============================================================================
+// Fingerprint subcommand (ksm-sfp/1; never touches the database)
+// ============================================================================
+
+#[cfg(feature = "native-parsers")]
+fn run_fingerprint(
+    file: &Path,
+    lang: Option<String>,
+    ranges: Option<String>,
+) -> anyhow::Result<()> {
+    use code_graph::fingerprint::{
+        fingerprint_source, parse_ranges, resolve_language, to_json_sorted,
+    };
+    use code_graph::types::Language;
+
+    let ranges = match ranges {
+        Some(spec) => match parse_ranges(&spec) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(2);
+            }
+        },
+        None => Vec::new(),
+    };
+    let language = match lang {
+        Some(name) => resolve_language(&name),
+        None => file
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(Language::from_extension)
+            .unwrap_or(Language::Unknown),
+    };
+    let given = file.display().to_string();
+    // Lossy decoding: some C sources (e.g. kernel files) are Latin-1; line
+    // numbers are unaffected.
+    let source = match std::fs::read(file) {
+        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+        Err(e) => {
+            eprintln!("error: cannot read {}: {e}", file.display());
+            std::process::exit(2);
+        }
+    };
+    let fp = fingerprint_source(&source, language, &given, &ranges);
+    println!("{}", to_json_sorted(&fp));
+    Ok(())
+}
+
+#[cfg(not(feature = "native-parsers"))]
+fn run_fingerprint(
+    file: &Path,
+    _lang: Option<String>,
+    _ranges: Option<String>,
+) -> anyhow::Result<()> {
+    // No tree-sitter parsers compiled in: every file is skipped.
+    let doc = serde_json::json!({
+        "coverage": "PARSER_SKIPPED",
+        "file": file.display().to_string(),
+        "functions": [],
+        "language": "unknown",
+        "schema": "ksm-sfp/1",
+        "tool": format!("code-graph {}", env!("CARGO_PKG_VERSION")),
+    });
+    println!("{doc}");
+    Ok(())
+}
+
+// ============================================================================
 // Routes
 // ============================================================================
 
@@ -415,11 +482,30 @@ enum Commands {
         #[arg(default_value = ".")]
         path: PathBuf,
     },
+
+    /// Print the structural fingerprint (ksm-sfp/1) of a file to stdout
+    Fingerprint {
+        /// File to fingerprint
+        file: PathBuf,
+
+        /// Language override (c|cpp|rust|python|go|java|typescript|javascript)
+        #[arg(long)]
+        lang: Option<String>,
+
+        /// Only functions overlapping these 1-based inclusive ranges (10-50,80-120)
+        #[arg(long)]
+        ranges: Option<String>,
+    },
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
+    // Fingerprint mode never opens a database and never starts a server.
+    if let Some(Commands::Fingerprint { file, lang, ranges }) = &cli.command {
+        return run_fingerprint(file, lang.clone(), ranges.clone());
+    }
 
     let db_path = cli
         .db_path
@@ -546,6 +632,7 @@ async fn main() -> anyhow::Result<()> {
     // CLI mode
     match cli.command.expect("test assertion") {
         Commands::Serve { .. } | Commands::SocketServe { .. } => unreachable!(),
+        Commands::Fingerprint { .. } => unreachable!("handled before database init"),
 
         Commands::Scan {
             path,
