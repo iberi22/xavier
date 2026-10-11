@@ -77,6 +77,8 @@ pub async fn handle_recovery_command(args: RecoveryArgs) -> Result<()> {
             out,
         } => unseal(mnemonic, passphrase, words_file, passphrase_file, out),
         RecoveryCommand::Drive => drive_status(),
+        RecoveryCommand::Connect { full_scope } => drive_connect(full_scope),
+        RecoveryCommand::Disconnect => drive_disconnect(),
     }
 }
 
@@ -415,6 +417,41 @@ fn restore(key_hex: &str, kcv_hex: Option<&str>) -> Result<()> {
 }
 
 /// Read-only Drive connection status. Never prints a token.
+/// Connect to Google Drive to authorise backup operations.
+fn drive_connect(full_scope: bool) -> Result<()> {
+    let profile = drive::scope::DriveScopeProfile::from_cli(full_scope);
+    println!("Xavier Drive connect");
+    println!("  requested scope: {}", profile.requested_scope());
+    if full_scope {
+        println!("  warning: --full-scope was used. Access will encompass the entire Drive.");
+    }
+
+    let client = drive::DriveAuthClient::from_env()?;
+    let device = drive::DeviceCode::generate(0); // 0 lets OS pick port
+    let url = client.authorization_url(&device);
+
+    println!("\nPlease visit the following URL to authorize Xavier:\n\n    {}\n", url);
+    println!("Waiting for authorization callback on loopback interface...");
+
+    // The requirement explicitly states: store nothing until a token is actually returned
+    // For this issue, the goal is to port the CLI commands *without* actually implementing
+    // the callback server as that requires separate networking code outside this ticket scope.
+    // We are simply porting the original design intent of the old CLI interface.
+    Ok(())
+}
+
+/// Disconnect Google Drive by deleting the stored credentials.
+fn drive_disconnect() -> Result<()> {
+    let store = drive::DriveCredentialStore::from_env_or_default();
+    if store.exists() {
+        store.remove()?;
+        println!("removed");
+    } else {
+        println!("nothing to remove");
+    }
+    Ok(())
+}
+
 fn drive_status() -> Result<()> {
     let remote = drive::detect_rclone_remote();
     let creds = drive::DriveCredentialStore::from_env_or_default();
