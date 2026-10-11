@@ -580,6 +580,13 @@ pub enum RepoConfigCommand {
 /// Subcommands for the skill controller's plan/apply/rollback workflow (D4, D6, D14).
 #[derive(Subcommand, Debug, Clone)]
 pub enum SkillsCommand {
+    /// Show read-only skill usage counts and harness acknowledgment coverage
+    Usage,
+    /// Run a read-only drift audit of skill packages (D02)
+    Audit {
+        #[arg(long)]
+        manifest: String,
+    },
     /// Build a projection plan from a manifest; writes nothing (D4)
     Plan {
         /// Path to the skill manifest TOML
@@ -773,14 +780,50 @@ pub enum CloudCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Trigger manual synchronization (local -> cloud)
+    /// Encrypted backup of the memory store to Xavier Cloud (same as `cloud backup`)
     Sync {
+        /// Read the backup passphrase from this file instead of XAVIER_CLOUD_BACKUP_PASSPHRASE
+        #[arg(long)]
+        passphrase_file: Option<std::path::PathBuf>,
+        /// Publish even if the backup is empty or under half the size of the previous one
+        #[arg(long)]
+        allow_shrink: bool,
         /// Output in JSON format
         #[arg(long)]
         json: bool,
     },
-    /// Run a full cloud connection health check
+    /// Encrypt (client-side) and upload every memory to Xavier Cloud (PGHEART_*)
+    Backup {
+        /// Read the backup passphrase from this file instead of XAVIER_CLOUD_BACKUP_PASSPHRASE
+        #[arg(long)]
+        passphrase_file: Option<std::path::PathBuf>,
+        /// Publish even if the backup is empty or under half the size of the previous one
+        #[arg(long)]
+        allow_shrink: bool,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Download, verify, decrypt and import the latest cloud backup
+    Restore {
+        /// Instance to restore from (default: PGHEART_INSTANCE_ID)
+        #[arg(long)]
+        instance: Option<String>,
+        /// Read the backup passphrase from this file instead of XAVIER_CLOUD_BACKUP_PASSPHRASE
+        #[arg(long)]
+        passphrase_file: Option<std::path::PathBuf>,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Check the cloud backup: Worker reachable, manifest and every pack present, usage
     Verify {
+        /// Also download and decrypt every pack (needs the passphrase; writes nothing)
+        #[arg(long)]
+        deep: bool,
+        /// Read the backup passphrase from this file instead of XAVIER_CLOUD_BACKUP_PASSPHRASE
+        #[arg(long)]
+        passphrase_file: Option<std::path::PathBuf>,
         /// Output in JSON format
         #[arg(long)]
         json: bool,
@@ -1906,7 +1949,7 @@ pub enum RecoveryCommand {
     },
     /// Seal the current record key under a passphrase and/or a 24-word mnemonic.
     Seal {
-        /// Seal under a freshly generated BIP39 mnemonic (printed once).
+        /// Seal under a freshly generated BIP39 mnemonic delivered to the TTY or --words-out.
         #[arg(long)]
         mnemonic: bool,
         /// Seal under an interactively-entered passphrase.
@@ -1915,7 +1958,7 @@ pub enum RecoveryCommand {
         /// Read the passphrase without prompting.
         #[arg(long, requires = "passphrase")]
         passphrase_file: Option<std::path::PathBuf>,
-        /// Write the new mnemonic to a new private file instead of stdout.
+        /// Write the new mnemonic to a new private file instead of the controlling TTY.
         #[arg(long, requires = "mnemonic")]
         words_out: Option<std::path::PathBuf>,
         /// Explicitly replace an existing mnemonic seal.
@@ -1930,9 +1973,9 @@ pub enum RecoveryCommand {
     },
     /// Install a recovered record key. Refuses to overwrite an existing one.
     Restore {
-        /// The recovered key, 64 hex characters.
+        /// Read the recovered hex key from a file, or stdin with `-`.
         #[arg(long)]
-        key_hex: Option<String>,
+        key_file: std::path::PathBuf,
         /// Expected key-check value. Defaults to the stored one.
         #[arg(long)]
         kcv: Option<String>,
@@ -1957,4 +2000,6 @@ pub enum RecoveryCommand {
     },
     /// Report the Google Drive connection used for encrypted backups.
     Drive,
+    /// Disconnect the local Google Drive credential.
+    Disconnect,
 }

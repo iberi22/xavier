@@ -105,7 +105,8 @@ impl MnemonicPath {
 
         let mut salt = [0u8; 16];
         rand::rngs::OsRng.fill_bytes(&mut salt);
-        let wrapping = Self::derive_wrapping_key(&recovery, &salt);
+        let argon2 = Argon2::default();
+        let wrapping = Self::derive_wrapping_key(&recovery, &salt, &argon2)?;
 
         let nonce_bytes = crate::crypto::encryption::NonceBytes::generate();
         let cipher = Aes256Gcm::new_from_slice(&wrapping).context("cipher creation failed")?;
@@ -117,16 +118,27 @@ impl MnemonicPath {
             salt: hex_encode(salt),
             nonce: hex_encode(nonce_bytes.as_bytes()),
             ciphertext: hex_encode(&ciphertext),
-            kdf: Self::kdf_label(),
+            kdf: Self::kdf_label_for(&argon2),
         })
     }
 
     pub(crate) fn kdf_label() -> String {
-        format!("argon2id-m19-t2-p1-{WRAP_DOMAIN:?}")
+        Self::kdf_label_for(&Argon2::default())
+    }
+
+    fn kdf_label_for(argon2: &Argon2<'_>) -> String {
+        let p = argon2.params();
+        format!(
+            "argon2id-m{}-t{}-p{}-{WRAP_DOMAIN:?}",
+            p.m_cost() / 1024,
+            p.t_cost(),
+            p.p_cost()
+        )
     }
 
     /// Unseal a key with the mnemonic. Wrong words fail the AEAD tag.
     pub fn open(seal: &MnemonicSeal, words: &str) -> Result<[u8; 32]> {
+        let argon2 = Self::stored_argon2(&seal.kdf)?;
         let recovery = Self::recovery_key_from_words(words)?;
         let salt = hex_decode(&seal.salt).context("seal salt is not hex")?;
         let nonce = hex_decode(&seal.nonce).context("seal nonce is not hex")?;
@@ -135,7 +147,7 @@ impl MnemonicPath {
             bail!("seal has wrong salt/nonce dimensions");
         }
 
-        let wrapping = Self::derive_wrapping_key(&recovery, &salt);
+        let wrapping = Self::derive_wrapping_key(&recovery, &salt, &argon2)?;
         let cipher = Aes256Gcm::new_from_slice(&wrapping).context("cipher creation failed")?;
         let plaintext = cipher
             .decrypt(Nonce::from_slice(&nonce), ciphertext.as_slice())
@@ -148,21 +160,55 @@ impl MnemonicPath {
         Ok(out)
     }
 
-    fn derive_wrapping_key(recovery: &[u8; MNEMONIC_ENTROPY_BYTES], salt: &[u8]) -> [u8; 32] {
+    fn stored_argon2(label: &str) -> Result<Argon2<'static>> {
+        let suffix = format!("-{WRAP_DOMAIN:?}");
+        let costs = label
+            .strip_prefix("argon2id-m")
+            .and_then(|s| s.strip_suffix(&suffix))
+            .context("unsupported recovery KDF label")?;
+        let (m, rest) = costs
+            .split_once("-t")
+            .context("invalid recovery KDF costs")?;
+        let (t, p) = rest
+            .split_once("-p")
+            .context("invalid recovery KDF costs")?;
+        let m: u32 = m.parse().context("invalid Argon2id memory cost")?;
+        let m = m
+            .checked_mul(1024)
+            .context("invalid Argon2id memory cost")?;
+        super::passphrase::validated_argon2(
+            m,
+            t.parse().context("invalid Argon2id time cost")?,
+            p.parse().context("invalid Argon2id parallelism")?,
+        )
+    }
+
+    fn derive_wrapping_key(
+        recovery: &[u8; MNEMONIC_ENTROPY_BYTES],
+        salt: &[u8],
+        argon2: &Argon2<'_>,
+    ) -> Result<[u8; 32]> {
         let mut material = Vec::with_capacity(WRAP_DOMAIN.len() + recovery.len());
         material.extend_from_slice(WRAP_DOMAIN);
         material.extend_from_slice(recovery);
         let mut key = [0u8; 32];
-        Argon2::default()
+        argon2
             .hash_password_into(&material, salt, &mut key)
-            .expect("32-byte output is always a valid Argon2 length");
-        key
+            .map_err(|e| anyhow::anyhow!("Argon2id derivation failed: {e}"))?;
+        Ok(key)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Produced once by the base commit's seal code.
+    const BASE_MN_WORDS: &str = "tejado tomar alteza tope polvo agudo zafiro avión fresa órbita palco nieto instante agudo derecho guardia litio molino ficción rudo teatro alacrán célebre gafas";
+    const BASE_MN_SALT: &str = "a170cbe6f0f38b709a5704d03eb44476";
+    const BASE_MN_NONCE: &str = "73af7366336733b50e9fa52a";
+    const BASE_MN_CT: &str = "e1d6cb805ddd4b3f01c0e4077fb8d76c431c3a98c7606a15c236d2b6cd4cc7674291a9cea5985497b76830bbc9eeba09";
+    const BASE_MN_KDF: &str = "argon2id-m19-t2-p1-[120, 97, 118, 105, 101, 114, 45, 114, 101, 99, 111, 118, 101, 114, 121, 45, 109, 110, 101, 109, 111, 110, 105, 99, 45, 119, 114, 97, 112, 45, 118, 49]";
 
     #[test]
     fn generated_mnemonic_roundtrips_to_the_same_key() {
@@ -248,5 +294,52 @@ mod tests {
             "no es un mnemonic valido en espanol"
         ));
         assert!(MnemonicPath::recovery_key_from_words("abc def").is_err());
+    }
+    #[test]
+    fn default_label_is_unchanged() {
+        assert_eq!(
+            MnemonicPath::kdf_label(),
+            format!("argon2id-m19-t2-p1-{WRAP_DOMAIN:?}")
+        );
+        let (words, _) = MnemonicPath::generate().unwrap();
+        let seal = MnemonicPath::seal(&[1u8; 32], &words).unwrap();
+        assert_eq!(seal.kdf, MnemonicPath::kdf_label());
+    }
+
+    #[test]
+    fn out_of_range_labels_are_rejected() {
+        let d = format!("{WRAP_DOMAIN:?}");
+        let ok = format!("argon2id-m19-t2-p1-{d}");
+        assert!(MnemonicPath::stored_argon2(&ok).is_ok());
+        for label in [
+            format!("argon2id-m18-t2-p1-{d}"),
+            format!("argon2id-m4097-t2-p1-{d}"),
+            format!("argon2id-m19-t1-p1-{d}"),
+            format!("argon2id-m19-t17-p1-{d}"),
+            format!("argon2id-m19-t2-p0-{d}"),
+            format!("argon2id-m19-t2-p17-{d}"),
+            format!("argon2id-m4294967295-t2-p1-{d}"),
+            format!("argon2id-mx-t2-p1-{d}"),
+            format!("argon2id-m19-t2-{d}"),
+            "argon2id-m19-t2-p1-other".to_string(),
+            "scrypt".to_string(),
+        ] {
+            assert!(MnemonicPath::stored_argon2(&label).is_err(), "{label}");
+        }
+    }
+
+    #[test]
+    fn base_produced_mnemonic_seal_opens() {
+        let seal = MnemonicSeal {
+            salt: BASE_MN_SALT.into(),
+            nonce: BASE_MN_NONCE.into(),
+            ciphertext: BASE_MN_CT.into(),
+            kdf: BASE_MN_KDF.into(),
+        };
+        assert!(seal.kdf.starts_with("argon2id-m19-t2-p1-"));
+        assert_eq!(
+            MnemonicPath::open(&seal, BASE_MN_WORDS).unwrap(),
+            [0xA5u8; 32]
+        );
     }
 }

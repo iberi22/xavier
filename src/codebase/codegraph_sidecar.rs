@@ -485,6 +485,61 @@ pub fn install_codegraph_sidecar_sync(from_source: bool) -> Result<SidecarInstal
 mod tests {
     use super::*;
 
+    /// Mark this whole lib-test binary as "inside a test" before `main`.
+    ///
+    /// `install_codegraph_sidecar` already refuses to spawn
+    /// `cargo build --release -p code-graph` when `XAVIER_INSIDE_TEST` is set
+    /// (issue #2260 cascade guard), but nothing in the repo ever sets it, so any
+    /// unit test that reaches the install path release-builds the sidecar from
+    /// inside the suite — repo rule: unit tests never run `cargo build`.
+    /// Under nextest the `NEXTEST` variable already covers this; this hook
+    /// covers plain `cargo test`, where sibling tests matched by the
+    /// `codegraph_sidecar` filter (e.g.
+    /// `cli::commands::code::tests::test_install_codegraph_sidecar_json_output`)
+    /// used to build. Same `.init_array` mechanism as
+    /// `crate::isolate_test_process!()`.
+    #[cfg(target_os = "linux")]
+    #[allow(unsafe_code)]
+    const _: () = {
+        extern "C" fn __xavier_inside_test_init() {
+            std::env::set_var("XAVIER_INSIDE_TEST", "1");
+        }
+        #[used]
+        #[link_section = ".init_array"]
+        static __XAVIER_INSIDE_TEST_INIT: extern "C" fn() = __xavier_inside_test_init;
+    };
+
+    /// Restores the process-global state a test overrides (env vars + cwd), even
+    /// if the test panics, so the override cannot leak into the next test that
+    /// shares this process (`--test-threads=1`).
+    struct EnvRestore {
+        vars: Vec<(&'static str, Option<std::ffi::OsString>)>,
+        cwd: PathBuf,
+    }
+
+    impl EnvRestore {
+        fn new(vars: &[&'static str]) -> Self {
+            let saved = vars
+                .iter()
+                .map(|k| (*k, std::env::var_os(k)))
+                .collect::<Vec<_>>();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            Self { vars: saved, cwd }
+        }
+    }
+
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            for (key, value) in &self.vars {
+                match value {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+            let _ = std::env::set_current_dir(&self.cwd);
+        }
+    }
+
     #[test]
     fn test_resolve_codegraph_binary_none_or_some() {
         let res = resolve_codegraph_binary();
@@ -503,11 +558,41 @@ mod tests {
         }
     }
 
+    /// The mock-download install must resolve — and write — ONLY inside its own
+    /// sandbox. Every lookup root of `resolve_codegraph_binary` is injected:
+    ///
+    /// * `HOME`             — install destination (`~/.local/bin/codegraph`);
+    /// * `CARGO_TARGET_DIR` — first artifact lookup root. A real
+    ///   `release/code-graph` there (built by another test or a previous run)
+    ///   short-circuits the install, so the path returned below used to depend
+    ///   on whatever existed on disk (nextest failure: assertion compared
+    ///   `$CARGO_TARGET_DIR/release/code-graph` against the tempdir path);
+    /// * `PATH`              — a `codegraph` on the real `PATH` resolves just as
+    ///   early (that is the `~/.local/bin/codegraph` this box has);
+    /// * cwd                 — `code-graph/Cargo.toml` in the crate root makes
+    ///   `install_codegraph_sidecar(false)` run a real
+    ///   `cargo build --release -p code-graph`, which unit tests must never do
+    ///   (repo rule, issue #2260 cascade). A private workspace without the
+    ///   manifest forces the precompiled-download path this test is named after.
     #[tokio::test]
     async fn test_install_codegraph_sidecar_mock_download() {
         let temp_dir = tempfile::tempdir().unwrap();
         let home_override = temp_dir.path().to_path_buf();
+        let target_override = temp_dir.path().join("target-empty");
+        let workspace = temp_dir.path().join("workspace");
+        std::fs::create_dir_all(&target_override).unwrap();
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        let _restore = EnvRestore::new(&["HOME", "CARGO_TARGET_DIR", "PATH", "XAVIER_INSIDE_TEST"]);
         std::env::set_var("HOME", &home_override);
+        std::env::set_var("CARGO_TARGET_DIR", &target_override);
+        std::env::set_var("PATH", "/usr/bin:/bin");
+        // Clear the suite-wide "never build inside a test" flag ONLY for this
+        // call: without it the install short-circuits before the download path
+        // this test exists to exercise (the private workspace above still keeps
+        // it from ever building anything).
+        std::env::remove_var("XAVIER_INSIDE_TEST");
+        std::env::set_current_dir(&workspace).unwrap();
 
         // Run download mode (non-source mode with non-existent source)
         let res = install_codegraph_sidecar(false).await;

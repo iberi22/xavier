@@ -65,7 +65,7 @@ machine never builds. PRs must be mergeable as-is:
 - `.gitcore/features.json` is the source of truth (status, tests, files).
 - Run `scripts/verify-pipeline.sh` to see the real state — it EXECUTES the
   declared tests. The pipeline is the judge; status is never hand-promoted.
-- CI runs the same pipeline on every PR.
+- **Post-merge lane** — runs post-merge on `main`: full feature-ledger verification (`scripts/verify-pipeline.sh`), and it is the only thing allowed to promote a `features.json` status.
 
 ## 5. Modifying features.json
 
@@ -99,7 +99,7 @@ machine never builds. PRs must be mergeable as-is:
 ## 9. Pull requests
 
 - 1 PR = 1 feature (or a bounded part of it), referencing its feature id.
-- CI runs: fmt, clippy, tests, feature verification, secret scan.
+- **PR lane**: `cargo fmt --all -- --check`, `cargo check --package xavier --all-targets --features ci-safe`, `cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings`, `cargo test --package xavier --lib --features ci-safe -- --test-threads=1`, plus the secret scan.
 - Never commit: session state, output artifacts, `.env`, logs, databases.
 
 ## 10. Canonical Directory Protocol & Agent Hygiene

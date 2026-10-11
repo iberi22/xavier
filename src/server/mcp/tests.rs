@@ -15,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tower::util::ServiceExt;
 
 use super::session::mcp_post_handler;
+use super::tools_core::tests::RecoveryDirGuard;
 use crate::workspace::WorkspaceContext;
 use crate::{
     agents::RuntimeConfig,
@@ -2527,4 +2528,595 @@ fn step_two() {}
     if dir.exists() {
         std::fs::remove_dir_all(&dir).ok();
     }
+}
+
+#[tokio::test]
+async fn auth_defaults_require_explicit_identity() {
+    crate::isolate_test_process!();
+    let (state, workspace) = test_state().await;
+    for name in ["list_projects", "future_tool"] {
+        let err = super::server::handle_tool_call(
+            state.clone(),
+            workspace.clone(),
+            None,
+            name,
+            json!({}),
+        )
+        .await
+        .expect_err("caller identity required");
+        assert!(err
+            .to_string()
+            .starts_with("Forbidden: Insufficient permissions"));
+    }
+    super::server::handle_tool_call(
+        state.clone(),
+        workspace.clone(),
+        None,
+        "health_check",
+        json!({}),
+    )
+    .await
+    .expect("anonymous health");
+    let claims = crate::security::auth::Claims::new(
+        "stdio_local".into(),
+        "local@xavier".into(),
+        crate::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    );
+    super::server::handle_tool_call(
+        state.clone(),
+        workspace.clone(),
+        Some(&claims),
+        "list_projects",
+        json!({}),
+    )
+    .await
+    .expect("explicit operator");
+    assert!(!super::server::root_credential_present());
+    let err = super::server::handle_tool_call(
+        state,
+        workspace,
+        Some(&claims),
+        "espacio_channel_list",
+        json!({}),
+    )
+    .await
+    .expect_err("root credential required");
+    assert!(err.to_string().contains("root"));
+}
+
+#[tokio::test]
+async fn recovery_status_requires_admin() {
+    crate::isolate_test_process!();
+    let (state, workspace) = test_state().await;
+    for role in [
+        crate::security::auth::UserRole::Readonly,
+        crate::security::auth::UserRole::User,
+    ] {
+        let claims = crate::security::auth::Claims::new(
+            "caller".into(),
+            "caller@xavier".into(),
+            role,
+            chrono::Duration::hours(1),
+        );
+        let err = super::server::handle_tool_call(
+            state.clone(),
+            workspace.clone(),
+            Some(&claims),
+            "recovery_status",
+            json!({}),
+        )
+        .await
+        .expect_err("admin required");
+        assert!(err
+            .to_string()
+            .starts_with("Forbidden: Insufficient permissions"));
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn recovery_status_uses_configured_directory() {
+    crate::isolate_test_process!();
+    let default_dir = tempfile::tempdir().unwrap();
+    let extra_dir = tempfile::tempdir().unwrap();
+    let _guard = RecoveryDirGuard::at(default_dir.path());
+    crate::recovery::RecoveryStore::at(default_dir.path())
+        .write_kcv(&[7; 32])
+        .unwrap();
+    let (state, workspace) = test_state().await;
+    let claims = crate::security::auth::Claims::new(
+        "operator".into(),
+        "local@xavier".into(),
+        crate::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    );
+    let result = super::server::handle_tool_call(
+        state,
+        workspace,
+        Some(&claims),
+        "recovery_status",
+        json!({"recovery_dir": extra_dir.path(), "crypt_passphrase_backed_up": true}),
+    )
+    .await;
+    let output = result.expect("admin status");
+    assert_eq!(output["structuredContent"]["kcvPresent"], true);
+    assert_eq!(output["structuredContent"]["cryptPassphraseBackedUp"], true);
+    let schema = super::server::get_xavier_tools()
+        .into_iter()
+        .find(|t| t.name == "recovery_status")
+        .unwrap()
+        .input_schema;
+    assert!(schema["properties"].get("recovery_dir").is_none());
+}
+
+#[tokio::test]
+async fn auth_defaults_stdio_has_local_identity() {
+    crate::isolate_test_process!();
+    let (state, workspace) = test_state().await;
+    let response = crate::server::mcp_stdio::dispatch_stdio_value(
+        state.clone(),
+        workspace.clone(),
+        json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+            "name": "list_projects", "arguments": {}
+        }}),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(response.get("error").is_none(), "{response}");
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    let response = crate::server::mcp_stdio::dispatch_stdio_value(
+        state,
+        workspace,
+        json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+            "name": "espacio_channel_list", "arguments": {"space_id": "esp_x"}
+        }}),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(response.to_string().contains("root"), "{response}");
+}
+
+fn stdio_claims() -> crate::security::auth::Claims {
+    crate::security::auth::Claims::new(
+        crate::server::mcp_stdio::STDIO_LOCAL_SUBJECT.into(),
+        "local@xavier".into(),
+        crate::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    )
+}
+
+#[tokio::test]
+async fn auth_defaults_stdio_denies_secret_tools() {
+    crate::isolate_test_process!();
+    let (state, workspace) = test_state().await;
+    let claims = stdio_claims();
+    for name in ["secret_lend", "secret_exec"] {
+        let err = super::server::handle_tool_call(
+            state.clone(),
+            workspace.clone(),
+            Some(&claims),
+            name,
+            json!({}),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().starts_with("Forbidden:"), "{name}: {err}");
+    }
+}
+
+#[tokio::test]
+async fn auth_defaults_stdio_run_command_not_gated() {
+    crate::isolate_test_process!();
+    let (state, workspace) = test_state().await;
+    let claims = stdio_claims();
+    let res = super::server::handle_tool_call(
+        state,
+        workspace,
+        Some(&claims),
+        "xavier_run_command",
+        json!({}),
+    )
+    .await;
+    if let Err(err) = res {
+        assert!(!err.to_string().starts_with("Forbidden:"), "{err}");
+    }
+}
+
+/// Text payload of a stdio `tools/call` response, or `None` when the call
+/// reported an error.
+async fn stdio_tool_text(
+    state: &AppState,
+    workspace: &WorkspaceContext,
+    id: u64,
+    name: &str,
+    arguments: Value,
+) -> Option<String> {
+    let response = crate::server::mcp_stdio::dispatch_stdio_value(
+        state.clone(),
+        workspace.clone(),
+        json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {
+            "name": name, "arguments": arguments
+        }}),
+    )
+    .await
+    .expect("stdio dispatch")
+    .expect("stdio response");
+    assert!(response.get("error").is_none(), "{response}");
+    if response["result"]["isError"] == true {
+        return None;
+    }
+    Some(
+        response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string(),
+    )
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn auth_defaults_stdio_memory_write_default_clearance_persists() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+
+    // A record that declares no clearance defaults to `Internal`, which the
+    // local Admin identity (`role_clearance(Admin) = TopSecret`) may write.
+    let saved = stdio_tool_text(
+        &state,
+        &workspace,
+        1,
+        "memory_save",
+        json!({"text": "stdio default clearance note", "namespace": "stdio-default"}),
+    )
+    .await
+    .expect("stdio memory_save of a default-clearance record");
+    assert!(saved.contains("Memory saved. id="), "{saved}");
+
+    let created = stdio_tool_text(
+        &state,
+        &workspace,
+        2,
+        "create_memory",
+        json!({"path": "stdio/default-note", "content": "stdio create default note"}),
+    )
+    .await
+    .expect("stdio create_memory of a default-clearance record");
+    assert!(!created.is_empty(), "{created}");
+
+    // Persistence: read the saved record back through the same transport.
+    let found = stdio_tool_text(
+        &state,
+        &workspace,
+        3,
+        "memory_search",
+        json!({"query": "stdio default clearance", "namespace": "stdio-default"}),
+    )
+    .await
+    .expect("stdio memory_search after the write");
+    assert!(found.contains("stdio default clearance note"), "{found}");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn auth_defaults_stdio_memory_write_top_secret_follows_admin_ceiling() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+
+    // The stdio identity is Admin, whose ceiling is `role_clearance(Admin) =
+    // TopSecret`: a TopSecret record is at the ceiling and must be accepted.
+    let saved = stdio_tool_text(
+        &state,
+        &workspace,
+        1,
+        "memory_save",
+        json!({
+            "text": "stdio top secret note",
+            "namespace": "stdio-top-secret",
+            "metadata": {"clearance": "top_secret"}
+        }),
+    )
+    .await
+    .expect("Admin may write at the TopSecret ceiling");
+    assert!(saved.contains("Memory saved. id="), "{saved}");
+}
+
+fn memory_write_claims(
+    subject: &str,
+    role: crate::security::auth::UserRole,
+) -> crate::security::auth::Claims {
+    crate::security::auth::Claims::new(
+        subject.to_string(),
+        format!("{subject}@example.invalid"),
+        role,
+        chrono::Duration::minutes(5),
+    )
+}
+
+struct MemoryWriteRpm {
+    previous: Option<std::ffi::OsString>,
+}
+
+impl MemoryWriteRpm {
+    fn set(value: &str) -> Self {
+        let previous = std::env::var_os("XAVIER_MEMORY_WRITE_RPM");
+        std::env::set_var("XAVIER_MEMORY_WRITE_RPM", value);
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        Self { previous }
+    }
+}
+
+impl Drop for MemoryWriteRpm {
+    fn drop(&mut self) {
+        match self.previous.take() {
+            Some(value) => std::env::set_var("XAVIER_MEMORY_WRITE_RPM", value),
+            None => std::env::remove_var("XAVIER_MEMORY_WRITE_RPM"),
+        }
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+    }
+}
+
+async fn call_memory_write(
+    state: &AppState,
+    workspace: &WorkspaceContext,
+    role: crate::security::auth::UserRole,
+    caller_key: &str,
+    name: &str,
+    arguments: Value,
+) -> anyhow::Result<Value> {
+    let claims = memory_write_claims(caller_key, role);
+    super::tools_memory::with_memory_write_caller_key(
+        caller_key.to_string(),
+        super::tools_memory::with_mcp_caller(
+            super::tools_memory::McpCaller {
+                clearance: crate::security::clearance::role_clearance(role),
+                space: None,
+            },
+            super::server::handle_tool_call(
+                state.clone(),
+                workspace.clone(),
+                Some(&claims),
+                name,
+                arguments,
+            ),
+        ),
+    )
+    .await
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_save_user_top_secret_denied() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+    let err = call_memory_write(
+        &state,
+        &workspace,
+        crate::security::auth::UserRole::User,
+        "mcp-save-user-high",
+        "memory_save",
+        json!({"text": "A useful project note.", "metadata": {"clearance": "top_secret"}}),
+    )
+    .await
+    .expect_err("user memory_save above the caller ceiling");
+    assert!(err.to_string().contains("clearance"), "{err}");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_save_user_internal_allowed() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+    call_memory_write(
+        &state,
+        &workspace,
+        crate::security::auth::UserRole::User,
+        "mcp-save-user-internal",
+        "memory_save",
+        json!({"text": "A useful project note.", "metadata": {"clearance": "internal"}}),
+    )
+    .await
+    .expect("user memory_save at internal");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_save_admin_top_secret_allowed() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+    call_memory_write(
+        &state,
+        &workspace,
+        crate::security::auth::UserRole::Admin,
+        "mcp-save-admin-high",
+        "memory_save",
+        json!({"text": "A useful project note.", "metadata": {"clearance": "top_secret"}}),
+    )
+    .await
+    .expect("admin memory_save at top_secret");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_create_memory_user_top_secret_denied() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+    let err = call_memory_write(
+        &state,
+        &workspace,
+        crate::security::auth::UserRole::User,
+        "mcp-create-user-high",
+        "create_memory",
+        json!({
+            "path": "notes/mcp-high",
+            "content": "A useful project note.",
+            "metadata": {"clearance": "top_secret"}
+        }),
+    )
+    .await
+    .expect_err("user create_memory above the caller ceiling");
+    assert!(err.to_string().contains("clearance"), "{err}");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_save_fragment_user_top_secret_denied() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+    let err = call_memory_write(
+        &state,
+        &workspace,
+        crate::security::auth::UserRole::User,
+        "mcp-fragment-user-high",
+        "save_fragment",
+        json!({
+            "agent_id": "agent-1",
+            "content": "A useful project note.",
+            "metadata": {"clearance": "top_secret"}
+        }),
+    )
+    .await
+    .expect_err("user save_fragment above the caller ceiling");
+    assert!(err.to_string().contains("clearance"), "{err}");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_write_rate_third_denied() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("2");
+    let (state, workspace) = test_state().await;
+    let role = crate::security::auth::UserRole::User;
+    let key = "mcp-rate-one";
+    for _ in 0..2 {
+        call_memory_write(
+            &state,
+            &workspace,
+            role,
+            key,
+            "memory_save",
+            json!({"text": "A useful project note.", "metadata": {"clearance": "internal"}}),
+        )
+        .await
+        .expect("write inside the budget");
+    }
+    let err = call_memory_write(
+        &state,
+        &workspace,
+        role,
+        key,
+        "memory_save",
+        json!({"text": "A useful project note.", "metadata": {"clearance": "internal"}}),
+    )
+    .await
+    .expect_err("third write");
+    assert!(
+        err.to_string().to_lowercase().contains("rate limit"),
+        "{err}"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_write_rate_independent_callers() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("2");
+    let (state, workspace) = test_state().await;
+    let role = crate::security::auth::UserRole::User;
+    let note = json!({"text": "A useful project note.", "metadata": {"clearance": "internal"}});
+    for _ in 0..2 {
+        call_memory_write(
+            &state,
+            &workspace,
+            role,
+            "mcp-rate-a",
+            "memory_save",
+            note.clone(),
+        )
+        .await
+        .expect("caller a inside budget");
+        call_memory_write(
+            &state,
+            &workspace,
+            role,
+            "mcp-rate-b",
+            "memory_save",
+            note.clone(),
+        )
+        .await
+        .expect("caller b inside budget");
+    }
+    let err_a = call_memory_write(
+        &state,
+        &workspace,
+        role,
+        "mcp-rate-a",
+        "memory_save",
+        note.clone(),
+    )
+    .await
+    .expect_err("caller a third write");
+    let err_b = call_memory_write(&state, &workspace, role, "mcp-rate-b", "memory_save", note)
+        .await
+        .expect_err("caller b third write");
+    assert!(
+        err_a.to_string().to_lowercase().contains("rate limit"),
+        "{err_a}"
+    );
+    assert!(
+        err_b.to_string().to_lowercase().contains("rate limit"),
+        "{err_b}"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_write_rate_disabled() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("0");
+    let (state, workspace) = test_state().await;
+    let role = crate::security::auth::UserRole::User;
+    for _ in 0..5 {
+        call_memory_write(
+            &state,
+            &workspace,
+            role,
+            "mcp-rate-off",
+            "memory_save",
+            json!({"text": "A useful project note.", "metadata": {"clearance": "internal"}}),
+        )
+        .await
+        .expect("disabled limit accepts the write");
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn mcp_memory_write_without_caller_clearance_fails_closed() {
+    crate::isolate_test_process!();
+    let _rpm = MemoryWriteRpm::set("600");
+    let (state, workspace) = test_state().await;
+    let claims = memory_write_claims("mcp-no-caller", crate::security::auth::UserRole::Admin);
+    let err = super::tools_memory::with_memory_write_caller_key(
+        "mcp-no-caller".to_string(),
+        super::server::handle_tool_call(
+            state.clone(),
+            workspace.clone(),
+            Some(&claims),
+            "memory_save",
+            json!({"text": "A useful project note.", "metadata": {"clearance": "internal"}}),
+        ),
+    )
+    .await
+    .expect_err("a call without a caller identity must not inherit the default ceiling");
+    assert!(err.to_string().contains("clearance"), "{err}");
 }

@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use xavier::agents::{Agent, AgentConfig};
+use xavier::context::skill_controller::{lease, state::Journal};
 use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
 use xavier::memory::sqlite_vec_store::VecSqliteMemoryStore;
 use xavier::memory::store::{MemoryRecord, MemoryStore};
@@ -38,6 +39,10 @@ pub async fn spawn_agents(
     };
 
     let mut agents = Vec::with_capacity(count);
+    let task_id = uuid::Uuid::new_v4().simple().to_string();
+    let mut task_content = format!(
+        "---\nname: eph-{task_id}\ndescription: Selected skills for an authorized task\n---\n\n"
+    );
     for i in 0..count {
         let name = format!("agent-{}", i + 1);
         let provider_name = available_providers
@@ -75,7 +80,10 @@ pub async fn spawn_agents(
 
         let mut loaded_skills = Vec::new();
         for skill_name in &effective_skills {
-            if let Some(content) = load_skill(skill_name) {
+            let skill = skill_name.clone();
+            if let Some(content) = tokio::task::spawn_blocking(move || load_skill(&skill)).await? {
+                task_content.push_str(&content);
+                task_content.push_str("\n\n");
                 context.insert(format!("skill_{}", skill_name), content);
                 loaded_skills.push(skill_name.clone());
             } else {
@@ -107,25 +115,86 @@ pub async fn spawn_agents(
 
     if let Some(task) = task {
         println!("Executing task across spawned agents: {}", task);
-        let memory = load_spawn_memory().await?;
-        let mut futures = Vec::with_capacity(agents.len());
-        for mut agent in agents {
-            let memory = Arc::clone(&memory);
-            futures.push(tokio::spawn(async move {
-                let name = agent.name.clone();
-                match agent.run(memory, None).await {
-                    Ok(resp) => println!("  {} completed: {}", name, resp.response),
-                    Err(error) => println!("  {} failed: {}", name, error),
+        let worktree = std::env::current_dir()?;
+        let journal = tokio::task::spawn_blocking(Journal::from_settings).await??;
+        with_task_skill(journal, worktree, task_id, task_content, || async move {
+            let memory = load_spawn_memory().await?;
+            let mut futures = Vec::with_capacity(agents.len());
+            for mut agent in agents {
+                let memory = Arc::clone(&memory);
+                futures.push(tokio::spawn(async move {
+                    let name = agent.name.clone();
+                    let response = agent.run(memory, None).await?;
+                    println!("  {} completed: {}", name, response.response);
+                    Ok::<_, anyhow::Error>(())
+                }));
+            }
+            let mut result = Ok(());
+            for future in futures {
+                match future.await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => result = Err(error),
+                    Err(error) => result = Err(error.into()),
                 }
-            }));
-        }
-
-        for future in futures {
-            let _ = future.await;
-        }
+            }
+            result
+        })
+        .await?;
     }
 
     Ok(())
+}
+
+/// Publication is a prerequisite for running; cleanup preserves the runner's result.
+async fn with_task_skill<F, Fut>(
+    journal: Journal,
+    worktree: PathBuf,
+    task_id: String,
+    content: String,
+    run: F,
+) -> Result<()>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<()>>,
+{
+    let (j, w, id) = (journal.clone(), worktree.clone(), task_id.clone());
+    tokio::task::spawn_blocking(move || lease::publish_task_skill(&j, &w, &id, &content)).await??;
+    let (j, w, id) = (journal.clone(), worktree.clone(), task_id.clone());
+    let (stop, mut stopped) = tokio::sync::oneshot::channel();
+    let mut renew = tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = &mut stopped => break,
+                _ = tokio::time::sleep(std::time::Duration::from_secs(lease::LEASE_SECONDS / 3)) => {},
+            }
+            let (j, w, id) = (j.clone(), w.clone(), id.clone());
+            match tokio::task::spawn_blocking(move || lease::renew_lease(&j, &w, &id)).await {
+                Ok(Ok(())) => {}
+                error => tracing::warn!(?error, "Task skill lease renewal failed"),
+            }
+        }
+    });
+    let result = run().await;
+    let _ = stop.send(());
+    // Drain any blocking heartbeat before aborting, so release cannot race its root lock.
+    let _ = (&mut renew).await;
+    renew.abort();
+    match tokio::task::spawn_blocking(move || lease::release_task(&journal, &worktree, &task_id))
+        .await
+    {
+        Ok(Ok(report)) => {
+            for (_, outcome) in report.entries {
+                if let xavier::context::skill_controller::rollback::RollbackOutcome::Conflict(
+                    reason,
+                ) = outcome
+                {
+                    tracing::warn!(%reason, "Task skill release conflict");
+                }
+            }
+        }
+        error => tracing::warn!(?error, "Task skill release failed"),
+    }
+    result
 }
 
 /// Batch-spawn many agents with provider/model cycling.
@@ -276,4 +345,100 @@ pub fn load_skill(skill_name: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn spawn_waits_for_publication_and_releases_on_agent_error() {
+        let worktree = tempdir().unwrap();
+        let state = tempdir().unwrap();
+        let journal = Journal::new(state.path().join("journal")).unwrap();
+        let skill = worktree.path().join(".agents/skills/eph-task/SKILL.md");
+        let link = worktree.path().join(".claude/skills/eph-task");
+        let result = with_task_skill(
+            journal.clone(),
+            worktree.path().into(),
+            "task".into(),
+            "body".into(),
+            || async {
+                assert_eq!(std::fs::read_to_string(&skill).unwrap(), "body");
+                assert_eq!(std::fs::read_link(&link).unwrap(), skill.parent().unwrap());
+                Err(anyhow::anyhow!("agent fixture failed"))
+            },
+        )
+        .await;
+        assert_eq!(result.unwrap_err().to_string(), "agent fixture failed");
+        assert!(!skill.parent().unwrap().exists());
+        assert!(std::fs::symlink_metadata(link).is_err());
+        assert!(journal.committed_transactions().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn spawn_never_runs_after_failed_publication() {
+        let worktree = tempdir().unwrap();
+        let state = tempdir().unwrap();
+        let journal = Journal::new(state.path().join("journal")).unwrap();
+        let occupied = worktree.path().join(".claude/skills/eph-task");
+        std::fs::create_dir_all(occupied.parent().unwrap()).unwrap();
+        std::fs::write(&occupied, "foreign").unwrap();
+        let ran = std::sync::atomic::AtomicBool::new(false);
+        let result = with_task_skill(
+            journal,
+            worktree.path().into(),
+            "task".into(),
+            "body".into(),
+            || async {
+                ran.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(!ran.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(std::fs::read_to_string(occupied).unwrap(), "foreign");
+    }
+
+    #[tokio::test]
+    async fn spawn_releases_after_success() {
+        let worktree = tempdir().unwrap();
+        let state = tempdir().unwrap();
+        let journal = Journal::new(state.path().join("journal")).unwrap();
+        with_task_skill(
+            journal,
+            worktree.path().into(),
+            "task".into(),
+            "body".into(),
+            || async { Ok(()) },
+        )
+        .await
+        .unwrap();
+        assert!(!worktree.path().join(".agents/skills/eph-task").exists());
+    }
+    #[tokio::test]
+    async fn spawn_release_error_preserves_the_agent_error() {
+        let worktree = tempdir().unwrap();
+        let state = tempdir().unwrap();
+        let journal = Journal::new(state.path().join("journal")).unwrap();
+        let marker = worktree.path().join(".agents/skills/eph-task/.lease");
+        let result = with_task_skill(
+            journal,
+            worktree.path().into(),
+            "task".into(),
+            "body".into(),
+            || async {
+                std::fs::write(marker, "foreign marker").unwrap();
+                Err(anyhow::anyhow!("original agent error"))
+            },
+        )
+        .await;
+        assert_eq!(result.unwrap_err().to_string(), "original agent error");
+        assert!(worktree
+            .path()
+            .join(".agents/skills/eph-task/SKILL.md")
+            .exists());
+    }
 }

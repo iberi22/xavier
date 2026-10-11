@@ -7,8 +7,9 @@
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use anyhow::{bail, Context, Result};
-use argon2::Argon2;
+use argon2::{Algorithm, Argon2, Params, Version};
 use chrono::{DateTime, Utc};
+#[cfg(test)]
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +18,23 @@ pub const AIRGAP_MAGIC: &[u8; 8] = b"SWALCAPS";
 
 /// Current binary specification format version
 pub const AIRGAP_VERSION: u8 = 1;
+
+/// Argon2id cost parameters, pinned to the values the format was written with.
+const ARGON2_M_COST_KIB: u32 = 19_456;
+const ARGON2_T_COST: u32 = 2;
+const ARGON2_P_COST: u32 = 1;
+
+/// Derives the 32-byte AES key from the passphrase with the pinned Argon2id parameters.
+fn derive_key(passphrase: &str, salt: &[u8]) -> Result<[u8; 32]> {
+    let params = Params::new(ARGON2_M_COST_KIB, ARGON2_T_COST, ARGON2_P_COST, Some(32))
+        .map_err(|e| anyhow::anyhow!("Argon2id parameter error: {}", e))?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let mut key = [0u8; 32];
+    argon2
+        .hash_password_into(passphrase.as_bytes(), salt, &mut key)
+        .map_err(|e| anyhow::anyhow!("Argon2id key derivation error: {}", e))?;
+    Ok(key)
+}
 
 /// Payload kind stored within the encrypted capsule
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,7 +78,8 @@ pub struct AirgapCapsule;
 
 impl AirgapCapsule {
     /// Encrypts plaintext data with an Argon2id-derived key and packages it into a binary capsule
-    pub fn pack_with_passphrase(
+    #[cfg(test)]
+    pub(crate) fn pack_with_passphrase(
         plaintext: &[u8],
         payload_kind: CapsulePayloadKind,
         original_filename: String,
@@ -74,13 +93,7 @@ impl AirgapCapsule {
         let mut nonce_bytes = [0u8; 12];
         rng.fill_bytes(&mut nonce_bytes);
 
-        // Derive 32-byte key using Argon2id
-        let mut key = [0u8; 32];
-        let argon2 = Argon2::default();
-        argon2
-            .hash_password_into(passphrase.as_bytes(), &salt, &mut key)
-            .map_err(|e| anyhow::anyhow!("Argon2id key derivation error: {}", e))?;
-
+        let key = derive_key(passphrase, &salt)?;
         let cipher = Aes256Gcm::new_from_slice(&key)
             .map_err(|e| anyhow::anyhow!("Cipher creation error: {}", e))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
@@ -136,6 +149,11 @@ impl AirgapCapsule {
         let header: AirgapCapsuleHeader =
             serde_json::from_slice(header_slice).context("Invalid capsule header JSON")?;
 
+        let salt = crate::crypto::hex_decode(&header.salt).context("Invalid capsule salt")?;
+        let nonce = crate::crypto::hex_decode(&header.nonce).context("Invalid capsule nonce")?;
+        if salt.len() != 16 || nonce.len() != 12 {
+            bail!("Invalid salt or nonce dimensions in capsule header");
+        }
         Ok(header)
     }
 
@@ -161,12 +179,7 @@ impl AirgapCapsule {
             bail!("Invalid salt or nonce dimensions in capsule header");
         }
 
-        let mut key = [0u8; 32];
-        let argon2 = Argon2::default();
-        argon2
-            .hash_password_into(passphrase.as_bytes(), &salt, &mut key)
-            .map_err(|e| anyhow::anyhow!("Argon2id derivation error: {}", e))?;
-
+        let key = derive_key(passphrase, &salt)?;
         let cipher = Aes256Gcm::new_from_slice(&key)
             .map_err(|e| anyhow::anyhow!("Cipher creation error: {}", e))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
@@ -246,6 +259,41 @@ mod tests {
 
         let result = AirgapCapsule::unpack_with_passphrase(&packed, "safe-password");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn inspect_validates_header_dimensions() {
+        let packed = AirgapCapsule::pack_with_passphrase(
+            b"test",
+            CapsulePayloadKind::SingleFile,
+            "source".into(),
+            "test".into(),
+            "passphrase",
+        )
+        .unwrap();
+        let len = u32::from_le_bytes(packed[8..12].try_into().unwrap()) as usize;
+        let original: serde_json::Value = serde_json::from_slice(&packed[12..12 + len]).unwrap();
+        for field in ["salt", "nonce"] {
+            for value in ["", "00", "zz", "é"] {
+                let mut header = original.clone();
+                header[field] = value.into();
+                let json = serde_json::to_vec(&header).unwrap();
+                let mut bytes = AIRGAP_MAGIC.to_vec();
+                bytes.extend_from_slice(&(json.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(&json);
+                assert!(AirgapCapsule::inspect_header(&bytes).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn pinned_kdf_matches_crate_default() {
+        let salt = [7u8; 16];
+        let mut expected = [0u8; 32];
+        Argon2::default()
+            .hash_password_into(b"kdf pin passphrase", &salt, &mut expected)
+            .unwrap();
+        assert_eq!(derive_key("kdf pin passphrase", &salt).unwrap(), expected);
     }
 
     #[test]

@@ -295,14 +295,25 @@ pub fn current() -> XavierSettings {
         let vault = HardwareVault::new("xavier-telegram");
         settings.telegram.notification_chat_id = vault.get_secret("notification_chat_id").ok();
     }
+    // PGHEART_* is canonical; XAVIER_PGHEART_* (documented in .env.example) is an alias.
+    let pgheart_env = |name: &str| {
+        std::env::var(name)
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| {
+                std::env::var(format!("XAVIER_{name}"))
+                    .ok()
+                    .filter(|v| !v.trim().is_empty())
+            })
+    };
     if settings.pgheart.url.is_none() {
-        settings.pgheart.url = std::env::var("PGHEART_URL").ok();
+        settings.pgheart.url = pgheart_env("PGHEART_URL");
     }
     if settings.pgheart.token.is_none() {
-        settings.pgheart.token = std::env::var("PGHEART_TOKEN").ok();
+        settings.pgheart.token = pgheart_env("PGHEART_TOKEN");
     }
     if settings.pgheart.instance_id.is_none() {
-        settings.pgheart.instance_id = std::env::var("PGHEART_INSTANCE_ID").ok();
+        settings.pgheart.instance_id = pgheart_env("PGHEART_INSTANCE_ID");
     }
     if settings.models.llm_api_key.is_none() {
         settings.models.llm_api_key = std::env::var("XAVIER_LLM_API_KEY").ok();
