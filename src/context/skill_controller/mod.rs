@@ -1,6 +1,7 @@
 pub mod audit;
 pub mod backup;
 pub mod composer;
+pub mod lease;
 pub mod manifest;
 pub mod plan;
 pub mod planner;
