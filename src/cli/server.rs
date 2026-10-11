@@ -206,6 +206,14 @@ pub fn memory_routes() -> Router<CliState> {
             )
             .get(stats_handler),
         )
+        // Sync write path: it persists client-supplied records, so it carries
+        // the same write permission gate as the single-record add route.
+        .route(
+            "/v1/memory/push",
+            post(crate::cli::handlers::memory::memory_push_handler).layer(middleware::from_fn(
+                require_permission(|r| r.can_add_memory()),
+            )),
+        )
         .route(
             "/v1/memories/search",
             post(xavier::server::v1_api::v1_memories_search),
@@ -1198,10 +1206,6 @@ pub async fn start_http_server(
         .route(
             "/v1/memory/manifest",
             get(crate::cli::handlers::memory::memory_manifest_handler),
-        )
-        .route(
-            "/v1/memory/push",
-            post(crate::cli::handlers::memory::memory_push_handler),
         )
         .route(
             "/v1/memory/pull",

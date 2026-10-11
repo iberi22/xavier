@@ -9,6 +9,7 @@ use anyhow::Result;
 use sha2::{Digest, Sha256};
 
 use crate::memory::store::{MemoryRecord, MemoryStore};
+use crate::security::clearance::{check_write_clearance, level_from_metadata, ClearanceLevel};
 
 use super::{ChunkDiff, DiffAction};
 
@@ -91,6 +92,47 @@ pub async fn apply_changes_received(
                 store.delete(workspace_id, path).await?;
             }
         }
+    }
+    Ok(())
+}
+
+/// Validate every incoming record against the caller's write ceiling before a
+/// single record is applied.
+///
+/// The whole batch is refused on the first violation: a batch applied record by
+/// record would leave the store holding some records the caller was allowed to
+/// write and some it was not. The metadata is normalized exactly like the
+/// single-record write path, and the typed `clearance` field is compared too;
+/// the effective level is the higher of the two, so neither can be used to
+/// smuggle a record above the ceiling. A record that cannot be parsed or
+/// normalized is treated as the highest level (fail closed) instead of being
+/// silently skipped.
+pub fn validate_changes_received(
+    diffs: &[ChunkDiff],
+    ceiling: ClearanceLevel,
+) -> Result<(), &'static str> {
+    for diff in diffs {
+        if !matches!(diff.action, DiffAction::Add | DiffAction::Update) {
+            continue;
+        }
+        let Some(data) = &diff.data else {
+            continue;
+        };
+        let Ok(incoming) = serde_json::from_slice::<MemoryRecord>(data) else {
+            return Err("Memory clearance exceeds caller clearance");
+        };
+        let metadata_level = match crate::memory::schema::normalize_metadata(
+            &incoming.path,
+            incoming.metadata.clone(),
+            &incoming.workspace_id,
+            None,
+        ) {
+            Ok(normalized) => level_from_metadata(&normalized),
+            // An unnormalizable payload is not trusted: treat it as the top level.
+            Err(_) => ClearanceLevel::TopSecret,
+        };
+        let effective = metadata_level.max(incoming.clearance);
+        check_write_clearance(effective, ceiling)?;
     }
     Ok(())
 }

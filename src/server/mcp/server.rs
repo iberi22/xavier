@@ -121,6 +121,22 @@ pub async fn handle_tool_call(
         }
     }
 
+    if matches!(
+        name,
+        "create_memory" | "memory_save" | "save_fragment" | "memoryfragment_save"
+    ) {
+        // The per-caller budget is consumed before clearance is evaluated.
+        // A write that later fails clearance still counts. That order is accepted.
+        let key = super::tools_memory::memory_write_caller_key(claims);
+        crate::adapters::inbound::http::middleware::rate_limit::check_memory_write_rate(&key)
+            .map_err(|retry| {
+                anyhow::anyhow!(
+                    "Memory write rate limit exceeded; retry after {} seconds",
+                    retry.as_secs().max(1)
+                )
+            })?;
+    }
+
     for (key, value) in arguments.as_object().unwrap_or(&serde_json::Map::new()) {
         if !should_prescan_tool_argument(name, key) {
             continue;
