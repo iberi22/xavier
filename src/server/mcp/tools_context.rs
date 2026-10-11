@@ -118,6 +118,11 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
                 "properties": {}
             }),
         },
+        MCPTool {
+            name: "xavier_skill_usage".to_string(),
+            description: "Read skill lifecycle counts and harness acknowledgment coverage".to_string(),
+            input_schema: json!({"type": "object", "properties": {}}),
+        },
     ]
 }
 
@@ -439,7 +444,8 @@ pub async fn handle_context_tool(
             let registry = build_skill_registry(Path::new(&workspace.workspace_id)).await;
             let memory = workspace.workspace.memory.clone();
             let dispatcher = SkillDispatcher::new(registry, Some(memory))
-                .with_clearance(super::tools_memory::caller_clearance());
+                .with_clearance(super::tools_memory::caller_clearance())
+                .with_telemetry_db(crate::api::skills::skill_usage_db_path());
             match dispatcher
                 .dispatch(&SkillDispatchRequest {
                     task: task.to_string(),
@@ -457,6 +463,7 @@ pub async fn handle_context_tool(
                         "confidence": result.confidence,
                         "context_pack": {
                             "system_instructions": result.context_pack.system_instructions,
+                            "composition": result.context_pack.composition,
                             "relevant_memories": result.context_pack.relevant_memories,
                             "prior_decisions": result.context_pack.prior_decisions,
                             "total_tokens": result.context_pack.total_tokens,
@@ -474,6 +481,23 @@ pub async fn handle_context_tool(
                         "confidence": 0.0,
                         "error": format!("{e}"),
                     }))?,
+                    true,
+                ),
+            }
+        }
+        "xavier_skill_usage" => {
+            let summary = tokio::task::spawn_blocking(|| {
+                crate::api::skills::usage_summary_blocking(
+                    &crate::api::skills::skill_usage_db_path(),
+                )
+            })
+            .await?;
+            match summary {
+                Ok(summary) => {
+                    super::server::mcp_text_result(serde_json::to_string_pretty(&summary)?, false)
+                }
+                Err(error) => super::server::mcp_text_result(
+                    serde_json::to_string(&json!({"error": error}))?,
                     true,
                 ),
             }
@@ -576,6 +600,76 @@ mod tests {
         serde_json::from_str(text).expect("tool payload is JSON")
     }
 
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_usage_cli_rest_mcp_agree() {
+        let _home = IsolatedHome::acquire().await;
+        let temp = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("XAVIER_DATA_DIR");
+        struct Restore(Option<std::ffi::OsString>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => std::env::set_var("XAVIER_DATA_DIR", value),
+                    None => std::env::remove_var("XAVIER_DATA_DIR"),
+                }
+            }
+        }
+        let _restore = Restore(previous);
+        std::env::set_var("XAVIER_DATA_DIR", temp.path());
+        let db = crate::api::skills::skill_usage_db_path();
+        crate::api::skills::seed_usage_fixture(&db);
+        let cli = crate::api::skills::usage_summary_blocking(&db).unwrap();
+        let response = crate::api::skills::skill_usage().await;
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 65536)
+            .await
+            .unwrap();
+        let rest: Value = serde_json::from_slice(&body).unwrap();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let claims = crate::security::auth::Claims::new(
+            "fixture-reader".into(),
+            "fixture@example.invalid".into(),
+            crate::security::auth::UserRole::Readonly,
+            chrono::Duration::hours(1),
+        );
+        let listing = super::super::session::dispatch_mcp_value(
+            state.clone(),
+            workspace.clone(),
+            Some(&claims),
+            json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(listing.get("error").is_none());
+        let tool = listing["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "xavier_skill_usage")
+            .unwrap();
+        assert_eq!(
+            tool["inputSchema"],
+            json!({"type": "object", "properties": {}})
+        );
+        let response = super::super::session::dispatch_mcp_value(
+            state,
+            workspace,
+            Some(&claims),
+            json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "xavier_skill_usage", "arguments": {}}}),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(response.get("error").is_none(), "{response}");
+        let output = &response["result"];
+        assert_eq!(output["isError"], false);
+        assert_eq!(cli, rest);
+        assert_eq!(cli, mcp_payload(output));
+    }
+
     /// Skill names of a listing payload, sorted.
     ///
     /// `SkillRegistry::list` walks a `HashMap`, so the per-instance order is not
@@ -637,6 +731,129 @@ mod tests {
             sorted_skill_names(&rest),
             "MCP and REST must report the same skills in the same listing"
         );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_live_composition_hash_matches_composer_without_files() {
+        use crate::context::skill_controller::composer::{
+            self, CompositionInput, CompositionScope, Evidence, SkillEntry,
+        };
+        use crate::context::skill_registry::build_skill_registry;
+        use sha2::{Digest, Sha256};
+        use std::sync::Arc;
+
+        let home = IsolatedHome::acquire().await;
+        let work = tempfile::tempdir().expect("temp workspace");
+        let previous_cwd = std::env::current_dir().expect("cwd");
+        struct CwdGuard(std::path::PathBuf);
+        impl Drop for CwdGuard {
+            fn drop(&mut self) {
+                std::env::set_current_dir(&self.0).expect("restore cwd");
+            }
+        }
+        let _cwd = CwdGuard(previous_cwd);
+        std::env::set_current_dir(work.path()).expect("fixture cwd");
+        let task = "Design distributed mesh consensus protocols and architecture";
+        write_fixture_skill(work.path(), "mesh-architect", task);
+        let skill_path = work.path().join("skills/mesh-architect/SKILL.md");
+        let skill_text = std::fs::read_to_string(&skill_path).expect("fixture bytes");
+        std::fs::write(
+            &skill_path,
+            skill_text.replacen("---\n", "---\nvisibility: public\n", 1),
+        )
+        .expect("public fixture skill");
+        let (state, mut workspace) = crate::server::mcp::tests::test_state().await;
+        let document = crate::memory::qmd_memory::MemoryDocument {
+            id: Some("m-live".to_string()),
+            path: "sessions/m-live".to_string(),
+            content: "distributed mesh consensus architecture evidence".to_string(),
+            metadata: json!({"kind": "observation", "namespace": {"workspace_id": "ws-live"}}),
+            ..Default::default()
+        };
+        let memory = Arc::new(crate::memory::qmd_memory::QmdMemory::new_with_workspace(
+            Arc::new(tokio::sync::RwLock::new(vec![document])),
+            "ws-live",
+        ));
+        let store = Arc::new(crate::memory::store::InMemoryMemoryStore::default());
+        workspace.workspace = Arc::new(
+            crate::workspace::WorkspaceState::new_minimal(
+                "ws-live".to_string(),
+                work.path().to_path_buf(),
+                memory,
+                store,
+            )
+            .await,
+        );
+        workspace.workspace_id = work.path().to_string_lossy().into_owned();
+        let registry = build_skill_registry(work.path()).await;
+        let skill = registry.get("mesh-architect").expect("fixture skill");
+        let scope = CompositionScope::new("ws-live", None).expect("scope");
+        let expected = composer::compose(
+            &scope,
+            &CompositionInput {
+                task_id: composer::task_fingerprint("ws-live", task),
+                task: task.to_string(),
+                skills: vec![SkillEntry {
+                    name: skill.name.clone(),
+                    content_hash: skill.content_hash.clone(),
+                }],
+                evidence: vec![Evidence::new(
+                    "m-live",
+                    "ws-live",
+                    "memory",
+                    "distributed mesh consensus architecture evidence",
+                )],
+                memory_available: true,
+                graph_revision: None,
+            },
+            4000,
+        )
+        .expect("composition");
+        let output = handle_context_tool(
+            state,
+            workspace,
+            "xavier_dispatch_skill",
+            json!({"task": task}),
+        )
+        .await
+        .expect("live dispatch");
+        let payload = mcp_payload(&output);
+        assert_eq!(payload["ok"], true);
+        let live = payload["context_pack"]["composition"]
+            .as_str()
+            .expect("live composition");
+        assert_eq!(
+            Sha256::digest(live.as_bytes()),
+            Sha256::digest(expected.markdown.as_bytes())
+        );
+        assert_eq!(live, expected.markdown);
+        let file_content = tokio::task::spawn_blocking(move || {
+            let published_root = tempfile::tempdir().expect("file delivery fixture");
+            let journal_root = tempfile::tempdir().expect("journal fixture");
+            let journal = crate::context::skill_controller::state::Journal::new(
+                journal_root.path().to_path_buf(),
+            )
+            .expect("journal");
+            let published = crate::context::skill_controller::lease::publish_task_skill(
+                &journal,
+                published_root.path(),
+                "live-fixture",
+                &expected.markdown,
+            )
+            .expect("file publication");
+            std::fs::read(published.skill_path).expect("published bytes")
+        })
+        .await
+        .expect("file fixture worker");
+        assert_eq!(
+            Sha256::digest(live.as_bytes()),
+            Sha256::digest(&file_content)
+        );
+        for root in [work.path(), home._home.path()] {
+            assert!(!root.join(".agents").exists());
+            assert!(!root.join(".claude").exists());
+        }
     }
 
     #[test]

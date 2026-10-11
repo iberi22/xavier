@@ -3,6 +3,9 @@ use serde_json::Value;
 use std::net::TcpListener;
 use std::process::{Child, Stdio};
 use std::time::Duration;
+use xavier::enterprise::rbac::Role;
+use xavier::memory::schema::ClearanceLevel;
+use xavier::mesh::{acl::MeshAcl, node::NodeId};
 
 struct ChildGuard {
     child: Child,
@@ -40,6 +43,10 @@ async fn test_health_endpoints_e2e() {
     });
     std::fs::write(&temp_config_path, config_json.to_string()).unwrap();
 
+    // Isolated config dir: no mesh_acl.json lives here, so the ACL maturity
+    // probe deterministically reports absent (never the developer's real dir).
+    let acl_dir = tempfile::tempdir().expect("acl tempdir");
+
     let code_db = format!("data/health-test-code-{port}.db");
     let mem_db = format!("data/health-test-mem-{port}.db");
 
@@ -50,6 +57,7 @@ async fn test_health_endpoints_e2e() {
             .env("XAVIER_TOKEN", "test-token")
             .env("XAVIER_HEADLESS", "true")
             .env("XAVIER_CONFIG_PATH", temp_config_path.to_str().unwrap())
+            .env("XAVIER_CONFIG_DIR", acl_dir.path())
             .env("XAVIER_CODE_GRAPH_DB_PATH", &code_db)
             .env("XAVIER_MEMORY_VEC_PATH", &mem_db)
             .stdout(Stdio::inherit())
@@ -153,18 +161,20 @@ async fn test_health_endpoints_e2e() {
     assert!(body_v1["system"].is_object());
     assert!(body_v1["mesh"].is_object());
 
-    // Maturity JSON shape checks
+    // Rejected license and absent ACL report false/0. Unchecked engines
+    // keep measured=false even though individual route and ACL checks ran.
     let mesh_maturity = &body_v1["mesh"]["maturity"];
-    assert_eq!(mesh_maturity["http_transport"].as_bool(), Some(true));
-    assert_eq!(mesh_maturity["http_transport_percent"].as_u64(), Some(100));
+    assert_eq!(mesh_maturity["http_transport"].as_bool(), Some(false));
+    assert_eq!(mesh_maturity["http_transport_percent"].as_u64(), Some(0));
     assert_eq!(mesh_maturity["libp2p"].as_bool(), Some(false));
-    assert_eq!(mesh_maturity["libp2p_percent"].as_u64(), Some(10));
-    assert_eq!(mesh_maturity["acl"].as_bool(), Some(true));
-    assert_eq!(mesh_maturity["acl_percent"].as_u64(), Some(90));
-    assert_eq!(mesh_maturity["tokenomics"].as_bool(), Some(true));
-    assert_eq!(mesh_maturity["tokenomics_percent"].as_u64(), Some(85));
+    assert_eq!(mesh_maturity["libp2p_percent"].as_u64(), Some(0));
+    assert_eq!(mesh_maturity["acl"].as_bool(), Some(false));
+    assert_eq!(mesh_maturity["acl_percent"].as_u64(), Some(0));
+    assert_eq!(mesh_maturity["tokenomics"].as_bool(), Some(false));
+    assert_eq!(mesh_maturity["tokenomics_percent"].as_u64(), Some(0));
     assert_eq!(mesh_maturity["onchain_gov"].as_bool(), Some(false));
     assert_eq!(mesh_maturity["onchain_gov_percent"].as_u64(), Some(0));
+    assert_eq!(mesh_maturity["measured"].as_bool(), Some(false));
 
     // 3. GET /v1/mesh/status (without accepted license) -> should return 403 Forbidden
     let resp_forbidden = client
@@ -196,6 +206,23 @@ async fn test_mesh_status_with_license_e2e() {
     });
     std::fs::write(&temp_config_path, config_json.to_string()).unwrap();
 
+    // Isolated config dir with one real ACL entry: the maturity probe must
+    // report acl true/100 (never the developer's real dir).
+    let acl_dir = tempfile::tempdir().expect("acl tempdir");
+    MeshAcl::load_from(acl_dir.path().join("mesh_acl.json"))
+        .expect("acl load")
+        .set_entry(
+            NodeId("health-test-node".to_string()),
+            xavier::mesh::acl::NodeAclEntry {
+                role: Role::Viewer,
+                clearance: ClearanceLevel::Internal,
+                namespaces: None,
+                namespace_acl: None,
+                public_key_hex: String::new(),
+            },
+        )
+        .expect("acl seed");
+
     let code_db = format!("data/health-test-code-{port}.db");
     let mem_db = format!("data/health-test-mem-{port}.db");
 
@@ -206,6 +233,7 @@ async fn test_mesh_status_with_license_e2e() {
             .env("XAVIER_TOKEN", "test-token")
             .env("XAVIER_HEADLESS", "true")
             .env("XAVIER_CONFIG_PATH", temp_config_path.to_str().unwrap())
+            .env("XAVIER_CONFIG_DIR", acl_dir.path())
             .env("XAVIER_CODE_GRAPH_DB_PATH", &code_db)
             .env("XAVIER_MEMORY_VEC_PATH", &mem_db)
             .stdout(Stdio::inherit())
@@ -242,16 +270,19 @@ async fn test_mesh_status_with_license_e2e() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.unwrap();
 
+    // HTTP routes are enabled by license acceptance even without `mesh`.
+    // The seeded typed ACL is present; engines remain unchecked.
     assert_eq!(body["http_transport"].as_bool(), Some(true));
     assert_eq!(body["http_transport_percent"].as_u64(), Some(100));
     assert_eq!(body["libp2p"].as_bool(), Some(false));
-    assert_eq!(body["libp2p_percent"].as_u64(), Some(10));
+    assert_eq!(body["libp2p_percent"].as_u64(), Some(0));
     assert_eq!(body["acl"].as_bool(), Some(true));
-    assert_eq!(body["acl_percent"].as_u64(), Some(90));
-    assert_eq!(body["tokenomics"].as_bool(), Some(true));
-    assert_eq!(body["tokenomics_percent"].as_u64(), Some(85));
+    assert_eq!(body["acl_percent"].as_u64(), Some(100));
+    assert_eq!(body["tokenomics"].as_bool(), Some(false));
+    assert_eq!(body["tokenomics_percent"].as_u64(), Some(0));
     assert_eq!(body["onchain_gov"].as_bool(), Some(false));
     assert_eq!(body["onchain_gov_percent"].as_u64(), Some(0));
+    assert_eq!(body["measured"].as_bool(), Some(false));
 
     // Cleanup
     let _ = std::fs::remove_file(temp_config_path);

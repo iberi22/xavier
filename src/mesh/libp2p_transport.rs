@@ -10,7 +10,6 @@
 //! - When `--features libp2p` is enabled, real gossipsub types are available.
 //! - NAT traversal is documented via iroh fallback (already provides hole-punching).
 
-use crate::mesh::maturity::MeshMaturityReport;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,18 +17,10 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 
 /// Error returned when attempting network operations on the deprecated libp2p transport stub.
-#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[derive(Debug, Error, Clone, Default, PartialEq, Eq)]
 #[error("libp2p transport is deprecated (libp2p_percent: {libp2p_percent}%); use Iroh/HTTP; see MeshMaturityReport")]
 pub struct Libp2pDeprecated {
     pub libp2p_percent: u8,
-}
-
-impl Default for Libp2pDeprecated {
-    fn default() -> Self {
-        Self {
-            libp2p_percent: MeshMaturityReport::default().libp2p_percent,
-        }
-    }
 }
 
 /// Mesh peer info for libp2p gossipsub
@@ -206,10 +197,10 @@ mod tests {
         assert_eq!(sub_err, Libp2pDeprecated::default());
 
         let pub_err = m.publish("xavier/test", b"hello mesh").await.unwrap_err();
-        assert_eq!(pub_err.libp2p_percent, 10);
+        assert_eq!(pub_err.libp2p_percent, 0);
         let msg = pub_err.to_string();
         assert!(msg.contains("libp2p transport is deprecated"));
-        assert!(msg.contains("libp2p_percent: 10%"));
+        assert!(msg.contains("libp2p_percent: 0%"));
         assert!(msg.contains("use Iroh/HTTP"));
         assert!(msg.contains("see MeshMaturityReport"));
     }

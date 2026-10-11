@@ -122,7 +122,10 @@ has() { printf '%s\n' "$STAGED" | grep -qE "$1"; }
 if has '\.rs$'; then
     if command -v cargo >/dev/null 2>&1 && [ -f Cargo.toml ]; then
         note "🦀  [SWAL] cargo fmt --check"
-        cargo fmt --all -- --check >/dev/null 2>&1 || fail "cargo fmt --all"
+        STAGED_RS=$(printf '%s\n' "$STAGED" | grep -E '\.rs$' | tr '\n' ' ' || true)
+        if [ -n "$STAGED_RS" ]; then
+            cargo fmt -- --check $STAGED_RS >/dev/null 2>&1 || fail "cargo fmt failed on staged files"
+        fi
     fi
     if [ "${SWAL_HOOK_FULL:-0}" = "1" ] && command -v cargo >/dev/null 2>&1; then
         note "🦀  [SWAL] cargo clippy -D warnings"

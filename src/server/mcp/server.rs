@@ -67,13 +67,20 @@ pub async fn handle_tool_call(
     name: &str,
     arguments: Value,
 ) -> anyhow::Result<Value> {
-    if claims.is_none() && matches!(name, "secret_lend" | "secret_exec") {
+    if claims.is_none() && name != "health_check" {
         return Err(anyhow::anyhow!(
             "Forbidden: Insufficient permissions for anonymous role to execute tool '{name}'"
         ));
     }
 
     if let Some(claims) = claims {
+        if claims.sub == crate::server::mcp_stdio::STDIO_LOCAL_SUBJECT
+            && matches!(name, "secret_lend" | "secret_exec")
+        {
+            return Err(anyhow::anyhow!(
+                "Forbidden: Insufficient permissions for local identity to execute tool '{name}'"
+            ));
+        }
         let role = &claims.role;
         use crate::security::auth::Permission;
         match name {
@@ -114,6 +121,22 @@ pub async fn handle_tool_call(
         }
     }
 
+    if matches!(
+        name,
+        "create_memory" | "memory_save" | "save_fragment" | "memoryfragment_save"
+    ) {
+        // The per-caller budget is consumed before clearance is evaluated.
+        // A write that later fails clearance still counts. That order is accepted.
+        let key = super::tools_memory::memory_write_caller_key(claims);
+        crate::adapters::inbound::http::middleware::rate_limit::check_memory_write_rate(&key)
+            .map_err(|retry| {
+                anyhow::anyhow!(
+                    "Memory write rate limit exceeded; retry after {} seconds",
+                    retry.as_secs().max(1)
+                )
+            })?;
+    }
+
     for (key, value) in arguments.as_object().unwrap_or(&serde_json::Map::new()) {
         if !should_prescan_tool_argument(name, key) {
             continue;
@@ -152,6 +175,7 @@ pub async fn handle_tool_call(
         || name == "xavier_run_command"
         || name == "xavier_dispatch_skill"
         || name == "xavier_skill_list"
+        || name == "xavier_skill_usage"
     {
         super::tools_context::handle_context_tool(state, workspace, name, arguments).await
     } else if super::tools_expert::is_expert_tool(name) {

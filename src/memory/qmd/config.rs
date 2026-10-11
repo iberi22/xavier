@@ -16,6 +16,7 @@ pub const SEMANTIC_WEIGHT: f32 = 0.3;
 pub const MAX_EXPANSIONS: usize = 4;
 pub const MAX_MULTI_HOP_DEPTH: usize = 2;
 pub const MAX_RERANK_CANDIDATES: usize = 32;
+pub const MIN_RELEVANCE_SCORE: f32 = 0.10;
 
 // ── Embedding cache ──────────────────────────────────────────────────
 pub const EMBEDDING_CACHE_TTL_SECS: u64 = 3600; // 1 hour

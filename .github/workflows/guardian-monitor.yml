@@ -1,0 +1,22 @@
+name: Guardian Monitor
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '17 */2 * * *'  # enabled by #2677 after owner approval
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run Guardian Probe
+        run: |
+          python3 scripts/guardian/probe.py inventory.json --vantage gha --correlate --json

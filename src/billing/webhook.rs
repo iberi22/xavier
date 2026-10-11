@@ -56,12 +56,19 @@ pub async fn handle_webhook(
         }
     };
 
-    info!("Received webhook event: {} ({})", event.id, event.event_type);
+    info!(
+        "Received webhook event: {} ({})",
+        event.id, event.event_type
+    );
 
     // Process the event
     if let Err(e) = process_webhook_event(&event, &state).await {
         error!("Failed to process webhook event {}: {}", event.id, e);
-        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Processing error: {}", e)).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Processing error: {}", e),
+        )
+            .into_response();
     }
 
     (StatusCode::OK, "OK").into_response()
@@ -95,8 +102,14 @@ async fn handle_checkout_completed(event: &WebhookEvent, _state: &AppState) -> R
     let data = &event.data.object;
 
     let session_id = data.get("id").and_then(|v| v.as_str()).unwrap_or_default();
-    let customer_id = data.get("customer").and_then(|v| v.as_str()).unwrap_or_default();
-    let subscription_id = data.get("subscription").and_then(|v| v.as_str()).unwrap_or_default();
+    let customer_id = data
+        .get("customer")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let subscription_id = data
+        .get("subscription")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
     let workspace_id = data
         .get("metadata")
         .and_then(|m| m.get("workspace_id"))
@@ -112,7 +125,10 @@ async fn handle_checkout_completed(event: &WebhookEvent, _state: &AppState) -> R
     if super::stripe_client::BillingService::is_available() {
         if let Ok(_billing) = super::stripe_client::BillingService::new() {
             // Update workspace billing metadata with subscription ID
-            info!("Would update workspace {} with subscription {}", workspace_id, subscription_id);
+            info!(
+                "Would update workspace {} with subscription {}",
+                workspace_id, subscription_id
+            );
         }
     }
 
@@ -124,8 +140,14 @@ async fn handle_subscription_updated(event: &WebhookEvent, _state: &AppState) ->
     let data = &event.data.object;
 
     let subscription_id = data.get("id").and_then(|v| v.as_str()).unwrap_or_default();
-    let status = data.get("status").and_then(|v| v.as_str()).unwrap_or_default();
-    let current_period_end = data.get("current_period_end").and_then(|v| v.as_i64()).unwrap_or_default();
+    let status = data
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let current_period_end = data
+        .get("current_period_end")
+        .and_then(|v| v.as_i64())
+        .unwrap_or_default();
 
     info!(
         "Subscription updated: id={}, status={}, period_end={}",
@@ -152,7 +174,10 @@ async fn handle_subscription_deleted(event: &WebhookEvent, _state: &AppState) ->
     info!("Subscription deleted: id={}", subscription_id);
 
     // Clear subscription from workspace - downgrade workspace to free tier
-    info!("Would downgrade workspace for subscription {}", subscription_id);
+    info!(
+        "Would downgrade workspace for subscription {}",
+        subscription_id
+    );
 
     Ok(())
 }
@@ -162,8 +187,14 @@ async fn handle_payment_failed(event: &WebhookEvent, _state: &AppState) -> Resul
     let data = &event.data.object;
 
     let invoice_id = data.get("id").and_then(|v| v.as_str()).unwrap_or_default();
-    let customer_id = data.get("customer").and_then(|v| v.as_str()).unwrap_or_default();
-    let amount_due = data.get("amount_due").and_then(|v| v.as_u64()).unwrap_or_default();
+    let customer_id = data
+        .get("customer")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let amount_due = data
+        .get("amount_due")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_default();
 
     warn!(
         "Payment failed: invoice={}, customer={}, amount_due={}",
@@ -187,8 +218,8 @@ pub enum WebhookEventType {
 }
 
 impl WebhookEventType {
-    /// From str.
-    pub fn from_str(s: &str) -> Self {
+    /// Parsea el tipo de evento de Stripe (`Self::Unknown` si no se reconoce).
+    pub fn from_event_str(s: &str) -> Self {
         match s {
             "checkout.session.completed" => Self::CheckoutCompleted,
             "customer.subscription.updated" => Self::SubscriptionUpdated,
@@ -206,23 +237,23 @@ mod tests {
     #[test]
     fn test_webhook_event_type_parsing() {
         assert_eq!(
-            WebhookEventType::from_str("checkout.session.completed"),
+            WebhookEventType::from_event_str("checkout.session.completed"),
             WebhookEventType::CheckoutCompleted
         );
         assert_eq!(
-            WebhookEventType::from_str("customer.subscription.updated"),
+            WebhookEventType::from_event_str("customer.subscription.updated"),
             WebhookEventType::SubscriptionUpdated
         );
         assert_eq!(
-            WebhookEventType::from_str("customer.subscription.deleted"),
+            WebhookEventType::from_event_str("customer.subscription.deleted"),
             WebhookEventType::SubscriptionDeleted
         );
         assert_eq!(
-            WebhookEventType::from_str("invoice.payment_failed"),
+            WebhookEventType::from_event_str("invoice.payment_failed"),
             WebhookEventType::PaymentFailed
         );
         assert_eq!(
-            WebhookEventType::from_str("unknown.event"),
+            WebhookEventType::from_event_str("unknown.event"),
             WebhookEventType::Unknown
         );
     }

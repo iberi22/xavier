@@ -72,6 +72,17 @@ pub use xavier::auth2::auth_routes;
 
 pub static START_TIME: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
+pub(crate) fn skill_api_routes() -> Router<CliState> {
+    Router::new()
+        .route(
+            "/api/skill/dispatch",
+            post(xavier::api::skills::dispatch_skill),
+        )
+        .route("/api/skill/list", get(xavier::api::skills::list_skills))
+        .route("/api/skill/usage", get(xavier::api::skills::skill_usage))
+        .route("/api/skill/audit", get(xavier::api::skills::audit_skills))
+}
+
 /// Handler for Prometheus metrics endpoint
 pub async fn metrics_handler() -> axum::response::Response {
     use axum::response::IntoResponse;
@@ -206,6 +217,14 @@ pub fn memory_routes() -> Router<CliState> {
             )
             .get(stats_handler),
         )
+        // Sync write path: it persists client-supplied records, so it carries
+        // the same write permission gate as the single-record add route.
+        .route(
+            "/v1/memory/push",
+            post(crate::cli::handlers::memory::memory_push_handler).layer(middleware::from_fn(
+                require_permission(|r| r.can_add_memory()),
+            )),
+        )
         .route(
             "/v1/memories/search",
             post(xavier::server::v1_api::v1_memories_search),
@@ -272,6 +291,87 @@ pub fn memory_large_body_routes() -> Router<CliState> {
         .route("/memory/export-pack", post(export_pack_handler))
 }
 
+/// Initialize the node master key (OS keyring first, then the encrypted
+/// fallback file `~/.xavier/master.key`, minting only when neither exists).
+///
+/// MUST run before anything creates a file under the node data dir: the
+/// keystore guard refuses to mint a key once that directory holds node
+/// material (`node/record.key`, or a `vec-store.sqlite3*` /
+/// `memory-store.sqlite3*` store), because a freshly minted key could not read
+/// whatever is already sealed there. That check is what makes a reinstall or a
+/// lost keyring fail closed instead of silently re-encrypting a live node, and
+/// it stays exactly as strict as before: only the *order* changes.
+pub(crate) fn init_node_master_key() -> Result<xavier::keystore::MasterKeyManager> {
+    xavier::keystore::MasterKeyManager::load_or_init()
+}
+
+/// Open the node's memory store, with the node master key already in place.
+///
+/// This is the daemon's store-opening ORDER as one function, because the order
+/// is load-bearing. `VecSqliteMemoryStore::new` creates
+/// `<data>/vec-store.sqlite3` while opening its pool, so initializing the key
+/// afterwards made a fresh install with no keyring available (headless CI, a
+/// scrubbed temp `HOME`) see the store file this very process had just created
+/// and conclude the node already existed: the key was never minted and boot
+/// died with "existing node data found in <data dir>" before `/health` ever
+/// answered.
+///
+/// Key first is what fixes it: an empty data dir mints normally, and a data dir
+/// that was already populated still fails closed (now before a single byte is
+/// written into it). Later callers — `AuthDb::new` through the secrets vault,
+/// and espacio's `MasterNodeKek` — re-enter `load_or_init` and adopt the key
+/// that is now on disk, so the key is initialized once and reused, never minted
+/// twice.
+pub(crate) async fn open_node_memory_store(
+    config: VecSqliteStoreConfig,
+) -> Result<(VecSqliteMemoryStore, xavier::keystore::MasterKeyManager)> {
+    let master_key = init_node_master_key()?;
+    let store = VecSqliteMemoryStore::new(config).await?;
+    Ok((store, master_key))
+}
+
+/// Refuse to serve HTTP without a configured token.
+fn ensure_http_token_configured(token: &str) -> Result<()> {
+    if token.trim().is_empty() {
+        return Err(anyhow!(
+            "XAVIER_TOKEN is not configured; refusing to start the HTTP server without a token"
+        ));
+    }
+    Ok(())
+}
+
+/// Importers owned by one process of the periodic ingestion loop.
+///
+/// Built once, outside the cycle loop. Each cursor file is
+/// `{data_dir}/ingest-cursors/<source>.json`, so a later process skips sources
+/// that have not changed. Without those files a new process full-scans.
+struct SessionImporters {
+    antigravity: xavier::memory::antigravity_importer::AntigravityImporter,
+    opencode: xavier::memory::opencode_importer::OpenCodeImporter,
+    hermes: xavier::memory::hermes_importer::HermesImporter,
+    codex: xavier::memory::codex_importer::CodexImporter,
+}
+
+fn build_session_importers(
+    data_dir: &std::path::Path,
+    embedder: Arc<dyn xavier::embedding::Embedder>,
+) -> SessionImporters {
+    let cursors = data_dir.join("ingest-cursors");
+    SessionImporters {
+        antigravity: xavier::memory::antigravity_importer::AntigravityImporter::new()
+            .with_embedder(embedder.clone())
+            .with_cursor_path(cursors.join("antigravity.json")),
+        opencode: xavier::memory::opencode_importer::OpenCodeImporter::new()
+            .with_embedder(embedder.clone())
+            .with_cursor_path(cursors.join("opencode.json")),
+        hermes: xavier::memory::hermes_importer::HermesImporter::new()
+            .with_embedder(embedder.clone())
+            .with_cursor_path(cursors.join("hermes.json")),
+        codex: xavier::memory::codex_importer::CodexImporter::with_embedder(embedder)
+            .with_cursor_path(cursors.join("codex.json")),
+    }
+}
+
 /// Start http server.
 pub async fn start_http_server(
     port: u16,
@@ -323,6 +423,7 @@ pub async fn start_http_server(
     let bind_addr = format!("{}:{}", bind_host, port);
     info!("Starting Xavier HTTP server on {}", bind_addr);
     let token = resolve_http_token()?;
+    ensure_http_token_configured(&token)?;
     std::env::set_var("XAVIER_TOKEN", &token);
 
     let cm = ConnectionManager::global();
@@ -399,11 +500,51 @@ pub async fn start_http_server(
     // VecSqliteMemoryStore::new registers sqlite-vec (vec_f32) via sqlite3_auto_extension
     // *before* opening its hashed pool. Do not open the vec pool earlier or connections
     // will lack vec_f32 and memory/add will 500.
-    let mut store_inner = VecSqliteMemoryStore::new(config.clone()).await?;
+    //
+    // Opened through [`open_node_memory_store`], not directly, because the node
+    // master key has to exist before the store file it is going to sit next to;
+    // that function keeps the vec pool exactly where it is.
+    let (mut store_inner, node_master_key) = open_node_memory_store(config.clone()).await?;
+    info!(
+        kcv = %node_master_key.kcv_hex(),
+        "node master key ready before opening the memory store"
+    );
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
     store_inner.set_event_tx(event_tx);
     let store = Arc::new(store_inner);
     let vec_project_id_for_vacuum = store.connection_project_id().to_string();
+
+    // Encrypted Xavier Cloud backup: runs only with PGHEART_URL/PGHEART_TOKEN AND a
+    // backup passphrase; XAVIER_CLOUD_BACKUP_INTERVAL_MINS=0 disables it.
+    if let Some(cloud_cfg) = xavier::sync::xavier_cloud::CloudBackupConfig::from_env() {
+        match (
+            xavier::sync::xavier_cloud::passphrase_from_env(),
+            xavier::sync::xavier_cloud::interval_from_env(),
+        ) {
+            (Ok(Some(pass)), Some(interval)) => {
+                tracing::info!(
+                    instance = %cloud_cfg.instance_id,
+                    interval_mins = interval.as_secs() / 60,
+                    "cloud_backup: periodic encrypted backup enabled"
+                );
+                let backup_store: Arc<dyn xavier::memory::store::MemoryStore> = store.clone();
+                tokio::spawn(xavier::sync::xavier_cloud::periodic_backup_loop(
+                    backup_store,
+                    cloud_cfg,
+                    pass,
+                    interval,
+                ));
+            }
+            (Ok(None), _) => tracing::warn!(
+                "cloud_backup: PGHEART_* is set but {} is not: periodic cloud backup disabled, nothing is uploaded",
+                xavier::sync::xavier_cloud::PASSPHRASE_ENV
+            ),
+            (Err(e), _) => tracing::warn!("cloud_backup: disabled: {e:#}"),
+            (Ok(Some(_)), None) => {
+                tracing::info!("cloud_backup: periodic backup disabled by interval 0")
+            }
+        }
+    }
 
     let time_store = Arc::new(TimeMetricsStore::new());
     let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new());
@@ -872,24 +1013,22 @@ pub async fn start_http_server(
         );
         let in_flight = Arc::clone(&ingestion_in_flight);
         // The importers are built ONCE, here, and not inside the cycle loop.
-        // Each one carries an in-memory cursor (fingerprint / watermark of what
-        // it already ingested) and `sync` consults it to skip work. A
-        // constructor inside the loop discards that state every cycle, which
-        // silently degrades every `sync` back into a full scan — the exact
-        // regression this wiring fixes. The structural tests in
-        // `ingestion_wiring_tests` guard the position of these constructors.
-        let ag_importer = xavier::memory::antigravity_importer::AntigravityImporter::new()
-            .with_embedder(ingestion_embedder.clone());
-        let oc_importer = xavier::memory::opencode_importer::OpenCodeImporter::new()
-            .with_embedder(ingestion_embedder.clone());
-        let hermes_importer = xavier::memory::hermes_importer::HermesImporter::new()
-            .with_embedder(ingestion_embedder.clone());
-        // Codex is built once too (D8): it carries a per-file fingerprint cursor,
-        // so rebuilding it every cycle would re-read every session file again.
-        // `with_embedder` is an associated fn, not a builder method.
-        let codex_importer = xavier::memory::codex_importer::CodexImporter::with_embedder(
-            ingestion_embedder.clone(),
-        );
+        // Each one carries a cursor (fingerprint / watermark of what it already
+        // ingested), loaded from and saved to `ingest-cursors/` under the daemon
+        // data dir, and `sync` consults it to skip work. A constructor inside
+        // the loop discards that state every cycle, which silently degrades
+        // every `sync` back into a full scan — the exact regression this wiring
+        // fixes. The structural tests in `ingestion_wiring_tests` guard the
+        // position of these constructors. This stays inside the enabled branch:
+        // `XAVIER_INGESTION_INTERVAL_SECS=0` does not build importers or cursor
+        // files.
+        let ingestion_data_dir = xavier::maloca::MalocaStore::resolve_state_dir();
+        let SessionImporters {
+            antigravity: ag_importer,
+            opencode: oc_importer,
+            hermes: hermes_importer,
+            codex: codex_importer,
+        } = build_session_importers(&ingestion_data_dir, ingestion_embedder);
         tokio::spawn(async move {
             // Initial grace period to allow server start
             tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
@@ -1080,10 +1219,6 @@ pub async fn start_http_server(
             get(crate::cli::handlers::memory::memory_manifest_handler),
         )
         .route(
-            "/v1/memory/push",
-            post(crate::cli::handlers::memory::memory_push_handler),
-        )
-        .route(
             "/v1/memory/pull",
             post(crate::cli::handlers::memory::memory_pull_handler),
         )
@@ -1202,11 +1337,7 @@ pub async fn start_http_server(
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
         .route("/session/compact", post(session_compact_handler))
-        .route(
-            "/api/skill/dispatch",
-            post(xavier::api::skills::dispatch_skill),
-        )
-        .route("/api/skill/list", get(xavier::api::skills::list_skills))
+        .merge(skill_api_routes())
         .route("/skills", get(xavier::api::skills::list_skills))
         .route(
             "/api/memory/health",
@@ -2692,6 +2823,412 @@ mod ingestion_wiring_tests {
             guard,
             first_sync,
             release
+        );
+    }
+}
+
+#[cfg(test)]
+mod startup_order_tests {
+    //! The daemon's startup order, exercised as the real sequence instead of the
+    //! real daemon: a fresh install (temp `HOME` and empty data dir, so no OS
+    //! keyring entry is reachable) must mint the node master key and open the
+    //! memory store. Regression guard for the boot loop where the store file
+    //! was created before the key, so the keystore guard read this process's own
+    //! `vec-store.sqlite3` as prior node data and refused to mint.
+
+    use super::{init_node_master_key, open_node_memory_store};
+    use std::path::{Path, PathBuf};
+    use xavier::memory::sqlite_vec_store::VecSqliteMemoryStore;
+    use xavier::memory::sqlite_vec_store::VecSqliteStoreConfig;
+    use xavier::memory::store::MemoryStore;
+
+    /// Puts back every variable a test here overwrote, so the sandbox cannot
+    /// leak into the rest of the suite.
+    struct EnvGuard {
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl EnvGuard {
+        fn capture(vars: &[&'static str]) -> Self {
+            Self {
+                saved: vars
+                    .iter()
+                    .map(|var| (*var, std::env::var_os(var)))
+                    .collect(),
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (var, value) in &self.saved {
+                match value {
+                    Some(value) => std::env::set_var(var, value),
+                    None => std::env::remove_var(var),
+                }
+            }
+        }
+    }
+
+    /// A fresh install: a temp `HOME` (nothing of the developer's `~/.xavier`)
+    /// with the session bus pointed at a socket that does not exist, so the OS
+    /// keyring is unreachable exactly as in the scrubbed child environment the
+    /// espacio e2e spawns, over an empty data dir. Returns the data dir, the
+    /// store path and the env guard.
+    fn fresh_install(root: &Path) -> (PathBuf, PathBuf, EnvGuard) {
+        let guard = EnvGuard::capture(&[
+            "HOME",
+            "XAVIER_DATA_DIR",
+            "XAVIER_MEMORY_VEC_PATH",
+            "DBUS_SESSION_BUS_ADDRESS",
+        ]);
+        let data = root.join("data");
+        std::fs::create_dir_all(&data).expect("create the data dir");
+        let store_path = data.join("vec-store.sqlite3");
+        std::env::set_var("HOME", root);
+        std::env::set_var("XAVIER_DATA_DIR", &data);
+        std::env::set_var("XAVIER_MEMORY_VEC_PATH", &store_path);
+        // No keyring: an address with no socket behind it cannot be connected to.
+        std::env::set_var(
+            "DBUS_SESSION_BUS_ADDRESS",
+            "unix:path=/nonexistent/xavier-test-no-session-bus",
+        );
+        (data, store_path, guard)
+    }
+
+    /// Whether the OS keyring holds an entry for this node's master key. When it
+    /// does, `load_or_init` returns it before the guard is ever consulted, so
+    /// the ordering is unobservable and there is nothing to assert.
+    fn keyring_holds_the_master_key() -> bool {
+        matches!(
+            xavier::keystore::MasterKeyManager::load_existing(),
+            Ok(Some(_))
+        )
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_fresh_install_mints_the_key_before_the_store_file_exists() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (data, store_path, _guard) = fresh_install(tmp.path());
+        assert!(
+            std::fs::read_dir(&data)
+                .expect("read the data dir")
+                .next()
+                .is_none(),
+            "precondition: the data dir must start empty"
+        );
+        if keyring_holds_the_master_key() {
+            eprintln!(
+                "skipping: the OS keyring holds this node's master key, so the \
+                 keystore guard is bypassed by design and the order is unobservable"
+            );
+            return;
+        }
+
+        let (store, master_key) = open_node_memory_store(VecSqliteStoreConfig::from_env())
+            .await
+            .expect("a fresh install must mint the master key and open the store");
+
+        assert!(store_path.exists(), "the memory store file must exist");
+        let key_file = tmp.path().join(".xavier").join("master.key");
+        assert!(
+            key_file.exists(),
+            "a fresh install with no keyring must mint ~/.xavier/master.key"
+        );
+        // Every later key consumer (AuthDb's secrets vault, espacio's
+        // MasterNodeKek) re-enters load_or_init: it must adopt the key that is
+        // now on disk instead of minting a second one or tripping the guard.
+        let reloaded = init_node_master_key().expect("the minted key must reload");
+        assert_eq!(reloaded.kcv_hex(), master_key.kcv_hex());
+        assert!(
+            !store
+                .health()
+                .await
+                .expect("the store must answer")
+                .is_empty(),
+            "the store must be usable after the key is in place"
+        );
+    }
+
+    /// The bug itself, reproduced without the daemon: with the store opened
+    /// first, the guard must still refuse — a store that predates the key is
+    /// exactly the case fail-closed exists for, and this test is what keeps the
+    /// ordering above from being "fixed" by weakening that guard.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_store_file_that_predates_the_key_still_fails_closed() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (_data, store_path, _guard) = fresh_install(tmp.path());
+        if keyring_holds_the_master_key() {
+            eprintln!("skipping: the OS keyring bypasses the guard by design");
+            return;
+        }
+
+        VecSqliteMemoryStore::new(VecSqliteStoreConfig::from_env())
+            .await
+            .expect("the store opens on its own");
+        assert!(store_path.exists());
+        assert!(
+            std::fs::metadata(&store_path)
+                .expect("stat the store")
+                .len()
+                > 0,
+            "the store file is not empty, so an empty-file exemption could not hide this"
+        );
+
+        let err = match init_node_master_key() {
+            Ok(_) => panic!("the guard must refuse to mint a key next to an existing store"),
+            Err(e) => e,
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("existing node data found"),
+            "unexpected error: {msg}"
+        );
+        assert!(
+            !tmp.path().join(".xavier").join("master.key").exists(),
+            "no master key may be minted next to a store that already exists"
+        );
+    }
+}
+
+#[cfg(test)]
+mod ensure_http_token_tests {
+    use super::ensure_http_token_configured;
+
+    #[test]
+    fn ensure_http_token_rejects_empty_and_whitespace() {
+        xavier::isolate_test_process!();
+        assert!(ensure_http_token_configured("").is_err());
+        assert!(ensure_http_token_configured("  \t\n").is_err());
+    }
+
+    #[test]
+    fn ensure_http_token_accepts_present() {
+        xavier::isolate_test_process!();
+        assert!(ensure_http_token_configured("a-token").is_ok());
+    }
+}
+
+#[cfg(test)]
+mod ingestion_persisted_cursor_tests {
+    use super::build_session_importers;
+    use std::path::{Path, PathBuf};
+    use xavier::embedding::NoopEmbedder;
+    use xavier::memory::store::{InMemoryMemoryStore, MemoryStore};
+
+    /// Puts env vars back when the test ends, including on assertion failure.
+    struct RestoreEnv {
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl RestoreEnv {
+        fn set(pairs: &[(&'static str, &Path)]) -> Self {
+            let saved = pairs
+                .iter()
+                .map(|(key, value)| {
+                    let prev = std::env::var_os(key);
+                    std::env::set_var(key, value);
+                    (*key, prev)
+                })
+                .collect();
+            Self { saved }
+        }
+    }
+
+    impl Drop for RestoreEnv {
+        fn drop(&mut self) {
+            for (key, prev) in self.saved.drain(..) {
+                match prev {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
+    fn write_opencode_db(path: &Path) -> std::io::Result<()> {
+        let conn =
+            rusqlite::Connection::open(path).map_err(|e| std::io::Error::other(e.to_string()))?;
+        conn.execute_batch(
+            "CREATE TABLE session (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                agent TEXT,
+                model TEXT,
+                time_created INTEGER,
+                time_updated INTEGER
+            );
+            CREATE TABLE message (
+                id TEXT PRIMARY KEY,
+                session_id TEXT,
+                time_created INTEGER,
+                data TEXT
+            );
+            CREATE TABLE part (
+                id TEXT PRIMARY KEY,
+                message_id TEXT,
+                session_id TEXT,
+                time_created INTEGER,
+                data TEXT
+            );
+            INSERT INTO session VALUES (
+                'ses_a', 'title', 'coder', 'model', 1600000000000, 1600000000000
+            );
+            INSERT INTO message VALUES (
+                'm1', 'ses_a', 1600000000001, '{\"role\":\"user\"}'
+            );
+            INSERT INTO part VALUES (
+                'p1', 'm1', 'ses_a', 1600000000001,
+                '{\"type\":\"text\",\"text\":\"hello opencode\"}'
+            );",
+        )
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+        Ok(())
+    }
+
+    fn write_sources(root: &Path) -> std::io::Result<(PathBuf, PathBuf, PathBuf, PathBuf)> {
+        let ag = root.join("ag");
+        let logs = ag.join("sess_a").join(".system_generated").join("logs");
+        std::fs::create_dir_all(&logs)?;
+        std::fs::write(
+            logs.join("transcript.jsonl"),
+            "{\"step_index\":0,\"type\":\"USER_INPUT\",\"content\":\"hello antigravity\"}\n",
+        )?;
+
+        let oc = root.join("opencode.db");
+        write_opencode_db(&oc)?;
+
+        let hermes = root.join("hermes");
+        std::fs::create_dir_all(&hermes)?;
+        std::fs::write(
+            hermes.join("s1.json"),
+            r#"{"session_id":"s1","request":{"body":{"model":"m","messages":[{"role":"user","content":"hello hermes"},{"role":"assistant","content":"ack"}]}}}"#,
+        )?;
+
+        let codex = root.join("codex");
+        std::fs::create_dir_all(&codex)?;
+        std::fs::write(
+            codex.join("a.json"),
+            r#"{"session_id":"a","messages":[{"role":"user","content":"hello codex"}]}"#,
+        )?;
+        Ok((ag, oc, hermes, codex))
+    }
+
+    async fn stored(store: &InMemoryMemoryStore) -> [usize; 4] {
+        [
+            store.list("agent:antigravity").await.expect("ag").len(),
+            store.list("agent:opencode").await.expect("oc").len(),
+            store.list("agent:hermes").await.expect("hermes").len(),
+            store.list("agent:codex").await.expect("codex").len(),
+        ]
+    }
+
+    /// A second process over unchanged sources reads and imports nothing.
+    /// The first set is dropped: an in-memory cursor would skip on its own,
+    /// and only the files under `ingest-cursors/` make the new set a no-op.
+    #[tokio::test]
+    async fn second_ingestion_pass_over_unchanged_sources_reads_nothing_new() {
+        let src = include_str!("server.rs");
+        let after_disabled = src
+            .split_once("Universal agent session ingestion DISABLED")
+            .expect("disabled branch")
+            .1;
+        let call_at = after_disabled
+            .find("build_session_importers(")
+            .expect("the enabled loop must build importers through build_session_importers");
+        assert!(
+            after_disabled[..call_at].contains("} else {"),
+            "persisted cursors must be built only when the ingestion loop is enabled"
+        );
+        let dir_needle = format!("{}{}", "data_dir.join(\"", "ingest-cursors\")");
+        assert!(
+            src.contains(&dir_needle),
+            "cursor files must live in an ingest-cursors/ directory"
+        );
+        for name in [
+            "antigravity.json",
+            "opencode.json",
+            "hermes.json",
+            "codex.json",
+        ] {
+            let needle = format!("cursors.join(\"{name}\")");
+            assert!(
+                src.contains(&needle),
+                "cursor file {name} is not under ingest-cursors/"
+            );
+        }
+
+        let root = tempfile::tempdir().expect("tempdir");
+        let data_dir = root.path().join("daemon-data");
+        let (ag, oc, hermes, codex) = write_sources(root.path()).expect("fixtures");
+        let _env = RestoreEnv::set(&[
+            ("ANTIGRAVITY_BRAIN_DIR", ag.as_path()),
+            ("OPENCODE_DB_PATH", oc.as_path()),
+            ("HERMES_SESSIONS_DIR", hermes.as_path()),
+            ("CODEX_SESSIONS_DIR", codex.as_path()),
+        ]);
+
+        let embedder = std::sync::Arc::new(NoopEmbedder);
+        let store = InMemoryMemoryStore::new();
+        let first = build_session_importers(&data_dir, embedder.clone());
+        let ag1 = first.antigravity.sync(&store).await.expect("ag pass 1");
+        let oc1 = first.opencode.sync(&store).await.expect("oc pass 1");
+        let he1 = first.hermes.sync(&store).await.expect("hermes pass 1");
+        let cx1 = first.codex.sync(&store).await.expect("codex pass 1");
+        assert!(ag1.read >= 1 && oc1.read >= 1 && he1.read >= 1 && cx1.read >= 1);
+        assert!(
+            oc1.message_rows >= 1,
+            "the first pass must read message parts"
+        );
+        let cursor_dir = data_dir.join("ingest-cursors");
+        for name in [
+            "antigravity.json",
+            "opencode.json",
+            "hermes.json",
+            "codex.json",
+        ] {
+            let path = cursor_dir.join(name);
+            assert!(
+                path.is_file() && path.starts_with(root.path()),
+                "cursor {} must be a file inside the tempdir",
+                path.display()
+            );
+        }
+        let before = stored(&store).await;
+        assert!(
+            before.iter().all(|n| *n > 0),
+            "first pass imported nothing: {before:?}"
+        );
+        drop(first);
+
+        let second = build_session_importers(&data_dir, embedder);
+        let ag2 = second.antigravity.sync(&store).await.expect("ag pass 2");
+        let oc2 = second.opencode.sync(&store).await.expect("oc pass 2");
+        let he2 = second.hermes.sync(&store).await.expect("hermes pass 2");
+        let cx2 = second.codex.sync(&store).await.expect("codex pass 2");
+        assert_eq!(
+            (
+                ag2.read,
+                ag2.records,
+                oc2.read,
+                oc2.records,
+                oc2.message_rows
+            ),
+            (0, 0, 0, 0, 0),
+            "antigravity/opencode second pass read new data"
+        );
+        assert_eq!(
+            (he2.read, he2.records, cx2.read, cx2.records),
+            (0, 0, 0, 0),
+            "hermes/codex second pass read new data"
+        );
+        assert!(ag2.skipped >= 1 && oc2.skipped >= 1 && he2.skipped >= 1 && cx2.skipped >= 1);
+        assert_eq!(
+            stored(&store).await,
+            before,
+            "second pass imported new rows"
         );
     }
 }

@@ -141,6 +141,121 @@ impl IpRateLimiter {
     }
 }
 
+/// Per-caller memory write budget shared by REST and MCP.
+pub struct MemoryWriteRateLimiter {
+    limiter: Option<IpRateLimiter>,
+}
+
+impl MemoryWriteRateLimiter {
+    pub fn new(rpm: u32) -> Self {
+        Self {
+            limiter: (rpm != 0).then(|| IpRateLimiter::new(f64::from(rpm), f64::from(rpm) / 60.0)),
+        }
+    }
+
+    pub fn check(&self, caller: &str) -> Result<(), Duration> {
+        self.check_amount(caller, 1.0)
+    }
+
+    /// Consume `amount` units atomically: either the whole batch fits or none
+    /// of it does, so a partially charged batch can never be applied.
+    pub fn check_amount(&self, caller: &str, amount: f64) -> Result<(), Duration> {
+        if let Some(limiter) = &self.limiter {
+            let (allowed, retry_after) = limiter.try_consume(caller, amount);
+            if !allowed {
+                return Err(retry_after);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Missing, empty, and unparsable values fall back to 600. Zero disables the limit.
+fn configured_memory_write_rpm() -> u32 {
+    let Ok(value) = std::env::var("XAVIER_MEMORY_WRITE_RPM") else {
+        return 600;
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return 600;
+    }
+    value.parse::<u32>().unwrap_or(600)
+}
+
+struct ActiveMemoryWriteLimiter {
+    rpm: u32,
+    limiter: MemoryWriteRateLimiter,
+}
+
+/// Rebuilt whenever the configured rate changes, so buckets from another rate do not carry over.
+static MEMORY_WRITE_RATE_LIMITER: std::sync::Mutex<Option<ActiveMemoryWriteLimiter>> =
+    std::sync::Mutex::new(None);
+
+fn lock_memory_write_limiter() -> std::sync::MutexGuard<'static, Option<ActiveMemoryWriteLimiter>> {
+    MEMORY_WRITE_RATE_LIMITER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+pub fn check_memory_write_rate(caller: &str) -> Result<(), Duration> {
+    check_memory_write_rate_amount(caller, 1.0)
+}
+
+/// Same limiter, consuming `amount` units in one step (batch writes).
+/// Either the whole batch is charged or the call is denied; a denial never
+/// leaves a partial charge behind.
+pub fn check_memory_write_rate_amount(caller: &str, amount: f64) -> Result<(), Duration> {
+    let rpm = configured_memory_write_rpm();
+    let mut slot = lock_memory_write_limiter();
+    if slot.as_ref().map(|active| active.rpm) != Some(rpm) {
+        *slot = Some(ActiveMemoryWriteLimiter {
+            rpm,
+            limiter: MemoryWriteRateLimiter::new(rpm),
+        });
+    }
+    let active = slot
+        .as_ref()
+        .expect("memory write limiter is installed for this check");
+    active.limiter.check_amount(caller, amount)
+}
+
+/// Install a fresh limiter for the current configuration. Tests call this so one
+/// case cannot spend another case's budget.
+#[cfg(test)]
+pub fn reset_memory_write_limiter() {
+    let rpm = configured_memory_write_rpm();
+    let mut slot = lock_memory_write_limiter();
+    *slot = Some(ActiveMemoryWriteLimiter {
+        rpm,
+        limiter: MemoryWriteRateLimiter::new(rpm),
+    });
+}
+
+#[derive(Clone)]
+pub struct MemoryWriteCallerKey(pub String);
+
+/// Resolve a stable caller key using authenticated identity before transport address.
+pub fn memory_write_caller_key(
+    token_id: Option<&str>,
+    agent_id: Option<&str>,
+    subject: Option<&str>,
+    ip: Option<std::net::SocketAddr>,
+) -> String {
+    if let Some(id) = token_id {
+        format!("token:{id}")
+    } else if let Some(id) = agent_id {
+        format!("agent:{id}")
+    } else if let Some(id) = subject {
+        format!("subject:{id}")
+    } else {
+        format!(
+            "ip:{}",
+            ip.map(|addr| addr.ip())
+                .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST))
+        )
+    }
+}
+
 static GLOBAL_IP_RATE_LIMITER: std::sync::LazyLock<IpRateLimiter> =
     std::sync::LazyLock::new(|| IpRateLimiter::new(100.0, 1.0));
 
@@ -225,6 +340,79 @@ mod tests {
     };
     use http_body_util::BodyExt;
     use tower::ServiceExt;
+
+    #[test]
+    fn test_memory_write_rate_per_caller() {
+        let limiter = MemoryWriteRateLimiter::new(2);
+        assert!(limiter.check("caller-a").is_ok());
+        assert!(limiter.check("caller-a").is_ok());
+        assert!(limiter.check("caller-a").unwrap_err() > Duration::ZERO);
+        assert!(limiter.check("caller-b").is_ok());
+        assert!(limiter.check("caller-b").is_ok());
+        assert!(limiter.check("caller-b").is_err());
+    }
+
+    #[test]
+    fn test_memory_write_rate_disabled() {
+        let limiter = MemoryWriteRateLimiter::new(0);
+        for _ in 0..1_000 {
+            assert!(limiter.check("caller").is_ok());
+        }
+    }
+
+    #[test]
+    fn test_memory_write_caller_identity_precedence() {
+        let ip = Some("192.0.2.1:1234".parse().unwrap());
+        assert_eq!(
+            memory_write_caller_key(Some("a"), Some("b"), Some("c"), ip),
+            "token:a"
+        );
+        assert_eq!(
+            memory_write_caller_key(None, Some("b"), Some("c"), ip),
+            "agent:b"
+        );
+        assert_eq!(
+            memory_write_caller_key(None, None, Some("c"), ip),
+            "subject:c"
+        );
+        assert_eq!(
+            memory_write_caller_key(None, None, None, ip),
+            "ip:192.0.2.1"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_memory_write_rate_rereads_configuration() {
+        crate::isolate_test_process!();
+        struct Restore(Option<std::ffi::OsString>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => std::env::set_var("XAVIER_MEMORY_WRITE_RPM", value),
+                    None => std::env::remove_var("XAVIER_MEMORY_WRITE_RPM"),
+                }
+                reset_memory_write_limiter();
+            }
+        }
+        let _restore = Restore(std::env::var_os("XAVIER_MEMORY_WRITE_RPM"));
+        let caller = format!("cfg-{}", ulid::Ulid::new());
+        std::env::set_var("XAVIER_MEMORY_WRITE_RPM", "1");
+        reset_memory_write_limiter();
+        assert!(check_memory_write_rate(&caller).is_ok());
+        assert!(check_memory_write_rate(&caller).is_err());
+        std::env::set_var("XAVIER_MEMORY_WRITE_RPM", "");
+        assert!(
+            check_memory_write_rate(&caller).is_ok(),
+            "empty configuration falls back to the default and starts a new budget"
+        );
+        std::env::set_var("XAVIER_MEMORY_WRITE_RPM", "not-a-number");
+        assert!(check_memory_write_rate(&caller).is_ok());
+        std::env::set_var("XAVIER_MEMORY_WRITE_RPM", "0");
+        for _ in 0..20 {
+            assert!(check_memory_write_rate(&caller).is_ok());
+        }
+    }
 
     #[tokio::test]
     async fn test_rate_limiter_try_consume() {

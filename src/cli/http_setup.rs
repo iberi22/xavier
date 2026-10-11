@@ -285,7 +285,7 @@ pub(crate) async fn handle_space_token(
             chrono::Duration::hours(1),
         ));
     req.extensions_mut().insert(auth);
-    next.run(req).await
+    next.run(with_memory_write_caller(req)).await
 }
 
 /// Maloca read paths that carry personal user content and therefore need a
@@ -386,7 +386,7 @@ pub async fn auth_middleware(
         || path == "/node/founder/status"
         || path == "/v1/node/founder/status"
     {
-        return next.run(req).await;
+        return next.run(with_memory_write_caller(req)).await;
     }
 
     let expected_token = match resolve_http_token() {
@@ -398,6 +398,13 @@ pub async fn auth_middleware(
             );
         }
     };
+
+    if expected_token.trim().is_empty() {
+        return json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({"status":"error","message":"Security token not configured"}),
+        );
+    }
 
     let provided_token = req
         .headers()
@@ -443,7 +450,7 @@ pub async fn auth_middleware(
                 xavier::security::auth::UserRole::Admin,
                 chrono::Duration::hours(1),
             ));
-        return next.run(req).await;
+        return next.run(with_memory_write_caller(req)).await;
     }
 
     // 1b. Space-scoped tokens (WP-13l). Terminal: a token with this prefix is
@@ -480,7 +487,7 @@ pub async fn auth_middleware(
                     xavier::security::auth::UserRole::User,
                     chrono::Duration::hours(1),
                 ));
-            return next.run(req).await;
+            return next.run(with_memory_write_caller(req)).await;
         }
     }
 
@@ -506,7 +513,7 @@ pub async fn auth_middleware(
                 xavier::security::auth::UserRole::User,
                 chrono::Duration::hours(1),
             ));
-        return next.run(req).await;
+        return next.run(with_memory_write_caller(req)).await;
     }
 
     // 4. Check Persistent API Tokens
@@ -538,7 +545,7 @@ pub async fn auth_middleware(
                     xavier::security::auth::UserRole::User,
                     chrono::Duration::hours(1),
                 ));
-            return next.run(req).await;
+            return next.run(with_memory_write_caller(req)).await;
         }
     }
 
@@ -561,7 +568,7 @@ pub async fn auth_middleware(
                 lease: None,
             });
             req.extensions_mut().insert(claims);
-            return next.run(req).await;
+            return next.run(with_memory_write_caller(req)).await;
         }
     }
 
@@ -569,6 +576,30 @@ pub async fn auth_middleware(
         StatusCode::UNAUTHORIZED,
         serde_json::json!({"status":"error","message":"Unauthorized"}),
     )
+}
+
+fn with_memory_write_caller(mut req: Request<Body>) -> Request<Body> {
+    use xavier::adapters::inbound::http::middleware::rate_limit::{
+        memory_write_caller_key, MemoryWriteCallerKey,
+    };
+    let session = req.extensions().get::<SessionInfo>();
+    let claims = req.extensions().get::<xavier::security::auth::Claims>();
+    let ip = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|c| c.0);
+    let key = memory_write_caller_key(
+        session
+            .and_then(|s| s.api_token.as_ref())
+            .map(|t| t.id.as_str()),
+        session
+            .and_then(|s| s.lease.as_ref())
+            .map(|l| l.agent_id.as_str()),
+        claims.map(|c| c.sub.as_str()),
+        ip,
+    );
+    req.extensions_mut().insert(MemoryWriteCallerKey(key));
+    req
 }
 
 #[derive(Clone, Debug)]
@@ -1087,6 +1118,820 @@ mod space_token_tests {
         (state, dir)
     }
 
+    struct TokenGuard(Option<String>);
+
+    impl TokenGuard {
+        fn set(value: &str) -> Self {
+            let prev = std::env::var("XAVIER_TOKEN").ok();
+            std::env::set_var("XAVIER_TOKEN", value);
+            Self(prev)
+        }
+    }
+
+    impl Drop for TokenGuard {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(v) => std::env::set_var("XAVIER_TOKEN", v),
+                None => std::env::remove_var("XAVIER_TOKEN"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn http_auth_requires_configured_token() {
+        xavier::isolate_test_process!();
+        let (state, _tmp) = test_state().await;
+        let _guard = TokenGuard::set("");
+        assert!(resolve_http_token().unwrap().is_empty());
+        let app = Router::new()
+            .fallback(any(echo))
+            .layer(from_fn_with_state(state, auth_middleware));
+        for header in [
+            None,
+            Some(("X-Xavier-Token", "")),
+            Some(("Authorization", "Bearer ")),
+        ] {
+            let (status, body) = send(&app, "POST", "/memory/add", "", Hdr::XToken, header).await;
+            assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(body["message"], "Security token not configured");
+        }
+        assert_eq!(call(&app, "GET", "/health", "").await, StatusCode::OK);
+        std::env::set_var("XAVIER_TOKEN", ROOT);
+        assert_eq!(
+            call(&app, "POST", "/memory/add", ROOT).await,
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_audit_requires_auth_and_configured_manifest() {
+        xavier::isolate_test_process!();
+        let (state, _tmp) = test_state().await;
+        let _token = TokenGuard::set(ROOT);
+        let _manifest = EnvRestore {
+            key: "XAVIER_SKILL_MANIFEST",
+            prev: std::env::var_os("XAVIER_SKILL_MANIFEST"),
+        };
+        std::env::remove_var("XAVIER_SKILL_MANIFEST");
+        let app = crate::cli::server::skill_api_routes()
+            .layer(from_fn_with_state(state.clone(), auth_middleware))
+            .with_state(state);
+        let status = call(&app, "GET", "/api/skill/audit", "").await;
+        assert!(matches!(
+            status,
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+        ));
+        assert_eq!(
+            call(&app, "GET", "/api/skill/audit", ROOT).await,
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_audit_authenticated_returns_redacted_report() {
+        xavier::isolate_test_process!();
+        let (state, _tmp) = test_state().await;
+        let fixture = tempfile::tempdir().unwrap();
+        let sources = fixture.path().join("sources");
+        let targets = fixture.path().join("targets");
+        let package = sources.join("demo");
+        std::fs::create_dir_all(&package).unwrap();
+        std::fs::create_dir_all(&targets).unwrap();
+        let skill = package.join("SKILL.md");
+        const MARKER: &str = "UNIQUE-BODY-MARKER-7f3a";
+        std::fs::write(&skill, format!("---\nname: demo\n---\n{MARKER}\n")).unwrap();
+        let manifest = fixture.path().join("manifest.toml");
+        std::fs::write(
+            &manifest,
+            format!(
+                r#"version = 1
+[sources]
+fixture = "{}"
+[[targets]]
+id = "fixture"
+root = "{}"
+tools = ["codex"]
+mode = "symlink"
+[[placements]]
+source = "fixture"
+targets = ["fixture"]
+path = "demo"
+name = "demo"
+"#,
+                sources.display(),
+                targets.display()
+            ),
+        )
+        .unwrap();
+        let _token = TokenGuard::set(ROOT);
+        let _manifest = EnvRestore::set("XAVIER_SKILL_MANIFEST", manifest.to_str().unwrap());
+        let app = crate::cli::server::skill_api_routes()
+            .layer(from_fn_with_state(state.clone(), auth_middleware))
+            .with_state(state);
+        let status = call(&app, "GET", "/api/skill/audit", "").await;
+        assert!(matches!(
+            status,
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+        ));
+        let before = [&skill, &manifest].map(|path| std::fs::read(path).unwrap());
+        let (status, body) = send(&app, "GET", "/api/skill/audit", ROOT, Hdr::Bearer, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["packages_audited"], 1);
+        let findings = body["findings"].as_array().unwrap();
+        assert!(!findings.is_empty());
+        for finding in findings {
+            for field in ["rule", "severity", "package", "location", "detail"] {
+                assert!(finding[field].is_string(), "missing string field: {field}");
+            }
+        }
+        assert!(!serde_json::to_string(&body).unwrap().contains(MARKER));
+        let after = [&skill, &manifest].map(|path| std::fs::read(path).unwrap());
+        assert_eq!(before, after, "audit must leave fixture files unchanged");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_usage_authenticated_route_is_read_only() {
+        xavier::isolate_test_process!();
+        let (state, _tmp) = test_state().await;
+        let fixture = tempfile::tempdir().unwrap();
+        let _data = EnvRestore::set("XAVIER_DATA_DIR", fixture.path().to_str().unwrap());
+        let _token = TokenGuard::set(ROOT);
+        let app = crate::cli::server::skill_api_routes()
+            .layer(from_fn_with_state(state.clone(), auth_middleware))
+            .with_state(state);
+        let status = call(&app, "GET", "/api/skill/usage", "").await;
+        assert!(matches!(
+            status,
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+        ));
+        let (status, body) = send(&app, "GET", "/api/skill/usage", ROOT, Hdr::Bearer, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["skills"], serde_json::json!([]));
+        assert!(!xavier::api::skills::skill_usage_db_path().exists());
+    }
+
+    struct EnvRestore {
+        key: &'static str,
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl EnvRestore {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prev = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            match self.prev.take() {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    fn write_subject(label: &str) -> String {
+        format!("{label}-{}", uuid::Uuid::new_v4())
+    }
+
+    async fn memory_write_response(
+        app: &Router,
+        endpoint: &str,
+        subject: &str,
+        role: xavier::security::auth::UserRole,
+        path: &str,
+        clearance: &str,
+    ) -> Response {
+        let mut request = Request::builder()
+            .method("POST")
+            .uri(endpoint)
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "path": path, "content": "A useful project note.",
+                    "metadata": {"clearance": clearance}
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(xavier::security::clearance::role_clearance(role));
+        request
+            .extensions_mut()
+            .insert(xavier::security::auth::Claims::new(
+                subject.to_string(),
+                "test@example.invalid".to_string(),
+                role,
+                chrono::Duration::minutes(1),
+            ));
+        app.clone().oneshot(request).await.unwrap()
+    }
+
+    fn memory_write_router(state: CliState) -> Router {
+        Router::new()
+            .route(
+                "/v1/memories",
+                axum::routing::post(crate::cli::handlers::memory::add_handler),
+            )
+            .route(
+                "/memory/add",
+                axum::routing::post(crate::cli::handlers::memory::add_handler),
+            )
+            .with_state(state)
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn memory_write_clearance_hardened() {
+        xavier::isolate_test_process!();
+        use xavier::security::auth::UserRole;
+        let _rpm = EnvRestore::set("XAVIER_MEMORY_WRITE_RPM", "600");
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        let (state, _tmp) = test_state().await;
+        let app = memory_write_router(state);
+        for endpoint in ["/v1/memories", "/memory/add"] {
+            let tag = endpoint.trim_start_matches('/').replace('/', "-");
+            assert_eq!(
+                memory_write_response(
+                    &app,
+                    endpoint,
+                    &write_subject(&format!("high-{tag}")),
+                    UserRole::User,
+                    "notes/high",
+                    "top_secret"
+                )
+                .await
+                .status(),
+                StatusCode::FORBIDDEN
+            );
+            assert_eq!(
+                memory_write_response(
+                    &app,
+                    endpoint,
+                    &write_subject(&format!("default-{tag}")),
+                    UserRole::User,
+                    "notes/default",
+                    "internal"
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+            assert_eq!(
+                memory_write_response(
+                    &app,
+                    endpoint,
+                    &write_subject(&format!("admin-{tag}")),
+                    UserRole::Admin,
+                    "notes/admin",
+                    "top_secret"
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+            assert_eq!(
+                memory_write_response(
+                    &app,
+                    endpoint,
+                    &write_subject(&format!("segment-{tag}")),
+                    UserRole::User,
+                    "segments/seg-admin/note",
+                    "internal"
+                )
+                .await
+                .status(),
+                StatusCode::FORBIDDEN,
+                "a user writing under seg-admin stays forbidden after metadata normalization"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn memory_write_clearance_production_router() {
+        xavier::isolate_test_process!();
+        let _rpm = EnvRestore::set("XAVIER_MEMORY_WRITE_RPM", "600");
+        let _routes = EnvRestore::set("XAVIER_REQUIRED_CLEARANCE_ROUTES", r#"{"routes":[]}"#);
+        let _secret = EnvRestore::set("XAVIER_JWT_SECRET", "memory-write-production-router-secret");
+        let _token = EnvRestore::set("XAVIER_TOKEN", "memory-write-production-root-token");
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        let (state, _tmp) = test_state().await;
+        let protected = crate::cli::server::memory_routes()
+            .merge(crate::cli::server::memory_large_body_routes())
+            .layer(axum::middleware::from_fn(
+                xavier::adapters::inbound::http::middleware::clearance::clearance_session_middleware,
+            ))
+            .layer(from_fn_with_state(state.clone(), auth_middleware));
+        let app = Router::new().merge(protected).with_state(state);
+        let user = xavier::security::auth::User::new(
+            "user@example.invalid".to_string(),
+            "User".to_string(),
+            xavier::security::auth::UserRole::User,
+        );
+        let jwt =
+            xavier::security::auth::generate_jwt(&user, b"memory-write-production-router-secret")
+                .expect("user jwt");
+        assert_eq!(
+            production_memory_write(&app, "/v1/memories", &jwt, "notes/prod-high", "top_secret")
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            production_memory_write(&app, "/memory/add", &jwt, "notes/prod-ok", "internal")
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            production_memory_write(
+                &app,
+                "/v1/memories",
+                &jwt,
+                "segments/seg-admin/note",
+                "internal"
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    async fn production_memory_write(
+        app: &Router,
+        endpoint: &str,
+        jwt: &str,
+        path: &str,
+        clearance: &str,
+    ) -> Response {
+        let request = Request::builder()
+            .method("POST")
+            .uri(endpoint)
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {jwt}"))
+            .body(Body::from(
+                serde_json::json!({
+                    "path": path,
+                    "content": "A useful project note.",
+                    "metadata": {"clearance": clearance}
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        app.clone().oneshot(request).await.unwrap()
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn memory_write_rate_hardened() {
+        xavier::isolate_test_process!();
+        use xavier::security::auth::UserRole;
+        let _rpm = EnvRestore::set("XAVIER_MEMORY_WRITE_RPM", "2");
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        let (state, _tmp) = test_state().await;
+        let app = memory_write_router(state);
+        let subject = write_subject("rate");
+        for endpoint in ["/v1/memories", "/memory/add"] {
+            assert_eq!(
+                memory_write_response(
+                    &app,
+                    endpoint,
+                    &subject,
+                    UserRole::User,
+                    "notes/rate",
+                    "internal"
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+        }
+        let response = memory_write_response(
+            &app,
+            "/v1/memories",
+            &subject,
+            UserRole::User,
+            "notes/rate",
+            "internal",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(
+            response
+                .headers()
+                .get("retry-after")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .parse::<u64>()
+                .unwrap()
+                > 0
+        );
+        assert_eq!(
+            memory_write_response(
+                &app,
+                "/v1/memories",
+                &write_subject("rate-other"),
+                UserRole::User,
+                "notes/other",
+                "internal"
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        std::env::set_var("XAVIER_MEMORY_WRITE_RPM", "0");
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        for _ in 0..3 {
+            assert_eq!(
+                memory_write_response(
+                    &app,
+                    "/memory/add",
+                    &subject,
+                    UserRole::User,
+                    "notes/disabled",
+                    "internal"
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+        }
+    }
+
+    // ── Sync push write controls (production route table) ────────────────────
+
+    fn write_router_with_clearance(state: CliState) -> Router {
+        let protected = crate::cli::server::memory_routes()
+            .merge(crate::cli::server::memory_large_body_routes())
+            .layer(axum::middleware::from_fn(
+                xavier::adapters::inbound::http::middleware::clearance::clearance_session_middleware,
+            ))
+            .layer(from_fn_with_state(state.clone(), auth_middleware));
+        Router::new().merge(protected).with_state(state)
+    }
+
+    fn write_router_auth_only(state: CliState) -> Router {
+        let protected = crate::cli::server::memory_routes()
+            .merge(crate::cli::server::memory_large_body_routes())
+            .layer(from_fn_with_state(state.clone(), auth_middleware));
+        Router::new().merge(protected).with_state(state)
+    }
+
+    fn jwt_for(role: xavier::security::auth::UserRole, secret: &str) -> String {
+        let user = xavier::security::auth::User::new(
+            format!("push-{role:?}@example.invalid"),
+            "Push".to_string(),
+            role,
+        );
+        xavier::security::auth::generate_jwt(&user, secret.as_bytes()).expect("jwt")
+    }
+
+    fn push_body(
+        workspace_id: &str,
+        path: &str,
+        typed_clearance: Option<&str>,
+        metadata_clearance: Option<&str>,
+    ) -> String {
+        use crate::memory::store::MemoryRecord;
+        use crate::memory::sync::{ChunkDiff, DiffAction};
+        let mut metadata = serde_json::Map::new();
+        if let Some(level) = metadata_clearance {
+            metadata.insert(
+                "clearance".to_string(),
+                serde_json::Value::String(level.to_string()),
+            );
+        }
+        let record = MemoryRecord {
+            workspace_id: workspace_id.to_string(),
+            path: path.to_string(),
+            content: "A useful project note.".to_string(),
+            metadata: serde_json::Value::Object(metadata),
+            clearance: typed_clearance
+                .map(xavier::security::clearance::ClearanceLevel::parse)
+                .unwrap_or_default(),
+            ..Default::default()
+        };
+        let diff = ChunkDiff {
+            chunk_hash: "hash".to_string(),
+            namespace: workspace_id.to_string(),
+            action: DiffAction::Add,
+            data: Some(serde_json::to_vec(&record).expect("serialise record")),
+            timestamp: std::time::SystemTime::now(),
+            record_path: None,
+        };
+        serde_json::to_string(&vec![diff]).expect("push body")
+    }
+
+    async fn push_with_jwt(app: &Router, jwt: &str, body: String) -> Response {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/v1/memory/push")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {jwt}"))
+            .body(Body::from(body))
+            .unwrap();
+        app.clone().oneshot(request).await.unwrap()
+    }
+
+    async fn add_with_jwt(
+        app: &Router,
+        endpoint: &str,
+        jwt: &str,
+        body: serde_json::Value,
+    ) -> Response {
+        let request = Request::builder()
+            .method("POST")
+            .uri(endpoint)
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {jwt}"))
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        app.clone().oneshot(request).await.unwrap()
+    }
+
+    const PUSH_SECRET: &str = "memory-push-production-router-secret";
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn memory_push_write_controls_production_router() {
+        use crate::memory::store::MemoryStore;
+        xavier::isolate_test_process!();
+        let _rpm = EnvRestore::set("XAVIER_MEMORY_WRITE_RPM", "600");
+        let _routes = EnvRestore::set("XAVIER_REQUIRED_CLEARANCE_ROUTES", r#"{"routes":[]}"#);
+        let _secret = EnvRestore::set("XAVIER_JWT_SECRET", PUSH_SECRET);
+        let _token = EnvRestore::set("XAVIER_TOKEN", "memory-push-production-root-token");
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        let (state, _tmp) = test_state().await;
+        let store = state.store.clone();
+        let app = write_router_with_clearance(state);
+
+        // A read-only identity cannot reach the sync write path at all.
+        assert_eq!(
+            push_with_jwt(
+                &app,
+                &jwt_for(xavier::security::auth::UserRole::Readonly, PUSH_SECRET),
+                push_body("test-ws", "sync/readonly", None, Some("internal"))
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+
+        let user = jwt_for(xavier::security::auth::UserRole::User, PUSH_SECRET);
+        // A typed clearance above the caller ceiling is refused.
+        assert_eq!(
+            push_with_jwt(
+                &app,
+                &user,
+                push_body(
+                    "test-ws",
+                    "sync/typed-high",
+                    Some("top_secret"),
+                    Some("internal")
+                )
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+        // metadata.clearance above the caller ceiling is refused too.
+        assert_eq!(
+            push_with_jwt(
+                &app,
+                &user,
+                push_body("test-ws", "sync/meta-high", None, Some("top_secret"))
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert!(store
+            .get("test-ws", "sync/typed-high")
+            .await
+            .unwrap()
+            .is_none());
+        assert!(store
+            .get("test-ws", "sync/meta-high")
+            .await
+            .unwrap()
+            .is_none());
+
+        // Within the ceiling: accepted and persisted.
+        assert_eq!(
+            push_with_jwt(
+                &app,
+                &user,
+                push_body("test-ws", "sync/within", None, Some("internal"))
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let stored = store
+            .get("test-ws", "sync/within")
+            .await
+            .unwrap()
+            .expect("accepted record is persisted");
+        assert_eq!(stored.content, "A useful project note.");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn memory_push_rate_budget_production_router() {
+        xavier::isolate_test_process!();
+        let _rpm = EnvRestore::set("XAVIER_MEMORY_WRITE_RPM", "1");
+        let _routes = EnvRestore::set("XAVIER_REQUIRED_CLEARANCE_ROUTES", r#"{"routes":[]}"#);
+        let _secret = EnvRestore::set("XAVIER_JWT_SECRET", PUSH_SECRET);
+        let _token = EnvRestore::set("XAVIER_TOKEN", "memory-push-production-root-token");
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        let (state, _tmp) = test_state().await;
+        let app = write_router_with_clearance(state);
+        let user = jwt_for(xavier::security::auth::UserRole::User, PUSH_SECRET);
+        assert_eq!(
+            push_with_jwt(
+                &app,
+                &user,
+                push_body("test-ws", "sync/rate-one", None, Some("internal"))
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let response = push_with_jwt(
+            &app,
+            &user,
+            push_body("test-ws", "sync/rate-two", None, Some("internal")),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(
+            response
+                .headers()
+                .get("retry-after")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .parse::<u64>()
+                .unwrap()
+                > 0
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn memory_write_without_caller_clearance_fails_closed() {
+        xavier::isolate_test_process!();
+        let _rpm = EnvRestore::set("XAVIER_MEMORY_WRITE_RPM", "600");
+        let _routes = EnvRestore::set("XAVIER_REQUIRED_CLEARANCE_ROUTES", r#"{"routes":[]}"#);
+        let _secret = EnvRestore::set("XAVIER_JWT_SECRET", PUSH_SECRET);
+        let _token = EnvRestore::set("XAVIER_TOKEN", "memory-push-production-root-token");
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        let (state, _tmp) = test_state().await;
+        // No clearance middleware: the handler must fall back to the lowest ceiling.
+        let app = write_router_auth_only(state);
+        let admin = jwt_for(xavier::security::auth::UserRole::Admin, PUSH_SECRET);
+        assert_eq!(
+            add_with_jwt(
+                &app,
+                "/v1/memories",
+                &admin,
+                serde_json::json!({
+                    "path": "notes/no-caller-high",
+                    "content": "A useful project note.",
+                    "metadata": {"clearance": "internal"}
+                })
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            add_with_jwt(
+                &app,
+                "/v1/memories",
+                &admin,
+                serde_json::json!({
+                    "path": "notes/no-caller-ok",
+                    "content": "A useful project note.",
+                    "metadata": {"clearance": "unclassified"}
+                })
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            push_with_jwt(
+                &app,
+                &admin,
+                push_body("test-ws", "sync/no-caller-high", None, Some("internal"))
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            push_with_jwt(
+                &app,
+                &admin,
+                push_body("test-ws", "sync/no-caller-ok", None, Some("unclassified"))
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn mcp_tools_call_without_caller_clearance_fails_closed() {
+        xavier::isolate_test_process!();
+        let _rpm = EnvRestore::set("XAVIER_MEMORY_WRITE_RPM", "600");
+        let _routes = EnvRestore::set("XAVIER_REQUIRED_CLEARANCE_ROUTES", r#"{"routes":[]}"#);
+        let _secret = EnvRestore::set("XAVIER_JWT_SECRET", PUSH_SECRET);
+        let _token = EnvRestore::set("XAVIER_TOKEN", "memory-push-production-root-token");
+        crate::adapters::inbound::http::middleware::rate_limit::reset_memory_write_limiter();
+        let (state, _tmp) = test_state().await;
+        let workspace_state = Arc::new(
+            xavier::workspace::WorkspaceState::new(
+                xavier::workspace::WorkspaceConfig::from_env(),
+                xavier::agents::RuntimeConfig::default(),
+                state.workspace_dir.clone(),
+            )
+            .await
+            .expect("workspace state"),
+        );
+        let workspace = xavier::workspace::WorkspaceContext {
+            workspace_id: state.workspace_id.clone(),
+            workspace: workspace_state,
+        };
+        let app = Router::new()
+            .route(
+                "/mcp/tools/call",
+                axum::routing::post(crate::cli::handlers::workspace::mcp_tools_call_handler),
+            )
+            .layer(Extension(workspace))
+            .layer(from_fn_with_state(state.clone(), auth_middleware))
+            .with_state(state);
+        let admin = jwt_for(xavier::security::auth::UserRole::Admin, PUSH_SECRET);
+        // No clearance middleware: the tools/call caller must fall back to the
+        // lowest ceiling, so an internal write is refused.
+        let response = add_with_jwt(
+            &app,
+            "/mcp/tools/call",
+            &admin,
+            serde_json::json!({
+                "name": "create_memory",
+                "arguments": {
+                    "path": "notes/mcp-no-caller",
+                    "content": "A useful project note.",
+                    "metadata": {"clearance": "internal"}
+                }
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("clearance"),
+            "{body}"
+        );
+        // Unclassified is within the fallback ceiling.
+        assert_eq!(
+            add_with_jwt(
+                &app,
+                "/mcp/tools/call",
+                &admin,
+                serde_json::json!({
+                    "name": "create_memory",
+                    "arguments": {
+                        "path": "notes/mcp-no-caller-ok",
+                        "content": "A useful project note.",
+                        "metadata": {"clearance": "unclassified"}
+                    }
+                })
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
     async fn echo(req: Request<Body>) -> Response {
         let ctx = req.extensions().get::<SpaceContext>().cloned();
         let claims = req
@@ -1212,6 +2057,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn real_middleware_accepts_both_header_forms_and_keeps_branch_order() {
         let f = fixture().await;
         for hdr in [Hdr::Bearer, Hdr::XToken] {
@@ -1244,6 +2090,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn space_token_is_403_on_workspace_global_memory_and_mcp_routes() {
         // Routes NOT audited as space-scoped (WP-13m) stay refused for every role.
         let f = fixture().await;
@@ -1288,6 +2135,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn claims_never_exceed_user_and_reader_is_readonly() {
         let f = fixture().await;
         let cases = [
@@ -1316,6 +2164,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn token_of_a_is_403_on_b_and_unknown_sub_paths_are_403() {
         let f = fixture().await;
         for (m, p) in [
@@ -1360,6 +2209,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn space_header_mismatch_is_403() {
         let f = fixture().await;
         let (st, _) = send(
@@ -1385,6 +2235,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn sensitive_and_admin_routes_are_403_even_for_space_admin() {
         let f = fixture().await;
         let mut toks = vec![f.admin_a.clone()];
@@ -1413,6 +2264,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn bad_tokens_are_401() {
         let f = fixture().await;
         let good = "A".repeat(43);
@@ -1456,6 +2308,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn without_a_space_manager_every_xsp_token_is_401() {
         let f = fixture().await;
         for hdr in [Hdr::Bearer, Hdr::XToken] {
@@ -1471,6 +2324,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn deleted_space_invalidates_its_tokens() {
         let f = fixture().await;
         f.manager.delete(OWN).await.unwrap();
@@ -1481,6 +2335,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn roles_gate_read_and_delete_on_the_own_space() {
         let f = fixture().await;
         let reader = issue(&f, OWN, "rita", SpaceRole::Reader);
@@ -1620,6 +2475,7 @@ mod space_token_tests {
     ];
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn maloca_legacy_personal_reads_require_auth() {
         std::env::set_var("XAVIER_TOKEN", ROOT);
         let (state, _tmp) = test_state().await;
@@ -1656,6 +2512,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn maloca_personal_reads_require_auth_and_public_reads_do_not() {
         let (app, _tmp) = maloca_app().await;
         for path in PROTECTED_READS {
@@ -1692,6 +2549,7 @@ mod space_token_tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn maloca_personal_reads_accept_readonly_jwt() {
         let (app, _tmp) = maloca_app().await;
         let secret = "maloca-priv-test-secret-0123456789";

@@ -853,7 +853,7 @@ Xavier desktop app DEBE ofrecer instaladores one-click para usuarios no técnico
 - **Docs:** Issue #1892, Issue #1895
 
 ### Description
-Soporte de arquitectura híbrida SWAL en Cloudflare: frontend `panel-ui` en Cloudflare Pages (`panel.xavier.swal.dev`) y persistencia serverless para el tier Socio SWAL ($9/mes) mapeando vectores a Cloudflare Vectorize, embeddings en Workers AI y metadatos en Cloudflare D1 con cifrado E2E.
+Soporte de arquitectura híbrida SWAL en Cloudflare: frontend `panel-ui` en Cloudflare Pages (`panel.xavier.swal.dev`) y persistencia serverless para el plan Respaldo de Xavier Cloud (10 USD/mes o 100 USD/año según el catálogo canónico v1, `iberi22/xavier-cloud` → `plans/catalog.v1.json`; reemplaza al antiguo tier Socio SWAL de 9 USD) mapeando vectores a Cloudflare Vectorize, embeddings en Workers AI y metadatos en Cloudflare D1 con cifrado E2E.
 
 ### Acceptance criteria
 - [ ] `panel-ui/wrangler.toml` configurado para Cloudflare Pages SPA
@@ -1478,6 +1478,41 @@ An LLM-free harness SHALL measure page-range hit-rate@k and MRR for DocBot, tree
 
 - [ ] `test_eval_report_compares_docbot_tree_hybrid` green (deterministic, no network)
 - [ ] Spec records measured hit@1/hit@3/MRR per arm
+
+---
+
+## REQ-085: Autonomous Delivery Pipeline (verifiable ship/show/ask + DONE)
+
+- **Category:** Process
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Files:** `docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md`, `docs/design/trunk-based/02-AUTONOMOUS-PIPELINE.md`, `docs/design/trunk-based/03-DONE-PROTOCOL.md`, `docs/adr/ADR-035-trunk-based-ship-show-ask.md`
+- **Features:** `feat-autonomous-delivery`
+
+### Description
+
+Every delivery increment SHALL be governed by an evidence-gated pipeline in which `DONE` is a
+computed verdict for an immutable SHA, never a checkbox or agent assertion. Each of the eight
+stages writes an accepted evidence record tied to `session_id`, feature/task ID, base/head SHA,
+timestamp, backend and artifact/URL; the next stage reads the predecessor's record, not the
+agent's prose. `flow:ship`/`flow:show`/`flow:ask` is the minimum review-timing class computed
+from the change's paths and diff, defaulting to Ask for unknown or mixed paths; verification
+strength is independent of the class. A rollback revert PR always requires guardian evidence
+and pre-merge panel review and never auto-merges, as does any outward-publishing change. The
+`DONE` verdict is computed by `scripts/done-check.sh` from one JSON evidence bundle and it
+never edits the feature ledger; only `scripts/verify-pipeline.sh` promotes status after
+executed tests. Design: `docs/design/trunk-based/01-DESIGN.md`, `02-AUTONOMOUS-PIPELINE.md`,
+`03-DONE-PROTOCOL.md`; policy: `docs/adr/ADR-035-trunk-based-ship-show-ask.md`.
+
+### Acceptance criteria
+
+- [ ] Missing, stale or SHA-mismatched stage evidence blocks the next stage's advance
+- [ ] An Ask-class change requires two independent model approvals, neither of them the author
+- [ ] A rollback revert PR or outward-publishing change never auto-merges without guardian evidence and current panel approval
+- [ ] Label class is the computed minimum from paths and diff; a downgrading label is not a green check
+- [ ] `done-check.sh` computes DONE from the evidence bundle at `head_sha` and never edits the ledger; promotion only follows a green `verify-pipeline.sh` run after executed tests
+
+---
 
 *WAVE-10 (2026-09-21): REQ-060..065 added (skill-injection wave: scan-paths, semantic-rank, loader-fate, fusion-gates, MCP-tools, ledger-docs). Implemented live: registry scans canonical store, cosine rank w/ keyword tiebreak, fusion gate 0.5 + ack-gate, MCP dispatch/list tools. Measured: Recall@3 0.950 / MRR 0.950 (20-query offline eval), live E2E post 0.2.5 restart. Full `verify-pipeline` green deferred: pre-existing zero-match filters outside the wave need ledger-wide cleanup (see rescan report).*
 

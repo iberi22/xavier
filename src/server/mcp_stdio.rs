@@ -29,7 +29,7 @@ pub async fn run_stdio_loop(state: AppState, workspace: WorkspaceContext) -> Res
             Err(_) => continue,
         };
 
-        let Some(response) = dispatch_mcp_value(state.clone(), workspace.clone(), None, payload)
+        let Some(response) = dispatch_stdio_value(state.clone(), workspace.clone(), payload)
             .await
             .ok()
             .flatten()
@@ -44,4 +44,40 @@ pub async fn run_stdio_loop(state: AppState, workspace: WorkspaceContext) -> Res
     }
 
     Ok(())
+}
+
+/// Subject of the local stdio identity; it carries no root credential.
+pub(crate) const STDIO_LOCAL_SUBJECT: &str = "stdio_local";
+
+pub(crate) async fn dispatch_stdio_value(
+    state: AppState,
+    workspace: WorkspaceContext,
+    payload: serde_json::Value,
+) -> Result<Option<serde_json::Value>, String> {
+    let claims = crate::security::auth::Claims::new(
+        STDIO_LOCAL_SUBJECT.to_string(),
+        "local@xavier".to_string(),
+        crate::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    );
+    // The local stdio identity carries no space token, so its ceiling is the
+    // role clearance the HTTP transport would apply to the same claims.
+    let caller = crate::server::mcp::tools_memory::McpCaller {
+        space: None,
+        clearance: crate::security::clearance::role_clearance(claims.role),
+    };
+    let write_key = crate::adapters::inbound::http::middleware::rate_limit::memory_write_caller_key(
+        None,
+        None,
+        Some(claims.sub.as_str()),
+        None,
+    );
+    crate::server::mcp::tools_memory::with_memory_write_caller_key(
+        write_key,
+        crate::server::mcp::tools_memory::with_mcp_caller(
+            caller,
+            dispatch_mcp_value(state, workspace, Some(&claims), payload),
+        ),
+    )
+    .await
 }
