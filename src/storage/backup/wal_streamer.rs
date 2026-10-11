@@ -1062,6 +1062,14 @@ mod tests {
             let db = db_path.clone();
             handles.push(std::thread::spawn(move || {
                 let c = Connection::open(&db).unwrap();
+                // Same busy_timeout the connection pool applies
+                // (src/storage/pragma.rs): four concurrent writers on one WAL
+                // database otherwise race to SQLITE_BUSY ("database is locked")
+                // whenever a writer is preempted mid-transaction, which is what
+                // made this stress test flaky under nextest CPU saturation. The
+                // timeout is per-connection, so every writer must set it.
+                crate::storage::apply_acquire_pragmas(&c)
+                    .expect("busy_timeout on concurrent writer connection");
                 for i in 0..25 {
                     c.execute(
                         &format!(
