@@ -380,7 +380,7 @@ impl Default for HealthState {
                 sync_lag_ms: 0.0,
                 latency_ms: 0.0,
                 connectivity: "unknown".to_string(),
-                maturity: crate::mesh::MeshMaturityReport::default(),
+                maturity: crate::mesh::MeshMaturityReport::unmeasured(),
             },
             telegram: TelegramHealth::default(),
             dependency_graph: ComponentDependencyGraph::default(),
@@ -518,7 +518,7 @@ pub(crate) fn fast_degraded_health_fallback() -> HealthResponse {
             sync_lag_ms: 0.0,
             latency_ms: 0.0,
             connectivity: "unknown".to_string(),
-            maturity: crate::mesh::MeshMaturityReport::default(),
+            maturity: crate::mesh::MeshMaturityReport::unmeasured(),
         },
         telegram: TelegramHealth::default(),
         auth: crate::security::auth::AuthHealth::default(),
@@ -961,7 +961,16 @@ async fn collect_health_impl(
             } else {
                 "no peers".to_string()
             },
-            maturity: crate::mesh::MeshMaturityReport::default(),
+            maturity: crate::mesh::maturity::MeshMaturityReport::from_checks(
+                &crate::mesh::maturity::MeshMaturityChecks {
+                    http_routes_enabled: settings.license.mesh_accepted,
+                    acl_loaded: crate::mesh::maturity::acl_store_loaded(),
+                    // No runtime engine to probe: unmeasured, not claimed.
+                    tokenomics_engine_present: None,
+                    // Governance is unchecked; feature presence is not a capability check.
+                    onchain_gov_present: None,
+                },
+            ),
         }
     } else {
         MeshHealth {
@@ -979,7 +988,16 @@ async fn collect_health_impl(
                 "disabled (mesh license not accepted)"
             }
             .to_string(),
-            maturity: crate::mesh::MeshMaturityReport::default(),
+            maturity: crate::mesh::maturity::MeshMaturityReport::from_checks(
+                &crate::mesh::maturity::MeshMaturityChecks {
+                    http_routes_enabled: settings.license.mesh_accepted,
+                    acl_loaded: crate::mesh::maturity::acl_store_loaded(),
+                    // No runtime engine to probe: unmeasured, not claimed.
+                    tokenomics_engine_present: None,
+                    // Governance is unchecked; feature presence is not a capability check.
+                    onchain_gov_present: None,
+                },
+            ),
         }
     };
     mesh.latency_ms = mesh_start.elapsed().as_secs_f64() * 1000.0;
@@ -2004,6 +2022,14 @@ mod tests {
             degraded_reasons_for(&subsystem, "degraded"),
             vec!["subsystem:embedding".to_string()]
         );
+    }
+
+    #[test]
+    fn default_health_state_reports_unmeasured_mesh_maturity() {
+        // The no-snapshot state must not invent maturity percentages.
+        let state = HealthState::default();
+        assert!(!state.mesh.maturity.measured);
+        assert_eq!(state.mesh.maturity.acl_percent, 0);
     }
 
     #[tokio::test]
