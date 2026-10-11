@@ -348,6 +348,8 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "builds code-graph in release; run manually"]
+    // Ignored: `CodeCommand::Install` can reach `cargo build --release -p code-graph`; run manually with `cargo test -p xavier --features ci-safe --lib -- --ignored`.
     async fn test_install_codegraph_sidecar_human_output() {
         let cmd = CodeCommand::Install {
             from_source: false,
@@ -359,6 +361,8 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "builds code-graph in release; run manually"]
+    // Ignored: `CodeCommand::Install` can reach `cargo build --release -p code-graph`; run manually with `cargo test -p xavier --features ci-safe --lib -- --ignored`.
     async fn test_install_codegraph_sidecar_json_output() {
         let cmd = CodeCommand::Install {
             from_source: true,
