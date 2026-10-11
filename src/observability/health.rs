@@ -289,7 +289,8 @@ impl Default for HealthStatus {
                 active_peers: 0,
                 peers: vec![],
                 status: HealthLevel::Healthy,
-                maturity: MeshMaturityReport::default(),
+                // Skeleton state: no checks ran here, report unmeasured.
+                maturity: MeshMaturityReport::unmeasured(),
             },
             tgd_consolidation: None,
         }
@@ -913,7 +914,8 @@ impl HealthMonitor {
             active_peers,
             peers: peer_healths,
             status,
-            maturity: MeshMaturityReport::default(),
+            // Background monitor without settings context: report unmeasured.
+            maturity: MeshMaturityReport::unmeasured(),
         }
     }
 

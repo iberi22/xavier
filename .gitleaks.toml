@@ -18,8 +18,13 @@ paths = [
 ]
 # Commits whose only finding is a fake test credential (verified by hand).
 # 8a827d62 (#2863): ingest-screening fixture in tests/v1_api_ingest_test.rs.
+# A merge re-stages that line, so the commit hash is not enough for
+# `gitleaks protect --staged`. The regex matches the fixture value only.
 commits = [
   "8a827d627381f1002a23875d63ea06de5d334a96",
+]
+regexes = [
+  '''wp-ingest-jwt-secret-0123456789abcdef''',
 ]
 
 [[rules]]
