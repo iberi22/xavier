@@ -116,7 +116,7 @@ impl Plan {
             && self.monthly_price_cents().is_some_and(|cents| cents > 0)
     }
 
-    /// Variable de entorno con el id de precio remoto (Stripe/Polar), si aplica.
+    /// Environment variable for the remote price ID, if applicable.
     fn price_env(&self) -> Option<&'static str> {
         match self {
             Self::Free | Self::Empresa => None,
@@ -128,8 +128,6 @@ impl Plan {
     }
 
     /// Get plan from a remote price ID.
-    ///
-    /// `STRIPE_PRICE_CLOUD` se sigue aceptando como alias de Respaldo.
     pub fn from_price_id(price_id: &str) -> Option<Self> {
         if price_id.is_empty() {
             return None;
@@ -141,22 +139,13 @@ impl Plan {
                 }
             }
         }
-        if std::env::var("STRIPE_PRICE_CLOUD").ok().as_deref() == Some(price_id) {
-            return Some(Self::Cloud);
-        }
         None
     }
 
     /// Convert plan to a remote price ID.
     pub fn price_id(&self) -> Option<String> {
         let var = self.price_env()?;
-        std::env::var(var).ok().or_else(|| {
-            if *self == Self::Cloud {
-                std::env::var("STRIPE_PRICE_CLOUD").ok()
-            } else {
-                None
-            }
-        })
+        std::env::var(var).ok()
     }
 
     /// Precio mensual publicado en centavos.
@@ -327,11 +316,7 @@ impl PlanLimits {
 pub struct SubscriptionStatus {
     /// Current plan
     pub plan: Plan,
-    /// Stripe customer ID
-    pub stripe_customer_id: Option<String>,
-    /// Stripe subscription ID
-    pub stripe_subscription_id: Option<String>,
-    /// Subscription status from Stripe
+    /// Subscription status
     pub subscription_status: String,
     /// Current period end timestamp
     pub current_period_end: Option<i64>,
@@ -345,8 +330,6 @@ impl Default for SubscriptionStatus {
     fn default() -> Self {
         Self {
             plan: Plan::Free,
-            stripe_customer_id: None,
-            stripe_subscription_id: None,
             subscription_status: "none".to_string(),
             current_period_end: None,
             is_active: false,
