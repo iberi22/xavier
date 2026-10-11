@@ -3,7 +3,8 @@ import argparse
 import json
 import subprocess
 import re
-from datetime import datetime, timezone
+import sys
+from datetime import datetime, timezone, timedelta
 
 def run_gh_cmd(cmd):
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -14,13 +15,18 @@ def parse_time(ts):
         return None
     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
+def format_metric(val):
+    if val is None:
+        return "n/a"
+    return f"{val:.1f}"
+
 def percentile(data, p):
     if not data:
-        return 0.0
+        return None
     s = sorted(data)
     idx = int((len(s) - 1) * (p / 100.0))
     if idx < 0:
-        return 0.0
+        return None
     return s[idx]
 
 def get_week_cohort(ts, now):
@@ -33,7 +39,13 @@ def extract_incident_data(issue_body):
     offending_sha_match = re.search(r'Offending SHA:\s*([a-f0-9]+)', issue_body, re.IGNORECASE)
     run_url_match = re.search(r'Run URL:\s*(\S+)', issue_body, re.IGNORECASE)
 
+    # Also support P11 marker: <!-- tbd-incident sha=<FULL_SHA> workflow=<NAME> -->
+    p11_marker_match = re.search(r'<!--\s*tbd-incident\s+sha=([a-f0-9]+)\s+workflow=\S+\s*-->', issue_body, re.IGNORECASE)
+
     sha = offending_sha_match.group(1) if offending_sha_match else None
+    if not sha and p11_marker_match:
+        sha = p11_marker_match.group(1)
+
     run_url = run_url_match.group(1) if run_url_match else None
     return sha, run_url
 
@@ -61,9 +73,12 @@ def analyze_cohorts(prs, issues, runs_data, weeks, now):
             if url:
                 run_by_url[url] = run
 
-            sha = run.get('head_sha')
+            sha = run.get('headSha') or run.get('head_sha')
             name = run.get('name', '')
-            if sha and 'fast-gate' in name.lower():
+
+            # Workflow name logic per feedback: match Exact 'Fast Gate (Shadow)'
+            # Or assume the gh query handled it, but let's be safe.
+            if sha and name == 'Fast Gate (Shadow)':
                 if sha not in fast_gate_runs_by_sha:
                     fast_gate_runs_by_sha[sha] = []
                 fast_gate_runs_by_sha[sha].append(run)
@@ -82,7 +97,7 @@ def analyze_cohorts(prs, issues, runs_data, weeks, now):
         if 0 <= week < weeks:
             cohorts[week]['incidents'].append(issue)
             if sha:
-                cohorts[week]['failed_shas'].add(sha)
+                cohorts[week]['failed_shas'].add(sha.lower())
 
             if closed_at:
                 failed_run_completed_at = None
@@ -95,6 +110,17 @@ def analyze_cohorts(prs, issues, runs_data, weeks, now):
 
                 mttr = (closed_at - start_time).total_seconds() / 3600.0
                 cohorts[week]['mttrs'].append(max(0, mttr))
+
+    # Helper to check if a commit sha matches any failed sha
+    def is_failed_sha(commit_sha, failed_shas):
+        if not commit_sha:
+            return False
+        commit_sha = commit_sha.lower()
+        for f_sha in failed_shas:
+            # Match if it's an exact match or if f_sha is a 7+ char prefix
+            if len(f_sha) >= 7 and commit_sha.startswith(f_sha):
+                return True
+        return False
 
     # Process PRs for lead time, CFR, and fast gate
     for pr in prs:
@@ -121,14 +147,21 @@ def analyze_cohorts(prs, issues, runs_data, weeks, now):
             shas_to_check = [head_sha, merge_commit_sha]
 
             for sha in shas_to_check:
-                if sha and sha in fast_gate_runs_by_sha:
-                    for run in fast_gate_runs_by_sha[sha]:
-                        run_created = parse_time(run.get('createdAt') or run.get('created_at'))
-                        run_completed = parse_time(run.get('updatedAt') or run.get('updated_at'))
-                        if run_created and run_completed:
-                            latency = (run_completed - run_created).total_seconds() / 60.0
-                            cohorts[week]['fast_gates'].append(max(0, latency))
-                    break # Use the first matching SHA's runs
+                if not sha:
+                    continue
+                # Exact match or prefix match for runs
+                for run_sha, runs in fast_gate_runs_by_sha.items():
+                    if len(run_sha) >= 7 and sha.startswith(run_sha):
+                        for run in runs:
+                            run_created = parse_time(run.get('createdAt') or run.get('created_at'))
+                            run_completed = parse_time(run.get('updatedAt') or run.get('updated_at'))
+                            if run_created and run_completed:
+                                latency = (run_completed - run_created).total_seconds() / 60.0
+                                cohorts[week]['fast_gates'].append(max(0, latency))
+                        break # Use the first matching SHA's runs
+                else:
+                    continue
+                break # If inner loop broke, break outer
 
     return cohorts
 
@@ -144,10 +177,20 @@ def print_metrics(cohorts, weeks):
         failed_prs = 0
         for pr in c['prs']:
             merge_commit = pr.get('mergeCommit', {}).get('oid')
-            if merge_commit and merge_commit in c['failed_shas']:
+
+            # Match if it's an exact match or if f_sha is a 7+ char prefix
+            is_failed = False
+            if merge_commit:
+                merge_commit = merge_commit.lower()
+                for f_sha in c['failed_shas']:
+                    if len(f_sha) >= 7 and merge_commit.startswith(f_sha):
+                        is_failed = True
+                        break
+
+            if is_failed:
                 failed_prs += 1
 
-        cfr = (failed_prs / n_prs * 100) if n_prs > 0 else 0.0
+        cfr_str = f"{(failed_prs / n_prs * 100):.1f}%" if n_prs > 0 else "n/a"
 
         lt_p50 = percentile(c['lead_times'], 50)
         lt_p90 = percentile(c['lead_times'], 90)
@@ -158,7 +201,7 @@ def print_metrics(cohorts, weeks):
         fg_p50 = percentile(c['fast_gates'], 50)
         fg_p90 = percentile(c['fast_gates'], 90)
 
-        print(f"{w:<6} | {n_prs:<4} | {n_inc:<9} | {cfr:<5.1f}% | {lt_p50:<9.1f} | {lt_p90:<9.1f} | {mttr_p50:<11.1f} | {mttr_p90:<11.1f} | {fg_p50:<9.1f} | {fg_p90:<9.1f}")
+        print(f"{w:<6} | {n_prs:<4} | {n_inc:<9} | {cfr_str:<6} | {format_metric(lt_p50):<9} | {format_metric(lt_p90):<9} | {format_metric(mttr_p50):<11} | {format_metric(mttr_p90):<11} | {format_metric(fg_p50):<9} | {format_metric(fg_p90):<9}")
 
 def main():
     parser = argparse.ArgumentParser(description="Report weekly GitHub flow metrics")
@@ -169,32 +212,41 @@ def main():
     parser.add_argument("--now", type=str, help="Mock now timestamp (ISO)")
     args = parser.parse_args()
 
+    if args.now:
+        now = parse_time(args.now)
+    else:
+        now = datetime.now(timezone.utc)
+
+    date_filter = (now - timedelta(days=args.weeks * 7)).strftime("%Y-%m-%d")
+
     if args.mock_prs:
         with open(args.mock_prs) as f:
             prs = json.load(f)
     else:
-        prs = run_gh_cmd(["gh", "pr", "list", "--state", "merged", "--limit", "100", "--json", "number,mergedAt,createdAt,labels,body,commits,mergeCommit,headRefOid"])
+        prs = run_gh_cmd(["gh", "pr", "list", "--state", "merged", "--search", f"merged:>={date_filter}", "--limit", "1000", "--json", "number,mergedAt,createdAt,labels,body,commits,mergeCommit,headRefOid"])
+        if len(prs) >= 1000:
+            print("WARNING: TRUNCATED PR result limit reached.", file=sys.stderr)
 
     if args.mock_issues:
         with open(args.mock_issues) as f:
             issues = json.load(f)
     else:
-        issues = run_gh_cmd(["gh", "issue", "list", "--label", "tbd-incident", "--state", "all", "--limit", "100", "--json", "number,createdAt,closedAt,state,body"])
+        # For issues we might just stick with limit 1000 without date filter on createdAt, but we'll add date filter to be safe.
+        issues = run_gh_cmd(["gh", "issue", "list", "--label", "tbd-incident", "--state", "all", "--search", f"created:>={date_filter}", "--limit", "1000", "--json", "number,createdAt,closedAt,state,body"])
+        if len(issues) >= 1000:
+            print("WARNING: TRUNCATED issues result limit reached.", file=sys.stderr)
 
     if args.mock_runs:
         with open(args.mock_runs) as f:
             runs_data = json.load(f)
     else:
-        # Note: In a real implementation this might need pagination or specific filtering
         try:
-            runs_data = run_gh_cmd(["gh", "run", "list", "--limit", "500", "--json", "databaseId,name,headSha,url,createdAt,updatedAt,conclusion"])
+            # Only querying runs after the date filter and specifically for the fast-gate workflow
+            runs_data = run_gh_cmd(["gh", "run", "list", "--workflow", "fast-gate.yml", "--created", f">={date_filter}", "--limit", "1000", "--json", "databaseId,name,headSha,url,createdAt,updatedAt,conclusion"])
+            if len(runs_data) >= 1000:
+                print("WARNING: TRUNCATED workflow runs result limit reached.", file=sys.stderr)
         except Exception:
             runs_data = []
-
-    if args.now:
-        now = parse_time(args.now)
-    else:
-        now = datetime.now(timezone.utc)
 
     cohorts = analyze_cohorts(prs, issues, runs_data, args.weeks, now)
     print_metrics(cohorts, args.weeks)
