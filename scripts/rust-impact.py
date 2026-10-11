@@ -189,6 +189,24 @@ def main():
 
     packages = build_package_graph(metadata)
 
+    if changed_files:
+        all_skip = True
+        for filepath in changed_files:
+            if filepath.startswith('docs/') or filepath.endswith('.md') or \
+               (filepath.startswith('panel-ui/') and not filepath.startswith('panel-ui/src-tauri/')) or \
+               filepath.startswith('.github/ISSUE_TEMPLATE/'):
+                continue
+            all_skip = False
+            break
+        if all_skip:
+            result = {
+                "skip_rust": True,
+                "reason": "All changed files are known non-Rust paths",
+                "packages": []
+            }
+            print(json.dumps(result, indent=2))
+            sys.exit(0)
+
     fallback = False
     reason = None
     modified_pkgs = {}
