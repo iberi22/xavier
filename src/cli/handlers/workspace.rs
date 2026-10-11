@@ -101,7 +101,7 @@ pub async fn mcp_tools_call_handler(
         space: space.as_ref().map(|e| e.0.clone()),
         clearance: requester
             .map(|Extension(level)| level)
-            .unwrap_or_else(xavier::security::clearance::default_clearance),
+            .unwrap_or(xavier::security::clearance::ClearanceLevel::Unclassified),
     };
     let write_key = write_caller.map(|Extension(key)| key.0).unwrap_or_else(|| {
         xavier::adapters::inbound::http::middleware::rate_limit::memory_write_caller_key(

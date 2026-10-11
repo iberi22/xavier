@@ -154,8 +154,14 @@ impl MemoryWriteRateLimiter {
     }
 
     pub fn check(&self, caller: &str) -> Result<(), Duration> {
+        self.check_amount(caller, 1.0)
+    }
+
+    /// Consume `amount` units atomically: either the whole batch fits or none
+    /// of it does, so a partially charged batch can never be applied.
+    pub fn check_amount(&self, caller: &str, amount: f64) -> Result<(), Duration> {
         if let Some(limiter) = &self.limiter {
-            let (allowed, retry_after) = limiter.try_consume(caller, 1.0);
+            let (allowed, retry_after) = limiter.try_consume(caller, amount);
             if !allowed {
                 return Err(retry_after);
             }
@@ -192,6 +198,13 @@ fn lock_memory_write_limiter() -> std::sync::MutexGuard<'static, Option<ActiveMe
 }
 
 pub fn check_memory_write_rate(caller: &str) -> Result<(), Duration> {
+    check_memory_write_rate_amount(caller, 1.0)
+}
+
+/// Same limiter, consuming `amount` units in one step (batch writes).
+/// Either the whole batch is charged or the call is denied; a denial never
+/// leaves a partial charge behind.
+pub fn check_memory_write_rate_amount(caller: &str, amount: f64) -> Result<(), Duration> {
     let rpm = configured_memory_write_rpm();
     let mut slot = lock_memory_write_limiter();
     if slot.as_ref().map(|active| active.rpm) != Some(rpm) {
@@ -203,7 +216,7 @@ pub fn check_memory_write_rate(caller: &str) -> Result<(), Duration> {
     let active = slot
         .as_ref()
         .expect("memory write limiter is installed for this check");
-    active.limiter.check(caller)
+    active.limiter.check_amount(caller, amount)
 }
 
 /// Install a fresh limiter for the current configuration. Tests call this so one

@@ -368,9 +368,18 @@ pub async fn mcp_post_handler(
             client.map(|extension| extension.0 .0),
         )
     });
+    let caller = super::tools_memory::McpCaller {
+        space: None,
+        clearance: claims_ref
+            .map(|c| crate::security::clearance::role_clearance(c.role))
+            .unwrap_or(crate::security::clearance::ClearanceLevel::Unclassified),
+    };
     let result = super::tools_memory::with_memory_write_caller_key(
         write_key,
-        dispatch_mcp_value(state, workspace, claims_ref, payload),
+        super::tools_memory::with_mcp_caller(
+            caller,
+            dispatch_mcp_value(state, workspace, claims_ref, payload),
+        ),
     )
     .await;
     let _ = manager.transition_state(session_id, McpSessionState::Connected);
