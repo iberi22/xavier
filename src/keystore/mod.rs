@@ -100,40 +100,131 @@ pub struct MasterKeyManager {
 impl MasterKeyManager {
     /// Load or initialize the master key
     pub fn load_or_init() -> Result<Self> {
-        if let Ok(key) = Self::load_from_keyring() {
-            return Ok(Self { master_key: key });
+        let keyring = match Self::load_from_keyring() {
+            Ok(key) => Ok(Some(key)),
+            Err(e)
+                if matches!(
+                    e.downcast_ref::<keyring::Error>(),
+                    Some(keyring::Error::NoEntry)
+                ) =>
+            {
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        };
+        Self::load_or_init_at(
+            &Self::get_fallback_path(),
+            &Self::get_fallback_encryption_key(),
+            &Self::get_legacy_fallback_encryption_key(),
+            &Self::node_data_dir(),
+            keyring,
+            Self::save_to_keyring,
+            create_private_file_new,
+        )
+    }
+
+    /// Data dir the node record key and the store live under.
+    fn node_data_dir() -> PathBuf {
+        crate::memory::sqlite_vec_store::at_rest::record_key_path()
+            .ancestors()
+            .nth(2)
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    /// True when `data_dir` already holds a node record key or a store database,
+    /// i.e. a new master key could not read what is already there.
+    fn data_dir_has_existing_material(data_dir: &Path) -> bool {
+        if data_dir.join("node").join("record.key").exists() {
+            return true;
+        }
+        match fs::read_dir(data_dir) {
+            Ok(entries) => entries.flatten().any(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                name.starts_with("vec-store.sqlite3") || name.starts_with("memory-store.sqlite3")
+            }),
+            Err(e) => e.kind() != std::io::ErrorKind::NotFound,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn load_or_init_at(
+        path: &Path,
+        current_key: &[u8; WRAPPING_KEY_LEN],
+        legacy_key: &[u8; WRAPPING_KEY_LEN],
+        data_dir: &Path,
+        keyring: Result<Option<[u8; MASTER_KEY_LEN]>>,
+        save_keyring: impl FnOnce(&[u8; MASTER_KEY_LEN]) -> Result<()>,
+        create_fallback: impl FnOnce(&Path, &[u8]) -> std::io::Result<()>,
+    ) -> Result<Self> {
+        let existing: Result<Option<[u8; MASTER_KEY_LEN]>> = match fs::symlink_metadata(path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+            Ok(_) => Self::load_from_fallback_at(path, current_key, legacy_key, true).map(Some),
+        };
+        if let Ok(Some(key)) = &keyring {
+            match existing {
+                Ok(Some(fallback)) if fallback != *key => {
+                    return Err(Self::init_error("keyring and fallback master keys differ"));
+                }
+                Err(e) => tracing::warn!(
+                    "Fallback master key file unusable ({e}); using the keyring key, file left untouched"
+                ),
+                _ => {}
+            }
+            return Ok(Self { master_key: *key });
+        }
+        match existing {
+            Err(e) => return Err(Self::init_error(e)),
+            Ok(Some(key)) => {
+                let _ = save_keyring(&key);
+                return Ok(Self { master_key: key });
+            }
+            Ok(None) => {}
+        }
+        // No key anywhere: only mint when nothing else could depend on an older key.
+        if Self::data_dir_has_existing_material(data_dir) {
+            let state = match &keyring {
+                Err(e) => format!("keyring unavailable ({e})"),
+                Ok(_) => "keyring has no entry".to_string(),
+            };
+            return Err(Self::init_error(format!(
+                "{state} and existing node data found in {}; unlock the keyring or restore master.key with `xavier recovery restore`",
+                data_dir.display()
+            )));
+        }
+        if let Err(e) = &keyring {
+            tracing::warn!(
+                "Keyring unavailable ({e}); minting a new master key in the encrypted file"
+            );
         }
 
-        if let Ok(key) = Self::load_from_fallback(true) {
-            // Found in fallback, try to restore to keyring
-            let _ = Self::save_to_keyring(&key);
-            return Ok(Self { master_key: key });
-        }
-
-        // Initialize new master key
         let mut key = [0u8; MASTER_KEY_LEN];
         rand::thread_rng().fill_bytes(&mut key);
-
-        // The master key always keeps its 0600 fallback copy: if the keyring later becomes
-        // unavailable (headless service), a missing copy would silently mint a new key and
-        // orphan every store encrypted with this one. Per-secret shadow copies are not kept.
-        let keyring_res = Self::save_to_keyring(&key);
-        if let Err(e) = &keyring_res {
+        if let Some(parent) = path.parent() {
+            ensure_private_dir(parent)?;
+        }
+        let encrypted = aes_encrypt(&key, current_key, &NonceBytes::generate())?;
+        match create_fallback(path, &encrypted) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Another writer created the file first: adopt its key.
+                key = Self::load_from_fallback_at(path, current_key, legacy_key, true)
+                    .map_err(Self::init_error)?;
+            }
+            Err(e) => return Err(Self::init_error(e)),
+        }
+        if let Err(e) = save_keyring(&key) {
             tracing::debug!("Keyring save failed: {e}; relying on encrypted file");
         }
-        match (Self::save_to_fallback(&key), &keyring_res) {
-            (Ok(()), _) => {}
-            (Err(fb_err), Ok(())) => {
-                tracing::warn!("Master key fallback copy not written ({fb_err}); keyring only")
-            }
-            (Err(fb_err), Err(e)) => {
-                return Err(anyhow!(
-                    "Failed to persist master key to both keyring ({e}) and fallback storage ({fb_err})"
-                ))
-            }
-        }
-
         Ok(Self { master_key: key })
+    }
+
+    fn init_error(error: impl std::fmt::Display) -> anyhow::Error {
+        anyhow!(
+            "Master key initialization failed closed: {error}. Use xavier recovery or restore the original host identity before retrying"
+        )
     }
 
     /// Read an existing master key without minting, saving, or rewrapping it.
@@ -325,11 +416,6 @@ impl MasterKeyManager {
             Err(EncryptionError::AuthenticationFailed) => Ok(None),
             Err(e) => Err(anyhow!("Failed to decrypt fallback master key: {}", e)),
         }
-    }
-
-    fn save_to_fallback(key: &[u8; MASTER_KEY_LEN]) -> Result<()> {
-        let path = Self::get_fallback_path();
-        Self::write_fallback_at(key, &path, &Self::get_fallback_encryption_key())
     }
 
     #[cfg(test)]
@@ -678,5 +764,321 @@ mod tests {
             foreign_blob,
             "a file we cannot decrypt must never be overwritten"
         );
+    }
+    struct Init {
+        _tmp: tempfile::TempDir,
+        path: PathBuf,
+        data_dir: PathBuf,
+        current: [u8; WRAPPING_KEY_LEN],
+        legacy: [u8; WRAPPING_KEY_LEN],
+    }
+
+    impl Init {
+        fn new() -> Self {
+            let tmp = tempfile::tempdir().unwrap();
+            let data_dir = tmp.path().join("data");
+            fs::create_dir_all(&data_dir).unwrap();
+            Self {
+                path: tmp.path().join("home").join("master.key"),
+                data_dir,
+                current: MasterKeyManager::derive_fallback_encryption_key(
+                    TEST_HOST,
+                    TEST_MACHINE_ID,
+                ),
+                legacy: MasterKeyManager::derive_legacy_fallback_encryption_key(TEST_HOST),
+                _tmp: tmp,
+            }
+        }
+
+        fn write_file(&self, key: &[u8; MASTER_KEY_LEN]) -> Vec<u8> {
+            fs::create_dir_all(self.path.parent().unwrap()).unwrap();
+            let blob = aes_encrypt(key, &self.current, &NonceBytes::generate()).unwrap();
+            fs::write(&self.path, &blob).unwrap();
+            blob
+        }
+
+        fn write_foreign_file(&self) -> Vec<u8> {
+            fs::create_dir_all(self.path.parent().unwrap()).unwrap();
+            let blob = aes_encrypt(
+                &[3u8; MASTER_KEY_LEN],
+                &[0x5au8; WRAPPING_KEY_LEN],
+                &NonceBytes::generate(),
+            )
+            .unwrap();
+            fs::write(&self.path, &blob).unwrap();
+            blob
+        }
+
+        /// Returns the result plus (keyring saves, create calls).
+        fn run(
+            &self,
+            keyring: Result<Option<[u8; MASTER_KEY_LEN]>>,
+        ) -> (
+            Result<MasterKeyManager>,
+            Option<[u8; MASTER_KEY_LEN]>,
+            usize,
+        ) {
+            let saved = std::cell::Cell::new(None);
+            let created = std::cell::Cell::new(0usize);
+            let result = MasterKeyManager::load_or_init_at(
+                &self.path,
+                &self.current,
+                &self.legacy,
+                &self.data_dir,
+                keyring,
+                |k| {
+                    saved.set(Some(*k));
+                    Ok(())
+                },
+                |p, b| {
+                    created.set(created.get() + 1);
+                    create_private_file_new(p, b)
+                },
+            );
+            (result, saved.get(), created.get())
+        }
+    }
+
+    fn keyring_err() -> Result<Option<[u8; MASTER_KEY_LEN]>> {
+        Err(anyhow!("keyring locked"))
+    }
+
+    #[test]
+    fn init_no_file_and_no_entry_mints_private_file() {
+        let t = Init::new();
+        let (result, saved, created) = t.run(Ok(None));
+        let key = result.unwrap().master_key;
+        assert_eq!(created, 1);
+        assert_eq!(saved, Some(key));
+        let blob = fs::read(&t.path).unwrap();
+        assert_eq!(aes_decrypt(&blob, &t.current).unwrap(), key.to_vec());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&t.path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    #[test]
+    fn init_keyring_error_mints_only_on_empty_data_dir() {
+        let t = Init::new();
+        let (result, _, created) = t.run(keyring_err());
+        assert!(result.is_ok());
+        assert_eq!(created, 1);
+        assert!(t.path.exists());
+    }
+
+    #[test]
+    fn init_keyring_error_with_record_key_fails_closed() {
+        let t = Init::new();
+        fs::create_dir_all(t.data_dir.join("node")).unwrap();
+        fs::write(t.data_dir.join("node").join("record.key"), b"x").unwrap();
+        let (result, saved, created) = t.run(keyring_err());
+        let msg = result.err().expect("must fail closed").to_string();
+        assert!(msg.contains("xavier recovery restore"), "{msg}");
+        assert_eq!(created, 0);
+        assert!(saved.is_none());
+        assert!(!t.path.exists());
+    }
+
+    #[test]
+    fn init_no_entry_with_record_key_fails_closed() {
+        let t = Init::new();
+        fs::create_dir_all(t.data_dir.join("node")).unwrap();
+        fs::write(t.data_dir.join("node").join("record.key"), b"x").unwrap();
+        let (result, saved, created) = t.run(Ok(None));
+        let msg = result.err().expect("must fail closed").to_string();
+        assert!(msg.contains("xavier recovery restore"), "{msg}");
+        assert_eq!(created, 0);
+        assert!(saved.is_none());
+        assert!(!t.path.exists());
+    }
+
+    #[test]
+    fn init_no_entry_with_store_database_fails_closed() {
+        let t = Init::new();
+        fs::write(t.data_dir.join("memory-store.sqlite3-wal"), b"db").unwrap();
+        let (result, saved, created) = t.run(Ok(None));
+        assert!(result.is_err());
+        assert_eq!(created, 0);
+        assert!(saved.is_none());
+        assert!(!t.path.exists());
+    }
+
+    #[test]
+    fn create_private_file_new_never_truncates_or_follows() {
+        let t = Init::new();
+        fs::create_dir_all(t.path.parent().unwrap()).unwrap();
+        create_private_file_new(&t.path, b"first").unwrap();
+        let err = create_private_file_new(&t.path, b"second").unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&t.path).unwrap(), b"first");
+        #[cfg(unix)]
+        {
+            let link = t.path.with_file_name("link.key");
+            std::os::unix::fs::symlink(t.path.with_file_name("nowhere.key"), &link).unwrap();
+            assert!(create_private_file_new(&link, b"x").is_err());
+            assert!(!t.path.with_file_name("nowhere.key").exists());
+        }
+    }
+
+    #[test]
+    fn init_mint_path_does_not_overwrite_a_file_that_appears_first() {
+        let t = Init::new();
+        let other = [0x12u8; MASTER_KEY_LEN];
+        let blob = aes_encrypt(&other, &t.current, &NonceBytes::generate()).unwrap();
+        let result = MasterKeyManager::load_or_init_at(
+            &t.path,
+            &t.current,
+            &t.legacy,
+            &t.data_dir,
+            Ok(None),
+            |_| Ok(()),
+            |p, b| {
+                fs::write(p, &blob).unwrap();
+                create_private_file_new(p, b)
+            },
+        );
+        assert_eq!(result.unwrap().master_key, other);
+        assert_eq!(fs::read(&t.path).unwrap(), blob);
+    }
+
+    #[test]
+    fn init_keyring_error_with_store_database_fails_closed() {
+        let t = Init::new();
+        fs::write(t.data_dir.join("vec-store.sqlite3"), b"db").unwrap();
+        let (result, _, created) = t.run(keyring_err());
+        assert!(result.is_err());
+        assert_eq!(created, 0);
+        assert!(!t.path.exists());
+    }
+
+    #[test]
+    fn init_keyring_error_with_unlisted_data_dir_state_fails_closed() {
+        let t = Init::new();
+        // An unreadable data dir cannot prove it is empty.
+        fs::remove_dir_all(&t.data_dir).unwrap();
+        fs::write(&t.data_dir, b"not a dir").unwrap();
+        let (result, _, created) = t.run(keyring_err());
+        assert!(result.is_err());
+        assert_eq!(created, 0);
+    }
+
+    #[test]
+    fn init_keyring_hit_without_file_creates_nothing() {
+        let t = Init::new();
+        let key = [0x11u8; MASTER_KEY_LEN];
+        let (result, saved, created) = t.run(Ok(Some(key)));
+        assert_eq!(result.unwrap().master_key, key);
+        assert_eq!(created, 0);
+        assert!(saved.is_none());
+        assert!(!t.path.exists());
+    }
+
+    #[test]
+    fn init_keyring_miss_adopts_decryptable_file() {
+        let t = Init::new();
+        let key = [0x22u8; MASTER_KEY_LEN];
+        let blob = t.write_file(&key);
+        let (result, saved, created) = t.run(Ok(None));
+        assert_eq!(result.unwrap().master_key, key);
+        assert_eq!(saved, Some(key));
+        assert_eq!(created, 0);
+        assert_eq!(fs::read(&t.path).unwrap(), blob);
+    }
+
+    #[test]
+    fn init_keyring_miss_undecryptable_file_fails_untouched() {
+        let t = Init::new();
+        let blob = t.write_foreign_file();
+        let (result, saved, created) = t.run(Ok(None));
+        assert!(result.is_err());
+        assert!(saved.is_none());
+        assert_eq!(created, 0);
+        assert_eq!(fs::read(&t.path).unwrap(), blob);
+    }
+
+    #[test]
+    fn init_keyring_miss_undecryptable_file_with_keyring_error_fails_untouched() {
+        let t = Init::new();
+        let blob = t.write_foreign_file();
+        let (result, _, created) = t.run(keyring_err());
+        assert!(result.is_err());
+        assert_eq!(created, 0);
+        assert_eq!(fs::read(&t.path).unwrap(), blob);
+    }
+
+    #[test]
+    fn init_keyring_and_file_mismatch_fails_untouched() {
+        let t = Init::new();
+        let blob = t.write_file(&[0x33u8; MASTER_KEY_LEN]);
+        let (result, saved, created) = t.run(Ok(Some([0x44u8; MASTER_KEY_LEN])));
+        assert!(result.is_err());
+        assert!(saved.is_none());
+        assert_eq!(created, 0);
+        assert_eq!(fs::read(&t.path).unwrap(), blob);
+    }
+
+    #[test]
+    fn init_keyring_hit_with_undecryptable_file_uses_keyring() {
+        let t = Init::new();
+        let blob = t.write_foreign_file();
+        let key = [0x55u8; MASTER_KEY_LEN];
+        let (result, saved, created) = t.run(Ok(Some(key)));
+        assert_eq!(result.unwrap().master_key, key);
+        assert!(saved.is_none());
+        assert_eq!(created, 0);
+        assert_eq!(fs::read(&t.path).unwrap(), blob);
+    }
+
+    #[test]
+    fn init_path_that_is_a_directory_fails_untouched() {
+        let t = Init::new();
+        fs::create_dir_all(&t.path).unwrap();
+        let (result, saved, created) = t.run(Ok(None));
+        assert!(result.is_err());
+        assert!(saved.is_none());
+        assert_eq!(created, 0);
+        assert!(t.path.is_dir());
+    }
+
+    #[test]
+    fn init_lost_create_race_adopts_other_writers_key() {
+        let t = Init::new();
+        let other = [0x66u8; MASTER_KEY_LEN];
+        let blob = aes_encrypt(&other, &t.current, &NonceBytes::generate()).unwrap();
+        let saved = std::cell::Cell::new(None);
+        let result = MasterKeyManager::load_or_init_at(
+            &t.path,
+            &t.current,
+            &t.legacy,
+            &t.data_dir,
+            Ok(None),
+            |k| {
+                saved.set(Some(*k));
+                Ok(())
+            },
+            |p, _| {
+                fs::write(p, &blob).unwrap();
+                Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
+            },
+        );
+        assert_eq!(result.unwrap().master_key, other);
+        assert_eq!(saved.get(), Some(other));
+        assert_eq!(fs::read(&t.path).unwrap(), blob);
+    }
+
+    #[test]
+    fn init_legacy_file_is_rewrapped_with_same_key() {
+        let t = Init::new();
+        let key = [0x77u8; MASTER_KEY_LEN];
+        fs::create_dir_all(t.path.parent().unwrap()).unwrap();
+        let legacy_blob = aes_encrypt(&key, &t.legacy, &NonceBytes::generate()).unwrap();
+        fs::write(&t.path, &legacy_blob).unwrap();
+        let (result, _, _) = t.run(Ok(None));
+        assert_eq!(result.unwrap().master_key, key);
+        let on_disk = fs::read(&t.path).unwrap();
+        assert_eq!(aes_decrypt(&on_disk, &t.current).unwrap(), key.to_vec());
     }
 }

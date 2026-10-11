@@ -1942,7 +1942,7 @@ pub enum RecoveryCommand {
     },
     /// Seal the current record key under a passphrase and/or a 24-word mnemonic.
     Seal {
-        /// Seal under a freshly generated BIP39 mnemonic (printed once).
+        /// Seal under a freshly generated BIP39 mnemonic delivered to the TTY or --words-out.
         #[arg(long)]
         mnemonic: bool,
         /// Seal under an interactively-entered passphrase.
@@ -1951,7 +1951,7 @@ pub enum RecoveryCommand {
         /// Read the passphrase without prompting.
         #[arg(long, requires = "passphrase")]
         passphrase_file: Option<std::path::PathBuf>,
-        /// Write the new mnemonic to a new private file instead of stdout.
+        /// Write the new mnemonic to a new private file instead of the controlling TTY.
         #[arg(long, requires = "mnemonic")]
         words_out: Option<std::path::PathBuf>,
         /// Explicitly replace an existing mnemonic seal.
@@ -1966,9 +1966,9 @@ pub enum RecoveryCommand {
     },
     /// Install a recovered record key. Refuses to overwrite an existing one.
     Restore {
-        /// The recovered key, 64 hex characters.
+        /// Read the recovered hex key from a file, or stdin with `-`.
         #[arg(long)]
-        key_hex: Option<String>,
+        key_file: std::path::PathBuf,
         /// Expected key-check value. Defaults to the stored one.
         #[arg(long)]
         kcv: Option<String>,
