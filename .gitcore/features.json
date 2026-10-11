@@ -2088,8 +2088,8 @@
     "feat-enterprise-compute-zdr": {
       "id": "feat-enterprise-compute-zdr",
       "name": "Enterprise ComputeProvider with ZDR",
-      "status": "stable",
-      "progress": 100,
+      "status": "planned",
+      "progress": 0,
       "wave": "wave-8",
       "module": "enterprise",
       "requirements": [
@@ -2099,22 +2099,20 @@
         "US-046"
       ],
       "files": [
-        "src/enterprise/compute.rs",
         "src/auth2/google_oauth.rs",
         "src/server/auth_routes.rs",
         "panel-ui/src/components/ColabAuthButton.tsx"
       ],
       "tests": [
-        "enterprise::compute::tests",
         "auth2::google_oauth::tests"
       ],
       "added": "2026-09-12",
-      "progress_pct": 100,
-      "passes": true,
+      "progress_pct": 0,
+      "passes": false,
       "verified_by": "wave-8",
       "last_tested": "2026-09-13",
-      "implemented_in": "src/enterprise/compute.rs, src/auth2/google_oauth.rs, src/server/auth_routes.rs, panel-ui/src/components/ColabAuthButton.tsx",
-      "notes": "Enterprise compute provider abstraction with cryptographically verifiable ZDR audit trail and OAuth provider integration complete."
+      "implemented_in": "src/auth2/google_oauth.rs, src/server/auth_routes.rs, panel-ui/src/components/ColabAuthButton.tsx",
+      "notes": "Regressed: a47d61e7 (2026-10-02) removed src/enterprise/compute.rs as unused duplicate compute types; the ZDR audit trail is no longer present. Demoted to planned on 2026-10-11; re-promotion only through a green verify run."
     },
     "feat-classified-clearance": {
       "id": "feat-classified-clearance",
@@ -3407,6 +3405,22 @@
         "Next (separate change): Xavier MCP tool that loads the KSM bundle and runs the matcher on the indexed project"
       ],
       "verification": "cargo test -p code-graph --test fingerprint; cargo clippy -p code-graph --all-targets -- -D warnings"
+    },
+    "chore-oss-scanner-enrollment": {
+      "id": "chore-oss-scanner-enrollment",
+      "name": "OSS Scanner enrolment files (build/scan configuration only)",
+      "category": "process",
+      "status": "in_progress",
+      "progress_pct": 90,
+      "description": "Configuration for Anthropic's OSS Scanner (github.com/anthropics/oss-scanner): .oss-scanner/Dockerfile builds /src with network (cargo fetch, debug build, test --no-run) so the scanner can build and test offline; .oss-scanner/threat_model.md is generated deterministically by kernel-security-memory scripts/oss_scanner/threat_model.py from .oss-scanner/ksm-context.yaml plus KSM evidence. No Rust/TS code changes (feature freeze respected).",
+      "steps": [
+        "Dockerfile follows the scanner contract (COPY . /src) and is built the way the scanner does it (clean clone, root .dockerignore removed)",
+        "Offline verification: docker run --network none -> cargo build --offline && cargo test --offline --no-run && a hermetic lib-test subset",
+        "Regenerate threat_model.md with KSM when ksm-context.yaml or the code layout changes (--check detects drift)",
+        "Enrolment PR to anthropics/oss-scanner only after the owner provides a public security contact"
+      ],
+      "passes": false,
+      "notes": "Validated: project.yaml for xavier passes the upstream tools/validate.py (check_project) from oss-scanner 2cef161; KSM defensive_auditor on src/ reports 0 findings after the Rust unsafe-only rule fix (previously 11 false positives). Scanner-like build (clean clone, root .dockerignore removed as tools/check_build.py does): docker build OK (~16 min, image 32.5 GB, debug target dir). Inside --network none with a login shell: cargo build --offline OK, cargo test --offline --no-run OK, cargo test --offline --lib -- --test-threads=1: 3662 passed, 0 failed, 1 ignored (351 s). In parallel (--test-threads=4) 1-4 different tests fail per run and each passes alone: flaky under parallelism (seen: tools_secrets temp-file cleanup, connection_manager fd/eviction counts, conversations_db CRUD, qmd bus quota). Stabilizing them is follow-up work. Status moves to stable after the enrolment PR to anthropics/oss-scanner (needs an owner-provided public security contact)."
     }
   },
   "verification_commands": {
