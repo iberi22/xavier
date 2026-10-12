@@ -96,28 +96,36 @@ impl MemoryDaemon {
             }
         });
 
-        // Run Semantic Compaction every 12 hours
-        let manager_compact = self.manager.clone();
-        tokio::spawn(async move {
-            info!("MemoryDaemon: Scheduled semantic compaction loop started (12h interval)");
-            loop {
-                sleep(Duration::from_secs(12 * 3600)).await;
-                info!("MemoryDaemon: Running scheduled compact_semantically()");
-                // Composition root: build the LLM adapter for this run and hand it to
-                // the memory manager through the `SemanticCompactor` port, so the
-                // manager never imports the provider module (ADR-033 Wave 0).
-                let compaction_model = crate::settings::XavierSettings::current()
-                    .models
-                    .compaction_model
-                    .clone();
-                let compactor = crate::agents::provider::ModelProviderClient::from_model_override(
-                    compaction_model,
-                );
-                if let Err(e) = manager_compact.compact_semantically(&compactor).await {
-                    error!("MemoryDaemon: Scheduled compaction failed: {}", e);
+        // Run Semantic Compaction every 12 hours (opt-in)
+        let compact_env = std::env::var("XAVIER_SEMANTIC_COMPACTION").ok();
+        if semantic_compaction_enabled(compact_env.as_deref()) {
+            let manager_compact = self.manager.clone();
+            tokio::spawn(async move {
+                info!("MemoryDaemon: Scheduled semantic compaction loop started (12h interval)");
+                loop {
+                    sleep(Duration::from_secs(12 * 3600)).await;
+                    info!("MemoryDaemon: Running scheduled compact_semantically()");
+                    // Composition root: build the LLM adapter for this run and hand it to
+                    // the memory manager through the `SemanticCompactor` port, so the
+                    // manager never imports the provider module (ADR-033 Wave 0).
+                    let compaction_model = crate::settings::XavierSettings::current()
+                        .models
+                        .compaction_model
+                        .clone();
+                    let compactor =
+                        crate::agents::provider::ModelProviderClient::from_model_override(
+                            compaction_model,
+                        );
+                    if let Err(e) = manager_compact.compact_semantically(&compactor).await {
+                        error!("MemoryDaemon: Scheduled compaction failed: {}", e);
+                    }
                 }
-            }
-        });
+            });
+        } else {
+            info!(
+                "MemoryDaemon: Scheduled semantic compaction is disabled (enable with XAVIER_SEMANTIC_COMPACTION=1)"
+            );
+        }
 
         // Run Garbage Collection every 24 hours
         let manager_gc = self.manager.clone();
@@ -425,9 +433,35 @@ fn find_xavier_dir() -> PathBuf {
     start.join(".xavier")
 }
 
+/// Check if semantic compaction is enabled via environment variable value.
+/// Returns true only for "1", "true", or "yes" (case-insensitive, trimmed).
+pub fn semantic_compaction_enabled(value: Option<&str>) -> bool {
+    let Some(v) = value else {
+        return false;
+    };
+    let trimmed = v.trim();
+    trimmed.eq_ignore_ascii_case("1")
+        || trimmed.eq_ignore_ascii_case("true")
+        || trimmed.eq_ignore_ascii_case("yes")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_semantic_compaction_enabled() {
+        assert!(!semantic_compaction_enabled(None));
+        assert!(!semantic_compaction_enabled(Some("0")));
+        assert!(!semantic_compaction_enabled(Some("false")));
+        assert!(!semantic_compaction_enabled(Some("no")));
+        assert!(!semantic_compaction_enabled(Some("random")));
+        assert!(semantic_compaction_enabled(Some("1")));
+        assert!(semantic_compaction_enabled(Some(" TRUE ")));
+        assert!(semantic_compaction_enabled(Some("yes")));
+        assert!(semantic_compaction_enabled(Some("YES")));
+        assert!(semantic_compaction_enabled(Some("true")));
+    }
 
     #[test]
     fn test_find_xavier_dir_returns_a_path_ending_in_xavier() {
