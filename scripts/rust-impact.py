@@ -204,7 +204,7 @@ def main():
                 "reason": "All changed files are known non-Rust paths",
                 "packages": []
             }
-            print(json.dumps(result, indent=2))
+            print(json.dumps(result))
             sys.exit(0)
 
     fallback = False
@@ -239,7 +239,7 @@ def main():
             "reason": reason,
             "packages": sorted(all_pkgs, key=lambda x: x['name'])
         }
-        print(json.dumps(result, indent=2))
+        print(json.dumps(result))
         return
 
     selected_ids = set(modified_pkgs.keys())
@@ -287,7 +287,7 @@ def main():
         "reason": "Scoped selection based on changed files",
         "packages": sorted(selected_packages, key=lambda x: x['name'])
     }
-    print(json.dumps(result, indent=2))
+    print(json.dumps(result))
 
 if __name__ == "__main__":
     main()
