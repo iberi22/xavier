@@ -278,7 +278,6 @@ pub fn plan_publication(
 /// members are rejected, never skipped: an unscannable package is not publishable.
 pub fn scan_package(dir: &AuthorizedDir) -> Result<PackageScan, PolicyError> {
     dir.revalidate()?;
-    let set = secret_set()?;
     let mut scan = PackageScan::default();
     let mut nodes = 0usize;
     let walk = WalkDir::new(dir.path())
@@ -319,17 +318,29 @@ pub fn scan_package(dir: &AuthorizedDir) -> Result<PackageScan, PolicyError> {
             });
         }
         scan.files_scanned += 1;
-        // `RegexSet::matches` yields each matching pattern index at most once.
         let text = String::from_utf8_lossy(&bytes);
-        for index in set.matches(text.as_ref()) {
-            scan.findings.push(SecretFinding {
-                class: SECRET_CLASSES[index].0,
-                location: relative.clone(),
-            });
-        }
+        scan.findings
+            .extend(scan_text(text.as_ref(), relative.clone())?);
     }
     dir.revalidate()?;
     Ok(scan)
+}
+
+/// Scan arbitrary text against the secret pattern set.
+pub(crate) fn scan_text(
+    text: &str,
+    location: impl Into<String>,
+) -> Result<Vec<SecretFinding>, PolicyError> {
+    let set = secret_set()?;
+    let location = location.into();
+    let mut findings = Vec::new();
+    for index in set.matches(text) {
+        findings.push(SecretFinding {
+            class: SECRET_CLASSES[index].0,
+            location: location.clone(),
+        });
+    }
+    Ok(findings)
 }
 
 type DirId = (u64, u64);

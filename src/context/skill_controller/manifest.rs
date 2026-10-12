@@ -174,7 +174,7 @@ pub enum ManifestError {
     InvalidTelemetry(String),
 }
 
-fn is_valid_slug(s: &str) -> bool {
+pub(crate) fn is_valid_slug(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 64
         && s.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())

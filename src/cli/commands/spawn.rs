@@ -332,6 +332,9 @@ pub async fn load_spawn_memory() -> Result<Arc<QmdMemory>> {
 ///
 /// Searches known paths for a skill with the given name.
 pub fn load_skill(skill_name: &str) -> Option<String> {
+    if !crate::context::skill_controller::manifest::is_valid_slug(skill_name) {
+        return None;
+    }
     let paths = [
         format!("skills/{}/SKILL.md", skill_name),
         format!("skills/{}.md", skill_name),
@@ -440,5 +443,16 @@ mod tests {
             .path()
             .join(".agents/skills/eph-task/SKILL.md")
             .exists());
+    }
+
+    #[test]
+    fn test_load_skill_rejects_invalid_slugs() {
+        assert_eq!(
+            load_skill("jules-multi-account/../jules-multi-account"),
+            None
+        );
+        for invalid in ["../../etc", "a/b", "", "..", "x\\y", "BadSlug", "a b"] {
+            assert_eq!(load_skill(invalid), None);
+        }
     }
 }

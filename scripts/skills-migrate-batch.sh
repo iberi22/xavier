@@ -71,11 +71,11 @@ for path in $DEST_PATHS; do
 done
 
 if [[ ${#BACKUP_TARGETS[@]} -gt 0 ]]; then
-  tar -cf "$BACKUP_TAR" "${BACKUP_TARGETS[@]}"
+  env -u TAR_OPTIONS tar -cf "$BACKUP_TAR" "${BACKUP_TARGETS[@]}"
   sha256sum "$BACKUP_TAR" > "$BACKUP_TAR.sha256"
 else
   # create empty tar to avoid errors and represent empty backup
-  tar -cf "$BACKUP_TAR" -T /dev/null
+  env -u TAR_OPTIONS tar -cf "$BACKUP_TAR" -T /dev/null
   sha256sum "$BACKUP_TAR" > "$BACKUP_TAR.sha256"
 fi
 
@@ -106,7 +106,7 @@ if [[ $APPLY_STATUS -ne 0 || $VERIFICATION_FAILED -ne 0 ]]; then
   # Simple conflict check from output, if rollback failed we restore backup
   if [[ $ROLLBACK_STATUS -ne 0 ]] || grep -iq 'conflict' "$BATCH_DIR/rollback.json"; then
     echo "Rollback failed or conflicts reported. Restoring from tar backup..."
-    tar -xf "$BACKUP_TAR" -C /
+    env -u TAR_OPTIONS tar -xf "$BACKUP_TAR" -C /
   fi
   exit 1
 fi
