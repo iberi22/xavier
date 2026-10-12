@@ -35,16 +35,16 @@ class TestShadowGateEvidence(unittest.TestCase):
     def test_missed_failure(self):
         pr_sha = "abcdef123"
         prs = [{"number": 100, "headRefOid": pr_sha}]
-        shadow_runs = [{"databaseId": 1, "headSha": pr_sha, "createdAt": "2026-10-10T10:00:00Z", "updatedAt": "2026-10-10T10:05:00Z", "runStartedAt": "2026-10-10T10:01:00Z"}]
-        ci_runs = [{"databaseId": 2, "headSha": pr_sha, "conclusion": "failure", "jobsUrl": "https://api.github.com/repos/iberi22/xavier/actions/runs/2/jobs", "createdAt": "2026-10-10T10:00:00Z", "updatedAt": "2026-10-10T10:10:00Z"}]
-        jobs = [{"name": "test-rust", "conclusion": "failure"}]
+        shadow_runs = [{"databaseId": 1, "headSha": pr_sha, "createdAt": "2026-10-10T10:00:00Z", "updatedAt": "2026-10-10T10:05:00Z", "startedAt": "2026-10-10T10:01:00Z"}]
+        ci_runs = [{"databaseId": 2, "headSha": pr_sha, "conclusion": "failure", "createdAt": "2026-10-10T10:00:00Z", "updatedAt": "2026-10-10T10:10:00Z"}]
+        jobs = {"jobs": [{"name": "test-rust", "conclusion": "failure"}]}
         log_txt = '::notice::classify={"class": "flow:ship"}\n::notice::rust-impact={"skip_rust": true}'
 
         gh_res = {
             "gh pr list": prs,
             "gh run list --workflow fast-gate.yml": shadow_runs,
             "gh run list --workflow ci.yml": ci_runs,
-            "gh api repos/iberi22/xavier/actions/runs/2/jobs": jobs,
+            "gh run view 2 --json jobs": jobs,
             "gh run view 1 --log": log_txt
         }
 
@@ -62,7 +62,7 @@ class TestShadowGateEvidence(unittest.TestCase):
     def test_unclassified_pr(self):
         pr_sha = "abcdef123"
         prs = [{"number": 100, "headRefOid": pr_sha}]
-        shadow_runs = [{"databaseId": 1, "headSha": pr_sha, "createdAt": "2026-10-10T10:00:00Z", "updatedAt": "2026-10-10T10:05:00Z", "runStartedAt": "2026-10-10T10:01:00Z"}]
+        shadow_runs = [{"databaseId": 1, "headSha": pr_sha, "createdAt": "2026-10-10T10:00:00Z", "updatedAt": "2026-10-10T10:05:00Z", "startedAt": "2026-10-10T10:01:00Z"}]
         ci_runs = []
         log_txt = 'some random log without notices'
 
@@ -95,7 +95,7 @@ class TestShadowGateEvidence(unittest.TestCase):
         pr_sha = "abcdef123"
         prs = [{"number": 100, "headRefOid": pr_sha}]
         # queue=1m, duration=4m, total=5m (300s). run_duration=240s
-        shadow_runs = [{"databaseId": 1, "headSha": pr_sha, "createdAt": "2026-10-10T10:00:00Z", "updatedAt": "2026-10-10T10:05:00Z", "runStartedAt": "2026-10-10T10:01:00Z"}]
+        shadow_runs = [{"databaseId": 1, "headSha": pr_sha, "createdAt": "2026-10-10T10:00:00Z", "updatedAt": "2026-10-10T10:05:00Z", "startedAt": "2026-10-10T10:01:00Z"}]
         log_txt = '::notice::classify={"class": "flow:ship"}\n::notice::rust-impact={"skip_rust": false}'
 
         gh_res = {

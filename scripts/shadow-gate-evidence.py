@@ -9,23 +9,6 @@ from datetime import datetime, timezone, timedelta
 
 def default_gh_runner(cmd, as_text=False):
     """Executes a gh command and parses JSON output if applicable."""
-    if not os.environ.get("GH_TOKEN") and not os.environ.get("GITHUB_TOKEN"):
-        try:
-            res = subprocess.run(
-                ["git", "credential", "fill"],
-                input="protocol=https\nhost=github.com\n",
-                capture_output=True,
-                text=True,
-            )
-            for line in res.stdout.splitlines():
-                if line.startswith("password="):
-                    token = line.split("=", 1)[1].strip()
-                    if token:
-                        os.environ["GH_TOKEN"] = token
-                        break
-        except Exception:
-            pass
-
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         if result.stdout.strip() == "":
@@ -75,30 +58,24 @@ def fetch_data(args, gh_runner):
     if not prs:
         prs = []
 
-    shadow_runs = gh_runner(["gh", "run", "list", "--workflow", "fast-gate.yml", "--created", f">={since_date}", "--limit", "1000", "--json", "databaseId,headSha,url,createdAt,updatedAt,runStartedAt"])
+    shadow_runs = gh_runner(["gh", "run", "list", "--workflow", "fast-gate.yml", "--created", f">={since_date}", "--limit", "1000", "--json", "databaseId,headSha,url,createdAt,updatedAt,startedAt"])
     if not shadow_runs:
         shadow_runs = []
 
-    ci_runs = gh_runner(["gh", "run", "list", "--workflow", "ci.yml", "--created", f">={since_date}", "--limit", "1000", "--json", "databaseId,headSha,conclusion,jobsUrl"])
+    ci_runs = gh_runner(["gh", "run", "list", "--workflow", "ci.yml", "--created", f">={since_date}", "--limit", "1000", "--json", "databaseId,headSha,conclusion"])
     if not ci_runs:
         ci_runs = []
 
     return prs, shadow_runs, ci_runs
 
-def get_run_jobs(jobs_url, gh_runner):
+def get_run_jobs(run_id, gh_runner):
     try:
-        # Extract repo path from jobs_url if possible, or use api call
-        # e.g., https://api.github.com/repos/iberi22/xavier/actions/runs/123/jobs
-        # Let's transform to gh api call
-        if not jobs_url:
+        if not run_id:
             return []
 
-        # jobs_url looks like: https://api.github.com/repos/OWNER/REPO/actions/runs/RUN_ID/jobs
-        api_path = re.sub(r'^https://api\.github\.com/', '', jobs_url)
-
-        jobs_data = gh_runner(["gh", "api", api_path, "--jq", ".jobs"])
-        if jobs_data:
-            return jobs_data
+        jobs_data = gh_runner(["gh", "run", "view", str(run_id), "--json", "jobs"])
+        if isinstance(jobs_data, dict):
+            return jobs_data.get("jobs", [])
         return []
     except Exception:
         return []
@@ -187,8 +164,8 @@ def main(args, gh_runner=default_gh_runner):
 
             # Check for missed failure
             if latest_ci and latest_ci.get("conclusion") == "failure":
-                jobs_url = latest_ci.get("jobsUrl")
-                jobs = get_run_jobs(jobs_url, gh_runner)
+                ci_run_id = latest_ci.get("databaseId")
+                jobs = get_run_jobs(ci_run_id, gh_runner)
 
                 # Check if it failed in a Rust job
                 failed_rust_job = False
@@ -215,7 +192,7 @@ def main(args, gh_runner=default_gh_runner):
         # Latest run latency
         created_at = parse_time(latest_shadow.get("createdAt"))
         updated_at = parse_time(latest_shadow.get("updatedAt"))
-        run_started_at = parse_time(latest_shadow.get("runStartedAt"))
+        run_started_at = parse_time(latest_shadow.get("startedAt"))
 
         if created_at and updated_at:
             duration = (updated_at - created_at).total_seconds()
@@ -227,7 +204,7 @@ def main(args, gh_runner=default_gh_runner):
 
         # Cold cache cohort (first run of the PR)
         first_shadow = s_runs[-1]
-        first_started = parse_time(first_shadow.get("runStartedAt"))
+        first_started = parse_time(first_shadow.get("startedAt"))
         first_updated = parse_time(first_shadow.get("updatedAt"))
 
         if first_started and first_updated:
