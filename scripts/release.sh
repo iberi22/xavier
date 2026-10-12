@@ -174,12 +174,48 @@ def update_file(path, old_content, new_content):
             f.write(new_content)
         print(f"Updated {path}")
 
+def get_cargo_pkg_name(toml_path):
+    if not os.path.exists(toml_path):
+        return None
+    with open(toml_path, "r") as f:
+        in_package = False
+        for line in f:
+            stripped = line.strip()
+            if stripped == "[package]":
+                in_package = True
+            elif stripped.startswith("["):
+                in_package = False
+            elif in_package and stripped.startswith("name = "):
+                return stripped.split('"')[1]
+    return None
+
+def update_cargo_lock(lock_path, pkg_name, new_ver):
+    if not os.path.exists(lock_path) or not pkg_name:
+        return
+    with open(lock_path, "r") as f:
+        old_content = f.read()
+
+    pattern = rf'(\[\[package\]\]\r?\nname\s*=\s*"{re.escape(pkg_name)}"\r?\nversion\s*=\s*)"[^"]+"'
+    new_content, count = re.subn(pattern, rf'\g<1>"{new_ver}"', old_content, count=1)
+    if count == 0:
+        pattern = rf'(\[\[package\]\]\r?\n(?:(?!\[\[package\]\])[^\n]*\r?\n)*?name\s*=\s*"{re.escape(pkg_name)}"\r?\n(?:(?!\[\[package\]\])[^\n]*\r?\n)*?version\s*=\s*)"[^"]+"'
+        new_content, count = re.subn(pattern, rf'\g<1>"{new_ver}"', old_content, count=1)
+
+    if count > 0:
+        update_file(lock_path, old_content, new_content)
+
 # Cargo.toml
+root_pkg_name = None
 if os.path.exists("Cargo.toml"):
+    root_pkg_name = get_cargo_pkg_name("Cargo.toml")
     with open("Cargo.toml", "r") as f:
         old_content = f.read()
     new_content = re.sub(r'^version = ".*?"', f'version = "{new_version}"', old_content, count=1, flags=re.MULTILINE)
     update_file("Cargo.toml", old_content, new_content)
+
+# Cargo.lock
+if root_pkg_name and os.path.exists("Cargo.lock"):
+    update_cargo_lock("Cargo.lock", root_pkg_name, new_version)
 
 # package.json
 if os.path.exists("package.json"):
@@ -203,11 +239,17 @@ if os.path.exists("panel-ui/src-tauri/tauri.conf.json"):
     update_file("panel-ui/src-tauri/tauri.conf.json", old_content, new_content)
 
 # panel-ui/src-tauri/Cargo.toml
+tauri_pkg_name = None
 if os.path.exists("panel-ui/src-tauri/Cargo.toml"):
+    tauri_pkg_name = get_cargo_pkg_name("panel-ui/src-tauri/Cargo.toml")
     with open("panel-ui/src-tauri/Cargo.toml", "r") as f:
         old_content = f.read()
     new_content = re.sub(r'^version = ".*?"', f'version = "{new_version}"', old_content, count=1, flags=re.MULTILINE)
     update_file("panel-ui/src-tauri/Cargo.toml", old_content, new_content)
+
+# panel-ui/src-tauri/Cargo.lock
+if tauri_pkg_name and os.path.exists("panel-ui/src-tauri/Cargo.lock"):
+    update_cargo_lock("panel-ui/src-tauri/Cargo.lock", tauri_pkg_name, new_version)
 
 # CHANGELOG.md
 if os.path.exists("CHANGELOG.md"):
