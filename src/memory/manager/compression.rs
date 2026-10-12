@@ -53,7 +53,7 @@ impl MemoryManager {
                 );
 
                 let compacted_content = match compactor.compact_document(&prompt).await {
-                    Some(compacted) if !compacted.trim().is_empty() => compacted,
+                    Some(compacted) if !compacted.trim().is_empty() => compacted.trim().to_string(),
                     _ => {
                         skipped_count += 1;
                         continue;
@@ -73,13 +73,16 @@ impl MemoryManager {
                 updated_doc.metadata["semantically_compacted"] = serde_json::json!(true);
                 updated_doc.metadata["original_size"] = serde_json::json!(old_size);
 
-                if self.memory.update(updated_doc).await.is_ok() {
-                    bytes_freed += freed;
-                    actions.push(MemoryManagementAction::Compressed {
-                        doc_id: doc_id.clone(),
-                        old_size,
-                        new_size,
-                    });
+                match self.memory.update(updated_doc).await {
+                    Ok(_) => {
+                        bytes_freed += freed;
+                        actions.push(MemoryManagementAction::Compressed {
+                            doc_id: doc_id.clone(),
+                            old_size,
+                            new_size,
+                        });
+                    }
+                    Err(e) => warn!("Semantic compaction update failed for {}: {}", doc_id, e),
                 }
             }
         }
