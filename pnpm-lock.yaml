@@ -5,11 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  sharp: ^0.35.3
-  postcss-selector-parser: '>=7.1.6'
-  http-cache-semantics: 4.3.0
   undici: ^7.29.0
   esbuild: ^0.28.1
+  sharp: ^0.35.4
 
 importers:
 
@@ -77,7 +75,7 @@ importers:
         specifier: ^3.10.1
         version: 3.10.1(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@17.0.2)(react@19.3.0)(redux@5.0.1)
       sharp:
-        specifier: ^0.35.3
+        specifier: ^0.35.4
         version: 0.35.5(@types/node@26.4.0)
       tailwindcss:
         specifier: 4.3.3
@@ -1702,6 +1700,11 @@ packages:
 
   '@volar/typescript@2.4.28':
     resolution: {integrity: sha512-Ja6yvWrbis2QtN4ClAKreeUZPVYMARDYZl9LMEv1iQ1QdepB6wn0jTRxA9MftYmYa4DQ4k/DaSZpFPUfxl8giw==}
+    peerDependencies:
+      typescript: '*'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   accessor-fn@1.5.3:
     resolution: {integrity: sha512-rkAofCwe/FvYFUlMB0v0gWmhqtfAtV1IUkdPbfhTUyYniu5LrC0A0UJkTH0Jv3S8SvwkmfuAlY+mQIJATdocMA==}
@@ -2878,8 +2881,8 @@ packages:
     peerDependencies:
       postcss: ^8.2.14
 
-  postcss-selector-parser@7.1.6:
-    resolution: {integrity: sha512-7qASPzhKF2l2KLboRZux8CCTRMdGiV08vWmyKzPz22qZ7ZjQBOeY7rNzNoCLSUiftJ7HUq0GERHmxw/t0dCdMw==}
+  postcss-selector-parser@6.1.4:
+    resolution: {integrity: sha512-bIoJLOmjCO1S9XdY/DcnR5hJxvrDir1PbGChrzXG3vw0/FOliy/fA3dmdhQ441kah4gKv+TwckGzex6wNS5cnQ==}
     engines: {node: '>=4'}
 
   postcss@8.5.29:
@@ -4750,11 +4753,13 @@ snapshots:
 
   '@volar/source-map@2.4.28': {}
 
-  '@volar/typescript@2.4.28':
+  '@volar/typescript@2.4.28(typescript@5.9.3)':
     dependencies:
       '@volar/language-core': 2.4.28
       path-browserify: 1.0.1
       vscode-uri: 3.2.0
+    optionalDependencies:
+      typescript: 5.9.3
 
   accessor-fn@1.5.3: {}
 
@@ -6100,9 +6105,9 @@ snapshots:
   postcss-nested@6.2.0(postcss@8.5.29):
     dependencies:
       postcss: 8.5.29
-      postcss-selector-parser: 7.1.6
+      postcss-selector-parser: 6.1.4
 
-  postcss-selector-parser@7.1.6:
+  postcss-selector-parser@6.1.4:
     dependencies:
       cssesc: 3.0.0
       util-deprecate: 1.0.2
@@ -6584,7 +6589,7 @@ snapshots:
   unplugin-dts@1.1.2(esbuild@0.28.2)(rolldown@1.2.11)(rollup@4.63.1)(typescript@5.9.3)(vite@8.3.3(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)):
     dependencies:
       '@rollup/pluginutils': 5.4.0(rollup@4.63.1)
-      '@volar/typescript': 2.4.28
+      '@volar/typescript': 2.4.28(typescript@5.9.3)
       compare-versions: 6.1.1
       debug: 4.4.3
       glob-to-regexp: 0.4.1
