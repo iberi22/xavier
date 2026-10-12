@@ -178,8 +178,7 @@ fn offline_catalog(fixture: &Fixture, cli: &str, args: &[&str], expected: &[&str
             .map(|dir| dir.join(cli))
             .find(|path| path.is_file())
     }) else {
-        eprintln!("UNAVAILABLE {cli}: not installed; native discovery NOT VERIFIED");
-        return;
+        panic!("UNAVAILABLE: {cli} not on PATH; native discovery NOT VERIFIED");
     };
     if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         panic!("UNSUPPORTED: network sandbox requires Linux x86_64");
@@ -248,7 +247,7 @@ const HERMES_GLOBAL: &str = ".hermes/skills";
 const OPENCLAW_GLOBAL: &str = ".openclaw/skills";
 
 #[test]
-fn hermes_global_discovery_without_project_leakage() {
+fn hermes_global_projection_without_project_leakage() {
     xavier::isolate_test_process!();
     let f = Fixture::new();
     f.project_into(&f.home.join(HERMES_GLOBAL), "hermes", &["alpha-visible"]);
@@ -287,7 +286,7 @@ fn openclaw_global_discovery_without_project_leakage() {
 }
 
 #[test]
-fn gemini_global_and_project_discovery() {
+fn gemini_global_and_project_projection() {
     xavier::isolate_test_process!();
     let f = Fixture::new();
     f.project_into(&f.home.join(".gemini/skills"), "gemini", &["alpha-visible"]);
@@ -298,6 +297,19 @@ fn gemini_global_and_project_discovery() {
     );
     f.assert_view(&f.home.join(".gemini/skills"), &["alpha-visible"]);
     f.assert_view(&f.project.join(".agents/skills"), &["beta-visible"]);
+}
+
+#[test]
+#[ignore = "#2621: gemini not installed; run with --ignored where available"]
+fn gemini_native_startup_global_and_project_catalog() {
+    xavier::isolate_test_process!();
+    let f = Fixture::new();
+    f.project_into(&f.home.join(".gemini/skills"), "gemini", &["alpha-visible"]);
+    f.project_into(
+        &f.project.join(".agents/skills"),
+        "gemini",
+        &["beta-visible"],
+    );
     offline_catalog(
         &f,
         "gemini",
