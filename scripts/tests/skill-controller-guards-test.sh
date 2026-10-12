@@ -70,6 +70,13 @@ mod tests {
     fn bad() { let x = foo.unwrap(); }
 }
 CODE
+mkdir -p "$TMP_DIR/src/context/skill_controller/audit"
+cat << 'CODE' > "$TMP_DIR/src/context/skill_controller/audit/tests.rs"
+fn bad() {
+    let x = foo.expect("standalone test file");
+    std::process::Command::new("ls");
+}
+CODE
 run_case "Clean fixtures" 0 0
 
 # Test 2: Inject guard_01 violation

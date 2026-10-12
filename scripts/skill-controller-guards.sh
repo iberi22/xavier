@@ -11,10 +11,16 @@ fail=0
 # Allow overriding root for tests
 TARGET_DIR="${XAVIER_TARGET_DIR:-$ROOT}"
 
-# Approximation: Strip from the first #[cfg(test)] to EOF per file.
-# This assumes tests are always at the end of the file.
+# Strip tests: ignore separate test files entirely, or strip from the first #[cfg(test)] to EOF.
 strip_tests() {
-  awk '/#\[cfg\(test\)\]/ {exit} {print}' "$1"
+  case "$1" in
+    */tests.rs|*_test.rs|*_tests.rs)
+      return 0
+      ;;
+    *)
+      awk '/#\[cfg\(test\)\]/ {exit} {print}' "$1"
+      ;;
+  esac
 }
 
 check_01() {
