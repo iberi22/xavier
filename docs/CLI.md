@@ -958,6 +958,70 @@ xavier regen tune
 xavier regen history --limit 10
 ```
 
+## Skills
+
+Skills allow extending Xavier with structured workflows. Note that audit/usage are read-only and that the HTTP routes (`/api/skill/audit`, `/api/skill/usage`) require authentication and never accept a client path.
+
+### `xavier skills usage`
+
+Shows read-only skill usage counts and harness acknowledgment coverage. Corresponds to `GET /api/skill/usage` and the MCP tool `xavier_skill_usage`.
+
+```bash
+xavier skills usage
+```
+
+### `xavier skills audit --manifest <path>`
+
+Runs a read-only drift audit of skill packages (D02). Corresponds to `GET /api/skill/audit` (server-side `XAVIER_SKILL_MANIFEST`).
+
+| Flag | Default | Description |
+|---|---|---|
+| `--manifest <path>` | required | Path to the skill manifest TOML. |
+
+```bash
+xavier skills audit --manifest skills.toml
+```
+
+### `xavier skills plan --manifest <path>`
+
+Builds a projection plan from a manifest; writes nothing (D4).
+
+| Flag | Default | Description |
+|---|---|---|
+| `--manifest <path>` | required | Path to the skill manifest TOML. |
+
+```bash
+xavier skills plan --manifest skills.toml > plan.json
+```
+
+### `xavier skills apply --manifest <path> --plan <path> [--apply]`
+
+Applies a saved plan; only mutates the filesystem when `--apply` is set (D4).
+
+| Flag | Default | Description |
+|---|---|---|
+| `--manifest <path>` | required | Path to the skill manifest TOML. |
+| `--plan <path>` | required | Path to a plan JSON file previously saved from `xavier skills plan`. |
+| `--apply` | `false` | Actually write changes (default is dry-run). |
+
+```bash
+xavier skills apply --manifest skills.toml --plan plan.json --apply
+```
+
+### `xavier skills rollback --manifest <path> --tx-id <id> [--apply]`
+
+Rolls back one journaled transaction by id; conflicts are left untouched (D14).
+
+| Flag | Default | Description |
+|---|---|---|
+| `--manifest <path>` | required | Path to the skill manifest TOML. |
+| `--tx-id <id>` | required | Transaction id returned by a previous `xavier skills apply`. |
+| `--apply` | `false` | Actually write changes (default is dry-run). |
+
+```bash
+xavier skills rollback --manifest skills.toml --tx-id 12345 --apply
+```
+
 ## Maintenance
 
 ### `xavier cleanup`
@@ -1053,6 +1117,16 @@ Inspect the unencrypted header metadata of a capsule.
 xavier airgap detect
 xavier airgap unpack --capsule ./backup.db.swal_capsule --output ./restored.db --passphrase-file ./capsule-passphrase.txt
 xavier airgap inspect --capsule ./backup.db.swal_capsule --json
+```
+
+## Recovery
+
+### `xavier recovery disconnect`
+
+Disconnect the local Google Drive credential.
+
+```bash
+xavier recovery disconnect
 ```
 
 ## Local Users
