@@ -165,4 +165,43 @@ echo "Test Case 4: check-only mode"
   echo "PASS: Test Case 4"
 )
 
+echo "=========================================================="
+echo "Test Case 5: Warmup failure with no matching lines continues anyway"
+mkdir -p "$TEST_DIR/bin5"
+cat << 'BIN' > "$TEST_DIR/bin5/cargo"
+#!/usr/bin/env bash
+if [[ "$*" == *"test -p code-graph --lib --no-run"* ]]; then
+  echo "warning: arbitrary failure with no matching keywords"
+  exit 1
+fi
+if [[ "$*" == *"--no-run"* ]]; then
+  exit 0
+fi
+echo "test result: ok. 1 passed; 0 failed"
+exit 0
+BIN
+chmod +x "$TEST_DIR/bin5/cargo"
+
+(
+  export PATH="$TEST_DIR/bin5:$PATH"
+  export XAVIER_VERIFY_PER_ATTEMPT_SECS=1
+  OUT="$(bash "$TEST_DIR/verify-pipeline.sh" 2>&1)" || RC=$?
+  if [ "${RC:-0}" -ne 0 ]; then
+    echo "FAIL: Expected exit code 0, got ${RC:-0}"
+    echo "$OUT"
+    exit 1
+  fi
+  if ! echo "$OUT" | grep -q 'warmup failed for: -p code-graph --lib (continuing anyway)'; then
+    echo "FAIL: Missing continuation warning"
+    echo "$OUT"
+    exit 1
+  fi
+  if ! echo "$OUT" | grep -q 'warning: arbitrary failure with no matching keywords'; then
+    echo "FAIL: Missing fallback tail output"
+    echo "$OUT"
+    exit 1
+  fi
+  echo "PASS: Test Case 5"
+)
+
 echo "All verify-pipeline tests passed"

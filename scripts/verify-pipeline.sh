@@ -147,7 +147,7 @@ PY
     if ! (cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_DIR" cargo test $spec --no-run >"$WARMUP_OUT" 2>&1); then
       echo "  ⚠ warmup failed for: $spec (continuing anyway)"
       echo "::group::warmup $spec"
-      grep -E '^error|error\[|could not compile|linker|signal' "$WARMUP_OUT" | head -40 > "$WARMUP_OUT.filtered"
+      grep -E '^error|error\[|could not compile|linker|signal' "$WARMUP_OUT" | head -40 > "$WARMUP_OUT.filtered" || true
       if [ -s "$WARMUP_OUT.filtered" ]; then
         cat "$WARMUP_OUT.filtered"
       else
