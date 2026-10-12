@@ -142,12 +142,30 @@ PY
   # so the first filters don't burn their budget on a cold target dir.
   echo "  … warming test binaries (one-time compile, may take minutes) …"
   for spec in "-p xavier --lib" "-p code-graph --lib" "-p xavier-core-logic --lib" "-p xavier --features telegram --lib" "-p xavier --features mesh --lib"; do
+    WARMUP_OUT="$(mktemp)"
     # shellcheck disable=SC2086
-    (cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_DIR" cargo test $spec --no-run >/dev/null 2>&1) \
-      || echo "  ⚠ warmup failed for: $spec (continuing anyway)"
+    if ! (cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_DIR" cargo test $spec --no-run >"$WARMUP_OUT" 2>&1); then
+      echo "  ⚠ warmup failed for: $spec (continuing anyway)"
+      echo "::group::warmup $spec"
+      grep -E '^error|error\[|could not compile|linker|signal' "$WARMUP_OUT" | head -40 > "$WARMUP_OUT.filtered" || true
+      if [ -s "$WARMUP_OUT.filtered" ]; then
+        cat "$WARMUP_OUT.filtered"
+      else
+        tail -40 "$WARMUP_OUT"
+      fi
+      rm -f "$WARMUP_OUT.filtered"
+      echo "::endgroup::"
+      if [ "$spec" = "-p xavier --lib" ]; then
+        echo "❌ build failed before any declared test could run"
+        rm -f "$WARMUP_OUT"
+        exit 1
+      fi
+    fi
+    rm -f "$WARMUP_OUT"
   done
   # Declared [[test]] target names (for path/:: filters pointing at integration targets).
   TEST_TARGETS="$(grep -A1 '^\[\[test\]\]' "$ROOT/Cargo.toml" | grep 'name =' | sed -E 's/.*name = "([^"]+)".*/\1/' | tr '\n' ' ')"
+  SEEN_ERRORS_FILE="$(mktemp)"
   # try_cargo: run one cargo invocation, set OUT/RC/PASSED. Echoes the label on success.
   try_cargo() {
     OUT="$(cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_DIR" $TIMEOUT_BIN cargo "$@" 2>&1)"
@@ -159,6 +177,15 @@ PY
       echo "    ✅ $TRY_LABEL (passed=$PASSED)"
       return 0
     fi
+
+    if [ "$RC" -ne 0 ] && [ "$PASSED" -eq 0 ]; then
+      ERR_SIG="$(printf '%s' "$OUT" | grep -m1 'error' || true)"
+      if ! grep -F -x -q "$ERR_SIG" "$SEEN_ERRORS_FILE" 2>/dev/null; then
+        echo "$ERR_SIG" >> "$SEEN_ERRORS_FILE"
+        printf '%s\n' "$OUT" | head -20
+      fi
+    fi
+
     FAIL_OUT="${FAIL_OUT:-}${FAIL_OUT:+$'\n'}--- $TRY_LABEL (rc=$RC) ---"$'\n'"$(printf '%s' "$OUT" | tail -12)"
     return 1
   }
@@ -249,6 +276,7 @@ PY
     fi
   done < "$TEST_LIST"
   rm -f "$TEST_LIST"
+  rm -f "$SEEN_ERRORS_FILE"
   if [ "$FAILED" -ne 0 ]; then
     echo "  ❌ declared tests failed (zero-match=$ZERO_MATCH) — failing pipeline"
     exit 1
