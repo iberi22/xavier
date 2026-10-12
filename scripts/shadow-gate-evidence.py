@@ -80,28 +80,49 @@ def get_run_jobs(run_id, gh_runner):
     except Exception:
         return []
 
+def extract_notice_payload(prefix, log_text):
+    if not log_text:
+        return None
+    pos = 0
+    decoder = json.JSONDecoder()
+    while True:
+        idx = log_text.find(prefix, pos)
+        if idx == -1:
+            break
+        start = idx + len(prefix)
+        brace = log_text.find('{', start)
+        if brace != -1 and log_text[start:brace].strip() == '':
+            try:
+                obj, _ = decoder.raw_decode(log_text, brace)
+                return obj
+            except Exception:
+                pass
+        pos = start
+    return None
+
 def extract_log_notices(run_id, gh_runner):
     log_text = gh_runner(["gh", "run", "view", str(run_id), "--log"], as_text=True)
     if not log_text:
         return None, None
 
-    classify = None
-    rust_impact = None
+    classify = extract_notice_payload('::notice::classify=', log_text)
+    rust_impact = extract_notice_payload('::notice::rust-impact=', log_text)
 
-    # regex to match `::notice::classify={...}`
-    match_c = re.search(r'::notice::classify=({.*?})', log_text)
-    if match_c:
-        try:
-            classify = json.loads(match_c.group(1))
-        except:
-            pass
+    if classify is None:
+        match_c = re.search(r'::notice::classify=({.*?})', log_text)
+        if match_c:
+            try:
+                classify = json.loads(match_c.group(1))
+            except Exception:
+                pass
 
-    match_r = re.search(r'::notice::rust-impact=({.*?})', log_text)
-    if match_r:
-        try:
-            rust_impact = json.loads(match_r.group(1))
-        except:
-            pass
+    if rust_impact is None:
+        match_r = re.search(r'::notice::rust-impact=({.*?})', log_text)
+        if match_r:
+            try:
+                rust_impact = json.loads(match_r.group(1))
+            except Exception:
+                pass
 
     return classify, rust_impact
 
