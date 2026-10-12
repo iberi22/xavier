@@ -15,28 +15,28 @@ Before initiating the migration procedure, ensure the following preconditions ar
 
 ## Inventory
 
-Before migrating any files, generate a comprehensive inventory of all discovered skill packages across known tool roots.
+Before migrating any files, generate a comprehensive projection plan and inventory report using the Xavier Skill Controller CLI across all declared tool roots in the manifest.
 
-Run the inventory tool:
+Run the planning tool:
 
 ```bash
-python3 scripts/skills-inventory.py --all-roots > inventory-report.json
+xavier skills plan --manifest manifest.toml > plan-report.json
 ```
 
 **How to read conflicts:**
-The JSON report will highlight duplicate skill names, version mismatches, and symlink loops.
-- `duplicate_names`: Look for distinct skill directories attempting to claim the same command namespace.
-- `unresolved_links`: Any symlinks that point outside authorized boundaries or are dangling.
-- `manifest_drift`: Differences between the proposed TOML manifest and the observed filesystem state.
+The JSON plan report outputs planned actions (`create`, `refresh`, `unchanged`, `conflict`), package identities, and unmanaged/foreign entries across all target roots:
+- `conflict`: Look for distinct skill directories attempting to claim the same destination or colliding in namespaces.
+- `foreign`: Any unmanaged files, directories, irregular entries, or symlinks pointing outside authorized source boundaries.
+- `removals`: Any destinations scheduled for removal.
 
-Resolve any identified conflicts in the `inventory-report.json` manually before proceeding to the batch migration phase.
+Resolve any identified conflicts or foreign entry warnings in `plan-report.json` before proceeding to the batch migration phase.
 
 ## Go/No-go checklist
 
 Evaluate this checklist (mapping to task O05) to determine if the migration can safely proceed:
 
-- [ ] Inventory script (`scripts/skills-inventory.py`) completed without fatal errors.
-- [ ] No unresolvable conflicts identified in the inventory report.
+- [ ] Projection plan generation (`xavier skills plan --manifest <manifest>`) completed without fatal errors or unresolved conflicts.
+- [ ] No unresolvable conflicts identified in the plan report.
 - [ ] Tarball backup of all tool roots has been successfully created and verified.
 - [ ] Required tools are available and executable on `$PATH`.
 - [ ] Target canonical store directory exists or can be created.
@@ -46,25 +46,25 @@ Evaluate this checklist (mapping to task O05) to determine if the migration can 
 
 ## Batch procedure
 
-To minimize risk, migrations are executed in bounded batches. One batch is defined as exactly one discovery root or a maximum of 25 packages.
+To minimize risk, migrations are executed in bounded batches. One batch is defined as exactly one discovery root or a maximum of 25 packages defined in a batch manifest.
 
-1. **Define the batch:** Identify the target tool root (e.g., `$HOME/.hermes/skills`).
+1. **Define the batch:** Prepare the batch manifest TOML (e.g., `manifest-batch-1.toml`) targeting the tool root (e.g., `$HOME/.hermes/skills`) and specify a dedicated state directory (e.g., `$HOME/.xavier/migration-state`).
 2. **Dry-run the batch migration:**
-   Execute the migration script in dry-run mode to inspect the proposed changes.
+   Execute the migration script in dry-run mode (without `--execute`) to inspect the proposed changes.
 
    ```bash
-   bash scripts/skills-migrate-batch.sh --dry-run --batch-size 25 --root "$HOME/.hermes/skills"
+   bash scripts/skills-migrate-batch.sh --manifest manifest-batch-1.toml --batch 1 --state "$HOME/.xavier/migration-state"
    ```
 
-3. **Review the plan:** Ensure no regular files are scheduled for deletion, only atomic symlink swaps.
+3. **Review the plan:** Inspect `$HOME/.xavier/migration-state/batch-1/plan.json`. Ensure no regular files are scheduled for deletion, only atomic symlink swaps.
 4. **Execute the batch:**
-   Run the migration script to apply the changes.
+   Run the migration script with `--execute` to create a verified tar backup and apply the changes.
 
    ```bash
-   bash scripts/skills-migrate-batch.sh --apply --batch-size 25 --root "$HOME/.hermes/skills"
+   bash scripts/skills-migrate-batch.sh --manifest manifest-batch-1.toml --batch 1 --state "$HOME/.xavier/migration-state" --execute
    ```
 
-5. **Verify the batch:** Check that the symlinks were created correctly and point to the unified store.
+5. **Verify the batch:** Check that the symlinks were created correctly and point to the unified store, and that the done marker (`$HOME/.xavier/migration-state/batch-1/done`) exists.
 
 ## Verification per adapter
 
@@ -81,28 +81,32 @@ The following table tracks the discovery root and testing status of each tool ad
 
 ## Rollback
 
-If a migration batch fails or introduces unexpected regressions, immediately execute the rollback procedure. The controller architecture is designed for a fail-safe, deterministic rollback.
+If a migration batch fails or introduces unexpected regressions, immediately execute the rollback procedure. The controller architecture is designed for a fail-safe, deterministic rollback. Note that `scripts/skills-migrate-batch.sh` automatically initiates rollback and restores from the tar backup if apply or verification fails. For manual rollback:
 
 1. **Controller rollback:**
-   Use the Xavier CLI to revert the ownership journal and remove projected symlinks for the affected batch.
+   Use the Xavier CLI with the transaction ID (`tx_id`) recorded in `$HOME/.xavier/migration-state/batch-<id>/apply.json` to revert journaled actions:
 
    ```bash
-   xavier skills rollback --batch-id <failed_batch_id>
+   # Dry-run rollback:
+   xavier skills rollback --manifest manifest-batch-1.toml --tx-id <tx_id>
+
+   # Apply rollback:
+   xavier skills rollback --manifest manifest-batch-1.toml --tx-id <tx_id> --apply
    ```
 
 2. **Tarball restore:**
-   If the controller rollback fails or is incomplete, manually restore the original tool roots from the tarball backup created in the Preconditions step.
+   If the controller rollback fails or reports conflicts, manually restore the original files from the batch backup archive created by the batch runner or the full backup created in Preconditions:
 
    ```bash
-   tar -xzf skills-backup.tar.gz -C "$HOME"
+   tar -xf "$HOME/.xavier/migration-state/batch-1/backup.tar" -C /
    ```
 
 3. **Verify rollback:**
    Confirm that the tool roots have been restored to their exact pre-migration state.
-   Run the inventory tool again to ensure no drift remains.
+   Run the audit command against the manifest to ensure no drift remains.
 
    ```bash
-   python3 scripts/skills-inventory.py --all-roots
+   xavier skills audit --manifest manifest-batch-1.toml
    ```
 
 ## Copy fallback
@@ -120,10 +124,10 @@ If an adapter is discovered that cannot follow symlinks:
 Once the migration is complete and the system is operating normally, perform ongoing telemetry and drift checks to ensure system integrity.
 
 1. **Audit for drift:**
-   Periodically run the audit command to detect any manual, out-of-band modifications to the tool roots or canonical store.
+   Periodically run the audit command against your manifest to detect any manual, out-of-band modifications to the tool roots or canonical store.
 
    ```bash
-   xavier skills audit --report-only
+   xavier skills audit --manifest manifest.toml
    ```
 
    Review the generated report for unauthorized changes.
@@ -132,7 +136,7 @@ Once the migration is complete and the system is operating normally, perform ong
    Use the usage command to confirm that migrated skills are being successfully selected, delivered, and invoked.
 
    ```bash
-   xavier skills usage --summary
+   xavier skills usage
    ```
 
 ## Ownership and retention of previous stores
