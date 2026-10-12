@@ -199,10 +199,52 @@ test_verification_failure() {
   echo "test_verification_failure passed"
 }
 
+test_backup_symlink_does_not_dereference() {
+  run_case "test_backup_symlink_does_not_dereference"
+  local STATE_DIR="$TEMP_DIR/state_symlink"
+  mkdir -p "$STATE_DIR"
+  mkdir -p /tmp/tools/skills
+
+  local SENTINEL="SENTINEL_SECRET_DATA_12345"
+  local REAL_FILE="$TEMP_DIR/real_sentinel.txt"
+  echo "$SENTINEL" > "$REAL_FILE"
+
+  # Destination is /tmp/tools/skills/demo; make it a symlink to REAL_FILE
+  rm -rf /tmp/tools/skills/demo
+  ln -s "$REAL_FILE" /tmp/tools/skills/demo
+
+  TAR_OPTIONS="-h" bash "$SCRIPT_TO_TEST" --manifest "$MOCK_MANIFEST" --batch 6 --state "$STATE_DIR" --execute
+
+  local BACKUP_TAR="$STATE_DIR/batch-6/backup.tar"
+  if [[ ! -f "$BACKUP_TAR" ]]; then
+    echo "test_backup_symlink_does_not_dereference failed: backup.tar missing"
+    exit 1
+  fi
+
+  # Check that tar listing starts with l for the symlink entry
+  local TAR_LISTING
+  TAR_LISTING=$(tar -tvf "$BACKUP_TAR")
+  echo "Backup tar listing:"
+  echo "$TAR_LISTING"
+
+  if ! echo "$TAR_LISTING" | grep -q '^l'; then
+    echo "test_backup_symlink_does_not_dereference failed: entry is not a symlink (does not start with l)"
+    exit 1
+  fi
+
+  if grep -q "$SENTINEL" "$BACKUP_TAR"; then
+    echo "test_backup_symlink_does_not_dereference failed: backup.tar contains sentinel string"
+    exit 1
+  fi
+
+  echo "test_backup_symlink_does_not_dereference passed"
+}
+
 test_dry_run
 test_execute_success
 test_idempotent
 test_failure_triggers_rollback
 test_verification_failure
+test_backup_symlink_does_not_dereference
 
 echo "All tests passed."
