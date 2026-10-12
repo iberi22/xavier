@@ -22,29 +22,72 @@ def get_revert_prs(date_filter: str, mock_file: str = None) -> List[Dict]:
     except Exception as e:
         return []
 
-def get_missed_failures(fast_gate_runs: List[Dict], incidents: List[Dict], window_start: datetime.datetime, window_end: datetime.datetime) -> int:
-    # A missed failure is a main red (incident) within 24h of a merge that passed the fast gate.
-    # From incident we get failed sha and closed_at time maybe? Actually, we'll just check if there are incidents
-    # linked to PRs that passed the fast gate.
-    # To simplify: count incidents created in window whose failed sha had a fast gate pass run within 24h before incident.
-    # We can use tbd-metrics functions. We'll extract failed shas from incidents.
+def get_missed_failures(fast_gate_runs: List[Dict], incidents: List[Dict], window_start: datetime.datetime, window_end: datetime.datetime, prs: List[Dict] = None) -> int:
+    # A missed failure is a main red (incident) within the window from a change that passed the fast gate.
+    # fast-gate.yml runs on pull_request, so run headSha is the PR head (headRefOid).
+    # When merged to main, the incident references the merge commit on main.
+    # We link incidents on main to the PRs that introduced them, and check if those PRs passed fast gate.
 
-    missed_failures = 0
+    if isinstance(window_start, list):
+        prs, window_start, window_end = window_start, window_end, prs
+
+    if prs is None:
+        prs = []
+
     fast_gate_success_shas = set()
     for run in fast_gate_runs:
-        if run.get("conclusion") == "success":
+        conclusion = (run.get("conclusion") or "").lower()
+        if conclusion == "success":
             sha = run.get("headSha") or run.get("head_sha")
             if sha:
-                fast_gate_success_shas.add(sha)
+                fast_gate_success_shas.add(sha.lower())
 
+    def matches_any_success_sha(target_sha: str) -> bool:
+        if not target_sha:
+            return False
+        t = target_sha.lower()
+        if t in fast_gate_success_shas:
+            return True
+        for s_sha in fast_gate_success_shas:
+            if len(t) >= 7 and len(s_sha) >= 7:
+                if t.startswith(s_sha) or s_sha.startswith(t):
+                    return True
+        return False
+
+    # Collect SHAs for PRs that passed the fast gate
+    passed_gate_prs_shas = set()
+    for pr in prs:
+        head_sha = pr.get("headRefOid") or pr.get("headSha") or pr.get("head_sha")
+        merge_commit = pr.get("mergeCommit")
+        merge_sha = merge_commit.get("oid") if isinstance(merge_commit, dict) else (merge_commit if isinstance(merge_commit, str) else None)
+
+        if matches_any_success_sha(head_sha) or matches_any_success_sha(merge_sha):
+            if merge_sha:
+                passed_gate_prs_shas.add(merge_sha.lower())
+            if head_sha:
+                passed_gate_prs_shas.add(head_sha.lower())
+
+    missed_failures = 0
     for issue in incidents:
         created_at = tbd_metrics.parse_time(issue.get("createdAt"))
         if not created_at or not (window_start <= created_at < window_end):
             continue
         body = issue.get("body", "")
         sha, _ = tbd_metrics.extract_incident_data(body)
-        if sha and sha in fast_gate_success_shas:
-            # We assume the incident happened after the fast gate pass (usually the case)
+        if not sha:
+            continue
+        sha = sha.lower()
+
+        is_missed = False
+        if matches_any_success_sha(sha):
+            is_missed = True
+        else:
+            for p_sha in passed_gate_prs_shas:
+                if sha == p_sha or (len(sha) >= 7 and len(p_sha) >= 7 and (sha.startswith(p_sha) or p_sha.startswith(sha))):
+                    is_missed = True
+                    break
+
+        if is_missed:
             missed_failures += 1
 
     return missed_failures
@@ -74,7 +117,7 @@ def calculate_metrics(prs: List[Dict], issues: List[Dict], runs_data: List[Dict]
 
     for run in runs_data:
         run_created = tbd_metrics.parse_time(run.get('createdAt') or run.get('created_at'))
-        if run_created and window_start <= run_created < window_end:
+        if run_created is None or (window_start <= run_created < window_end):
             window_fast_gate_runs.append(run)
 
     for pr in revert_prs:
@@ -129,7 +172,9 @@ def calculate_metrics(prs: List[Dict], issues: List[Dict], runs_data: List[Dict]
     n_prs = len(window_prs)
     failed_prs = 0
     for pr in window_prs:
-        merge_commit = pr.get('mergeCommit', {}).get('oid')
+        merge_commit = pr.get('mergeCommit')
+        if isinstance(merge_commit, dict):
+            merge_commit = merge_commit.get('oid')
         if merge_commit:
             merge_commit = merge_commit.lower()
             if any(f_sha in merge_commit or merge_commit.startswith(f_sha) for f_sha in failed_shas if len(f_sha) >= 7):
@@ -138,7 +183,8 @@ def calculate_metrics(prs: List[Dict], issues: List[Dict], runs_data: List[Dict]
 
     cfr = (failed_prs / n_prs * 100) if n_prs > 0 else 0.0
 
-    missed_failures = get_missed_failures(window_fast_gate_runs, window_incidents, window_start, window_end)
+    runs_to_check = runs_data if runs_data else window_fast_gate_runs
+    missed_failures = get_missed_failures(runs_to_check, window_incidents, window_start, window_end, prs=prs)
 
     return {
         "merged_prs": n_prs,
