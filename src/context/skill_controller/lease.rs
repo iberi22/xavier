@@ -110,6 +110,16 @@ pub fn publish_task_skill(
     if content.len() as u64 > super::backup::MAX_BACKUP_BYTES {
         return Err(LeaseError::Conflict);
     }
+    let findings =
+        super::policy::scan_text(content, format!(".agents/skills/eph-{task_id}/SKILL.md"))?;
+    if !findings.is_empty() {
+        let summary = findings
+            .iter()
+            .map(|f| format!("{} at {}", f.class, f.location))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(LeaseError::Policy(PolicyError::SecretsBlocked { summary }));
+    }
     let _lock = lock(journal, worktree)?;
     vacant(&dir)?;
     vacant(&link)?;
@@ -461,5 +471,16 @@ mod tests {
                 .file_type()
                 .is_symlink());
         }
+    }
+
+    #[test]
+    fn test_secret_finding_blocks_publication_without_creating_link() {
+        let (w, _s, j) = fixture();
+        let fake_key = format!("AIza{}", "A".repeat(35));
+        let content = format!("---\nname: demo\n---\nkey = {fake_key}\n");
+        let result = publish_task_skill(&j, w.path(), "task_secret", &content);
+        assert!(result.is_err());
+        assert!(!w.path().join(".agents/skills/eph-task_secret").exists());
+        assert!(!w.path().join(".claude/skills/eph-task_secret").exists());
     }
 }
