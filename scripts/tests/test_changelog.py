@@ -13,6 +13,9 @@ class TestChangelog(unittest.TestCase):
         self.assertEqual(changelog.map_type_to_section("perf"), "Changed")
         self.assertEqual(changelog.map_type_to_section("docs"), "Documentation")
         self.assertEqual(changelog.map_type_to_section("test"), "Maintenance")
+        self.assertEqual(changelog.map_type_to_section("sec"), "Security")
+        self.assertEqual(changelog.map_type_to_section("security"), "Security")
+        self.assertEqual(changelog.map_type_to_section("fix", "security"), "Security")
         self.assertEqual(changelog.map_type_to_section("other"), "Other")
 
         # fallback for non-conventional titles to Other
@@ -29,6 +32,8 @@ class TestChangelog(unittest.TestCase):
             {"number": 2, "title": "build(deps): bump x from 1 to 2", "author": {"login": "dependabot"}},
             {"number": 3, "title": "chore: another dep", "author": {"login": "dependabot[bot]"}},
             {"number": 4, "title": "fix: crash", "author": {"login": "user2"}},
+            {"number": 5, "title": "sec: oauth state validation", "author": {"login": "user3"}},
+            {"number": 6, "title": "fix(security): gate code index", "author": {"login": "user4"}},
         ]
 
         sections = changelog.format_prs(prs)
@@ -41,6 +46,11 @@ class TestChangelog(unittest.TestCase):
         self.assertTrue("- Dependencies: 2 updates" in sections["Maintenance"])
 
         self.assertEqual(len(sections["Fixed"]), 1)
+
+        # Security
+        self.assertEqual(len(sections["Security"]), 2)
+        self.assertEqual(sections["Security"][0], "- oauth state validation (#5)")
+        self.assertEqual(sections["Security"][1], "- **security**: gate code index (#6)")
 
     def test_replace_unreleased_section(self):
         # replace markdown section safely without touching other parts

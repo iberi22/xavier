@@ -28,15 +28,18 @@ def get_prs(repo, tag_date, runner=subprocess.run):
     return prs if prs else []
 
 def parse_conventional_commit(title):
-    match = re.match(r"^([a-z]+)(?:\(([^)]+)\))?(?:!)?: (.*)$", title)
+    match = re.match(r"^([a-zA-Z]+)(?:\(([^)]+)\))?(?:!)?: (.*)$", title)
     if match:
-        type_ = match.group(1)
+        type_ = match.group(1).lower()
         scope = match.group(2)
         subject = match.group(3)
         return type_, scope, subject
     return None, None, title
 
-def map_type_to_section(type_):
+def map_type_to_section(type_, scope=None):
+    scope_lower = scope.lower() if scope else None
+    if type_ in ("sec", "security") or scope_lower in ("sec", "security"):
+        return "Security"
     mapping = {
         "feat": "Added",
         "fix": "Fixed",
@@ -47,6 +50,8 @@ def map_type_to_section(type_):
         "ci": "Maintenance",
         "build": "Maintenance",
         "chore": "Maintenance",
+        "sec": "Security",
+        "security": "Security",
     }
     return mapping.get(type_, "Other")
 
@@ -78,7 +83,7 @@ def format_prs(prs):
             continue
 
         type_, scope, subject = parse_conventional_commit(title)
-        section = map_type_to_section(type_)
+        section = map_type_to_section(type_, scope)
 
         if scope:
             bullet = f"- **{scope}**: {subject} (#{number})"
