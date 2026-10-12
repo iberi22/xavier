@@ -203,5 +203,45 @@ class TestShadowGateEvidence(unittest.TestCase):
         self.assertIn("Missed failures", out)
         self.assertIn("abcdef123", out)
 
+    def test_realistic_gh_log_with_bracket_notice_and_tabs(self):
+        pr_sha = "abcdef123"
+        prs = [{"number": 100, "headRefOid": pr_sha}]
+        shadow_runs = [{"databaseId": 1, "headSha": pr_sha, "createdAt": "2026-10-10T10:00:00Z", "updatedAt": "2026-10-10T10:05:00Z", "startedAt": "2026-10-10T10:01:00Z"}]
+        nested_impact = {
+            "skip_rust": True,
+            "reason": "Docs only",
+            "packages": []
+        }
+        log_txt = (
+            "Shadow Fast Gate\tClassify change (report-only)\t2026-10-12T06:13:44.4221000Z ##[notice]classify={\"class\": \"flow:ship\"}\n"
+            "Shadow Fast Gate\tClassify change (report-only)\t2026-10-12T06:13:44.4223856Z ##[notice]rust-impact=" + json.dumps(nested_impact) + "\n"
+            "Shadow Fast Gate\tSummary Check\t2026-10-12T06:13:45.0000000Z Always-present summary check completed\n"
+        )
+
+        def mock_gh(cmd, as_text=False):
+            return log_txt
+
+        classify, rust_impact = self.mod.extract_log_notices(1, mock_gh)
+        self.assertEqual(classify, {"class": "flow:ship"})
+        self.assertEqual(rust_impact, nested_impact)
+
+        gh_res = {
+            "gh pr list": prs,
+            "gh run list --workflow fast-gate.yml": shadow_runs,
+            "gh run list --workflow ci.yml": [],
+            "gh run view 1 --log": log_txt
+        }
+
+        args = {"since": "2026-10-01", "until": None, "out": None, "json": False}
+        with patch.object(self.mod, 'datetime', spec=datetime.datetime) as mock_datetime:
+            mock_datetime.now.return_value = datetime.datetime(2026, 10, 20, tzinfo=datetime.timezone.utc)
+            mock_datetime.fromisoformat.side_effect = datetime.datetime.fromisoformat
+            mock_datetime.min = datetime.datetime.min
+            out = self.run_main(args, gh_res)
+
+        self.assertIn("Skip Rust decisions: 1", out)
+        self.assertIn("Unclassified count: 0", out)
+        self.assertIn("PANEL_INPUT: ready", out)
+
 if __name__ == "__main__":
     unittest.main()
