@@ -1279,6 +1279,162 @@ name = "demo"
         prev: Option<std::ffi::OsString>,
     }
 
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_clearance_authenticated_production_routes() {
+        use xavier::security::auth::UserRole;
+        xavier::isolate_test_process!();
+        let _skill_env = crate::context::skill_registry::env_lock().lock().await;
+        let fixture = tempfile::tempdir().unwrap();
+        let package = fixture.path().join("skills").join("clearance-fixture");
+        std::fs::create_dir_all(&package).unwrap();
+        const NAME: &str = "clearance-fixture";
+        const INSTRUCTIONS: &str = "CONFIDENTIAL-FIXTURE-INSTRUCTIONS";
+        std::fs::write(
+            package.join("SKILL.md"),
+            format!(
+                "---\nname: {NAME}\ndescription: Clearance fixture confidential orchestration\nclearance: confidential\n---\n{INSTRUCTIONS}\n"
+            ),
+        )
+        .unwrap();
+        let _store = EnvRestore::set(
+            "XAVIER_SKILL_STORE",
+            fixture.path().join("skills").to_str().unwrap(),
+        );
+        let _data = EnvRestore::set("XAVIER_DATA_DIR", fixture.path().to_str().unwrap());
+        let _routes = EnvRestore::set("XAVIER_REQUIRED_CLEARANCE_ROUTES", r#"{"routes":[]}"#);
+        let _secret = EnvRestore::set("XAVIER_JWT_SECRET", PUSH_SECRET);
+        let _root = TokenGuard::set(ROOT);
+        let (state, _state_dir) = test_state().await;
+        let workspace = xavier::workspace::WorkspaceContext {
+            workspace_id: fixture.path().to_str().unwrap().to_string(),
+            workspace: Arc::new(
+                xavier::workspace::WorkspaceState::new_minimal(
+                    state.workspace_id.clone(),
+                    state.workspace_dir.clone(),
+                    state.qmd_memory.clone(),
+                    state.store.clone(),
+                )
+                .await,
+            ),
+        };
+        let thread = workspace
+            .workspace
+            .conversations_db
+            .create_thread(Some("clearance fusion"), None, Some("test"))
+            .await
+            .unwrap();
+        workspace
+            .workspace
+            .conversations_db
+            .store_message(
+                &thread.id,
+                "user",
+                "Clearance fixture confidential orchestration",
+                None,
+                None,
+                None,
+                None,
+                Some(20),
+            )
+            .await
+            .unwrap();
+        let app = crate::cli::server::skill_api_routes()
+            .merge(xavier::server::http::context::context_regenerate_routes())
+            .layer(Extension(workspace))
+            .layer(axum::middleware::from_fn(
+                xavier::adapters::inbound::http::middleware::clearance::clearance_session_middleware,
+            ))
+            .layer(from_fn_with_state(state.clone(), auth_middleware))
+            .with_state(state);
+        let readonly = jwt_for(UserRole::Readonly, PUSH_SECRET);
+        for endpoint in ["/api/skill/list", "/skills"] {
+            let (status, body) = send(&app, "GET", endpoint, &readonly, Hdr::Bearer, None).await;
+            assert_eq!(status, StatusCode::OK);
+            assert!(
+                body["skills"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|skill| skill["name"] != NAME),
+                "readonly identity must not list Confidential skills at {endpoint}"
+            );
+        }
+        let response = add_with_jwt(
+            &app,
+            "/api/skill/dispatch",
+            &readonly,
+            serde_json::json!({"task": "clearance-fixture confidential orchestration"}),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["data"]["skill_name"], "_none");
+        assert!(!body.to_string().contains(NAME));
+        let response = add_with_jwt(
+            &app,
+            "/v1/context/regenerate",
+            &readonly,
+            serde_json::json!({"session_id": thread.id, "depth": "deep"}),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(!body["context"].as_str().unwrap().contains(NAME));
+        for token in [
+            jwt_for(UserRole::User, PUSH_SECRET),
+            jwt_for(UserRole::Admin, PUSH_SECRET),
+            ROOT.to_string(),
+        ] {
+            for endpoint in ["/api/skill/list", "/skills"] {
+                let (status, body) = send(&app, "GET", endpoint, &token, Hdr::Bearer, None).await;
+                assert_eq!(status, StatusCode::OK);
+                assert!(body["skills"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|skill| skill["name"] == NAME));
+            }
+            let response = add_with_jwt(
+                &app,
+                "/api/skill/dispatch",
+                &token,
+                serde_json::json!({"task": "clearance-fixture confidential orchestration"}),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(body["ok"], true);
+            assert_eq!(body["data"]["skill_name"], NAME);
+            assert!(body["data"]["context_pack"]["system_instructions"]
+                .as_str()
+                .unwrap()
+                .contains(NAME));
+            let response = add_with_jwt(
+                &app,
+                "/v1/context/regenerate",
+                &token,
+                serde_json::json!({"session_id": thread.id, "depth": "deep"}),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(body["context"].as_str().unwrap().contains(NAME), "{body}");
+        }
+    }
+
     impl EnvRestore {
         fn set(key: &'static str, value: &str) -> Self {
             let prev = std::env::var_os(key);

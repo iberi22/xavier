@@ -504,8 +504,12 @@ pub async fn handle_context_tool(
         }
         "xavier_skill_list" => {
             let registry = build_skill_registry(Path::new(&workspace.workspace_id)).await;
-            let skills: Vec<Value> = registry
-                .list()
+            let (visible, _) = crate::security::clearance::split_by_clearance(
+                super::tools_memory::caller_clearance(),
+                registry.list(),
+                |name| registry.clearance_of(name),
+            );
+            let skills: Vec<Value> = visible
                 .into_iter()
                 .filter_map(|name| {
                     registry.get(name).map(|s| {
@@ -587,7 +591,7 @@ mod tests {
         std::fs::write(
             dir.join("SKILL.md"),
             format!(
-                "---\nname: {name}\ndescription: \"{description}\"\n---\n\n# {name}\n\nFixture body.\n"
+                "---\nname: {name}\ndescription: \"{description}\"\nvisibility: public\n---\n\n# {name}\n\nFixture body.\n"
             ),
         )
         .expect("fixture SKILL.md");
@@ -603,6 +607,7 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn skill_usage_cli_rest_mcp_agree() {
+        crate::isolate_test_process!();
         let _home = IsolatedHome::acquire().await;
         let temp = tempfile::tempdir().unwrap();
         let previous = std::env::var_os("XAVIER_DATA_DIR");
@@ -686,9 +691,10 @@ mod tests {
     }
 
     async fn rest_skill_list(workspace: &WorkspaceContext) -> Value {
-        let response = crate::api::skills::list_skills(axum::extract::Extension(workspace.clone()))
-            .await
-            .into_response();
+        let response =
+            crate::api::skills::list_skills(axum::extract::Extension(workspace.clone()), None)
+                .await
+                .into_response();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
             .await
@@ -696,9 +702,207 @@ mod tests {
         serde_json::from_slice(&body).expect("rest payload is JSON")
     }
 
+    const CONFIDENTIAL_SKILL: &str = "confidential-mesh-design";
+    const CONFIDENTIAL_DESCRIPTION: &str = "Confidential distributed mesh consensus architecture";
+    const CONFIDENTIAL_TASK: &str = "distributed mesh consensus architecture";
+
+    fn write_confidential_skill(root: &Path) {
+        write_fixture_skill(root, CONFIDENTIAL_SKILL, CONFIDENTIAL_DESCRIPTION);
+        let path = root
+            .join("skills")
+            .join(CONFIDENTIAL_SKILL)
+            .join("SKILL.md");
+        let bytes = std::fs::read_to_string(&path).expect("fixture bytes");
+        std::fs::write(
+            path,
+            bytes.replace("visibility: public", "clearance: confidential"),
+        )
+        .expect("confidential fixture");
+    }
+
+    async fn skill_session_call(
+        state: &crate::AppState,
+        workspace: &WorkspaceContext,
+        role: crate::security::auth::UserRole,
+        name: &str,
+        arguments: Value,
+    ) -> Value {
+        let claims = crate::security::auth::Claims::new(
+            "skill-fixture".into(),
+            "skill-fixture@example.invalid".into(),
+            role,
+            chrono::Duration::minutes(5),
+        );
+        // HTTP establishes this identity before entering the JSON-RPC dispatcher.
+        let output = super::super::tools_memory::with_mcp_caller(
+            super::super::tools_memory::McpCaller {
+                space: None,
+                clearance: crate::security::clearance::role_clearance(role),
+            },
+            super::super::session::dispatch_mcp_value(
+                state.clone(),
+                workspace.clone(),
+                Some(&claims),
+                json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments}}),
+            ),
+        )
+        .await
+        .expect("session dispatch")
+        .expect("session response");
+        assert!(output.get("error").is_none(), "{output}");
+        assert_eq!(output["result"]["isError"], false, "{output}");
+        mcp_payload(&output["result"])
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_clearance_mcp_session_list_filters_low_role() {
+        crate::isolate_test_process!();
+        use crate::security::auth::UserRole;
+
+        let _home = IsolatedHome::acquire().await;
+        let work = tempfile::tempdir().expect("workspace");
+        write_confidential_skill(work.path());
+        write_fixture_skill(work.path(), "public-reference", "Public fixture reference");
+        let (state, mut workspace) = crate::server::mcp::tests::test_state().await;
+        workspace.workspace_id = work.path().to_string_lossy().into_owned();
+
+        let low = skill_session_call(
+            &state,
+            &workspace,
+            UserRole::Readonly,
+            "xavier_skill_list",
+            json!({}),
+        )
+        .await;
+        assert_eq!(sorted_skill_names(&low), vec!["public-reference"]);
+        assert_eq!(low["count"], 1);
+        assert!(!low.to_string().contains(CONFIDENTIAL_SKILL));
+        assert!(!low.to_string().contains(CONFIDENTIAL_DESCRIPTION));
+        for role in [UserRole::User, UserRole::Admin] {
+            let allowed =
+                skill_session_call(&state, &workspace, role, "xavier_skill_list", json!({})).await;
+            assert_eq!(allowed["count"], 2);
+            assert!(sorted_skill_names(&allowed).contains(&CONFIDENTIAL_SKILL.to_string()));
+            assert!(allowed.to_string().contains(CONFIDENTIAL_DESCRIPTION));
+        }
+        let local = crate::server::mcp_stdio::dispatch_stdio_value(
+            state,
+            workspace,
+            json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "xavier_skill_list", "arguments": {}}}),
+        )
+        .await
+        .expect("local dispatch")
+        .expect("local response");
+        assert!(local.get("error").is_none(), "{local}");
+        assert_eq!(mcp_payload(&local["result"])["count"], 2);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_clearance_mcp_session_dispatch_filters_low_role() {
+        crate::isolate_test_process!();
+        use crate::security::auth::UserRole;
+
+        let _home = IsolatedHome::acquire().await;
+        let work = tempfile::tempdir().expect("workspace");
+        write_confidential_skill(work.path());
+        let (state, mut workspace) = crate::server::mcp::tests::test_state().await;
+        workspace.workspace_id = work.path().to_string_lossy().into_owned();
+        let arguments = json!({"task": CONFIDENTIAL_TASK});
+        let low = skill_session_call(
+            &state,
+            &workspace,
+            UserRole::Readonly,
+            "xavier_dispatch_skill",
+            arguments.clone(),
+        )
+        .await;
+        assert_eq!(low["skill_name"], "_none");
+        assert_eq!(low["hidden_by_clearance"], 1);
+        assert_eq!(low["context_pack"]["system_instructions"], "");
+        assert_eq!(low["context_pack"]["composition"], "");
+        assert!(!low.to_string().contains(CONFIDENTIAL_DESCRIPTION));
+        for role in [UserRole::User, UserRole::Admin] {
+            let allowed = skill_session_call(
+                &state,
+                &workspace,
+                role,
+                "xavier_dispatch_skill",
+                arguments.clone(),
+            )
+            .await;
+            assert_eq!(allowed["skill_name"], CONFIDENTIAL_SKILL);
+            assert_eq!(allowed["hidden_by_clearance"], 0);
+            assert!(!allowed["context_pack"]["system_instructions"]
+                .as_str()
+                .unwrap()
+                .is_empty());
+        }
+        let local = crate::server::mcp_stdio::dispatch_stdio_value(
+            state,
+            workspace,
+            json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "xavier_dispatch_skill", "arguments": arguments}}),
+        )
+        .await
+        .expect("local dispatch")
+        .expect("local response");
+        assert!(local.get("error").is_none(), "{local}");
+        assert_eq!(
+            mcp_payload(&local["result"])["skill_name"],
+            CONFIDENTIAL_SKILL
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_clearance_mcp_missing_identity_defaults_unclassified() {
+        crate::isolate_test_process!();
+
+        let _home = IsolatedHome::acquire().await;
+        let work = tempfile::tempdir().expect("workspace");
+        write_confidential_skill(work.path());
+        let (state, mut workspace) = crate::server::mcp::tests::test_state().await;
+        workspace.workspace_id = work.path().to_string_lossy().into_owned();
+        let listing = handle_context_tool(
+            state.clone(),
+            workspace.clone(),
+            "xavier_skill_list",
+            json!({}),
+        )
+        .await
+        .expect("anonymous list");
+        assert_eq!(mcp_payload(&listing)["count"], 0);
+        let dispatch = handle_context_tool(
+            state.clone(),
+            workspace.clone(),
+            "xavier_dispatch_skill",
+            json!({"task": CONFIDENTIAL_TASK}),
+        )
+        .await
+        .expect("anonymous dispatch");
+        assert_eq!(mcp_payload(&dispatch)["skill_name"], "_none");
+        assert_eq!(mcp_payload(&dispatch)["hidden_by_clearance"], 1);
+        let anonymous = super::super::session::dispatch_mcp_value(
+            state,
+            workspace,
+            None,
+            json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "params": {"name": "xavier_skill_list", "arguments": {}}}),
+        )
+        .await
+        .expect("anonymous session")
+        .expect("anonymous response");
+        assert!(anonymous.get("error").is_some(), "{anonymous}");
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn test_mcp_skill_list_matches_rest_on_same_fixture() {
+        crate::isolate_test_process!();
         let _home = IsolatedHome::acquire().await;
         let work = tempfile::tempdir().expect("temp workspace");
         for (name, description) in [
@@ -736,6 +940,7 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn test_live_composition_hash_matches_composer_without_files() {
+        crate::isolate_test_process!();
         use crate::context::skill_controller::composer::{
             self, CompositionInput, CompositionScope, Evidence, SkillEntry,
         };
@@ -858,6 +1063,7 @@ mod tests {
 
     #[test]
     fn test_mcp_context_tools_own_no_registry_constructor() {
+        crate::isolate_test_process!();
         let source = include_str!("tools_context.rs");
         let production = source
             .split("#[cfg(test)]\nmod tests")

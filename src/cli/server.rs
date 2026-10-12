@@ -73,14 +73,7 @@ pub use xavier::auth2::auth_routes;
 pub static START_TIME: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
 pub(crate) fn skill_api_routes() -> Router<CliState> {
-    Router::new()
-        .route(
-            "/api/skill/dispatch",
-            post(xavier::api::skills::dispatch_skill),
-        )
-        .route("/api/skill/list", get(xavier::api::skills::list_skills))
-        .route("/api/skill/usage", get(xavier::api::skills::skill_usage))
-        .route("/api/skill/audit", get(xavier::api::skills::audit_skills))
+    xavier::api::skills::skill_api_routes()
 }
 
 /// Handler for Prometheus metrics endpoint
@@ -1338,7 +1331,6 @@ pub async fn start_http_server(
         .route("/memory/query", post(memory_query_handler))
         .route("/session/compact", post(session_compact_handler))
         .merge(skill_api_routes())
-        .route("/skills", get(xavier::api::skills::list_skills))
         .route(
             "/api/memory/health",
             get(xavier::api::skills::memory_health),
@@ -1468,10 +1460,7 @@ pub async fn start_http_server(
         .route("/xavier/sync/check", post(sync_check_handler))
         .route("/xavier/sync/check", get(sync_check_handler))
         .route("/xavier/verify/save", post(verify_save_handler))
-        .route(
-            "/v1/context/regenerate",
-            post(xavier::server::http::context::v1_context_regenerate),
-        )
+        .merge(xavier::server::http::context::context_regenerate_routes())
         .route(
             "/v1/context/deepen",
             post(xavier::server::http::context::v1_context_deepen),

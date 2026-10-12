@@ -11,7 +11,19 @@ use std::path::{Path, PathBuf};
 
 use crate::context::skill_controller::state::{Journal, JournalAction};
 
+use crate::security::clearance::{default_clearance, split_by_clearance, ClearanceLevel};
 use crate::workspace::WorkspaceContext;
+
+/// Production skill routes, shared with transport regression tests.
+pub fn skill_api_routes<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
+    use axum::routing::{get, post};
+    axum::Router::new()
+        .route("/api/skill/dispatch", post(dispatch_skill))
+        .route("/api/skill/list", get(list_skills))
+        .route("/skills", get(list_skills))
+        .route("/api/skill/usage", get(skill_usage))
+        .route("/api/skill/audit", get(audit_skills))
+}
 
 use crate::context::skill_controller::audit::{
     audit_packages, AuditReport, AuditedPackage, Severity,
@@ -69,6 +81,7 @@ pub struct MemoryRefResponse {
 /// Dispatch skill.
 pub async fn dispatch_skill(
     Extension(workspace): Extension<WorkspaceContext>,
+    requester: Option<Extension<ClearanceLevel>>,
     Json(request): Json<DispatchRequest>,
 ) -> impl IntoResponse {
     use crate::context::skill_dispatcher::SkillDispatchRequest;
@@ -78,8 +91,13 @@ pub async fn dispatch_skill(
     let workspace_root = std::path::PathBuf::from(&workspace.workspace_id);
     let registry = SkillRegistry::build_skill_registry(&workspace_root).await;
     let memory = workspace.workspace.memory.clone();
-    let dispatcher =
-        SkillDispatcher::new(registry, Some(memory)).with_telemetry_db(skill_usage_db_path());
+    let dispatcher = SkillDispatcher::new(registry, Some(memory))
+        .with_clearance(
+            requester
+                .map(|Extension(level)| level)
+                .unwrap_or_else(default_clearance),
+        )
+        .with_telemetry_db(skill_usage_db_path());
 
     let dispatch_request = SkillDispatchRequest {
         task: request.task,
@@ -186,14 +204,23 @@ pub struct SkillListEntry {
 }
 
 /// List skills.
-pub async fn list_skills(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
+pub async fn list_skills(
+    Extension(workspace): Extension<WorkspaceContext>,
+    requester: Option<Extension<ClearanceLevel>>,
+) -> impl IntoResponse {
     use crate::context::skill_registry::SkillRegistry;
 
     let workspace_root = std::path::PathBuf::from(&workspace.workspace_id);
     let registry = SkillRegistry::build_skill_registry(&workspace_root).await;
 
-    let skills: Vec<SkillListEntry> = registry
-        .list()
+    let (visible, _) = split_by_clearance(
+        requester
+            .map(|Extension(level)| level)
+            .unwrap_or_else(default_clearance),
+        registry.list(),
+        |name| registry.clearance_of(name),
+    );
+    let skills: Vec<SkillListEntry> = visible
         .into_iter()
         .filter_map(|name| {
             registry.get(name).map(|s| SkillListEntry {
@@ -980,14 +1007,15 @@ Follow these steps to analyze memory and debug issues.
 
     #[tokio::test]
     async fn test_list_skills_retains_json_fields() {
+        crate::isolate_test_process!();
         // Same lock as the registry tests: both mutate XAVIER_SKILL_STORE in one test binary.
         let _lock = crate::context::skill_registry::env_lock().lock().await;
         let temp_dir = tempfile::tempdir().unwrap();
         let _env_guard = EnvGuard::isolate(temp_dir.path());
 
         let workspace_ctx = setup_test_workspace(temp_dir.path()).await;
-        let app = Router::new()
-            .route("/api/skill/list", get(list_skills))
+        let app = skill_api_routes::<()>()
+            .layer(Extension(ClearanceLevel::Confidential))
             .layer(Extension(workspace_ctx));
 
         let req = Request::builder()
@@ -1019,13 +1047,14 @@ Follow these steps to analyze memory and debug issues.
 
     #[tokio::test]
     async fn test_dispatch_skill_matched_retains_json_fields() {
+        crate::isolate_test_process!();
         let _lock = crate::context::skill_registry::env_lock().lock().await;
         let temp_dir = tempfile::tempdir().unwrap();
         let _env_guard = EnvGuard::isolate(temp_dir.path());
 
         let workspace_ctx = setup_test_workspace(temp_dir.path()).await;
-        let app = Router::new()
-            .route("/api/skill/dispatch", post(dispatch_skill))
+        let app = skill_api_routes::<()>()
+            .layer(Extension(ClearanceLevel::Confidential))
             .layer(Extension(workspace_ctx));
 
         let payload = serde_json::json!({
