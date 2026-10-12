@@ -2016,6 +2016,12 @@ pub enum RecoveryCommand {
     },
     /// Report the Google Drive connection used for encrypted backups.
     Drive,
+    /// Authorize Google Drive for encrypted backups.
+    Connect {
+        /// Request full Drive access for this authorization only.
+        #[arg(long)]
+        full_scope: bool,
+    },
     /// Disconnect the local Google Drive credential.
     Disconnect,
 }
