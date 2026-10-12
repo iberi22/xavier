@@ -240,6 +240,15 @@ impl MasterKeyManager {
         }
     }
 
+    /// Seal Drive credentials without exposing the master key.
+    pub(crate) fn store_drive_credentials(
+        &self,
+        store: &crate::drive::DriveCredentialStore,
+        credentials: &crate::drive::DriveCredentials,
+    ) -> Result<std::path::PathBuf> {
+        store.store(credentials, &self.master_key)
+    }
+
     /// Check value of the master key itself, without exposing its bytes.
     pub fn kcv_hex(&self) -> String {
         crate::recovery::kcv::encode_kcv(&self.master_key)
