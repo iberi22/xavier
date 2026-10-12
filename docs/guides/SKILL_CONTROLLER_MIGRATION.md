@@ -6,7 +6,7 @@ This document defines the procedure for migrating existing skill stores and tool
 
 Before initiating the migration procedure, ensure the following preconditions are met:
 
-- Xavier may be stopped during this process. Because skill packages are static files, the migration can be safely performed offline.
+- Xavier MUST be stopped for the CLI checks before and after each batch. Because skill packages are static files, the migration can be safely performed offline.
 - Run the Xavier-stopped static guards to ensure invariants hold before and after each batch:
 
 ```bash
@@ -73,12 +73,12 @@ Following a successful migration, retain the previous stores and backups. Deleti
 
 The following table tracks the discovery root and status for each adapter based on measured compatibility tests.
 
-| Adapter | Discovery Root | Measured Result | Status |
-|---|---|---|---|
-| OpenClaw | `$HOME/.openclaw/skills` | Symlinks followed successfully | `verified` |
-| Codex | `$HOME/.codex/skills` | Symlinks followed successfully (via offline catalog test) | `verified` |
-| Hermes | `$HOME/.hermes/skills` | Hermes launcher attempts dependency downloads in offline startup; native discovery unverified | `unsupported` |
-| Claude Code | `$HOME/.claude/skills` | Claude Code 2.1.296 has no verified offline catalog command; authenticated model calls are not hermetic | `unsupported` |
-| OpenCode | `.config/opencode/skills` | OpenCode 0.26 debug has no skill subcommand; native discovery unverified | `unsupported` |
-| agy | `$HOME/.agy/skills` | installed agy wrapper ignores HOME and writes real account cache; unsafe to launch hermetically | `unsupported` |
-| Gemini CLI | `$HOME/.config/gemini/skills` | gemini not installed | `unavailable` |
+| Adapter | Discovery Root | Project Root | Measured Result | Status |
+|---|---|---|---|---|
+| OpenClaw | `$HOME/.openclaw/skills` | `<project>/.agents/skills` | Symlinks followed successfully | `verified` |
+| Codex | `$HOME/.agents/skills` | `<project>/.agents/skills` | Symlinks followed successfully (only verified by the ignored native test run with --ignored) | `verified` |
+| Hermes | `$HOME/.hermes/skills` | `<project>/.agents/skills` | Hermes launcher attempts dependency downloads in offline startup; native discovery unverified | `unsupported` |
+| Claude Code | `$HOME/.claude/skills` | `<project>/.claude/skills` | Claude Code 2.1.296 has no verified offline catalog command; authenticated model calls are not hermetic | `unsupported` |
+| OpenCode | `$HOME/.config/opencode/skills` | `<project>/.agents/skills`, `<project>/.claude/skills` | OpenCode 0.26 debug has no skill subcommand; native discovery unverified | `unsupported` |
+| agy | `$HOME/.gemini/config/skills` | `<project>/.agents/skills` | installed agy wrapper ignores HOME and writes real account cache; unsafe to launch hermetically | `unsupported` |
+| Gemini CLI | `$HOME/.gemini/skills` | `<project>/.agents/skills` | gemini not installed | `unavailable` |
