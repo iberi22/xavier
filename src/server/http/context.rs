@@ -145,9 +145,18 @@ fn fusion_composition_document(
     )
 }
 
+/// Production context regeneration route, shared with transport regression tests.
+pub fn context_regenerate_routes<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
+    axum::Router::new().route(
+        "/v1/context/regenerate",
+        axum::routing::post(v1_context_regenerate),
+    )
+}
+
 /// V1 context regenerate.
 pub async fn v1_context_regenerate(
     Extension(workspace): Extension<WorkspaceContext>,
+    requester: Option<Extension<crate::security::clearance::ClearanceLevel>>,
     Json(payload): Json<RegenerateRequest>,
 ) -> impl IntoResponse {
     let depth = payload.depth.to_lowercase();
@@ -242,7 +251,11 @@ pub async fn v1_context_regenerate(
             let workspace_root = std::path::PathBuf::from(&workspace.workspace_id);
             let registry = build_skill_registry(&workspace_root).await;
             let memory = workspace.workspace.memory.clone();
-            let dispatcher = SkillDispatcher::new(registry, Some(memory));
+            let dispatcher = SkillDispatcher::new(registry, Some(memory)).with_clearance(
+                requester
+                    .map(|Extension(level)| level)
+                    .unwrap_or_else(crate::security::clearance::default_clearance),
+            );
 
             let selected_tokens: usize = selected_docs.iter().map(|d| d.token_count).sum();
             let remaining_budget = token_budget.saturating_sub(selected_tokens);
@@ -710,6 +723,9 @@ mod tests {
     ) -> String {
         let response = v1_context_regenerate(
             Extension(workspace),
+            Some(Extension(
+                crate::security::clearance::ClearanceLevel::TopSecret,
+            )),
             Json(RegenerateRequest {
                 session_id: session_id.to_string(),
                 depth: depth.to_string(),
