@@ -3312,11 +3312,11 @@
       "category": "security",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Unification of vault service namespace between CLI and HTTP daemon to xavier-clavis, with strict security gating on legacy fallback (api_key_ prefix only) to prevent leaking general credentials from xavier namespace, and hermetic integration test coverage.",
+      "description": "Unification of vault service namespace between CLI and HTTP daemon to xavier-clavis. Clavis reads and writes only namespaced api_key_ entries, and legacy global-vault entries are neither served nor migrated.",
       "steps": [
         "Unify CLI keys vault service to xavier-clavis",
-        "Implement secure legacy fallback migration for api_key_ prefixed secrets in HTTP handler",
-        "Reject access to non-api_key secrets in legacy namespace with 404",
+        "Enforce strict api_key_ namespacing for all Clavis entry reads and writes",
+        "Ensure legacy global-vault entries are neither served nor migrated",
         "Hermetic integration tests for namespace unification and security filtering"
       ],
       "passes": true,
@@ -3324,11 +3324,11 @@
       "github_issue": 2811,
       "pr": 2818,
       "last_tested": "2026-10-02",
-      "notes": "WAVE-31.04. Unifies vault service to xavier-clavis, restricts legacy fallback to api_key_* keys, preventing exfiltration of general secrets. Duplicate PR #2815 closed.",
+      "notes": "WAVE-31.04. Unifies vault service to xavier-clavis. Legacy global-vault entries are neither served nor migrated; Clavis serves and stores only namespaced api-key entries.",
       "implemented_in": "src/adapters/inbound/http/handlers/clavis.rs, src/cli/commands/secrets.rs, tests/clavis_namespace_e2e.rs",
       "tests": [
         "test_cli_keys_generate_and_http_read_contract",
-        "test_legacy_xavier_namespace_fallback_migration",
+        "test_legacy_global_vault_entries_are_not_served_or_migrated",
         "test_security_gate_general_secrets_unreachable_via_clavis_handler",
         "test_rejection_of_non_api_key_legacy_secret"
       ],
@@ -3363,11 +3363,16 @@
       "notes": "No migra ni modifica memorias existentes. El aislamiento del CODEGRAPH esta completo; el de los REGISTROS DE MEMORIA no: memory_store_path_for() da ruta y seleccion, pero el daemon sigue abriendo un unico store global multiplexado por workspace_id. Verificado con el binario real: pack no filtra el secreto de la BD, unpack restaura el .db intacto con el header correcto, y el .enc de un repo no se abre desde otro sin dejar archivos a medias. Detalle en docs/features/repo-memory-instance.md.",
       "implemented_in": "src/codebase/repo_config.rs, src/codebase/repo_package_crypto.rs, src/codebase/repo_identity.rs, src/cli/commands/repo.rs, src/cli/commands/repo_pack.rs, src/memory/repo_memory_store_path.rs",
       "tests": [
-        "repo_pack (28)",
-        "repo_memory_store_path (8)",
-        "repo_config (23)",
-        "repo_identity (9)",
-        "ambito repo (117)"
+        "pack_then_unpack_restores_identical_bytes_and_a_correct_header",
+        "packages_are_isolated_per_repo",
+        "repo_a_and_repo_b_resolve_to_different_stores",
+        "store_lives_next_to_the_repo_config_and_the_graph",
+        "repo_config_absent_file_uses_defaults_and_never_errors",
+        "repo_config_two_products_in_one_repo_get_distinct_project_ids",
+        "declared_project_id_wins_over_directory_name",
+        "codegraph_repo_isolation_a_b_evict_reopen",
+        "truncated_and_malformed_containers_are_rejected",
+        "empty_file_roundtrips"
       ],
       "req_ids": [],
       "user_stories": []
