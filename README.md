@@ -1,7 +1,7 @@
 # Xavier — Fast Vector Memory & Communal Context Runtime for AI Agents
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
-[![Version](https://img.shields.io/badge/version-0.2.15-brightgreen.svg)](https://github.com/iberi22/xavier)
+[![Version](https://img.shields.io/badge/version-0.2.17-brightgreen.svg)](https://github.com/iberi22/xavier)
 [![CI Build Status](https://github.com/iberi22/xavier/actions/workflows/ci.yml/badge.svg)](https://github.com/iberi22/xavier/actions/workflows/ci.yml)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 
@@ -13,7 +13,7 @@ Xavier is a **high-performance, Rust-based vector memory runtime for AI agents**
 
 ### 1. Build & Installation
 
-Ensure you have Rust (1.91+) installed.
+Ensure you have Rust (1.94+) installed.
 
 ```bash
 # Clone repository
@@ -102,13 +102,13 @@ swal-preflight check --cwd .
 
 ## 📦 Downloads
 
-Latest release: **[v0.2.15](https://github.com/iberi22/xavier/releases/tag/v0.2.15)** — built via `.github/workflows/release.yml` (3 targets + SHA256, plus the `XavierSetup.exe` Windows installer).
+Latest release: **[v0.2.17](https://github.com/iberi22/xavier/releases/tag/v0.2.17)** — built via `.github/workflows/release.yml` (3 targets + SHA256, plus the `XavierSetup.exe` Windows installer).
 
 | OS | Arch | Artifact |
 |---|---|---|
-| Linux | x86_64 | `xavier-v0.2.15-x86_64-unknown-linux-gnu.tar.gz` |
-| macOS | aarch64 (Apple Silicon) | `xavier-v0.2.15-aarch64-apple-darwin.tar.gz` |
-| Windows | x86_64 | `xavier-v0.2.15-x86_64-pc-windows-msvc.zip` |
+| Linux | x86_64 | `xavier-v0.2.17-x86_64-unknown-linux-gnu.tar.gz` |
+| macOS | aarch64 (Apple Silicon) | `xavier-v0.2.17-aarch64-apple-darwin.tar.gz` |
+| Windows | x86_64 | `xavier-v0.2.17-x86_64-pc-windows-msvc.zip` |
 
 Each artifact has a `.sha256` sidecar.
 
@@ -116,13 +116,13 @@ Each artifact has a `.sha256` sidecar.
 
 ```bash
 # Linux example
-curl -L https://github.com/iberi22/xavier/releases/download/v0.2.15/xavier-v0.2.15-x86_64-unknown-linux-gnu.tar.gz -o xavier.tar.gz
-curl -L https://github.com/iberi22/xavier/releases/download/v0.2.15/xavier-v0.2.15-x86_64-unknown-linux-gnu.tar.gz.sha256 -o xavier.sha256
+curl -L https://github.com/iberi22/xavier/releases/download/v0.2.17/xavier-v0.2.17-x86_64-unknown-linux-gnu.tar.gz -o xavier.tar.gz
+curl -L https://github.com/iberi22/xavier/releases/download/v0.2.17/xavier-v0.2.17-x86_64-unknown-linux-gnu.tar.gz.sha256 -o xavier.sha256
 sha256sum -c xavier.sha256
 tar -xzf xavier.tar.gz && ./xavier --help
 ```
 
-Docker image: `ghcr.io/iberi22/xavier:0.2.15` (also `:latest`) — also see [Downloads page](docs/site/src/content/docs/downloads.mdx) (Starlight).
+Docker image: `ghcr.io/iberi22/xavier:0.2.17` (also `:latest`) — also see [Downloads page](docs/site/src/content/docs/downloads.mdx) (Starlight).
 
 ---
 
@@ -411,9 +411,9 @@ PRAGMA foreign_keys = ON;
 
 ## 🦀 Minimum Supported Rust Version (MSRV)
 
-Xavier guarantees compilation on Rust **1.91** or higher.
+Xavier guarantees compilation on Rust **1.94** or higher.
 
-- **Current Pin**: Defined via `rust-version = "1.91"` in `Cargo.toml`.
+- **Current Pin**: Defined via `rust-version = "1.94"` in `Cargo.toml`.
 - **Bump Policy**: MSRV bumps follow a `stable-minus-2` policy (never exceeding `stable - 2` releases at the time of bump) when required by upstream dependency updates. Any MSRV bump is explicitly announced in a patch release.
 - **Scope**: Applies to standard crate library and binary builds. Development tooling, UI runtimes, or optional feature sidecars may require newer toolchain versions.
 

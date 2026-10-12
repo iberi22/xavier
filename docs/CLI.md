@@ -1,6 +1,6 @@
 # Xavier CLI Reference
 
-Version: `0.2.15 (2026-09-27)`
+Version: `0.2.17 (2026-09-29)`
 
 ```bash
 xavier [COMMAND]
