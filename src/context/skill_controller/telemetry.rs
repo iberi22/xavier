@@ -49,6 +49,8 @@ pub enum TelemetryError {
     FieldLength { field: &'static str, max: usize },
     #[error("{field} is not an opaque identifier: no text, spaces or path separators")]
     NotOpaque { field: &'static str },
+    #[error("{field} contains a credential-shaped value")]
+    Credential { field: &'static str },
     #[error("a retention window of {days} days is out of range")]
     RetentionOutOfRange { days: u32 },
 }
@@ -163,13 +165,20 @@ impl UsageEvent {
     /// absolute path or a credential can never be stored or logged.
     fn validate(&self) -> Result<(), TelemetryError> {
         check_opaque("event_id", &self.event_id)?;
+        check_secret("event_id", &self.event_id)?;
         check_workspace_id(&self.workspace_id)?;
+        check_secret("workspace_id", &self.workspace_id)?;
         check_opaque("task_id", &self.task_id)?;
+        check_secret("task_id", &self.task_id)?;
         check_opaque("tool", &self.tool)?;
+        check_secret("tool", &self.tool)?;
         check_opaque("skill_name", &self.skill_name)?;
+        check_secret("skill_name", &self.skill_name)?;
         check_opaque("outcome", &self.outcome)?;
+        check_secret("outcome", &self.outcome)?;
         if let Some(package_hash) = &self.package_hash {
             check_opaque("package_hash", package_hash)?;
+            check_secret("package_hash", package_hash)?;
         }
         Ok(())
     }
@@ -225,6 +234,13 @@ fn check_opaque(field: &'static str, value: &str) -> Result<(), TelemetryError> 
         return Err(TelemetryError::NotOpaque { field });
     }
     Ok(())
+}
+
+fn check_secret(field: &'static str, value: &str) -> Result<(), TelemetryError> {
+    match crate::context::skill_controller::policy::scan_text(value, field) {
+        Ok(findings) if findings.is_empty() => Ok(()),
+        Ok(_) | Err(_) => Err(TelemetryError::Credential { field }),
+    }
 }
 
 /// Row counts are never negative; keep the conversion total.
@@ -677,6 +693,37 @@ mod tests {
             writer.count().expect("count must succeed"),
             0,
             "no rejected event may reach the table"
+        );
+    }
+
+    #[test]
+    fn credential_shaped_values_are_rejected() {
+        let conn = migrated();
+        let writer = writer(&conn);
+
+        let credential = format!("ghp_{}", "a".repeat(36));
+        let mut event = event("evt-credential", SkillStage::Selected);
+        event.workspace_id = credential.clone();
+
+        let outcome = writer.record(&event, false);
+        assert!(
+            outcome.is_err(),
+            "an event with a credential-shaped workspace_id must be rejected"
+        );
+        let error = outcome.unwrap_err();
+        let error_text = error.to_string();
+        assert!(
+            !error_text.contains(&credential),
+            "error text must not contain credential bytes: {error_text}"
+        );
+        assert!(
+            error_text.contains("workspace_id"),
+            "error text must name the offending field: {error_text}"
+        );
+        assert_eq!(
+            writer.count().expect("count must succeed"),
+            0,
+            "no rejected credential event may reach the table"
         );
     }
 

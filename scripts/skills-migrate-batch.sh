@@ -59,11 +59,11 @@ if [[ $EXECUTE -eq 0 ]]; then
   exit 0
 fi
 
-DEST_PATHS=$(jq -r '.entries[] | "\(.root)/\(.name)"' "$PLAN_FILE")
+mapfile -t DEST_PATHS < <(jq -r '.entries[] | "\(.root)/\(.name)"' "$PLAN_FILE")
 
 # Backup existing paths safely
 BACKUP_TARGETS=()
-for path in $DEST_PATHS; do
+for path in "${DEST_PATHS[@]}"; do
   # Check if it exists or is a broken symlink
   if [[ -e "$path" || -h "$path" ]]; then
     BACKUP_TARGETS+=("$path")
@@ -88,7 +88,7 @@ TX_ID=$(jq -r '.tx_id // empty' "$APPLY_FILE" 2>/dev/null || echo "")
 
 VERIFICATION_FAILED=0
 if [[ $APPLY_STATUS -eq 0 ]]; then
-  for path in $DEST_PATHS; do
+  for path in "${DEST_PATHS[@]}"; do
     if [[ ! -e "$path" && ! -h "$path" ]]; then
       echo "Verification failed: $path does not exist after apply."
       VERIFICATION_FAILED=1
