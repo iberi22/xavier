@@ -35,7 +35,12 @@ impl TelemetrySource {
         // No revocation list exists yet; kept as the hook for it.
         let revoked_wallets: BTreeSet<String> = BTreeSet::new();
 
-        let logs = db.get_all_logs().map_err(|e| e.to_string())?;
+        let limit = std::env::var("XAVIER_TRAINING_MAX_RECORDS")
+            .unwrap_or_else(|_| "10000".to_string())
+            .parse::<u32>()
+            .unwrap_or(10_000);
+
+        let logs = db.get_recent_logs(limit).map_err(|e| e.to_string())?;
         let mut batch = SourceBatch {
             total_found: logs.len(),
             ..SourceBatch::default()
@@ -94,5 +99,38 @@ impl TrainingSource for TelemetrySource {
 
     async fn collect(&self, ctx: &SourceContext) -> Result<SourceBatch, String> {
         self.collect_sync(ctx.seed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_commons::telemetry_db::TelemetryDb;
+    use tempfile::tempdir;
+
+    crate::isolate_test_process!();
+
+    #[test]
+    fn telemetry_source_is_bounded() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("telemetry.db");
+        let db = TelemetryDb::new(&db_path).unwrap();
+
+        for i in 0..15 {
+            db.save_encrypted_log(
+                &format!("hash{}", i),
+                b"payload",
+                b"dek",
+                b"pubkey",
+                "wallet",
+            )
+            .unwrap();
+        }
+
+        std::env::set_var("XAVIER_TRAINING_MAX_RECORDS", "10");
+        let source = TelemetrySource::new(&db_path);
+        let batch = source.collect_sync(42).unwrap();
+
+        assert_eq!(batch.total_found, 10);
     }
 }

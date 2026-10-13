@@ -420,7 +420,10 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         .merge(
             xavier::server::training_routes::router(
                 xavier::server::training_routes::TrainingState {
-                    db_path: state.workspace_dir.clone().join("data/vec-store.sqlite3"),
+                    db_path: std::path::PathBuf::from(
+                        std::env::var("XAVIER_TELEMETRY_DB_PATH")
+                            .unwrap_or_else(|_| ".xavier/telemetry.db".to_string()),
+                    ),
                     data_dir: state.workspace_dir.clone().join("data/datasets"),
                 },
             )
