@@ -1005,7 +1005,13 @@ impl KnowledgeConsolidator {
         let deduped = self.dedup_entities(all_entity_names);
         let consolidated_entities = raw_count.saturating_sub(deduped.len());
 
-        let decay_mgr = crate::memory::decay::DecayManager::with_defaults();
+        // Offline consolidate never hard-deletes by age: decay only ranks here,
+        // and the evidence-gated utility pruner below is the only deleter.
+        let decay_config = crate::memory::decay::DecayConfig {
+            prune_threshold: None,
+            ..Default::default()
+        };
+        let decay_mgr = crate::memory::decay::DecayManager::new(decay_config);
         let decay_report = decay_mgr
             .decay_workspace_memories(store, workspace_id)
             .await?;
@@ -1101,5 +1107,45 @@ mod knowledge_tests {
 
         assert_eq!(report.total_processed, 2);
         assert!(report.summary.contains("Knowledge graph"));
+    }
+
+    #[tokio::test]
+    async fn offline_decay_keeps_old_low_priority_record() {
+        use crate::memory::store::InMemoryMemoryStore;
+        use crate::memory::store::MemoryRecord;
+        use crate::memory::store::MemoryStore;
+        use chrono::Duration;
+        use chrono::Utc;
+
+        let store = InMemoryMemoryStore::new();
+        let ws = "ws-test";
+
+        let old_time = Utc::now() - Duration::days(40);
+        let old_record = MemoryRecord {
+            id: "rec-old-low".into(),
+            workspace_id: ws.into(),
+            content: "Low priority old memory".into(),
+            score: 0.15,
+            created_at: old_time,
+            updated_at: old_time,
+            metadata: serde_json::json!({
+                "priority": "low"
+            }),
+            ..Default::default()
+        };
+        store.put(old_record).await.unwrap();
+
+        let k = KnowledgeConsolidator::default();
+        let report = k.run_consolidation(&store, ws).await.unwrap();
+
+        assert_eq!(
+            report.pruned_count, 0,
+            "offline consolidate must not prune decayed records"
+        );
+        let retrieved = store.get(ws, "rec-old-low").await.unwrap();
+        assert!(
+            retrieved.is_some(),
+            "old low-priority record must survive offline consolidate"
+        );
     }
 }
