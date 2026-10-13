@@ -9,6 +9,7 @@
 - **`/health` reports `version` and `degraded_reasons`** (#2568, #2574): one `host:<cpu|memory|disk>` or `subsystem:<database|embedding|llm|vector_db|mesh>` entry per non-healthy component, empty iff `healthy`.
 - **`xavier improve` deadlines** (#2579): `XAVIER_IMPROVE_STAGE_TIMEOUT_SECS` (default 120) and `XAVIER_IMPROVE_TOTAL_TIMEOUT_SECS` (default 300), capped at 24h; overruns end the cycle as `truncated` with partial progress persisted. Exit codes: `0` completed, `124` truncated, `1` failed.
 ### Changed
+- scheduled TGD consolidation is opt-in (`XAVIER_TGD_SCHEDULER`) (#2994)
 - exact migration paths, stricter usage telemetry (#2992)
 - **`xavier health` exits non-zero when the node is `unhealthy`** and prints the server version and degraded reasons (#2574); `xavier stats` reads every counter from the same workspace as MCP `xavier_stats`, unmeasured counters are `unknown`.
 - **`xavier code dump/scan`** resolve the target as explicit path → caller cwd → daemon default and report `requested_path` / `resolved_path` (#2576); hubs/god nodes exclude trivial constructors.
@@ -26,12 +27,16 @@
 - **Maloca**: unified store path, CORS/auth on Maloca routes (#2540).
 - **Dead `/v1/auth/*` user-login API removed** (#2546): `/v1/auth/login`, `/register`, `/refresh`, `/logout`, `/totp/verify` and `/totp/setup` were backed by `security::auth_store::AuthStore`, a user store nothing in the codebase ever wrote a user into — every login against it failed forever, on every fresh install. These paths now answer `308 Permanent Redirect` (login/register/refresh/logout/recover, same or superset request body) or `410 Gone` (totp/verify, totp/setup — no compatible successor) with a JSON body naming the real `/auth/*` route. The dead `AuthStore` login/TOTP/recovery methods were removed; `AuthStore` itself stays (still backs the unrelated `/v1/auth/sessions` root-token session endpoints). `docs/api/openapi.yaml`, `docs/api/README.md` and the Postman collection now document the real `/auth/*` flow (register, login with inline `totp_code`, refresh, logout, 2FA setup/verify, recovery) instead of the dead one.
 ### Security
+- permission checks aligned on the v1 consolidate route and mesh peer writes (#3001)
 - consistent checks across skill publication paths (#2979)
 - skill controller security review (#2990)
 - **Constant-time OAuth state validation** (#2551).
 - `POST /code/dump` / `/code/load` accept arbitrary paths behind the API token (pre-existing); hardening tracked in #2580.
 
 ### Documentation
+- single skill adapter status table in ADR-044 (#2996)
+- main branch ruleset as code, not yet applied (#2961)
+- features ledger reconciled for the Clavis namespace (#3000)
 - ADR-045 (#2993)
 - docs for skills and recovery disconnect CLI commands (#2973)
 - skill-controller migration runbook (#2976)
@@ -39,7 +44,7 @@
 ### Maintenance
 - hermetic release-binary smoke test (#2991)
 - postcss-selector-parser pin (#2975)
-- Dependencies: 6 updates (#2980, #2981, #2982, #2983, #2986, #2988)
+- Dependencies: 10 updates (#2980, #2981, #2982, #2983, #2984, #2985, #2986, #2987, #2988, #2989 incl. zip 9)
 
 ## [0.2.17] — 2026-09-29 — desktop attach fix
 
