@@ -205,7 +205,13 @@ fn open_code_graph_db(
 async fn execute_code_tool(name: &str, args: &serde_json::Value) -> axum::response::Response {
     let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
     let workspace = std::path::PathBuf::from(path_str);
-    let db = match open_code_graph_db(&workspace) {
+    let db = match tokio::task::spawn_blocking({
+        let w = workspace.clone();
+        move || open_code_graph_db(&w)
+    })
+    .await
+    .unwrap_or_else(|e| Err(e.to_string()))
+    {
         Ok(db) => db,
         Err(e) => {
             return (
@@ -443,5 +449,34 @@ mod tests {
             .await
             .into_response();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_execute_tool_code_scan_current_thread() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("lib.rs"), "pub fn hello() {}\n").unwrap();
+        // Isolate code-graph DB under the temp workspace
+        std::env::set_var(
+            "XAVIER_CODE_GRAPH_DB_PATH",
+            dir.path().join("code_graph.db").to_string_lossy().as_ref(),
+        );
+
+        let req = ToolExecuteRequest {
+            args: serde_json::json!({ "path": dir.path().to_string_lossy() }),
+        };
+        let response = execute_tool("code_scan".to_string(), req)
+            .await
+            .into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["status"], "ok");
+        assert!(body["indexed_files"].as_u64().unwrap_or(0) >= 1);
+
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
     }
 }
