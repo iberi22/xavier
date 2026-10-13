@@ -215,7 +215,7 @@ PY
         fi ;;
       tests/e2e/*|tests/*.rs)
         local base; base="$(basename "$1" .rs)"
-        echo "--test $base|test --test $base" ;;
+        echo "--test $base|test -p xavier --features test-utils --test $base" ;;
       *)                echo "" ;;
     esac
   }
@@ -253,7 +253,7 @@ PY
     TRY_LABEL="xavier --lib";        try_cargo test -p xavier --lib "$testname" && return 0
     TRY_LABEL="code-graph --lib";    try_cargo test -p code-graph --lib "$testname" && return 0
     TRY_LABEL="xavier-core-logic";   try_cargo test -p xavier-core-logic --lib "$testname" && return 0
-    TRY_LABEL="--test $testname";    try_cargo test --test "$testname" && return 0
+    TRY_LABEL="--test $testname";    try_cargo test -p xavier --features test-utils --test "$testname" && return 0
     case "$testname" in
       */*.rs)
         local base; base="$(basename "$testname" .rs)"
