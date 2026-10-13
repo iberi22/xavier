@@ -49,8 +49,8 @@ fn build_router_request(
     req
 }
 
-/// Helper to install an isolated test vault for hermetic execution.
-
+/// Installs an isolated vault (keyring stubbed via the `test-utils` feature) and
+/// redirects HOME/XDG dirs into a tempdir; restores the environment on drop.
 struct VaultGuard {
     vault: std::sync::Arc<HardwareVault>,
     #[allow(dead_code)]

@@ -41,11 +41,8 @@ fn build_clavis_request(
     req
 }
 
-/// Sets up isolated temporary directories for `HOME` and `XAVIER_DATA_DIR` so that
-/// integration tests never touch the developer's real `~/.xavier` vault files or keyring.
-/// Note: HardwareVault::isolated is #[cfg(test)] gated in src/secrets/vault.rs and thus not
-/// exported across the library boundary to tests/*. We achieve isolated storage by isolating env paths.
-
+/// Installs an isolated vault (keyring stubbed via the `test-utils` feature) and
+/// redirects HOME/XDG dirs into a tempdir; restores the environment on drop.
 struct VaultGuard {
     vault: std::sync::Arc<HardwareVault>,
     #[allow(dead_code)]
