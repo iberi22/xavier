@@ -252,7 +252,7 @@ async fn production_router_smoke() {
     assert_eq!(
         resp.status(),
         StatusCode::UNAUTHORIZED,
-        "PUT /v1/memories/{id} without token should return 401 Unauthorized"
+        "PUT /v1/memories/{{id}} without token should return 401 Unauthorized"
     );
 
     // 6. DELETE /v1/memories/{id} with Readonly JWT -> 403
@@ -266,7 +266,7 @@ async fn production_router_smoke() {
     assert_eq!(
         resp.status(),
         StatusCode::FORBIDDEN,
-        "DELETE /v1/memories/{id} with Readonly JWT should return 403 Forbidden"
+        "DELETE /v1/memories/{{id}} with Readonly JWT should return 403 Forbidden"
     );
 
     // 7. GET /v1/config/providers -> not 404 with the root token
