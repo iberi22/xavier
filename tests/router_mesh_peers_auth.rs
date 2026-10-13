@@ -69,7 +69,7 @@ fn workspace_token(identity: &NodeIdentity, workspace_id: &str) -> String {
 fn forged_workspace_token(token: &str) -> String {
     let decoded = xavier::crypto::base64_decode(token).expect("token base64");
     let mut token_data: serde_json::Value = serde_json::from_slice(&decoded).expect("token json");
-    token_data["signature"] = serde_json::json!(xavier::crypto::hex_encode(&[0xAB_u8; 64]));
+    token_data["signature"] = serde_json::json!(xavier::crypto::hex_encode([0xAB_u8; 64]));
     xavier::crypto::base64_encode(serde_json::to_vec(&token_data).expect("token json"))
 }
 
