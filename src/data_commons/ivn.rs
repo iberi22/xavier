@@ -16,11 +16,52 @@ use thiserror::Error;
 
 static EXCLUSION_STORE: RwLock<Option<HashMap<String, u64>>> = RwLock::new(None);
 
+fn resolve_exclusion_path() -> std::path::PathBuf {
+    if let Ok(env_path) = std::env::var("XAVIER_DATA_DIR") {
+        std::path::PathBuf::from(env_path)
+            .join("ivn")
+            .join("exclusions.json")
+    } else if let Some(data_dir) = dirs::data_dir() {
+        data_dir.join("xavier").join("ivn").join("exclusions.json")
+    } else {
+        std::path::PathBuf::from("data")
+            .join("ivn")
+            .join("exclusions.json")
+    }
+}
+
+fn load_exclusions_from_disk() -> HashMap<String, u64> {
+    let path = resolve_exclusion_path();
+    if !path.exists() {
+        return HashMap::new();
+    }
+    match std::fs::read_to_string(&path) {
+        Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
+        Err(_) => HashMap::new(),
+    }
+}
+
+fn save_exclusions_to_disk(map: &HashMap<String, u64>) {
+    let path = resolve_exclusion_path();
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+    }
+    if let Ok(serialized) = serde_json::to_string_pretty(map) {
+        let _ = std::fs::write(&path, serialized);
+    }
+}
+
 /// Record an exclusion window for a node/wallet address until `until_timestamp` (Unix timestamp)
 pub fn record_exclusion(node_id: &WalletAddress, until_timestamp: u64) {
-    let mut store = EXCLUSION_STORE.write().unwrap();
-    let map = store.get_or_insert_with(HashMap::new);
+    let mut store = match EXCLUSION_STORE.write() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    let map = store.get_or_insert_with(load_exclusions_from_disk);
     map.insert(node_id.0.clone(), until_timestamp);
+    save_exclusions_to_disk(map);
 }
 
 /// Check if a node/wallet address is currently excluded at the system time
@@ -34,20 +75,32 @@ pub fn is_excluded(node_id: &WalletAddress) -> bool {
 
 /// Check if a node/wallet address is excluded at a specific timestamp
 pub fn is_excluded_at(node_id: &WalletAddress, current_time: u64) -> bool {
-    let store = EXCLUSION_STORE.read().unwrap();
-    if let Some(map) = store.as_ref() {
-        if let Some(&until) = map.get(&node_id.0) {
-            return current_time < until;
-        }
+    let mut store = match EXCLUSION_STORE.write() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    let map = store.get_or_insert_with(load_exclusions_from_disk);
+    if let Some(&until) = map.get(&node_id.0) {
+        return current_time < until;
     }
     false
 }
 
 /// Clear all registered exclusions (useful for testing)
 pub fn clear_exclusions() {
-    let mut store = EXCLUSION_STORE.write().unwrap();
+    let mut store = match EXCLUSION_STORE.write() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
     if let Some(map) = store.as_mut() {
         map.clear();
+        save_exclusions_to_disk(map);
+    } else {
+        *store = Some(HashMap::new());
+        let path = resolve_exclusion_path();
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 
@@ -615,5 +668,36 @@ mod tests {
 
         let sanction_max = sanction_validator_with_config(&config, u32::MAX, false);
         assert!(sanction_max.karma_penalty < 0);
+    }
+
+    #[test]
+    fn test_exclusion_persistence_across_restarts() {
+        let tmp_dir = tempfile::tempdir().expect("tempdir");
+        let prev_data_dir = std::env::var_os("XAVIER_DATA_DIR");
+        std::env::set_var("XAVIER_DATA_DIR", tmp_dir.path());
+
+        clear_exclusions();
+
+        let val = WalletAddress("xv1_persisted_node".into());
+        let until = 2_000_000_000u64;
+        record_exclusion(&val, until);
+
+        assert!(is_excluded_at(&val, 1_900_000_000u64));
+
+        // Simulate process restart / memory clearing
+        {
+            let mut store = EXCLUSION_STORE.write().unwrap();
+            *store = None;
+        }
+
+        // Must still be excluded because it reloads from disk under node data dir
+        assert!(is_excluded_at(&val, 1_900_000_000u64));
+
+        clear_exclusions();
+        if let Some(prev) = prev_data_dir {
+            std::env::set_var("XAVIER_DATA_DIR", prev);
+        } else {
+            std::env::remove_var("XAVIER_DATA_DIR");
+        }
     }
 }
