@@ -83,14 +83,36 @@ pub fn scan_projects_from_dir(base_dir: &Path) -> Vec<SwalProject> {
     projects
 }
 
-/// Scan all projects under the canonical SWAL workspace directory `/home/belal/proyectosSWAL`.
+/// Scan all projects under the canonical SWAL workspace directory.
+/// Resolves from XAVIER_SWAL_WORKSPACE, falling back to the repository's parent.
 pub fn scan_projects() -> Vec<SwalProject> {
-    scan_projects_from_dir(Path::new("/home/belal/proyectosSWAL"))
+    use std::sync::OnceLock;
+    static PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+    let target = PATH.get_or_init(|| {
+        if let Ok(val) = std::env::var("XAVIER_SWAL_WORKSPACE") {
+            Some(PathBuf::from(val))
+        } else if let Ok(cwd) = std::env::current_dir() {
+            cwd.parent().map(|p| p.to_path_buf())
+        } else {
+            tracing::warn!(
+                "XAVIER_SWAL_WORKSPACE is not set and fallback to parent directory failed"
+            );
+            None
+        }
+    });
+
+    if let Some(p) = target {
+        scan_projects_from_dir(p)
+    } else {
+        Vec::new()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::EnvRestore;
     use std::fs::{create_dir_all, write};
     use tempfile::tempdir;
 
@@ -156,5 +178,38 @@ mod tests {
         assert_eq!(f2.progress_pct, 100.0);
         assert_eq!(f2.status, "stable");
         assert!(f2.notes.is_none());
+    }
+
+    #[test]
+    fn test_scan_projects_config_resolution() {
+        crate::isolate_test_process!();
+        let tmp = tempdir().unwrap();
+        let repo_dir = tmp.path().join("test-repo-config");
+        let gitcore_dir = repo_dir.join(".gitcore");
+        create_dir_all(&gitcore_dir).unwrap();
+
+        let features_json = r#"{
+            "protocol": "3.8.0",
+            "features": [
+                {
+                    "id": "feat-1",
+                    "name": "Feature Config",
+                    "progress_pct": 50.0,
+                    "status": "draft"
+                }
+            ]
+        }"#;
+        write(gitcore_dir.join("features.json"), features_json).unwrap();
+
+        let _env_guard = EnvRestore::new("XAVIER_SWAL_WORKSPACE", tmp.path().to_str().unwrap());
+
+        let projects = scan_projects();
+
+        assert_eq!(
+            projects.len(),
+            1,
+            "Scan should resolve config and find projects"
+        );
+        assert_eq!(projects[0].repo_name, "test-repo-config");
     }
 }
