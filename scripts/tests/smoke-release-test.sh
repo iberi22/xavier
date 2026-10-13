@@ -19,6 +19,7 @@ setup_fake_binary() {
     local script_file="$1"
     local healthy="$2"
     local allow_unauth="$3"
+    local empty_mcp_tools="${4:-0}"
 
     cat << PYTHON > "$script_file"
 #!/usr/bin/env python3
@@ -75,7 +76,10 @@ class FakeXavierHandler(BaseHTTPRequestHandler):
                 try:
                     data = json.loads(body)
                     if data.get('method') == 'tools/list':
-                        self.send_json(200, {"jsonrpc": "2.0", "id": data.get('id'), "result": {"tools": [{"name": "fake_tool"}]}})
+                        if "$empty_mcp_tools" == "1":
+                            self.send_json(200, {"jsonrpc": "2.0", "id": data.get('id'), "result": {"tools": []}})
+                        else:
+                            self.send_json(200, {"jsonrpc": "2.0", "id": data.get('id'), "result": {"tools": [{"name": "fake_tool"}]}})
                         return
                 except:
                     pass
@@ -156,16 +160,40 @@ grep -q "SMOKE: FAIL unauthenticated write" "$TEMP_DIR/out_unauth.log" || {
 
 # Test 4: cleanup happens (no temp dir left)
 echo "Test 4: Cleanup happens"
-# We run the script in a subshell, let it create its own temp dir,
-# then after it fails (or succeeds), verify that no directories matching 'tmp.*' created recently exist.
-# The script's output tells us what dir it created if we hack it, but standard mktemp -d is hard to track from outside.
-# However, we can use the pass test and verify no processes are left.
-PIDS=$(pgrep -f "fake_binary" || true)
-if [[ -n "$PIDS" ]]; then
-    echo "Test 4 failed - found leaking processes:"
-    echo "$PIDS"
-    kill -9 $PIDS || true
+mkdir -p "$TEMP_DIR/tmproot"
+FAKE_BIN_CLEANUP="$TEMP_DIR/fake_binary_cleanup.py"
+setup_fake_binary "$FAKE_BIN_CLEANUP" "1" "0" "0"
+
+TMPDIR="$TEMP_DIR/tmproot" bash "$SCRIPT_PATH" "$FAKE_BIN_CLEANUP" > "$TEMP_DIR/out_cleanup.log" 2>&1
+
+if [[ $(ls -A "$TEMP_DIR/tmproot" | wc -l) -ne 0 ]]; then
+    echo "Test 4 failed - normal run left files in tmproot:"
+    ls -la "$TEMP_DIR/tmproot"
     exit 1
 fi
 
+TMPDIR="$TEMP_DIR/tmproot" bash "$SCRIPT_PATH" "$FAKE_BIN_CLEANUP" --keep > "$TEMP_DIR/out_cleanup_keep.log" 2>&1
+
+if [[ $(ls -A "$TEMP_DIR/tmproot" | wc -l) -eq 0 ]]; then
+    echo "Test 4 failed - keep run did not leave files in tmproot"
+    exit 1
+fi
+
+
+
+# Test 5: FAIL when MCP tools array is empty
+echo "Test 5: FAIL when MCP tools array is empty"
+FAKE_BIN_EMPTY_MCP="$TEMP_DIR/fake_binary_empty_mcp.py"
+setup_fake_binary "$FAKE_BIN_EMPTY_MCP" "1" "0" "1"
+
+if bash "$SCRIPT_PATH" "$FAKE_BIN_EMPTY_MCP" > "$TEMP_DIR/out_empty_mcp.log" 2>&1; then
+    echo "Test 5 failed (should have exited non-zero). Output:"
+    cat "$TEMP_DIR/out_empty_mcp.log"
+    exit 1
+fi
+grep -q "SMOKE: FAIL mcp" "$TEMP_DIR/out_empty_mcp.log" || {
+    echo "Test 5 failed to print correct error. Output:"
+    cat "$TEMP_DIR/out_empty_mcp.log"
+    exit 1
+}
 echo "All tests passed."

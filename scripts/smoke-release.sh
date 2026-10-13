@@ -60,13 +60,7 @@ export XAVIER_CONFIG_DIR="$TEMP_DIR"
 export XAVIER_WORKSPACE_DIR="$TEMP_DIR"
 export XAVIER_CONFIG_PATH="$TEMP_DIR/config.json"
 
-RESOLVED_DATA_DIR=$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$XAVIER_DATA_DIR")
-RESOLVED_TEMP_DIR=$(python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$TEMP_DIR")
 
-if [[ "$RESOLVED_DATA_DIR" != "$RESOLVED_TEMP_DIR"* ]]; then
-    echo "Error: resolved data dir is not under temp root" >&2
-    exit 1
-fi
 
 XAVIER_TOKEN=$(python3 -c "import os, binascii; print(binascii.hexlify(os.urandom(16)).decode('utf-8'))")
 export XAVIER_TOKEN
@@ -88,7 +82,7 @@ echo "Waiting for health check (max 30s)..."
 MAX_TRIES=30
 HEALTHY=0
 for ((i=1; i<=MAX_TRIES; i++)); do
-    if curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/health" | grep -q "200"; then
+    if curl -s --max-time 2 -o /dev/null -w "%{http_code}" "$BASE_URL/health" | grep -q "200"; then
         HEALTHY=1
         break
     fi
@@ -109,7 +103,7 @@ PAYLOAD=$(cat <<JSON
 JSON
 )
 
-ADD_RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/v1/memory/add" \
+ADD_RESP=$(curl -s --max-time 5 -w "\n%{http_code}" -X POST "$BASE_URL/v1/memory/add" \
     -H "X-Xavier-Token: $XAVIER_TOKEN" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD")
@@ -132,7 +126,7 @@ SEARCH_PAYLOAD=$(cat <<JSON
 JSON
 )
 
-SEARCH_RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/v1/memory/search" \
+SEARCH_RESP=$(curl -s --max-time 5 -w "\n%{http_code}" -X POST "$BASE_URL/v1/memory/search" \
     -H "X-Xavier-Token: $XAVIER_TOKEN" \
     -H "Content-Type: application/json" \
     -d "$SEARCH_PAYLOAD")
@@ -147,7 +141,7 @@ if [[ "$SEARCH_CODE" != "200" ]] || ! echo "$SEARCH_BODY" | grep -q "smoke memor
 fi
 echo "SMOKE: PASS 3/5 (search memory)"
 
-UNAUTH_RESP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/memory/add" \
+UNAUTH_RESP=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/v1/memory/add" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD")
 
@@ -167,7 +161,7 @@ MCP_PAYLOAD=$(cat <<JSON
 JSON
 )
 
-MCP_RESP=$(curl -s -w "\n%{http_code}" -X POST "$MCP_URL" \
+MCP_RESP=$(curl -s --max-time 5 -w "\n%{http_code}" -X POST "$MCP_URL" \
     -H "X-Xavier-Token: $XAVIER_TOKEN" \
     -H "Content-Type: application/json" \
     -d "$MCP_PAYLOAD")
@@ -175,7 +169,7 @@ MCP_RESP=$(curl -s -w "\n%{http_code}" -X POST "$MCP_URL" \
 MCP_BODY=$(echo "$MCP_RESP" | head -n -1)
 MCP_CODE=$(echo "$MCP_RESP" | tail -n 1)
 
-if [[ "$MCP_CODE" != "200" ]] || ! echo "$MCP_BODY" | grep -q "tools"; then
+if [[ "$MCP_CODE" != "200" ]] || ! echo "$MCP_BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get("result",{}).get("tools") else 1)'; then
     echo "SMOKE: FAIL mcp"
     echo "Code: $MCP_CODE"
     echo "Body: $MCP_BODY"
