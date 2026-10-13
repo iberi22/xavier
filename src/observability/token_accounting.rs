@@ -22,7 +22,9 @@ struct TrackerState {
     entries: std::collections::VecDeque<TokenAccountingEntry>,
     total_original_tokens: usize,
     total_optimized_tokens: usize,
-    total_savings_usd: f32,
+    // Money accumulates in f64: thousands of f32 additions drift far past the
+    // resolution the public f32 figure can express.
+    total_savings_usd: f64,
     operation_count: usize,
 }
 
@@ -70,7 +72,7 @@ impl TokenAccountingTracker {
         let mut state = self.state.write().await;
         state.total_original_tokens += original_tokens;
         state.total_optimized_tokens += optimized_tokens;
-        state.total_savings_usd += savings;
+        state.total_savings_usd += f64::from(savings);
         state.operation_count += 1;
 
         if state.entries.len() >= MAX_TRACKER_ENTRIES {
@@ -94,7 +96,7 @@ impl TokenAccountingTracker {
         TokenStats {
             total_original_tokens: state.total_original_tokens,
             total_optimized_tokens: state.total_optimized_tokens,
-            total_savings_usd: state.total_savings_usd,
+            total_savings_usd: state.total_savings_usd as f32,
             savings_percentage,
             operation_count: state.operation_count,
         }
