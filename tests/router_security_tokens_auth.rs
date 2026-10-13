@@ -238,12 +238,7 @@ async fn router_security_tokens_auth_matrix() {
             path
         );
 
-        // 2. User JWT -> 403 on create/delete (which are POST/DELETE).
-        // (Wait, are there any GETs in the matrix that are NOT root-only prefix?
-        //  /security/tokens is a root-only prefix, but /v1/auth/sessions is NOT.
-        //  Wait, /v1/auth/sessions might be root-only by some other logic? The issue says:
-        //  `User JWT -> 403 on create/delete; non-root scoped token -> 403 on the root-only prefix.`
-        //  This means we should just assert exactly what's requested: 403 for User on POST/DELETE, and 403 for scoped on root-only prefix).
+        // 2. User JWT -> 403 on create/delete (POST/DELETE).
         let resp_user = run_request(&app, method.clone(), Some(&user_jwt), path, true).await;
         if method == Method::POST || method == Method::DELETE {
             assert_eq!(
