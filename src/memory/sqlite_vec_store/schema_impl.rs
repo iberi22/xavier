@@ -121,6 +121,12 @@ impl VecSqliteMemoryStore {
             .active_model_name()
             .unwrap_or_else(|| "noop".to_string());
 
+        let embedder_ready = if old_model != active_model && active_model != "noop" {
+            crate::embedding::build_embedder_from_env().await.is_ok()
+        } else {
+            false
+        };
+
         let active_model_c = active_model.clone();
         let project_id_c2 = self.project_id.clone();
         let reindex_action = self
@@ -130,6 +136,7 @@ impl VecSqliteMemoryStore {
                 rt.block_on(Self::check_and_handle_embedding_model_change(
                     conn,
                     &active_model_c,
+                    embedder_ready,
                 ))
             })
             .await?;
@@ -473,6 +480,7 @@ impl VecSqliteMemoryStore {
     pub async fn check_and_handle_embedding_model_change(
         conn: &Connection,
         active_model: &str,
+        embedder_ready: bool,
     ) -> Result<ReindexAction> {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS embedding_model_meta (
@@ -490,6 +498,14 @@ impl VecSqliteMemoryStore {
         };
 
         if old_model.as_deref() != Some(active_model) {
+            if active_model == "noop" || !embedder_ready {
+                tracing::warn!(
+                    "Embedding model changed to {}, but embedder is not ready/noop. Keeping existing vectors.",
+                    active_model
+                );
+                return Ok(ReindexAction::None);
+            }
+
             let n_rows = conn.execute(
                 "UPDATE memory_records SET embedding = NULL WHERE embedding IS NOT NULL",
                 [],
@@ -603,10 +619,13 @@ mod tests {
         ).unwrap();
 
         // Since it's the first time, no 'active' key exists in embedding_model_meta
-        let action =
-            VecSqliteMemoryStore::check_and_handle_embedding_model_change(&conn, "qwen3-coder")
-                .await
-                .unwrap();
+        let action = VecSqliteMemoryStore::check_and_handle_embedding_model_change(
+            &conn,
+            "qwen3-coder",
+            true,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(action, ReindexAction::Invalidated(1));
 
@@ -660,10 +679,13 @@ mod tests {
         ).unwrap();
 
         // Same model, should return ReindexAction::None
-        let action =
-            VecSqliteMemoryStore::check_and_handle_embedding_model_change(&conn, "qwen3-coder")
-                .await
-                .unwrap();
+        let action = VecSqliteMemoryStore::check_and_handle_embedding_model_change(
+            &conn,
+            "qwen3-coder",
+            true,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(action, ReindexAction::None);
 
@@ -707,10 +729,13 @@ mod tests {
         ).unwrap();
 
         // Different model, should invalidate and return Invalidated(1)
-        let action =
-            VecSqliteMemoryStore::check_and_handle_embedding_model_change(&conn, "qwen3-coder")
-                .await
-                .unwrap();
+        let action = VecSqliteMemoryStore::check_and_handle_embedding_model_change(
+            &conn,
+            "qwen3-coder",
+            true,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(action, ReindexAction::Invalidated(1));
 
@@ -1554,5 +1579,179 @@ mod tests {
         std::env::remove_var("XAVIER_EMBEDDING_MODEL");
         std::env::remove_var("XAVIER_EMBEDDER");
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+    }
+
+    #[tokio::test]
+    async fn model_change_to_noop_keeps_vectors() {
+        let conn = setup_test_db();
+
+        // Pre-save an old model name
+        conn.execute(
+            "INSERT INTO embedding_model_meta (key, value) VALUES ('active', 'old-model')",
+            [],
+        )
+        .unwrap();
+
+        // Insert a record with an embedding
+        conn.execute(
+            "INSERT INTO memory_records (id, embedding) VALUES ('mem_1', X'1234')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memory_embeddings (id, workspace_id, embedding) VALUES ('mem_1', 'ws_1', X'5678')",
+            []
+        ).unwrap();
+
+        // Model is "noop", should not invalidate
+        let action =
+            VecSqliteMemoryStore::check_and_handle_embedding_model_change(&conn, "noop", true)
+                .await
+                .unwrap();
+
+        assert_eq!(action, ReindexAction::None);
+
+        // Check that embedding is NOT NULL
+        let embedding: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT embedding FROM memory_records WHERE id = 'mem_1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(embedding.is_some());
+
+        // Check that memory_embeddings was NOT cleared
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_embeddings", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        // Check that the model meta was NOT updated
+        let saved_model: String = conn
+            .query_row(
+                "SELECT value FROM embedding_model_meta WHERE key = 'active'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(saved_model, "old-model");
+    }
+
+    #[tokio::test]
+    async fn model_change_with_unbuildable_embedder_keeps_vectors_and_meta() {
+        let conn = setup_test_db();
+
+        // Pre-save an old model name
+        conn.execute(
+            "INSERT INTO embedding_model_meta (key, value) VALUES ('active', 'old-model')",
+            [],
+        )
+        .unwrap();
+
+        // Insert a record with an embedding
+        conn.execute(
+            "INSERT INTO memory_records (id, embedding) VALUES ('mem_1', X'1234')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memory_embeddings (id, workspace_id, embedding) VALUES ('mem_1', 'ws_1', X'5678')",
+            []
+        ).unwrap();
+
+        // Model is changed, but embedder is not ready (unbuildable)
+        let action = VecSqliteMemoryStore::check_and_handle_embedding_model_change(
+            &conn,
+            "new-model",
+            false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(action, ReindexAction::None);
+
+        // Check that embedding is NOT NULL
+        let embedding: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT embedding FROM memory_records WHERE id = 'mem_1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(embedding.is_some());
+
+        // Check that memory_embeddings was NOT cleared
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_embeddings", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        // Check that the model meta was NOT updated
+        let saved_model: String = conn
+            .query_row(
+                "SELECT value FROM embedding_model_meta WHERE key = 'active'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(saved_model, "old-model");
+    }
+
+    #[tokio::test]
+    async fn model_change_to_real_model_invalidates_and_updates_meta() {
+        let conn = setup_test_db();
+
+        // Pre-save an old model name
+        conn.execute(
+            "INSERT INTO embedding_model_meta (key, value) VALUES ('active', 'old-model')",
+            [],
+        )
+        .unwrap();
+
+        // Insert a record with an embedding
+        conn.execute(
+            "INSERT INTO memory_records (id, embedding) VALUES ('mem_1', X'1234')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memory_embeddings (id, workspace_id, embedding) VALUES ('mem_1', 'ws_1', X'5678')",
+            []
+        ).unwrap();
+
+        // Model is changed and embedder is ready, should invalidate and update meta
+        let action =
+            VecSqliteMemoryStore::check_and_handle_embedding_model_change(&conn, "new-model", true)
+                .await
+                .unwrap();
+
+        assert_eq!(action, ReindexAction::Invalidated(1));
+
+        // Check that embedding is now NULL
+        let embedding: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT embedding FROM memory_records WHERE id = 'mem_1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(embedding.is_none());
+
+        // Check that memory_embeddings was cleared
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_embeddings", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+
+        // Check that the model meta WAS updated
+        let saved_model: String = conn
+            .query_row(
+                "SELECT value FROM embedding_model_meta WHERE key = 'active'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(saved_model, "new-model");
     }
 }
