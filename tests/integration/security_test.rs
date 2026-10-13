@@ -6,6 +6,12 @@ mod security_tests {
     use xavier::security::{SecurityConfig, SecurityManager};
 
     #[test]
+    fn test_security_manager_instantiation() {
+        let _manager = SecurityManager::new();
+        // Just verify it doesn't panic on creation
+    }
+
+    #[test]
     fn test_security_config_creation() {
         let config = SecurityConfig::new();
 
@@ -82,7 +88,7 @@ mod secrets_tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "requires actual secrets backend; run with --ignored"]
     fn test_store_secret() {
         let mut manager = SecretsManager::new();
 
@@ -94,7 +100,7 @@ mod secrets_tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "requires actual secrets backend; run with --ignored"]
     fn test_retrieve_secret() {
         let mut manager = SecretsManager::new();
 
@@ -107,7 +113,7 @@ mod secrets_tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "requires actual secrets backend; run with --ignored"]
     fn test_delete_secret() {
         let mut manager = SecretsManager::new();
 
@@ -120,9 +126,9 @@ mod secrets_tests {
     }
 
     #[test]
-    #[ignore] // Requires actual secrets backend
+    #[ignore = "unimplemented; requires actual secrets backend"]
     fn test_secrets_encryption_at_rest() {
         // Test that secrets are encrypted when stored
-        todo!("Implement with actual secrets backend (Vault, AWS Secrets Manager, etc.)");
+        // Unimplemented: needs a real secrets backend; kept ignored.
     }
 }

@@ -11,7 +11,7 @@ impl Drop for ChildGuard {
 
 // Run with: cargo test -p xavier --test e2e_chat_local -- --ignored --nocapture
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore] // requires compiled binary and may be slow in CI
+#[ignore = "requires compiled binary and may be slow in CI; run with --ignored --nocapture"]
 async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
