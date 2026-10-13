@@ -143,7 +143,7 @@ Healthcheck: `curl -fsS http://localhost:8006/ready` (503 until the memory store
 ### Development mode (no token, browser panel)
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+XAVIER_TOKEN=dummy-dev-token docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 # or
 XAVIER_TOKEN=dummy docker compose up -d
 ```
@@ -203,7 +203,7 @@ src/
 
 ### 🌐 HTTP REST API (`:8006`)
 
-All authenticated HTTP routes require the `X-Xavier-Token` header.
+All authenticated HTTP routes require the `X-Xavier-Token` or `Authorization: Bearer <token>` header.
 
 #### Maloca V1 Services (`/v1/maloca/*`)
 | Endpoint | Method | Description |
