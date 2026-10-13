@@ -608,6 +608,46 @@ shell history and agent transcripts. `xavier vault set` and `xavier secrets put`
 read the value from a hidden interactive prompt when stdin is a TTY, and from
 stdin when it is piped.
 
+### `xavier keys`
+
+Manage API keys in the hardware vault. Secret plaintext is never printed during generation or listing; you must explicitly export it.
+
+#### `xavier keys generate`
+
+Generate a new API key and store it in the hardware vault. The value is never printed: only the name, the sha256 fingerprint, the expiry and the rotation count are shown. Retrieve the plaintext with `xavier keys export --name <NAME>` or use `xavier secrets exec`.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--name <name>` | required | Logical name for the key (1-64 chars of `[A-Za-z0-9_-]`). |
+| `--ttl-secs <secs>` | none | Key lifetime in seconds (`0` = use `XAVIER_DEFAULT_KEY_TTL_SECS`). |
+| `--test` | `false` | Issue a test-scope key (`xavier_test_...`) instead of live. |
+
+#### `xavier keys export`
+
+Print the plaintext of an existing key to stdout. Refuses to run when stdout is not a TTY unless `--yes` is passed, and masks the value from the log stream.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--name <name>` | required | Name of the key to export. |
+| `--yes` | `false` | Skip the interactive confirmation (required for non-TTY stdout). |
+
+#### `xavier keys list`
+
+Show the metadata (fingerprint, expiry, rotations) of an issued key, without revealing any value.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--name <name>` | required | Name of the key to inspect. |
+
+#### `xavier keys revoke`
+
+Revoke a key and its metadata from the vault.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--name <name>` | required | Name of the key to revoke. |
+
+
 ### `xavier secrets put <name>`
 
 Store one secret in the hardware vault, reading the value from the hidden
