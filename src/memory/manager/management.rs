@@ -11,6 +11,38 @@ use super::core::MemoryManager;
 use super::types::{ManagedMemory, MemoryPriority, MemoryQuality, MemoryStats};
 
 impl MemoryManager {
+    /// Get relevance score for a document, seeding from persisted metadata (`memory_importance`)
+    /// when the record is first seen.
+    pub(crate) fn get_or_seed_relevance_score(
+        &self,
+        doc_id: Option<&str>,
+        metadata: &serde_json::Value,
+    ) -> f32 {
+        let Some(id) = doc_id else {
+            return 1.0;
+        };
+        let mut relevance_map = self
+            .relevance_scores
+            .lock()
+            .expect("manager: relevance_scores lock poisoned");
+        if let Some(&score) = relevance_map.get(id) {
+            score
+        } else {
+            let seeded = metadata
+                .get("memory_importance")
+                .or_else(|| metadata.get("importance"))
+                .and_then(|v| {
+                    v.as_f64()
+                        .map(|f| f as f32)
+                        .or_else(|| v.as_str().and_then(|s| s.parse::<f32>().ok()))
+                })
+                .unwrap_or(1.0)
+                .clamp(0.0, 1.0);
+            relevance_map.insert(id.to_string(), seeded);
+            seeded
+        }
+    }
+
     /// Get statistics about all memories
     pub async fn get_stats(&self) -> Result<MemoryStats> {
         let docs = self.memory.all_documents().await;
@@ -40,7 +72,16 @@ impl MemoryManager {
                     .last_access_times
                     .lock()
                     .expect("manager: last_access_times lock poisoned");
-                (counts.get(id).copied().unwrap_or(0), times.get(id).copied())
+                let meta_last_access = doc
+                    .metadata
+                    .get("last_accessed_at")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc));
+                (
+                    counts.get(id).copied().unwrap_or(0),
+                    times.get(id).copied().or(meta_last_access),
+                )
             } else {
                 (0, None)
             };
@@ -50,8 +91,19 @@ impl MemoryManager {
                 verified = graph_lock.read().await.has_supporting_beliefs(doc_id).await;
             }
 
-            let quality =
+            let mut quality =
                 MemoryQuality::calculate(&doc, priority, access_count, last_access, verified);
+            let relevance = self.get_or_seed_relevance_score(doc.id.as_deref(), &doc.metadata);
+            quality.relevance_score = (quality.relevance_score * relevance).clamp(0.0, 1.0);
+            quality.overall = (0.40 * quality.relevance_score
+                + 0.25 * quality.accuracy_score
+                + 0.20 * quality.freshness_score
+                + 0.15 * quality.completeness_score)
+                .clamp(0.0, 1.0);
+
+            if relevance < 0.999 {
+                stats.decayed_count += 1;
+            }
 
             let bucket = if quality.overall >= 0.7 {
                 "high"
@@ -90,6 +142,13 @@ impl MemoryManager {
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&chrono::Utc));
 
+            let meta_last_access = doc
+                .metadata
+                .get("last_accessed_at")
+                .and_then(|v| v.as_str())
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+
             let (access_count, last_access, created_at) = if let Some(id) = &doc.id {
                 let counts = self
                     .access_counts
@@ -106,11 +165,11 @@ impl MemoryManager {
 
                 (
                     counts.get(id).copied().unwrap_or(0),
-                    times.get(id).copied(),
+                    times.get(id).copied().or(meta_last_access),
                     created.get(id).copied().or(meta_created),
                 )
             } else {
-                (0, None, meta_created)
+                (0, meta_last_access, meta_created)
             };
 
             let mut verified = false;
@@ -118,8 +177,15 @@ impl MemoryManager {
                 verified = graph_lock.read().await.has_supporting_beliefs(doc_id).await;
             }
 
-            let quality =
+            let mut quality =
                 MemoryQuality::calculate(&doc, priority, access_count, last_access, verified);
+            let relevance = self.get_or_seed_relevance_score(doc.id.as_deref(), &doc.metadata);
+            quality.relevance_score = (quality.relevance_score * relevance).clamp(0.0, 1.0);
+            quality.overall = (0.40 * quality.relevance_score
+                + 0.25 * quality.accuracy_score
+                + 0.20 * quality.freshness_score
+                + 0.15 * quality.completeness_score)
+                .clamp(0.0, 1.0);
 
             memories.push(ManagedMemory {
                 doc,
