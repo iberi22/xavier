@@ -1,7 +1,9 @@
 //! CLI: `xavier node create|recover|status|anchor|anchor-pack`
 
 use crate::cli::commands::enums::NodeCommand;
+use crate::cli::commands::users::ensure_secret_output_allowed;
 use anyhow::{bail, Context, Result};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use xavier::crypto::hex_encode;
 use xavier::node_identity::{
@@ -126,6 +128,8 @@ async fn cmd_create(
     data_dir: Option<PathBuf>,
     shares_out: Option<PathBuf>,
 ) -> Result<()> {
+    ensure_secret_output_allowed(std::io::stdout().is_terminal(), false)?;
+
     let store = store_for(data_dir.clone());
     if store.vault_exists() && !force {
         bail!(

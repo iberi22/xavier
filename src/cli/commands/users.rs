@@ -53,8 +53,8 @@ fn now_secs() -> i64 {
 /// Refuses to print secrets (recovery phrase, TOTP secret/QR, backup codes) to a
 /// stdout that is not an interactive terminal (piped, redirected, captured by
 /// another process), unless the operator explicitly opts in.
-fn ensure_secret_output_allowed(explicit_override: bool) -> Result<()> {
-    if std::io::stdout().is_terminal() || explicit_override {
+pub fn ensure_secret_output_allowed(is_tty: bool, explicit_override: bool) -> Result<()> {
+    if is_tty || explicit_override {
         return Ok(());
     }
     bail!(
@@ -119,6 +119,7 @@ async fn set_role(email: &str, role: &str, json: bool) -> Result<()> {
 
 async fn reset_password(email: &str, json: bool) -> Result<()> {
     let db = open_auth_db()?;
+    ensure_secret_output_allowed(std::io::stdout().is_terminal(), false)?;
     // La contrasena en claro existe solo en esta variable: se imprime UNA vez
     // y jamas se registra en logs.
     let password = db.reset_user_password(email)?;
@@ -181,7 +182,7 @@ async fn create_user_cmd(
 ) -> Result<()> {
     // Checked BEFORE any prompt: no point typing a password just to be told at
     // the end that the recovery phrase cannot be shown.
-    ensure_secret_output_allowed(tty_override)?;
+    ensure_secret_output_allowed(std::io::stdout().is_terminal(), tty_override)?;
 
     let email_norm = email.trim().to_ascii_lowercase();
     let role_norm = role.trim().to_ascii_lowercase();
@@ -317,7 +318,7 @@ fn confirm_totp_enrollment(
 }
 
 async fn totp_enroll_cmd(email: String, tty_override: bool) -> Result<()> {
-    ensure_secret_output_allowed(tty_override)?;
+    ensure_secret_output_allowed(std::io::stdout().is_terminal(), tty_override)?;
 
     let email_norm = email.trim().to_ascii_lowercase();
     let db = open_auth_db()?;
@@ -729,5 +730,18 @@ mod tests {
         let err = disable_totp_with_code(&db, "ana@ejemplo.com", "123456")
             .expect_err("should refuse: 2FA not enabled");
         assert!(err.to_string().contains("no tiene 2FA activo"));
+    }
+
+    #[test]
+    fn test_secret_output_guard() {
+        // (is_tty, override)
+        assert!(ensure_secret_output_allowed(true, false).is_ok());
+        assert!(ensure_secret_output_allowed(true, true).is_ok());
+        assert!(ensure_secret_output_allowed(false, true).is_ok());
+
+        let err = ensure_secret_output_allowed(false, false).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("stdout no es una terminal interactiva"));
     }
 }
