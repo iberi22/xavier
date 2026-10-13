@@ -446,7 +446,7 @@ pub async fn handle_core_tool(
                 .get("page")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(1)
-                .max(1) as usize;
+                .clamp(1, 1000) as usize;
             let max_records = arguments
                 .get("max_records")
                 .or_else(|| arguments.get("limit"))
@@ -464,7 +464,7 @@ pub async fn handle_core_tool(
                 .unwrap_or(0)
                 .clamp(0, 2) as usize;
 
-            let fetch_limit = (page * max_records).saturating_add(1);
+            let fetch_limit = page.saturating_mul(max_records).saturating_add(1);
             let all_records = workspace
                 .workspace
                 .list_memory_records_filtered(
@@ -476,9 +476,9 @@ pub async fn handle_core_tool(
                 )
                 .await?;
 
-            let offset = (page - 1) * max_records;
+            let offset = page.saturating_sub(1).saturating_mul(max_records);
             let total_fetched = all_records.len();
-            let has_more = total_fetched > page * max_records;
+            let has_more = total_fetched > page.saturating_mul(max_records);
             let records: Vec<_> = all_records
                 .into_iter()
                 .skip(offset)
@@ -1323,6 +1323,31 @@ pub(crate) mod tests {
         assert!(
             err.to_string().contains("GITHUB_TOKEN"),
             "error must clearly name the missing secret, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn huge_page_returns_empty_without_panicking() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let claims = admin_claims();
+        let output = handle_core_tool(
+            state,
+            workspace,
+            Some(&claims),
+            "get_project_context",
+            json!({
+                "project_id": "huge_page_test",
+                "page": u64::MAX
+            }),
+        )
+        .await
+        .expect("should not panic and should succeed");
+
+        let content = output["structuredContent"].as_object().unwrap();
+        assert_eq!(
+            content["total_records"], 0,
+            "Huge page should return 0 records"
         );
     }
 
