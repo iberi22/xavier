@@ -647,6 +647,80 @@ async fn handle_skills_command(cmd: enums::SkillsCommand) -> Result<()> {
             );
             Ok(())
         }
+        enums::SkillsCommand::Gc {
+            manifest,
+            worktree,
+            apply,
+        } => {
+            let _manifest = read_skill_manifest(manifest).await?;
+            let journal = xavier::context::SkillJournal::from_settings()
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let now = xavier::context::skill_controller::backup::current_timestamp();
+            let worktree_path = std::path::PathBuf::from(worktree);
+            if apply {
+                let reports = tokio::task::spawn_blocking(move || {
+                    let pending = journal.pending_transactions().map_err(|e| {
+                        anyhow::anyhow!("failed to read journal pending transactions: {e}")
+                    })?;
+                    let is_active = |task_id: &str| {
+                        let needle = format!("eph-{task_id}");
+                        pending.iter().any(|tx| {
+                            tx.entries
+                                .iter()
+                                .any(|entry| entry.target_path.to_string_lossy().contains(&needle))
+                        })
+                    };
+                    xavier::context::skill_controller::lease::cleanup_stale(
+                        &journal,
+                        std::path::Path::new(&worktree_path),
+                        now,
+                        is_active,
+                    )
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))
+                })
+                .await
+                .map_err(|e| anyhow::anyhow!("gc cleanup task failed: {e}"))??;
+                let rendered: Vec<_> = reports.iter().map(render_rollback_report).collect();
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "dry_run": false,
+                        "reports": rendered,
+                    }))?
+                );
+            } else {
+                let stale = tokio::task::spawn_blocking(move || {
+                    let pending = journal.pending_transactions().map_err(|e| {
+                        anyhow::anyhow!("failed to read journal pending transactions: {e}")
+                    })?;
+                    let is_active = |task_id: &str| {
+                        let needle = format!("eph-{task_id}");
+                        pending.iter().any(|tx| {
+                            tx.entries
+                                .iter()
+                                .any(|entry| entry.target_path.to_string_lossy().contains(&needle))
+                        })
+                    };
+                    xavier::context::skill_controller::lease::list_stale(
+                        &journal,
+                        std::path::Path::new(&worktree_path),
+                        now,
+                        is_active,
+                    )
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))
+                })
+                .await
+                .map_err(|e| anyhow::anyhow!("gc list task failed: {e}"))??;
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "dry_run": true,
+                        "stale_tasks": stale,
+                    }))?
+                );
+            }
+            Ok(())
+        }
     }
 }
 
@@ -671,6 +745,7 @@ mod skills_command_tests {
         assert!(names.contains(&"plan"), "missing plan: {names:?}");
         assert!(names.contains(&"apply"), "missing apply: {names:?}");
         assert!(names.contains(&"rollback"), "missing rollback: {names:?}");
+        assert!(names.contains(&"gc"), "missing gc: {names:?}");
     }
 
     #[tokio::test]
