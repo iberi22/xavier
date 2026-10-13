@@ -662,14 +662,7 @@ async fn handle_skills_command(cmd: enums::SkillsCommand) -> Result<()> {
                     let pending = journal.pending_transactions().map_err(|e| {
                         anyhow::anyhow!("failed to read journal pending transactions: {e}")
                     })?;
-                    let is_active = |task_id: &str| {
-                        let needle = format!("eph-{task_id}");
-                        pending.iter().any(|tx| {
-                            tx.entries
-                                .iter()
-                                .any(|entry| entry.target_path.to_string_lossy().contains(&needle))
-                        })
-                    };
+                    let is_active = |task_id: &str| task_has_pending_tx(&pending, task_id);
                     xavier::context::skill_controller::lease::cleanup_stale(
                         &journal,
                         std::path::Path::new(&worktree_path),
@@ -693,14 +686,7 @@ async fn handle_skills_command(cmd: enums::SkillsCommand) -> Result<()> {
                     let pending = journal.pending_transactions().map_err(|e| {
                         anyhow::anyhow!("failed to read journal pending transactions: {e}")
                     })?;
-                    let is_active = |task_id: &str| {
-                        let needle = format!("eph-{task_id}");
-                        pending.iter().any(|tx| {
-                            tx.entries
-                                .iter()
-                                .any(|entry| entry.target_path.to_string_lossy().contains(&needle))
-                        })
-                    };
+                    let is_active = |task_id: &str| task_has_pending_tx(&pending, task_id);
                     xavier::context::skill_controller::lease::list_stale(
                         &journal,
                         std::path::Path::new(&worktree_path),
@@ -724,8 +710,49 @@ async fn handle_skills_command(cmd: enums::SkillsCommand) -> Result<()> {
     }
 }
 
+/// True when a pending journal transaction targets the task's own `eph-{task_id}`
+/// path component (an exact component match, so `eph-task2` never marks `task`).
+fn task_has_pending_tx(
+    pending: &[xavier::context::skill_controller::state::TransactionRecord],
+    task_id: &str,
+) -> bool {
+    let needle = format!("eph-{task_id}");
+    pending.iter().any(|tx| {
+        tx.entries.iter().any(|entry| {
+            entry
+                .target_path
+                .components()
+                .any(|c| c.as_os_str() == needle.as_str())
+        })
+    })
+}
+
 #[cfg(test)]
 mod skills_command_tests {
+    #[test]
+    fn gc_task_activity_matches_the_exact_task_component() {
+        use xavier::context::skill_controller::backup::BackupKind;
+        use xavier::context::skill_controller::state::{
+            JournalAction, JournalEntry, TransactionRecord, TransactionState,
+        };
+        let tx = |path: &str| TransactionRecord {
+            id: "tx".into(),
+            state: TransactionState::Pending,
+            created_at: 0,
+            updated_at: 0,
+            entries: vec![JournalEntry {
+                target_path: std::path::PathBuf::from(path),
+                action: JournalAction::Remove,
+                prior_state: BackupKind::Absent,
+                owned_hash: None,
+            }],
+        };
+        let pending = vec![tx("/wt/.skills/eph-task2/SKILL.md")];
+        assert!(task_has_pending_tx(&pending, "task2"));
+        assert!(!task_has_pending_tx(&pending, "task"));
+        assert!(!task_has_pending_tx(&[], "task2"));
+    }
+
     use super::*;
     use clap::CommandFactory;
     use std::fs;
