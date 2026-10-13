@@ -7,6 +7,13 @@ test.describe("Agent Chat Interactions", () => {
       await route.fulfill({ json: { status: "online" } });
     });
 
+    // Mock the provider config probe: a reachable config marks the panel configured
+    await page.route("**/v1/config/providers", async (route) => {
+      await route.fulfill({
+        json: { providers: [{ provider: "local", model: "test-model", api_key: null, base_url: null }] },
+      });
+    });
+
     // Mock initial threads
     await page.route("**/panel/api/threads", async (route) => {
       if (route.request().method() === "POST") {

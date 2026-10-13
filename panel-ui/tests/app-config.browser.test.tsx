@@ -85,13 +85,47 @@ describe("App Native & HTTP Config Check", () => {
 		expect(screen.queryByText("Xavier Offline")).not.toBeInTheDocument();
 	});
 
-	test("Browser mode: non-Tauri environment with fetch 404 sets hasConfig to true (Ollama fallback)", async () => {
+	test("Browser mode: non-Tauri environment with fetch 404 sets hasConfig to false", async () => {
 		const fetchSpy = vi
 			.spyOn(globalThis, "fetch")
 			.mockImplementation(async (url) => {
 				const urlStr = String(url);
 				if (urlStr.includes("/v1/config/providers")) {
 					return new Response("Not Found", { status: 404 });
+				}
+				if (urlStr.includes("/health")) {
+					return new Response(JSON.stringify({ status: "ok" }), {
+						status: 200,
+					});
+				}
+				if (urlStr.includes("/panel/api/threads")) {
+					return new Response(JSON.stringify([]), { status: 200 });
+				}
+				if (urlStr.includes("/panel/api/bookmarks")) {
+					return new Response(JSON.stringify([]), { status: 200 });
+				}
+				return new Response(JSON.stringify({}), { status: 200 });
+			});
+
+		render(<App />);
+
+		await waitFor(() => {
+			expect(fetchSpy).toHaveBeenCalledWith(
+				expect.stringContaining("/v1/config/providers"),
+				expect.anything(),
+			);
+		});
+
+		expect(screen.queryByText("Xavier Offline")).not.toBeInTheDocument();
+	});
+
+	test("Browser mode: non-Tauri environment with fetch throw sets hasConfig to false", async () => {
+		const fetchSpy = vi
+			.spyOn(globalThis, "fetch")
+			.mockImplementation(async (url) => {
+				const urlStr = String(url);
+				if (urlStr.includes("/v1/config/providers")) {
+					throw new Error("Network Error");
 				}
 				if (urlStr.includes("/health")) {
 					return new Response(JSON.stringify({ status: "ok" }), {
