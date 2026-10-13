@@ -33,14 +33,26 @@ pub struct PublicRagResult {
 /// Order of priority:
 /// 1. `SWAL_WORKSPACE_DIR` environment variable
 /// 2. `XAVIER_SWAL_DIR` environment variable
-/// 3. Canonical default `/home/belal/proyectosSWAL`
+/// 3. Fallback to `SWAL_REPOS_DIR` or `~/proyectosSWAL`
 pub fn resolve_swal_workspace_dir() -> PathBuf {
     if let Ok(val) = std::env::var("SWAL_WORKSPACE_DIR") {
         PathBuf::from(val)
     } else if let Ok(val) = std::env::var("XAVIER_SWAL_DIR") {
         PathBuf::from(val)
+    } else if let Ok(env_path) = std::env::var("SWAL_REPOS_DIR") {
+        PathBuf::from(env_path)
     } else {
-        PathBuf::from("/home/belal/proyectosSWAL")
+        let home = std::env::var("HOME").map(PathBuf::from).ok();
+        let swal_home = home.as_ref().map(|h| h.join("proyectosSWAL"));
+        if let Some(ref p) = swal_home {
+            if p.exists() {
+                p.clone()
+            } else {
+                PathBuf::from("proyectosSWAL")
+            }
+        } else {
+            PathBuf::from("proyectosSWAL")
+        }
     }
 }
 
@@ -326,6 +338,45 @@ mod tests {
         assert_eq!(calculate_symbol_score("IrohTransport", "iroh"), 5.0);
         assert_eq!(calculate_symbol_score("IrohTransport", "transport"), 1.0);
         assert_eq!(calculate_symbol_score("IrohTransport", "other"), 0.1);
+    }
+
+    #[test]
+    fn test_resolve_swal_workspace_dir_fallback() {
+        crate::isolate_test_process!();
+        struct EnvRestore {
+            key: &'static str,
+            prev: Option<std::ffi::OsString>,
+        }
+        impl EnvRestore {
+            fn set(key: &'static str, val: &str) -> Self {
+                let prev = std::env::var_os(key);
+                std::env::set_var(key, val);
+                Self { key, prev }
+            }
+            fn remove(key: &'static str) -> Self {
+                let prev = std::env::var_os(key);
+                std::env::remove_var(key);
+                Self { key, prev }
+            }
+        }
+        impl Drop for EnvRestore {
+            fn drop(&mut self) {
+                if let Some(p) = &self.prev {
+                    std::env::set_var(self.key, p);
+                } else {
+                    std::env::remove_var(self.key);
+                }
+            }
+        }
+        let _g1 = EnvRestore::remove("SWAL_WORKSPACE_DIR");
+        let _g2 = EnvRestore::remove("XAVIER_SWAL_DIR");
+
+        let tmp = tempfile::tempdir().unwrap();
+        let tmp_str = tmp.path().to_str().unwrap();
+        let _g3 = EnvRestore::set("SWAL_REPOS_DIR", tmp_str);
+
+        let res = super::resolve_swal_workspace_dir();
+        assert_eq!(res, std::path::PathBuf::from(tmp_str));
     }
 
     #[test]
