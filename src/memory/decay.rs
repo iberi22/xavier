@@ -187,10 +187,11 @@ pub fn calculate_decay(
         return (record.score, false);
     }
 
-    // Hard age limits per priority are checked first
+    // Hard age limits per priority are checked first; they only delete when
+    // pruning is enabled (`prune_threshold: None` means decay never deletes).
     let max_age = priority.max_age_days() as f32;
     if days_since > max_age {
-        return (0.0, true);
+        return (0.0, config.prune_threshold.is_some());
     }
 
     if days_since > config.inactivity_days {
@@ -305,6 +306,26 @@ mod tests {
 
         // Critical priority never decays.
         assert_eq!(new_score, 1.0);
+        assert!(!should_prune);
+    }
+
+    #[test]
+    fn hard_age_limit_never_prunes_when_pruning_is_disabled() {
+        let record = MemoryRecord {
+            score: 0.5,
+            metadata: serde_json::json!({
+                "memory_priority": "ephemeral",
+                "last_accessed_at": (Utc::now() - chrono::Duration::days(3650)).to_rfc3339()
+            }),
+            ..Default::default()
+        };
+        let config = DecayConfig {
+            prune_threshold: None,
+            inactivity_days: 30.0,
+            default_initial_score: 1.0,
+        };
+
+        let (_, should_prune) = calculate_decay(&record, Utc::now(), &config);
         assert!(!should_prune);
     }
 
