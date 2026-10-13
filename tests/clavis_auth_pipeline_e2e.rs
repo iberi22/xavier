@@ -24,8 +24,8 @@ use xavier::memory::qmd_memory::QmdMemory;
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 use xavier::ports::inbound::AgentLifecyclePort;
 use xavier::secrets::audit::QmdAuditLogger;
+use xavier::security::auth::{User, UserRole};
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
-use xavier::security::auth::{UserRole, User};
 
 /// Minimal `CliState` fixture, mimicking `tests/test_store_path_hierarchy.rs` and `tests/test_maloca_auth_gate.rs`.
 async fn create_test_cli_state(temp_dir: &TempDir) -> CliState {
@@ -96,7 +96,12 @@ async fn create_test_cli_state(temp_dir: &TempDir) -> CliState {
 }
 
 /// Helper to execute requests against the router.
-async fn run_request(router: &Router, token: Option<&str>, uri: &str, is_bearer: bool) -> axum::response::Response {
+async fn run_request(
+    router: &Router,
+    token: Option<&str>,
+    uri: &str,
+    is_bearer: bool,
+) -> axum::response::Response {
     let mut builder = Request::builder().uri(uri).method(Method::GET);
     if let Some(tok) = token {
         if is_bearer {
@@ -156,10 +161,7 @@ impl Drop for RestoreEnv {
 async fn clavis_auth_pipeline_verifies_tokens_via_production_middleware() {
     let temp = tempfile::tempdir().unwrap();
     // Use the test isolation pattern.
-    let _env = RestoreEnv::set(&[
-        ("HOME", temp.path()),
-        ("XAVIER_DATA_DIR", temp.path()),
-    ]);
+    let _env = RestoreEnv::set(&[("HOME", temp.path()), ("XAVIER_DATA_DIR", temp.path())]);
 
     // Setup the correct expected root token.
     let expected_root_token = "e2e-root-token-9999";
@@ -167,7 +169,7 @@ async fn clavis_auth_pipeline_verifies_tokens_via_production_middleware() {
     let push_secret = "push-secret-for-signing-jwt";
     let _env_str = RestoreEnv::set_str(&[
         ("XAVIER_TOKEN", expected_root_token),
-        ("XAVIER_JWT_SECRET", push_secret)
+        ("XAVIER_JWT_SECRET", push_secret),
     ]);
 
     let state = create_test_cli_state(&temp).await;
@@ -203,7 +205,11 @@ async fn clavis_auth_pipeline_verifies_tokens_via_production_middleware() {
 
     // 3. Valid token, but insufficient permissions -> HTTP 403 Forbidden
     // We sign a token as `UserRole::User` which lacks `can_manage_secrets()`.
-    let user = User::new("test_user".to_string(), "user@example.com".to_string(), UserRole::User);
+    let user = User::new(
+        "test_user".to_string(),
+        "user@example.com".to_string(),
+        UserRole::User,
+    );
     let user_token = xavier::security::auth::generate_jwt(&user, push_secret.as_bytes()).unwrap();
     let resp = run_request(&app, Some(&user_token), endpoint, true).await;
     assert_eq!(
@@ -219,7 +225,8 @@ async fn clavis_auth_pipeline_verifies_tokens_via_production_middleware() {
     let status = resp.status();
     assert!(
         status != StatusCode::UNAUTHORIZED && status != StatusCode::FORBIDDEN,
-        "Expected authorized user querying missing key to pass auth, got {}", status
+        "Expected authorized user querying missing key to pass auth, got {}",
+        status
     );
 }
 
