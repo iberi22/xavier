@@ -226,7 +226,6 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    continue-on-error: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -243,6 +242,19 @@ jobs:
           shared-key: ci-safe-test
           save-if: false
 
+      - name: "test(audit): verify missing macro is detected"
+        run: |
+          touch tests/dummy_hygiene_test.rs
+          set +e
+          missing=$(grep -L 'isolate_test_process!' tests/*.rs benches/*.rs || true)
+          set -e
+          rm tests/dummy_hygiene_test.rs
+          if ! echo "$missing" | grep -q "dummy_hygiene_test.rs"; then
+            echo "::error::Audit logic failed to catch missing macro" >&2
+            exit 1
+          fi
+          echo "OK: missing macro caught by grep logic"
+
       - name: Audit every test/bench root installs the sandbox
         run: |
           missing=$(grep -L 'isolate_test_process!' tests/*.rs benches/*.rs || true)
@@ -253,6 +265,7 @@ jobs:
           echo "OK: all test/bench crate roots are sandboxed"
 
       - name: Check no test writes to the real home
+        continue-on-error: true
         run: bash scripts/check-test-writes.sh
 
   # Job: Observability contract gate (WAVE-29.10)
