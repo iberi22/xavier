@@ -191,10 +191,7 @@ impl ConsolidationTask {
                 continue;
             }
 
-            let exists = match memory.get(&doc_id).await {
-                Ok(Some(_)) => true,
-                _ => false,
-            };
+            let exists = matches!(memory.get(&doc_id).await, Ok(Some(_)));
             if !exists {
                 continue;
             }
