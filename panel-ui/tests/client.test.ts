@@ -128,15 +128,24 @@ describe("ApiClient unit tests", () => {
     const searchRes = await client.searchMemories("query", "note", 10);
     expect(searchRes).toEqual(mockMemories);
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/memory/search?"),
-      expect.anything()
+      expect.stringContaining("/memory/search"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ query: "query", limit: 10 }),
+      })
     );
 
     const addRes = await client.addMemory("new content");
     expect(addRes).toEqual(mockMemories[0]);
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining("/memory/add"),
-      expect.anything()
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          content: "new content",
+          metadata: { kind: "note", priority: "medium", source: "panel-ui" }
+        })
+      })
     );
   });
 
