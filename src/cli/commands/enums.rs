@@ -620,6 +620,18 @@ pub enum SkillsCommand {
         #[arg(long)]
         apply: bool,
     },
+    /// Remove expired, inactive task leases; dry-run unless --apply
+    Gc {
+        /// Path to the skill manifest TOML
+        #[arg(long)]
+        manifest: String,
+        /// Path to the worktree containing task lease directories
+        #[arg(long)]
+        worktree: String,
+        /// Actually write changes (default is dry-run)
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 /// Subcommands for the auto-improvement loop.

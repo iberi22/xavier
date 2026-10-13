@@ -300,6 +300,40 @@ pub fn cleanup_stale(
     Ok(reports)
 }
 
+pub fn list_stale(
+    journal: &Journal,
+    worktree: &Path,
+    now: u64,
+    is_active: impl Fn(&str) -> bool,
+) -> Result<Vec<String>, LeaseError> {
+    let (policy, dir, _) = paths(worktree, "probe")?;
+    let parent = dir.parent().ok_or(LeaseError::Conflict)?;
+    if !parent.try_exists()? {
+        return Ok(Vec::new());
+    }
+    policy.authorize(RootKind::Target, parent)?;
+    let mut stale = Vec::new();
+    for entry in fs::read_dir(parent)?.take(1024) {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(task_id) = name.to_str().and_then(|name| name.strip_prefix("eph-")) else {
+            continue;
+        };
+        let Ok((policy, dir, link)) = paths(worktree, task_id) else {
+            continue;
+        };
+        let _lock = lock(journal, worktree)?;
+        let Ok(lease) = read_lease(journal, &policy, &dir, &link) else {
+            continue;
+        };
+        if lease.expires_at <= now && !is_active(task_id) {
+            stale.push(task_id.to_string());
+        }
+    }
+    stale.sort();
+    Ok(stale)
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::rollback::RollbackOutcome;
@@ -482,5 +516,45 @@ mod tests {
         assert!(result.is_err());
         assert!(!w.path().join(".agents/skills/eph-task_secret").exists());
         assert!(!w.path().join(".claude/skills/eph-task_secret").exists());
+    }
+
+    #[test]
+    fn gc_releases_expired_inactive_keeps_active_and_dry_run_changes_nothing() {
+        let (w, _s, j) = fixture();
+        let mut outputs = Vec::new();
+        for task in ["inactive", "active", "unexpired"] {
+            let out = publish_task_skill(&j, w.path(), task, "body").expect("publish task skill");
+            let path = out.skill_path.parent().expect("parent dir").join(".lease");
+            let mut lease: Lease =
+                serde_json::from_slice(&fs::read(&path).expect("read lease")).expect("parse lease");
+            lease.expires_at = if task == "unexpired" { 101 } else { 99 };
+            atomic_write(&path, &serde_json::to_vec(&lease).expect("serialize lease"))
+                .expect("write lease");
+            outputs.push(out);
+        }
+
+        // Dry-run: list_stale identifies the expired inactive lease without mutating the filesystem.
+        let stale = list_stale(&j, w.path(), 100, |id| id == "active").expect("list stale");
+        assert_eq!(stale, vec!["inactive"]);
+        for out in &outputs {
+            assert!(out.skill_path.exists());
+            assert!(fs::symlink_metadata(&out.link_path)
+                .expect("metadata")
+                .file_type()
+                .is_symlink());
+        }
+
+        // Apply: cleanup_stale releases the expired inactive lease and preserves active and unexpired.
+        let reports = cleanup_stale(&j, w.path(), 100, |id| id == "active").expect("cleanup stale");
+        assert_eq!(reports.len(), 1);
+        assert!(!outputs[0].skill_path.exists());
+        assert!(fs::symlink_metadata(&outputs[0].link_path).is_err());
+        for out in &outputs[1..] {
+            assert!(out.skill_path.exists());
+            assert!(fs::symlink_metadata(&out.link_path)
+                .expect("metadata")
+                .file_type()
+                .is_symlink());
+        }
     }
 }
