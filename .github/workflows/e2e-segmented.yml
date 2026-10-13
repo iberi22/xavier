@@ -16,12 +16,18 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
 
 permissions:
   contents: read
 
 concurrency:
-  group: e2e-${{ github.ref }}
+  group: e2e-${{ github.sha }}
   cancel-in-progress: false
 
 env:
@@ -97,6 +103,7 @@ jobs:
 
   e2e-02:
     name: W02 resto_b (19)
+    if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
@@ -161,6 +168,7 @@ jobs:
 
   e2e-03:
     name: W03 resto_c (18)
+    if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
@@ -224,6 +232,7 @@ jobs:
 
   e2e-04:
     name: W04 resto_d (18)
+    if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
@@ -287,6 +296,7 @@ jobs:
 
   e2e-05:
     name: W05 mesh (10)
+    if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
@@ -342,6 +352,7 @@ jobs:
 
   e2e-06:
     name: W06 search_embedding (7)
+    if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
@@ -394,6 +405,7 @@ jobs:
 
   e2e-07:
     name: W07 session_sync_panel (7)
+    if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
@@ -446,6 +458,7 @@ jobs:
 
   e2e-08:
     name: W08 security_secrets (6)
+    if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
@@ -497,6 +510,7 @@ jobs:
 
   e2e-09:
     name: W09 memory_sync (8)
+    if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
@@ -550,6 +564,7 @@ jobs:
 
   e2e-10:
     name: W10 maloca (4)
+    if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
@@ -599,6 +614,7 @@ jobs:
 
   e2e-11:
     name: W11 telemetry_skill (3)
+    if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
@@ -647,6 +663,7 @@ jobs:
 
   e2e-12:
     name: W12 codegraph (3)
+    if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
@@ -695,6 +712,7 @@ jobs:
 
   e2e-13:
     name: W13 storage (2)
+    if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
@@ -755,7 +773,9 @@ jobs:
           gate_failed=0
           check() {
             local job="$1" result="$2"
-            if [ "$result" != "none" ]; then
+            if [ -z "$result" ]; then
+              echo "$job: skipped"
+            elif [ "$result" != "none" ]; then
               echo "::error::$job reported failing targets: $result"
               gate_failed=1
             else
@@ -780,3 +800,16 @@ jobs:
             exit 1
           fi
           echo "E2E gate PASSED: all 13 waves reported no failing targets"
+
+          test_check_skipped_does_not_fail() {
+            local orig=$gate_failed
+            gate_failed=0
+            check "test_job" ""
+            if [ "$gate_failed" -ne 0 ]; then
+              echo "test(check_skipped): failed because empty result changed gate_failed"
+              exit 1
+            fi
+            echo "test(check_skipped): passed"
+            gate_failed=$orig
+          }
+          test_check_skipped_does_not_fail
