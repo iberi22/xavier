@@ -430,6 +430,18 @@ async fn detect_docker() -> DockerStatus {
     }
 }
 
+/// Safely masks strings, never panics on non-ASCII char boundaries.
+pub fn mask_secret(v: &str) -> String {
+    let char_count = v.chars().count();
+    if char_count > 8 {
+        let first_4: String = v.chars().take(4).collect();
+        let last_4: String = v.chars().skip(char_count - 4).collect();
+        format!("{}...{}", first_4, last_4)
+    } else {
+        "****".to_string()
+    }
+}
+
 async fn detect_env_vars(detailed: bool) -> HashMap<String, EnvVarStatus> {
     let mut vars = HashMap::new();
 
@@ -452,13 +464,7 @@ async fn detect_env_vars(detailed: bool) -> HashMap<String, EnvVarStatus> {
         let present = value.is_some();
 
         let masked_value = if detailed && present {
-            value.map(|v| {
-                if v.len() > 8 {
-                    format!("{}...{}", &v[..4], &v[v.len() - 4..])
-                } else {
-                    "****".to_string()
-                }
-            })
+            value.map(|v| mask_secret(&v))
         } else {
             None
         };
@@ -711,5 +717,23 @@ mod scanner_tests {
         let status = detect_ollama().await;
         assert!(status.running);
         assert!(status.models.contains(&"qwen3-coder".to_string()));
+    }
+
+    #[test]
+    fn mask_secret_handles_multibyte() {
+        let v = "ñandú-clave-é漢字";
+        let masked = mask_secret(v);
+        assert_eq!(masked, "ñand...-é漢字");
+    }
+
+    #[test]
+    fn mask_secret_short_value() {
+        let v = "1234567";
+        let masked = mask_secret(v);
+        assert_eq!(masked, "****");
+
+        let v2 = "12345678";
+        let masked2 = mask_secret(v2);
+        assert_eq!(masked2, "****");
     }
 }
