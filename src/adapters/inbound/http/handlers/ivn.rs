@@ -21,9 +21,10 @@ use std::str::FromStr;
 use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::data_commons::ivn::{
-    IvnConfig, IvnError, KarmaEngine, ValidatorCandidate, ValidatorSelection, Verdict,
-    VerdictEngine, VerdictStatus, Vote,
+    apply_rewards, apply_sanctions, IvnConfig, IvnError, KarmaEngine, ValidatorCandidate,
+    ValidatorSelection, Verdict, VerdictEngine, VerdictStatus, Vote,
 };
+use crate::data_commons::reputation::{EigenTrustEngine, ReputationConfig};
 use crate::data_commons::types::WalletAddress;
 
 // ---------------------------------------------------------------------------
@@ -770,6 +771,134 @@ mod tests {
             assert_ne!(val.node_id, "submitter_x");
         }
     }
+
+    #[tokio::test]
+    async fn test_final_verdict_applies_sanctions_and_exclusions() {
+        use crate::data_commons::ivn::{clear_exclusions, is_excluded_at};
+        use axum::extract::Path;
+        use axum::Json;
+
+        let tmp_dir = tempfile::tempdir().expect("tempdir");
+        let prev_data_dir = std::env::var_os("XAVIER_DATA_DIR");
+        std::env::set_var("XAVIER_DATA_DIR", tmp_dir.path());
+        clear_exclusions();
+
+        let req_id = "test_req_sanctions_1".to_string();
+        let applicant = "xv1_applicant_liar".to_string();
+        let val1 = "xv1_val_honest_1".to_string();
+        let val2 = "xv1_val_honest_2".to_string();
+        let val3 = "xv1_val_honest_3".to_string();
+        let val4 = "xv1_val_honest_4".to_string();
+        let val5_fp = "xv1_val_false_positive".to_string();
+
+        let mut store = IvnEngineStore::default();
+        store.requests.insert(
+            req_id.clone(),
+            IdentityRequestRecord {
+                id: req_id.clone(),
+                applicant: applicant.clone(),
+                proof_hashes: vec!["hash".into()],
+                signature: None,
+                assigned_validators: vec![
+                    ValidatorCandidateDto {
+                        node_id: val1.clone(),
+                        wallet: val1.clone(),
+                        karma: 500,
+                        seed: "s1".into(),
+                        operator_id: None,
+                        ip_address: None,
+                    },
+                    ValidatorCandidateDto {
+                        node_id: val2.clone(),
+                        wallet: val2.clone(),
+                        karma: 500,
+                        seed: "s2".into(),
+                        operator_id: None,
+                        ip_address: None,
+                    },
+                    ValidatorCandidateDto {
+                        node_id: val3.clone(),
+                        wallet: val3.clone(),
+                        karma: 500,
+                        seed: "s3".into(),
+                        operator_id: None,
+                        ip_address: None,
+                    },
+                    ValidatorCandidateDto {
+                        node_id: val4.clone(),
+                        wallet: val4.clone(),
+                        karma: 500,
+                        seed: "s4".into(),
+                        operator_id: None,
+                        ip_address: None,
+                    },
+                    ValidatorCandidateDto {
+                        node_id: val5_fp.clone(),
+                        wallet: val5_fp.clone(),
+                        karma: 500,
+                        seed: "s5".into(),
+                        operator_id: None,
+                        ip_address: None,
+                    },
+                ],
+                votes: HashMap::new(),
+                status: IdentityRequestStatus::Pending,
+                created_at: 1_700_000_000,
+                updated_at: 1_700_000_000,
+                verdict: None,
+            },
+        );
+        init_ivn_engine(store);
+
+        // 4 honest validators vote Reject, 1 false-positive validator votes Check
+        // Total 5 votes -> Quorum met -> Final status: Rejected!
+        for v_id in [&val1, &val2, &val3, &val4] {
+            let res = vote_identity_request_handler(
+                Path(req_id.clone()),
+                Json(VoteRequest {
+                    validator_node_id: v_id.to_string(),
+                    vote: Vote::Reject,
+                }),
+            )
+            .await
+            .into_response();
+            assert_eq!(res.status(), StatusCode::OK);
+        }
+
+        let res5 = vote_identity_request_handler(
+            Path(req_id.clone()),
+            Json(VoteRequest {
+                validator_node_id: val5_fp.clone(),
+                vote: Vote::Check,
+            }),
+        )
+        .await
+        .into_response();
+        assert_eq!(res5.status(), StatusCode::OK);
+
+        let final_record = current_ivn_store().requests.get(&req_id).unwrap().clone();
+        assert_eq!(final_record.status, IdentityRequestStatus::Rejected);
+
+        // Assert applicant is sanctioned (180 days retry window exclusion)
+        let check_time = 1_700_000_000 + 86_400; // 1 day later
+        assert!(is_excluded_at(
+            &WalletAddress(applicant.clone()),
+            check_time
+        ));
+
+        // Assert false-positive validator is sanctioned (90 days exclusion)
+        assert!(is_excluded_at(&WalletAddress(val5_fp.clone()), check_time));
+
+        // Assert honest reject validators are NOT excluded
+        assert!(!is_excluded_at(&WalletAddress(val1.clone()), check_time));
+
+        clear_exclusions();
+        if let Some(prev) = prev_data_dir {
+            std::env::set_var("XAVIER_DATA_DIR", prev);
+        } else {
+            std::env::remove_var("XAVIER_DATA_DIR");
+        }
+    }
 }
 
 /// `GET /v1/ivn/karma/{agent}` — Query agent karma, tier, and history log.
@@ -882,11 +1011,53 @@ pub async fn vote_identity_request_handler(
     // Update status based on verdict evaluation once all assigned validators have voted or verdict is final
     match verdict.status {
         VerdictStatus::Passed => {
+            let previously_passed = record.status == IdentityRequestStatus::Passed;
             record.status = IdentityRequestStatus::Passed;
+            if !previously_passed {
+                let mut engine = EigenTrustEngine::new(ReputationConfig::default(), Vec::new());
+                let applicant_wallet = WalletAddress(record.applicant.clone());
+                let validator_votes: Vec<(WalletAddress, Vote)> = record
+                    .votes
+                    .iter()
+                    .map(|(v_id, vote)| (WalletAddress(v_id.clone()), *vote))
+                    .collect();
+                apply_rewards(&mut engine, &verdict, &applicant_wallet, &validator_votes);
+
+                // Derive false-positive validators (who voted Reject on a Passed request)
+                let fp_validators: Vec<WalletAddress> = record
+                    .votes
+                    .iter()
+                    .filter(|(_, vote)| **vote == Vote::Reject)
+                    .map(|(v_id, _)| WalletAddress(v_id.clone()))
+                    .collect();
+                if !fp_validators.is_empty() {
+                    apply_sanctions(&mut engine, &fp_validators, None, now);
+                }
+            }
         }
         VerdictStatus::Rejected => {
             if record.votes.len() >= record.assigned_validators.len() {
+                let previously_rejected = record.status == IdentityRequestStatus::Rejected;
                 record.status = IdentityRequestStatus::Rejected;
+                if !previously_rejected {
+                    let mut engine = EigenTrustEngine::new(ReputationConfig::default(), Vec::new());
+                    let applicant_wallet = WalletAddress(record.applicant.clone());
+                    let validator_votes: Vec<(WalletAddress, Vote)> = record
+                        .votes
+                        .iter()
+                        .map(|(v_id, vote)| (WalletAddress(v_id.clone()), *vote))
+                        .collect();
+                    apply_rewards(&mut engine, &verdict, &applicant_wallet, &validator_votes);
+
+                    // Derive false-positive validators (who voted Check on a Rejected request)
+                    let fp_validators: Vec<WalletAddress> = record
+                        .votes
+                        .iter()
+                        .filter(|(_, vote)| **vote == Vote::Check)
+                        .map(|(v_id, _)| WalletAddress(v_id.clone()))
+                        .collect();
+                    apply_sanctions(&mut engine, &fp_validators, Some(&applicant_wallet), now);
+                }
             }
         }
         VerdictStatus::QuorumNotMet => {
