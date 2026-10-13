@@ -1944,6 +1944,28 @@ name = "demo"
 
     #[tokio::test]
     #[serial_test::serial]
+    async fn v1_consolidate_requires_delete_permission() {
+        xavier::isolate_test_process!();
+        let _secret = EnvRestore::set("XAVIER_JWT_SECRET", PUSH_SECRET);
+        let _token = EnvRestore::set("XAVIER_TOKEN", "memory-push-production-root-token");
+        let (state, _tmp) = test_state().await;
+        let app = write_router_auth_only(state);
+        let readonly = jwt_for(xavier::security::auth::UserRole::Readonly, PUSH_SECRET);
+        assert_eq!(
+            add_with_jwt(
+                &app,
+                "/v1/memories/consolidate",
+                &readonly,
+                serde_json::json!({})
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
     async fn memory_write_without_caller_clearance_fails_closed() {
         xavier::isolate_test_process!();
         let _rpm = EnvRestore::set("XAVIER_MEMORY_WRITE_RPM", "600");
