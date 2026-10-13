@@ -197,8 +197,8 @@ test.describe("Sovereign Recovery Modal & Disaster Recovery Wizard E2E", () => {
     const expectedWord1 = wordsList[idx1];
     const expectedWord2 = wordsList[idx2];
 
-    const input1 = page.locator(`input[placeholder*='Enter word #${idx1 + 1}']`);
-    const input2 = page.locator(`input[placeholder*='Enter word #${idx2 + 1}']`);
+    const input1 = page.locator(`input[placeholder='Enter word #${idx1 + 1}']`);
+    const input2 = page.locator(`input[placeholder='Enter word #${idx2 + 1}']`);
 
     // Submit invalid quiz inputs first
     await input1.fill("wrongword1");
@@ -249,7 +249,7 @@ test.describe("Sovereign Recovery Modal & Disaster Recovery Wizard E2E", () => {
       page.locator("span:has-text('Sovereign Node Reconstruction')")
     ).toBeVisible();
 
-    const textarea = page.locator("textarea[placeholder*='e.g. abandon amount']");
+    const textarea = page.getByPlaceholder("e.g. abandon amount");
     await expect(textarea).toBeVisible();
 
     const restoreSubmitBtn = page.locator(
@@ -294,5 +294,49 @@ test.describe("Sovereign Recovery Modal & Disaster Recovery Wizard E2E", () => {
     await textarea.fill(validMnemonic);
     const restoreScreenshotPath = path.join(ARTIFACT_DIR, "disaster_recovery_restore_e2e.png");
     await page.screenshot({ path: restoreScreenshotPath, fullPage: true });
+  });
+
+  test("verifies quiz handles extra spaces cleanly", async ({ page }) => {
+    await page.goto("/#/wallet");
+
+    await expect(page.locator("h2:has-text('Billetera Soberana SWAL')")).toBeVisible({
+      timeout: 10000,
+    });
+
+    const recoveryBtn = page.locator("button:has-text('Recuperación BIP-39 (Share 2)')");
+    await recoveryBtn.click();
+
+    await expect(page.locator("h2:has-text('Disaster Recovery Wizard')")).toBeVisible();
+
+    const quizPromptLocator = page.locator("p:has-text('please type word')");
+    await expect(quizPromptLocator).toBeVisible();
+    const quizPromptText = await quizPromptLocator.textContent();
+
+    const matches = quizPromptText?.match(/#(\d+)/g);
+    expect(matches).not.toBeNull();
+    expect(matches?.length).toBeGreaterThanOrEqual(2);
+
+    const idx1 = parseInt(matches![0].replace("#", ""), 10) - 1;
+    const idx2 = parseInt(matches![1].replace("#", ""), 10) - 1;
+
+    const fullMnemonic =
+      "abandon amount abandon amount abandon amount abandon amount abandon amount abandon announce";
+    const wordsList = fullMnemonic.split(" ");
+    const expectedWord1 = wordsList[idx1];
+    const expectedWord2 = wordsList[idx2];
+
+    const input1 = page.locator(`input[placeholder='Enter word #${idx1 + 1}']`);
+    const input2 = page.locator(`input[placeholder='Enter word #${idx2 + 1}']`);
+
+    await input1.fill(`  ${expectedWord1}  `);
+    await input2.fill(`  ${expectedWord2}  `);
+
+    // Assuming the app trims spaces, it should pass verification
+    // if the original test's success condition matches.
+    const confirmBtn = page.locator("button:has-text('I have securely backed up my key')");
+
+    // The validation runs after change, if it passes, text will be visible
+    await expect(page.locator("text=Word verification passed!")).toBeVisible();
+    await expect(confirmBtn).toBeEnabled();
   });
 });
