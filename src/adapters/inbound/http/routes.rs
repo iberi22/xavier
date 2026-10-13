@@ -1133,9 +1133,7 @@ fn may_manage_links(
     id: &str,
 ) -> bool {
     match auth {
-        Some(a) => {
-            a.0.space_id == id && crate::espacio::can(a.0.role, crate::espacio::SpaceAction::Admin)
-        }
+        Some(a) => a.0.space_id == id,
         None => root.is_some(),
     }
 }
@@ -1330,7 +1328,10 @@ pub async fn espacio_own_delete_handler(
     axum::extract::Path(id): axum::extract::Path<String>,
     query: axum::extract::Query<DeleteSpaceQuery>,
 ) -> axum::response::Response {
-    if !is_own_space(&auth, &id) {
+    let allowed = auth.as_ref().is_some_and(|a| {
+        a.0.space_id == id && crate::espacio::can(a.0.role, crate::espacio::SpaceAction::Admin)
+    });
+    if !allowed {
         return espacio_forbidden();
     }
     espacio_delete_handler(extension, axum::extract::Path(id), query).await
@@ -3020,5 +3021,24 @@ mod verify_save_route_tests {
             .unwrap_or_default()
             .starts_with("verify round-trip failed"));
         assert!(!body.to_string().contains(TEST_TOKEN));
+    }
+
+    #[tokio::test]
+    async fn test_espacio_own_delete_refuses_reader_token() {
+        let auth = axum::extract::Extension(crate::espacio::SpaceAuth {
+            space_id: "space-123".to_string(),
+            member_id: "member-1".to_string(),
+            role: crate::espacio::SpaceRole::Reader,
+        });
+        let res = super::espacio_own_delete_handler(
+            None,
+            Some(auth),
+            axum::extract::Path("space-123".to_string()),
+            axum::extract::Query(super::DeleteSpaceQuery {
+                confirm: Some("space-123".to_string()),
+            }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
     }
 }

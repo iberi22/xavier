@@ -172,9 +172,17 @@ impl NodeIdentity {
         std::fs::create_dir_all(&config_dir)?;
 
         let identity_file = config_dir.join("mesh_identity.json");
+        Self::load_or_create_at(&identity_file)
+    }
+
+    /// Load identity from path or generate and save with restrictive permissions.
+    pub fn load_or_create_at(identity_file: &std::path::Path) -> Result<Self> {
+        if let Some(parent) = identity_file.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
 
         if identity_file.exists() {
-            let raw = std::fs::read_to_string(&identity_file)
+            let raw = std::fs::read_to_string(identity_file)
                 .context("Failed to read mesh identity file")?;
             let stored: StoredIdentity =
                 serde_json::from_str(&raw).context("Failed to parse mesh identity file")?;
@@ -191,15 +199,28 @@ impl NodeIdentity {
         };
 
         let json = serde_json::to_string_pretty(&stored)?;
-        // Store with restrictive permissions on Linux/macOS via write + chmod
-        std::fs::write(&identity_file, &json).context("Failed to write mesh identity file")?;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        use std::io::Write;
+        let mut file = opts
+            .open(identity_file)
+            .context("Failed to open mesh identity file")?;
+        file.write_all(json.as_bytes())
+            .context("Failed to write mesh identity file")?;
+        file.sync_all()
+            .context("Failed to sync mesh identity file")?;
+        drop(file);
 
-        // Attempt to restrict permissions (best-effort on Windows)
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ =
-                std::fs::set_permissions(&identity_file, std::fs::Permissions::from_mode(0o600));
+            std::fs::set_permissions(identity_file, std::fs::Permissions::from_mode(0o600))
+                .context("Failed to set permissions on mesh identity file")?;
         }
 
         tracing::info!(
@@ -382,5 +403,20 @@ mod tests {
         };
         let err = NodeIdentity::load_preferring_swal_vault("0000", None, &vault).unwrap_err();
         assert_eq!(err.to_string(), "swal vault unlock failed: bad pin");
+    }
+
+    #[test]
+    fn test_identity_file_permissions_mode_0600() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mesh_identity.json");
+        let _ = NodeIdentity::load_or_create_at(&path).unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let meta = std::fs::metadata(&path).unwrap();
+            let mode = meta.permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "identity file should be mode 0600");
+        }
     }
 }
