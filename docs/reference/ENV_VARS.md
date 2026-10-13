@@ -40,11 +40,12 @@
 | Variable | Type | Config JSON | Default | Required | Description |
 |----------|------|-------------|---------|----------|-------------|
 | `XAVIER_HOST` | `string` | `server.host` | `"127.0.0.1"` | ❌ | IP address to bind the HTTP server |
+| `XAVIER_SHUTDOWN_GRACE_SECS` | `u64` | — | `5` | ❌ | Server shutdown grace period in seconds |
+| `XAVIER_SECRET_EGRESS` | `string` | — | — | ❌ | Egress policy configuration |
 | `XAVIER_PORT` | `u16` | `server.port` | `8006` | ❌ | HTTP server port |
 | `XAVIER_URL` | `string` | — | `"http://localhost:8006"` | ❌ | Full URL for client, verification, and sync connections |
 | `XAVIER_TOKEN` | `string` | — | (random if dev mode) | ✅ | Authentication token for HTTP API and CLI clients |
 | `XAVIER_TOKEN_SECRET` | `string` | — | — | ✅ | Secret key for HMAC signing in sync/verification |
-| `XAVIER_DEV_MODE` | `bool` | — | `false` | ❌ | Bypass auth requirements; generates random token if unset |
 | `XAVIER_LOG_LEVEL` | `string` | `server.log_level` | `"info"` | ❌ | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `XAVIER_CODE_GRAPH_DB_PATH` | `string` | `server.code_graph_db_path` | `"data/code_graph.db"` | ❌ | Path to code graph SQLite DB |
 | `XAVIER_CONFIG_PATH` | `string` | — | `"config/xavier.config.json"` | ❌ | Override config file location |
@@ -178,6 +179,8 @@ These are used when `XAVIER_MODEL_PROVIDER` is set to a specific cloud provider.
 | `XAVIER_ROUTER_POLICY_REFRESH_SECS` | `u64` | — | `30` | ❌ | Policy file refresh interval |
 | `XAVIER_ROUTER_RETRIEVED_MODEL` | `string` | `models.router_retrieved_model` | `""` | ❌ | Model for retrieved-augmented queries |
 | `XAVIER_ROUTER_COMPLEX_MODEL` | `string` | `models.router_complex_model` | `""` | ❌ | Model for complex reasoning queries |
+| `XAVIER_EXPERT_THRESHOLD` | `f32` | — | `0.7` | ❌ | Expert router relevance threshold |
+| `XAVIER_EXPERT_KEEP_ALIVE` | `u64` | — | — | ❌ | Expert router keep-alive timeout |
 | `XAVIER_ROUTER_FAST_MODEL` | `string` | — | (none) | ❌ | Model for fast/direct queries (router override) |
 | `XAVIER_ROUTER_QUALITY_MODEL` | `string` | — | (none) | ❌ | Model for quality queries (router override) |
 
@@ -261,6 +264,15 @@ Controls how many documents/tokens are included at each context regeneration hoo
 **Source**: `src/tasks/session_sync_task.rs`, `src/settings.rs`
 
 ---
+
+
+## 10a. Maintenance Jobs
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `XAVIER_GC_DESTRUCTIVE` | `bool` | — | Opt-in scheduled maintenance job for garbage collection (destructive) |
+| `XAVIER_SEMANTIC_COMPACTION` | `bool` | — | Opt-in scheduled maintenance job for semantic compaction |
+| `XAVIER_TGD_SCHEDULER` | `bool` | — | Opt-in scheduled nightly TGD consolidation |
 
 ## 11. Vector Store Features
 
@@ -403,10 +415,7 @@ All env vars found in the codebase are documented above. There are **no undocume
 For a development setup, you only need:
 
 ```bash
-# Dev mode — generates a random token, bypasses auth
-export XAVIER_DEV_MODE=true
-
-# Or explicit token (only if not using dev mode)
+# Explicit token
 export XAVIER_TOKEN="your-secure-token"
 
 # Optional: customize host/port

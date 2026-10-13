@@ -143,12 +143,12 @@ Healthcheck: `curl -fsS http://localhost:8006/ready` (503 until the memory store
 ### Development mode (no token, browser panel)
 
 ```bash
-XAVIER_DEV_MODE=true docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 # or
-XAVIER_DEV_MODE=true XAVIER_TOKEN=dummy docker compose up -d
+XAVIER_TOKEN=dummy docker compose up -d
 ```
 
-`docker-compose.yml` respects `XAVIER_DEV_MODE=${XAVIER_DEV_MODE:-false}` — when `true`, the HTTP `X-Xavier-Token` gate is bypassed for local dev (do NOT use in production).
+`docker-compose.yml` sets up local development. Ensure you use `XAVIER_TOKEN` for authentication.
 
 ---
 
@@ -157,7 +157,7 @@ XAVIER_DEV_MODE=true XAVIER_TOKEN=dummy docker compose up -d
 | Mode | How to run | URL | Notes |
 |---|---|---|---|
 | **Browser (prod)** | `xavier http` (serves `panel-ui/build`) | `http://localhost:8006/` and `/panel` | No Tauri, uses `VITE_XAVIER_API_TOKEN` + polling fallback |
-| **Browser (dev)** | `pnpm --filter xavier-panel-ui dev` + `cargo run -- http` | `http://localhost:5173` (Vite) proxied to `:8006` | Hot-reload, `XAVIER_DEV_MODE=true` |
+| **Browser (dev)** | `pnpm --filter xavier-panel-ui dev` + `cargo run -- http` | `http://localhost:5173` (Vite) proxied to `:8006` | Hot-reload, use `XAVIER_TOKEN` |
 | **Tauri Desktop** | `pnpm --filter xavier-panel-ui tauri dev` | Native window | Requires `__TAURI_INTERNALS__` guard + dynamic `invoke`/`listen` |
 | **Custom panel path** | `XAVIER_PANEL_UI_DIR=/path/to/dist xavier http` | Same as browser | Priority: `XAVIER_PANEL_UI_DIR` → `<exe_dir>/panel-ui/build` → `<cwd>/panel-ui/build` → `CARGO_MANIFEST_DIR/panel-ui/build` (see `src/server/panel/assets.rs`) |
 
@@ -203,7 +203,7 @@ src/
 
 ### 🌐 HTTP REST API (`:8006`)
 
-All authenticated HTTP routes require the `X-Xavier-Token` header (or `XAVIER_DEV_MODE=true` for local development).
+All authenticated HTTP routes require the `X-Xavier-Token` header.
 
 #### Maloca V1 Services (`/v1/maloca/*`)
 | Endpoint | Method | Description |
@@ -355,7 +355,6 @@ xavier regen benchmark                            # Measure recall@k metrics
 | `XAVIER_EMBEDDING_CACHE_ENABLED` | `true` | Enables persistent SQLite LRU cache for vector embeddings |
 | `XAVIER_EMBEDDING_CACHE_CAPACITY` | `10000` | Maximum in-memory LRU cache capacity |
 | `XAVIER_EMBEDDING_CACHE_TTL` | `24` | Embedding cache TTL in hours |
-| `XAVIER_DEV_MODE` | `false` | Development mode; bypasses HTTP authentication when set to `true` |
 | `XAVIER_EMAIL_DEDUP_SECS` | `300` | Rate-limiting window in seconds for email notification deduplication |
 | `XAVIER_MESH_AUTO_REPAIR` | `1` | Auto-repair peer connection manager (`0` or `false` disables auto-reconnect) |
 
