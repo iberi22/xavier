@@ -230,7 +230,9 @@ pub fn memory_routes() -> Router<CliState> {
         )
         .route(
             "/v1/memories/consolidate",
-            post(xavier::server::v1_api::v1_memories_consolidate),
+            post(xavier::server::v1_api::v1_memories_consolidate).layer(middleware::from_fn(
+                require_permission(|r| r.can_delete_memory()),
+            )),
         )
         .route(
             "/v1/events",
@@ -1706,7 +1708,9 @@ pub async fn start_http_server(
         )
         .route(
             "/v1/mesh/peers",
-            get(list_peers_handler).post(crate::cli::handlers::mesh::add_peer_handler),
+            get(list_peers_handler).post(crate::cli::handlers::mesh::add_peer_handler.layer(
+                middleware::from_fn(require_permission(|r| r.can_edit_config())),
+            )),
         )
         .route("/v1/mesh/peers/pair", post(pair_peer_handler))
         .route("/v1/mesh/peers/decode", post(decode_pairing_code_handler))
@@ -1714,8 +1718,22 @@ pub async fn start_http_server(
             "/v1/mesh/peers/generate-code",
             post(generate_pairing_code_handler),
         )
-        .route("/v1/mesh/peers/{node_id}/acl", put(update_peer_acl_handler))
-        .route("/v1/mesh/peers/{node_id}", delete(remove_peer_handler))
+        .route(
+            "/v1/mesh/peers/{node_id}/acl",
+            put(
+                update_peer_acl_handler.layer(middleware::from_fn(require_permission(|r| {
+                    r.can_edit_config()
+                }))),
+            ),
+        )
+        .route(
+            "/v1/mesh/peers/{node_id}",
+            delete(
+                remove_peer_handler.layer(middleware::from_fn(require_permission(|r| {
+                    r.can_edit_config()
+                }))),
+            ),
+        )
         .route(
             "/v1/mesh/workspaces/share",
             post(crate::cli::handlers::mesh::share_workspace_handler),
