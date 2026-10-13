@@ -12,6 +12,9 @@ use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
+pub const MAX_CAPSULE_SIZE: u64 = 1_073_741_824; // 1 GB ceiling for single capsule
+pub const MAX_UNCOMPRESSED_SIZE: u64 = 5_368_709_120; // 5 GB ceiling for unpacked payload budget
+
 #[derive(Args, Debug, Clone)]
 pub struct AirgapArgs {
     #[command(subcommand)]
@@ -154,6 +157,12 @@ async fn run_unpack(
     output_dir: Option<PathBuf>,
     passphrase_file: Option<PathBuf>,
 ) -> Result<()> {
+    if fs::metadata(&capsule)?.len() > MAX_CAPSULE_SIZE {
+        bail!(
+            "Capsule size exceeds maximum limit of {} bytes",
+            MAX_CAPSULE_SIZE
+        );
+    }
     let capsule_bytes = fs::read(&capsule).context("Failed to read capsule file")?;
     let pass = match passphrase_file {
         Some(path) => {
@@ -305,6 +314,12 @@ async fn run_inspect(capsule: PathBuf, json: bool) -> Result<()> {
     if !capsule.exists() {
         bail!("Capsule file does not exist: {}", capsule.display());
     }
+    if fs::metadata(&capsule)?.len() > MAX_CAPSULE_SIZE {
+        bail!(
+            "Capsule size exceeds maximum limit of {} bytes",
+            MAX_CAPSULE_SIZE
+        );
+    }
 
     let capsule_bytes = fs::read(&capsule).context("Failed to read capsule file")?;
     let header = AirgapCapsule::inspect_header(&capsule_bytes)?;
@@ -367,7 +382,7 @@ fn unzip_memory_to_dir(zip_bytes: &[u8], dest_dir: &Path) -> Result<()> {
     }
     validate_output_path(dest_dir)?;
     fs::create_dir(dest_dir).context("Archive output directory must be new")?;
-    if let Err(error) = extract_archive_entries(&mut archive, dest_dir) {
+    if let Err(error) = extract_archive_entries(&mut archive, dest_dir, MAX_UNCOMPRESSED_SIZE) {
         // dest_dir was created above, so removing it cannot touch pre-existing data.
         let _ = fs::remove_dir_all(dest_dir);
         return Err(error);
@@ -375,9 +390,24 @@ fn unzip_memory_to_dir(zip_bytes: &[u8], dest_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn extract_archive_entries(archive: &mut ZipArchive<Cursor<&[u8]>>, dest_dir: &Path) -> Result<()> {
+fn extract_archive_entries(
+    archive: &mut ZipArchive<Cursor<&[u8]>>,
+    dest_dir: &Path,
+    max_uncompressed_size: u64,
+) -> Result<()> {
+    let mut total_extracted: u64 = 0;
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
+
+        let size = file.size();
+        total_extracted = total_extracted.saturating_add(size);
+        if total_extracted > max_uncompressed_size {
+            bail!(
+                "Uncompressed size exceeds budget of {} bytes",
+                max_uncompressed_size
+            );
+        }
+
         let outpath = dest_dir.join(
             file.enclosed_name()
                 .context("Invalid archive output path")?,
@@ -424,5 +454,53 @@ mod tests {
         }
         assert!(!is_protected_key_name("record.keys"));
         assert!(!is_protected_key_name("notes.txt"));
+    }
+
+    #[tokio::test]
+    async fn test_unpack_capsule_exceeds_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let capsule_path = dir.path().join("too_large.swal_capsule");
+        let file = fs::File::create(&capsule_path).unwrap();
+        file.set_len(MAX_CAPSULE_SIZE + 1).unwrap();
+
+        let result = run_unpack(capsule_path, None, Some(dir.path().to_path_buf()), None).await;
+        let err = result.unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Capsule size exceeds maximum limit"));
+    }
+
+    #[test]
+    fn test_extract_exceeds_uncompressed_budget() {
+        use zip::write::{SimpleFileOptions, ZipWriter};
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create an in-memory zip archive with two small files
+        let mut buf = Vec::new();
+        {
+            let mut writer = ZipWriter::new(Cursor::new(&mut buf));
+            writer
+                .start_file("file1.txt", SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"hello world").unwrap(); // 11 bytes
+            writer
+                .start_file("file2.txt", SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"12345").unwrap(); // 5 bytes
+            writer.finish().unwrap();
+        }
+
+        let mut archive = ZipArchive::new(Cursor::new(buf.as_slice())).unwrap();
+        let dest_dir = dir.path().join("out");
+        fs::create_dir(&dest_dir).unwrap();
+
+        // The first entry (11 bytes) already exceeds a 10-byte budget, so the
+        // ceiling trips before anything is written.
+        let result = extract_archive_entries(&mut archive, &dest_dir, 10);
+        let err = result.unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Uncompressed size exceeds budget of 10 bytes"));
+        assert!(fs::read_dir(&dest_dir).unwrap().next().is_none());
     }
 }
