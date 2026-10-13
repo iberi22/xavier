@@ -151,7 +151,7 @@ pub fn parse_markdown_vault(source_path: &Path, workspace_id: &str) -> Result<Ve
 
         for i in 0..archive.len() {
             let mut zip_file = archive.by_index(i)?;
-            let name = zip_file.name().to_string();
+            let name = zip_file.name()?.to_string();
 
             if name.ends_with(".md") && !name.starts_with("__MACOSX") && !name.starts_with('.') {
                 let mut content = String::new();
