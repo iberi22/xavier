@@ -40,7 +40,6 @@ pub mod auto_update;
 pub mod challenge;
 pub mod cloud_node;
 pub mod context_bridge;
-pub mod crypto_gating;
 pub mod dashboard;
 pub mod data_consent;
 pub mod data_sanitizer;

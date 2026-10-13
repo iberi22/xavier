@@ -1164,7 +1164,6 @@ xavier/
 │   │   ├── challenge.rs
 │   │   ├── cloud_node.rs
 │   │   ├── context_bridge.rs
-│   │   ├── crypto_gating.rs
 │   │   ├── dashboard.rs
 │   │   ├── data_consent.rs
 │   │   ├── data_sanitizer.rs
