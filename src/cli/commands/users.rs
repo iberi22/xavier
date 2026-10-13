@@ -69,7 +69,11 @@ pub async fn handle_users_command(cmd: UsersCommand) -> Result<()> {
     match cmd {
         UsersCommand::List { json } => list_users(json).await,
         UsersCommand::SetRole { email, role, json } => set_role(&email, &role, json).await,
-        UsersCommand::ResetPassword { email, json } => reset_password(&email, json).await,
+        UsersCommand::ResetPassword {
+            email,
+            json,
+            i_understand_output_is_not_a_tty,
+        } => reset_password(&email, json, i_understand_output_is_not_a_tty).await,
         UsersCommand::Create {
             email,
             role,
@@ -117,9 +121,9 @@ async fn set_role(email: &str, role: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
-async fn reset_password(email: &str, json: bool) -> Result<()> {
+async fn reset_password(email: &str, json: bool, tty_override: bool) -> Result<()> {
     let db = open_auth_db()?;
-    ensure_secret_output_allowed(std::io::stdout().is_terminal(), false)?;
+    ensure_secret_output_allowed(std::io::stdout().is_terminal(), tty_override)?;
     // La contrasena en claro existe solo en esta variable: se imprime UNA vez
     // y jamas se registra en logs.
     let password = db.reset_user_password(email)?;

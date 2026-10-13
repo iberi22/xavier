@@ -31,7 +31,19 @@ pub async fn handle_node_command(cmd: NodeCommand) -> Result<()> {
             force,
             data_dir,
             shares_out,
-        } => cmd_create(pin, passphrase, device_key_hex, force, data_dir, shares_out).await,
+            i_understand_output_is_not_a_tty,
+        } => {
+            cmd_create(
+                pin,
+                passphrase,
+                device_key_hex,
+                force,
+                data_dir,
+                shares_out,
+                i_understand_output_is_not_a_tty,
+            )
+            .await
+        }
         NodeCommand::Recover {
             pin,
             passphrase,
@@ -127,8 +139,9 @@ async fn cmd_create(
     force: bool,
     data_dir: Option<PathBuf>,
     shares_out: Option<PathBuf>,
+    tty_override: bool,
 ) -> Result<()> {
-    ensure_secret_output_allowed(std::io::stdout().is_terminal(), false)?;
+    ensure_secret_output_allowed(std::io::stdout().is_terminal(), tty_override)?;
 
     let store = store_for(data_dir.clone());
     if store.vault_exists() && !force {
