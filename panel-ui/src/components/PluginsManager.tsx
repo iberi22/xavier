@@ -77,19 +77,24 @@ export function PluginsManager({ token }: PluginsManagerProps) {
 
       setPlugins(list);
     } catch (err: any) {
-      // Fallback default plugins list when offline / API error
-      setPlugins(
-        DEFAULT_PLUGINS.map((dp) => ({
-          ...dp,
-          installed: installedMap[dp.name] ?? false,
-          status: installedMap[dp.name]
-            ? dp.name === "codegraph"
-              ? "Active (Sidecar)"
-              : "Active"
-            : "Not Installed",
-        }))
-      );
-      setError(err?.message || "Failed to load plugins from server");
+      if (err?.message && err.message.includes("404")) {
+        setPlugins([]);
+        setError("Plugin ecosystem is not available in this build.");
+      } else {
+        // Fallback default plugins list when offline / API error
+        setPlugins(
+          DEFAULT_PLUGINS.map((dp) => ({
+            ...dp,
+            installed: installedMap[dp.name] ?? false,
+            status: installedMap[dp.name]
+              ? dp.name === "codegraph"
+                ? "Active (Sidecar)"
+                : "Active"
+              : "Not Installed",
+          }))
+        );
+        setError(err?.message || "Failed to load plugins from server");
+      }
     } finally {
       setLoading(false);
     }
@@ -121,10 +126,27 @@ export function PluginsManager({ token }: PluginsManagerProps) {
         await api.installPlugin(pluginName);
         setInstalledMap((prev) => ({ ...prev, [pluginName]: true }));
       } catch (err: any) {
-        // Keep optimistic update for client offline/mock mode, but show error toast handling if needed
-        setInstalledMap((prev) => ({ ...prev, [pluginName]: true }));
-        if (err?.message) {
-          setError(`Installation note: ${err.message}`);
+        // Revert optimistic update
+        setPlugins((prev) =>
+          prev.map((p) =>
+            p.name === pluginName
+              ? {
+                  ...p,
+                  installed: false,
+                  status: "Not Installed",
+                }
+              : p
+          )
+        );
+
+        if (err?.message && err.message.includes("404")) {
+          setError("Plugin installation is not available in this build.");
+        } else {
+          // Keep optimistic update for client offline/mock mode, but show error toast handling if needed
+          setInstalledMap((prev) => ({ ...prev, [pluginName]: true }));
+          if (err?.message) {
+            setError(`Installation note: ${err.message}`);
+          }
         }
       } finally {
         setInstallingName(null);

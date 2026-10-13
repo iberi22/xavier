@@ -267,18 +267,12 @@ export class ApiClient {
 
   // Memory
   async searchMemories(query: string, kind?: string, limit = 20, workspaceId?: string) {
-    const activeWorkspace =
-      workspaceId ||
-      (typeof localStorage !== "undefined"
-        ? localStorage.getItem("xavier_active_workspace") || "default"
-        : "default");
-    const params = new URLSearchParams({
-      q: query,
-      limit: String(limit),
-      workspace_id: activeWorkspace,
+    // The server only accepts `query` and `limit` in SearchPayload.
+    // We drop kind and workspaceId which are not supported by the server's payload.
+    return this.fetch<MemoryEntry[]>("/memory/search", {
+      method: "POST",
+      body: JSON.stringify({ query, limit }),
     });
-    if (kind) params.set("kind", kind);
-    return this.fetch<MemoryEntry[]>(`/api/memory/search?${params}`);
   }
 
   async addMemory(
@@ -287,9 +281,14 @@ export class ApiClient {
     priority = "medium",
     source = "panel-ui",
   ) {
-    return this.fetch<MemoryEntry>("/api/memory/add", {
+    // The server's AddPayload accepts content, and optionally path, metadata, title, cluster_id, level, relation.
+    // For now we map kind/source/priority to metadata to avoid sending unsupported fields at the top level.
+    return this.fetch<MemoryEntry>("/memory/add", {
       method: "POST",
-      body: JSON.stringify({ content, kind, priority, source }),
+      body: JSON.stringify({
+        content,
+        metadata: { kind, priority, source }
+      }),
     });
   }
 
@@ -326,7 +325,7 @@ export class ApiClient {
 
   // Agents
   async getAgents() {
-    return this.fetch<Agent[]>("/api/agents");
+    return this.fetch<Agent[]>("/agents");
   }
 
   // Cloud relay
