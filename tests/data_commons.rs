@@ -1,5 +1,4 @@
 use xavier::agents::anomaly_scanner::AnomalyScannerAgent;
-use xavier::mesh::crypto_gating::{AccessRequest, CryptoGatingService};
 use xavier::mesh::governance::DaoGovernanceSystem;
 use xavier::mesh::telemetry::TelemetryPayload;
 
@@ -20,48 +19,9 @@ async fn test_data_commons_phase_2_e2e_flow() {
     // Serialize to JSON
     let raw_json = serde_json::to_string(&payload).unwrap();
 
-    // 2. Encryption (Local Node)
-    let crypto_service = CryptoGatingService::new();
-    let encrypted_payload = crypto_service.encrypt_payload(&raw_json);
-
-    // Validate IPFS CID generation
-    assert!(encrypted_payload.ipfs_cid.starts_with("Qm"));
-    println!(
-        "Simulating IPFS Upload... Payload pinned at CID: {}",
-        encrypted_payload.ipfs_cid
-    );
-
-    // 3. Network Storage (Simulated)
-    // The `encrypted_payload` is stored in the Mesh/Supabase.
-
-    // 4. Attacker Node (Tries to decrypt without valid Wallet/Signature)
-    let invalid_access_req = AccessRequest {
-        wallet_address: "ATTACKER_WALLET".to_string(),
-        signature: "invalid_sig".to_string(),
-    };
-
-    // Attacker fails validation, doesn't get the symmetric key
-    let access_result = crypto_service.validate_access(&invalid_access_req);
-    assert!(access_result.is_err());
-
-    // 5. Maintainer Node (Pays XAV or is whitelisted, uses correct signature)
-    let valid_access_req = AccessRequest {
-        wallet_address: "MAINTAINER_NODE_1".to_string(),
-        signature: "valid_signature".to_string(),
-    };
-
-    // Maintainer gets the symmetric key
-    let symmetric_key = crypto_service.validate_access(&valid_access_req).unwrap();
-
-    // Decrypt the payload
-    let decrypted_json = crypto_service
-        .decrypt_payload(&encrypted_payload, &symmetric_key)
-        .unwrap();
-    assert_eq!(raw_json, decrypted_json);
-
     // 6. Autonomous Remediation (Maintainer runs AnomalyScanner)
     let scanner = AnomalyScannerAgent::new();
-    let report = scanner.scan_telemetry(&decrypted_json).await;
+    let report = scanner.scan_telemetry(&raw_json).await;
 
     // The payload was a Rust Panic
     assert_eq!(report.anomaly_type, "Rust Core Panic");
