@@ -106,6 +106,9 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings
 
+      - name: Check code-graph parsers
+        run: cargo check -p parser-rust -p parser-ts -p parser-python -p parser-go -p parser-java -p parser-c -p parser-cpp --all-targets
+
   # Job MSRV: Minimum Supported Rust Version Check
   rust-msrv:
     name: Rust MSRV Check
