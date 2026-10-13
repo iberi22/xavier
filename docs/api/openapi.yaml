@@ -1102,6 +1102,744 @@ paths:
                     filepath: "src/memory/store.rs"
                     line: 25
 
+  /panel/api/threads:
+    get:
+      summary: Endpoint for /panel/api/threads
+      operationId: get_panel_api_threads
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /panel/api/threads/{thread_id}:
+    get:
+      summary: Endpoint for /panel/api/threads/{thread_id}
+      operationId: get_panel_api_threads_thread_id
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /panel/api/bookmarks:
+    get:
+      summary: Endpoint for /panel/api/bookmarks
+      operationId: get_panel_api_bookmarks
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /panel/api/widgets:
+    get:
+      summary: Endpoint for /panel/api/widgets
+      operationId: get_panel_api_widgets
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /panel/api/graph:
+    get:
+      summary: Endpoint for /panel/api/graph
+      operationId: get_panel_api_graph
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/providers/quota:
+    get:
+      summary: Endpoint for /v1/providers/quota
+      operationId: get_v1_providers_quota
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/ollama/models:
+    get:
+      summary: Endpoint for /v1/ollama/models
+      operationId: get_v1_ollama_models
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/ollama/pull:
+    get:
+      summary: Endpoint for /v1/ollama/pull
+      operationId: get_v1_ollama_pull
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/ollama/active:
+    get:
+      summary: Endpoint for /v1/ollama/active
+      operationId: get_v1_ollama_active
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/offline/config:
+    get:
+      summary: Endpoint for /v1/offline/config
+      operationId: get_v1_offline_config
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/offline/models:
+    get:
+      summary: Endpoint for /v1/offline/models
+      operationId: get_v1_offline_models
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/offline/status:
+    get:
+      summary: Endpoint for /v1/offline/status
+      operationId: get_v1_offline_status
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/offline/download:
+    get:
+      summary: Endpoint for /v1/offline/download
+      operationId: get_v1_offline_download
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/providers:
+    get:
+      summary: Endpoint for /v1/providers
+      operationId: get_v1_providers
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/providers/status:
+    get:
+      summary: Endpoint for /v1/providers/status
+      operationId: get_v1_providers_status
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/providers/switch:
+    get:
+      summary: Endpoint for /v1/providers/switch
+      operationId: get_v1_providers_switch
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/health:
+    get:
+      summary: Endpoint for /v1/mesh/health
+      operationId: get_v1_mesh_health
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/cloud:
+    get:
+      summary: Endpoint for /v1/mesh/cloud
+      operationId: get_v1_mesh_cloud
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/data_commons/opt_in:
+    get:
+      summary: Endpoint for /v1/mesh/data_commons/opt_in
+      operationId: get_v1_mesh_data_commons_opt_in
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/manifest:
+    get:
+      summary: Endpoint for /v1/mesh/manifest
+      operationId: get_v1_mesh_manifest
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/chunks/request:
+    get:
+      summary: Endpoint for /v1/mesh/chunks/request
+      operationId: get_v1_mesh_chunks_request
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/chunks/push:
+    get:
+      summary: Endpoint for /v1/mesh/chunks/push
+      operationId: get_v1_mesh_chunks_push
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/session/{session_id}/share:
+    get:
+      summary: Endpoint for /v1/mesh/session/{session_id}/share
+      operationId: get_v1_mesh_session_session_id_share
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/status:
+    get:
+      summary: Endpoint for /v1/mesh/status
+      operationId: get_v1_mesh_status
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/chat/send:
+    get:
+      summary: Endpoint for /v1/mesh/chat/send
+      operationId: get_v1_mesh_chat_send
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/chat/history/{room_or_peer}:
+    get:
+      summary: Endpoint for /v1/mesh/chat/history/{room_or_peer}
+      operationId: get_v1_mesh_chat_history_room_or_peer
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/chat/signal:
+    get:
+      summary: Endpoint for /v1/mesh/chat/signal
+      operationId: get_v1_mesh_chat_signal
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/public/nodes:
+    get:
+      summary: Endpoint for /v1/mesh/public/nodes
+      operationId: get_v1_mesh_public_nodes
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/peers:
+    get:
+      summary: Endpoint for /v1/mesh/peers
+      operationId: get_v1_mesh_peers
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/peers/pair:
+    get:
+      summary: Endpoint for /v1/mesh/peers/pair
+      operationId: get_v1_mesh_peers_pair
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/peers/decode:
+    get:
+      summary: Endpoint for /v1/mesh/peers/decode
+      operationId: get_v1_mesh_peers_decode
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/peers/generate-code:
+    get:
+      summary: Endpoint for /v1/mesh/peers/generate-code
+      operationId: get_v1_mesh_peers_generate_code
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/peers/{node_id}/acl:
+    get:
+      summary: Endpoint for /v1/mesh/peers/{node_id}/acl
+      operationId: get_v1_mesh_peers_node_id_acl
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/peers/{node_id}:
+    get:
+      summary: Endpoint for /v1/mesh/peers/{node_id}
+      operationId: get_v1_mesh_peers_node_id
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/workspaces/share:
+    get:
+      summary: Endpoint for /v1/mesh/workspaces/share
+      operationId: get_v1_mesh_workspaces_share
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/workspaces/join:
+    get:
+      summary: Endpoint for /v1/mesh/workspaces/join
+      operationId: get_v1_mesh_workspaces_join
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/workspaces/query:
+    get:
+      summary: Endpoint for /v1/mesh/workspaces/query
+      operationId: get_v1_mesh_workspaces_query
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/consent/revoke:
+    get:
+      summary: Endpoint for /v1/mesh/consent/revoke
+      operationId: get_v1_mesh_consent_revoke
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/consent/list:
+    get:
+      summary: Endpoint for /v1/mesh/consent/list
+      operationId: get_v1_mesh_consent_list
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/bridges:
+    get:
+      summary: Endpoint for /v1/mesh/bridges
+      operationId: get_v1_mesh_bridges
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /v1/mesh/bridges/{id}:
+    get:
+      summary: Endpoint for /v1/mesh/bridges/{id}
+      operationId: get_v1_mesh_bridges_id
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /notifications:
+    get:
+      summary: Endpoint for /notifications
+      operationId: get_notifications
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /notifications/stream:
+    get:
+      summary: Endpoint for /notifications/stream
+      operationId: get_notifications_stream
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /notifications/{id}/read:
+    get:
+      summary: Endpoint for /notifications/{id}/read
+      operationId: get_notifications_id_read
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /notifications/read-all:
+    get:
+      summary: Endpoint for /notifications/read-all
+      operationId: get_notifications_read_all
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /notifications/all:
+    get:
+      summary: Endpoint for /notifications/all
+      operationId: get_notifications_all
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /notifications/subscriptions:
+    get:
+      summary: Endpoint for /notifications/subscriptions
+      operationId: get_notifications_subscriptions
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /notifications/subscriptions/{id}:
+    get:
+      summary: Endpoint for /notifications/subscriptions/{id}
+      operationId: get_notifications_subscriptions_id
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+  /panel/api/chat:
+    get:
+      summary: Endpoint for /panel/api/chat
+      operationId: get_panel_api_chat
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Bad Request
+
+
+
 components:
   securitySchemes:
     XavierToken:
