@@ -24,7 +24,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/api": "^2.12.1",
     "@tauri-apps/plugin-dialog": "2.8.1",
-    "lucide-react": "1.52.0",
+    "lucide-react": "1.54.0",
     "motion": "14.0.0",
     "prismjs": "^1.30.0",
     "react": "^19.3.0",
