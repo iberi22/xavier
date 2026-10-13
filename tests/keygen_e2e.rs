@@ -7,7 +7,6 @@
 //! to prevent touching `~/.xavier/secrets`.
 
 use chrono::Utc;
-use tempfile::tempdir;
 
 use xavier::secrets::keygen::{
     export_key, fingerprint, format_generate_output, generate_key, load_metadata, revoke_key,
@@ -16,14 +15,80 @@ use xavier::secrets::keygen::{
 use xavier::secrets::vault::HardwareVault;
 use xavier::secrets::SecretError;
 
-fn setup_isolated_vault(service_name: &str) -> (HardwareVault, tempfile::TempDir) {
-    let dir = tempdir().expect("failed to create temp directory for vault isolation");
-    std::env::set_var("HOME", dir.path());
-    std::env::set_var("XAVIER_DATA_DIR", dir.path());
-    let nonce = rand::random::<u64>();
-    let vault = HardwareVault::new(&format!("{service_name}-{nonce:016x}"));
-    (vault, dir)
+
+struct VaultGuard {
+    vault: HardwareVault,
+    #[allow(dead_code)]
+    tmp_dir: tempfile::TempDir,
+    original_home: Option<std::ffi::OsString>,
+    original_data: Option<std::ffi::OsString>,
+    original_xdg: Option<std::ffi::OsString>,
+    original_dbus: Option<std::ffi::OsString>,
 }
+
+impl VaultGuard {
+    fn new(service_name: &str) -> (HardwareVault, Self) {
+        let tmp_dir = tempfile::tempdir().expect("create tempdir");
+        let isolated_dir = tmp_dir.path().to_path_buf();
+
+        let original_home = std::env::var_os("HOME");
+        let original_data = std::env::var_os("XAVIER_DATA_DIR");
+        let original_xdg = std::env::var_os("XDG_RUNTIME_DIR");
+        let original_dbus = std::env::var_os("DBUS_SESSION_BUS_ADDRESS");
+
+        std::env::set_var("HOME", &isolated_dir);
+        std::env::set_var("XAVIER_DATA_DIR", &isolated_dir);
+        let xdg_dir = tmp_dir.path().join("xdg");
+        std::fs::create_dir_all(&xdg_dir).unwrap();
+        std::env::set_var("XDG_RUNTIME_DIR", &xdg_dir);
+        std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+
+        let nonce = rand::random::<u64>();
+        let vault = HardwareVault::new(&format!("{service_name}-{nonce:016x}")).isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
+
+        let guard_vault = HardwareVault::new(&format!("{service_name}-{nonce:016x}")).isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
+        (vault, Self {
+            vault: guard_vault,
+            tmp_dir,
+            original_home,
+            original_data,
+            original_xdg,
+            original_dbus,
+        })
+    }
+}
+
+impl Drop for VaultGuard {
+    fn drop(&mut self) {
+        if let Some(ref home) = self.original_home {
+            std::env::set_var("HOME", home);
+        } else {
+            std::env::remove_var("HOME");
+        }
+
+        if let Some(ref data) = self.original_data {
+            std::env::set_var("XAVIER_DATA_DIR", data);
+        } else {
+            std::env::remove_var("XAVIER_DATA_DIR");
+        }
+
+        if let Some(ref xdg) = self.original_xdg {
+            std::env::set_var("XDG_RUNTIME_DIR", xdg);
+        } else {
+            std::env::remove_var("XDG_RUNTIME_DIR");
+        }
+
+        if let Some(ref dbus) = self.original_dbus {
+            std::env::set_var("DBUS_SESSION_BUS_ADDRESS", dbus);
+        } else {
+            std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+        }
+
+        // Ensure this drop guard refuses to work on a non-stubbed vault to prevent deleting real keyring entries
+        assert_eq!(self.vault.keyring_stub_ok(), Some(false), "VaultGuard must only be used with a fully stubbed isolated vault");
+    }
+}
+
 
 fn test_now() -> chrono::DateTime<Utc> {
     chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("valid timestamp")
@@ -31,7 +96,7 @@ fn test_now() -> chrono::DateTime<Utc> {
 
 #[test]
 fn test_e2e_keygen_persists_and_exports_exact_value() {
-    let (vault, _dir) = setup_isolated_vault("xavier-keygen-e2e-persist");
+    let (vault, _dir) = VaultGuard::new("xavier-keygen-e2e-persist");
     let name = "service_auth";
     let now = test_now();
 
@@ -67,7 +132,7 @@ fn test_e2e_keygen_persists_and_exports_exact_value() {
 
 #[test]
 fn test_e2e_keygen_export_missing_key_returns_err() {
-    let (vault, _dir) = setup_isolated_vault("xavier-keygen-e2e-missing");
+    let (vault, _dir) = VaultGuard::new("xavier-keygen-e2e-missing");
     let res = export_key(&vault, "nonexistent_key_name");
     assert!(res.is_err(), "exporting non-existent key must return Err");
     match res {
@@ -91,7 +156,7 @@ fn test_e2e_keygen_export_missing_key_returns_err() {
 
 #[test]
 fn test_e2e_keygen_rotation_increments_count_and_replaces_value() {
-    let (vault, _dir) = setup_isolated_vault("xavier-keygen-e2e-rotate");
+    let (vault, _dir) = VaultGuard::new("xavier-keygen-e2e-rotate");
     let name = "rotatable_api_key";
     let now = test_now();
 
@@ -117,7 +182,7 @@ fn test_e2e_keygen_rotation_increments_count_and_replaces_value() {
 
 #[test]
 fn test_e2e_keygen_format_output_never_contains_secret_value() {
-    let (vault, _dir) = setup_isolated_vault("xavier-keygen-e2e-format");
+    let (vault, _dir) = VaultGuard::new("xavier-keygen-e2e-format");
     let name = "redacted_key";
     let now = test_now();
 
@@ -176,7 +241,7 @@ fn test_e2e_keygen_fingerprint_stability_and_format() {
 
 #[test]
 fn test_e2e_keygen_revoke_deletes_value_and_metadata() {
-    let (vault, _dir) = setup_isolated_vault("xavier-keygen-e2e-revoke");
+    let (vault, _dir) = VaultGuard::new("xavier-keygen-e2e-revoke");
     let name = "ephemeral_token";
     let now = test_now();
 
@@ -232,7 +297,7 @@ fn test_e2e_keygen_validate_name_rejects_traversal_and_invalid_chars() {
 
 #[test]
 fn test_e2e_keygen_scope_prefixes_and_64_hex_chars() {
-    let (vault, _dir) = setup_isolated_vault("xavier-keygen-e2e-scopes");
+    let (vault, _dir) = VaultGuard::new("xavier-keygen-e2e-scopes");
     let now = test_now();
 
     let live_key =

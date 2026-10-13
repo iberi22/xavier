@@ -70,8 +70,8 @@ pub fn clavis_vault() -> Arc<HardwareVault> {
 }
 
 /// Install an isolated vault (tests only).
-#[cfg(test)]
-pub(crate) fn set_clavis_vault(vault: Arc<HardwareVault>) {
+#[cfg(any(test, feature = "test-utils"))]
+pub fn set_clavis_vault(vault: Arc<HardwareVault>) {
     match vault_slot().write() {
         Ok(mut guard) => *guard = vault,
         Err(_) => panic!("CLAVIS_VAULT lock poisoned while installing the test vault"),
