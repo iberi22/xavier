@@ -319,7 +319,10 @@ pub async fn mcp_post_handler(
     static PRUNE_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let manager = McpSessionManager::global();
 
-    if PRUNE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 100 == 0 {
+    if PRUNE_COUNTER
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        .is_multiple_of(100)
+    {
         manager.prune_stale_sessions(DEFAULT_TIMEOUT_DURATION);
     }
 
