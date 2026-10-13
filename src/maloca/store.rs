@@ -241,6 +241,11 @@ impl MalocaStore {
             .iter_mut()
             .find(|o| o.id == id)
             .ok_or_else(|| anyhow::anyhow!("inbox offer not found"))?;
+        if let Some(ref claimed) = offer.claimed_by {
+            if claimed != node_id {
+                return Err(anyhow::anyhow!("offer already claimed by a different node"));
+            }
+        }
         offer.claimed_by = Some(node_id.to_string());
         offer.microtask.status = "claimed".into();
         let out = offer.clone();
@@ -255,6 +260,12 @@ impl MalocaStore {
             .iter_mut()
             .find(|o| o.id == id)
             .ok_or_else(|| anyhow::anyhow!("inbox offer not found"))?;
+        if offer.microtask.status == "completed" {
+            return Err(anyhow::anyhow!("offer already completed"));
+        }
+        if offer.claimed_by.is_none() {
+            return Err(anyhow::anyhow!("offer not claimed"));
+        }
         offer.microtask.status = "completed".into();
         let claimed_by = offer.claimed_by.clone();
         let receipt = RewardReceipt {
@@ -957,6 +968,27 @@ mod tests {
         assert_eq!(store.list_votes(Some("p-genesis-params")).len(), 1);
         assert!(store.list_votes(Some(&other.id)).is_empty());
         assert_eq!(store.list_votes(None).len(), 1);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn claim_and_complete_are_idempotent() {
+        let (dir, store) = temp_store();
+
+        let err_unclaimed = store.complete("offer-seed-1").unwrap_err();
+        assert!(err_unclaimed.to_string().contains("not claimed"));
+
+        store.claim("offer-seed-1", "local").unwrap();
+        store.claim("offer-seed-1", "local").unwrap();
+
+        let err_claimed = store.claim("offer-seed-1", "other").unwrap_err();
+        assert!(err_claimed.to_string().contains("already claimed"));
+
+        store.complete("offer-seed-1").unwrap();
+
+        let err_completed = store.complete("offer-seed-1").unwrap_err();
+        assert!(err_completed.to_string().contains("already completed"));
+
         let _ = std::fs::remove_dir_all(dir);
     }
 }
