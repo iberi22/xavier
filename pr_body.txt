@@ -1,0 +1,31 @@
+Closes #3014
+
+Synchronizes the runtime environment variables `XAVIER_*` across `.env.example`, `docs/reference/ENV_VARS.md`, and `README.md`.
+
+Removed keys that are no longer referenced in `src`, `crates`, or `scripts` based on `git grep`:
+- `XAVIER_PLUGIN_PARSE_TIMEOUT_SECS` (grep returned nothing)
+- `XAVIER_PLUGIN_PROBE_TIMEOUT_SECS` (grep returned nothing)
+- `XAVIER_SECRET_SYMMETRIC_KEY` (grep returned nothing outside of `.env.example`/`docs`)
+- `XAVIER_DEV_MODE` (grep returned nothing in `src`, removing from docs per acceptance criteria)
+
+Added keys:
+- `XAVIER_EXPERT_KEEP_ALIVE`
+- `XAVIER_EXPERT_THRESHOLD`
+- `XAVIER_SECRET_EGRESS`
+- `XAVIER_SEMANTIC_COMPACTION`
+- `XAVIER_SHUTDOWN_GRACE_SECS`
+- `XAVIER_GC_DESTRUCTIVE`
+- `XAVIER_TGD_SCHEDULER`
+
+Removed all mentions of `XAVIER_DEV_MODE` in `README.md` and updated the quickstart authentication paragraph.
+
+Verification:
+```bash
+comm -23 <(git grep -hoE 'env::var\("XAVIER_[A-Z0-9_]+"' -- src | grep -oE 'XAVIER_[A-Z0-9_]+' | grep -v -E 'XAVIER_TEST|XAVIER_INSIDE' | sort -u) <(grep -oE '^#? ?XAVIER_[A-Z0-9_]+' .env.example | grep -oE 'XAVIER_[A-Z0-9_]+' | sort -u)
+# (empty output)
+grep -c 'XAVIER_DEV_MODE' README.md .env.example
+# README.md:0
+# .env.example:0
+grep -c -E 'XAVIER_(SEMANTIC_COMPACTION|TGD_SCHEDULER|GC_DESTRUCTIVE)' .env.example
+# 3
+```
