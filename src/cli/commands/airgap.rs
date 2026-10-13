@@ -494,11 +494,13 @@ mod tests {
         let dest_dir = dir.path().join("out");
         fs::create_dir(&dest_dir).unwrap();
 
-        // Total size is 16 bytes. Test with budget of 15 bytes.
-        let result = extract_archive_entries(&mut archive, &dest_dir, 15);
+        // The first entry (11 bytes) already exceeds a 10-byte budget, so the
+        // ceiling trips before anything is written.
+        let result = extract_archive_entries(&mut archive, &dest_dir, 10);
         let err = result.unwrap_err();
         assert!(err
             .to_string()
-            .contains("Uncompressed size exceeds budget of 15 bytes"));
+            .contains("Uncompressed size exceeds budget of 10 bytes"));
+        assert!(fs::read_dir(&dest_dir).unwrap().next().is_none());
     }
 }
