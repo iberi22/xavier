@@ -2,7 +2,7 @@
 
 use crate::cli::commands::enums::CLI_HTTP_CLIENT;
 use crate::cli::config::{require_xavier_token, resolve_base_url};
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 /// Handle memory command.
 pub async fn handle_memory_command(
@@ -222,10 +222,10 @@ async fn show_consolidation_status() -> Result<()> {
         } else {
             println!("ℹ️ No active consolidation progress found.");
         }
+        Ok(())
     } else {
-        println!("❌ Failed to fetch status: {}", resp.text().await?);
+        bail!("❌ Failed to fetch status: {}", resp.text().await?);
     }
-    Ok(())
 }
 
 async fn run_index_self() -> Result<()> {
@@ -247,10 +247,10 @@ async fn run_index_self() -> Result<()> {
             "✅ Self-indexing complete: {}",
             serde_json::to_string_pretty(&body)?
         );
+        Ok(())
     } else {
-        println!("❌ Self-indexing failed: {}", resp.text().await?);
+        bail!("❌ Self-indexing failed: {}", resp.text().await?);
     }
-    Ok(())
 }
 
 async fn run_nightly_consolidation() -> Result<()> {
@@ -461,5 +461,69 @@ mod tests {
             }
             _ => panic!("Expected Prune variant"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_show_consolidation_status_failure_returns_err() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("local_addr").port();
+        let server = tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::AsyncWriteExt;
+                let response = b"HTTP/1.1 500 Internal Server Error
+Content-Length: 5
+
+error";
+                let _ = socket.write_all(response).await;
+            }
+        });
+
+        std::env::set_var("XAVIER_URL", format!("http://127.0.0.1:{}", port));
+        std::env::set_var("XAVIER_TOKEN", "test-token");
+        let result = show_consolidation_status().await;
+        std::env::remove_var("XAVIER_URL");
+        std::env::remove_var("XAVIER_TOKEN");
+        let _ = server.await;
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("❌ Failed to fetch status:"));
+    }
+
+    #[tokio::test]
+    async fn test_run_index_self_failure_returns_err() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("local_addr").port();
+        let server = tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::AsyncWriteExt;
+                let response = b"HTTP/1.1 500 Internal Server Error
+Content-Length: 5
+
+error";
+                let _ = socket.write_all(response).await;
+            }
+        });
+
+        std::env::set_var("XAVIER_URL", format!("http://127.0.0.1:{}", port));
+        std::env::set_var("XAVIER_TOKEN", "test-token");
+        let result = run_index_self().await;
+        std::env::remove_var("XAVIER_URL");
+        std::env::remove_var("XAVIER_TOKEN");
+        let _ = server.await;
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("❌ Self-indexing failed:"));
     }
 }

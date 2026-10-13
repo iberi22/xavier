@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::cli::commands::enums::{KeysCommand, SecretsCommand, VaultCommand, CLI_HTTP_CLIENT};
 use crate::cli::config::{resolve_base_url, xavier_token};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
 use xavier::clavis;
 use xavier::secrets::import_env::{parse_env_reader, read_value_from_reader, SecretValue};
@@ -444,10 +444,10 @@ async fn lend_secret(name: &str, agent: &str, ttl: u64) -> Result<()> {
         println!("Secret lent successfully!");
         println!("Lease Token: {}", body["token"]);
         println!("Expires: {}", body["expires_at"]);
+        Ok(())
     } else {
-        println!("Failed to lend secret: {}", response.status());
+        bail!("Failed to lend secret: {}", response.status());
     }
-    Ok(())
 }
 
 async fn list_leases() -> Result<()> {
@@ -480,10 +480,10 @@ async fn list_leases() -> Result<()> {
                 }
             );
         }
+        Ok(())
     } else {
-        println!("Failed to list leases: {}", response.status());
+        bail!("Failed to list leases: {}", response.status());
     }
-    Ok(())
 }
 
 async fn revoke_lease(token_str: &str) -> Result<()> {
@@ -500,10 +500,10 @@ async fn revoke_lease(token_str: &str) -> Result<()> {
 
     if response.status().is_success() {
         println!("Lease revoked successfully.");
+        Ok(())
     } else {
-        println!("Failed to revoke lease: {}", response.status());
+        bail!("Failed to revoke lease: {}", response.status());
     }
-    Ok(())
 }
 
 async fn check_lease_status(token_str: &str) -> Result<()> {
@@ -529,10 +529,10 @@ async fn check_lease_status(token_str: &str) -> Result<()> {
         );
         println!("Agent: {}", status["agent_id"]);
         println!("Expires: {}", status["expires_at"]);
+        Ok(())
     } else {
-        println!("Failed to get lease status: {}", response.status());
+        bail!("Failed to get lease status: {}", response.status());
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1007,5 +1007,65 @@ mod tests {
         assert_eq!(resolve_ttl(None).expect("ttl"), keygen::DEFAULT_TTL_SECS);
         // An explicit 0 means "use the default", not "never expires".
         assert_eq!(resolve_ttl(Some(0)).expect("ttl"), keygen::DEFAULT_TTL_SECS);
+    }
+
+    #[tokio::test]
+    async fn test_revoke_lease_failure_returns_err() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("local_addr").port();
+        let server = tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::AsyncWriteExt;
+                let response = b"HTTP/1.1 500 Internal Server Error
+Content-Length: 0
+
+";
+                let _ = socket.write_all(response).await;
+            }
+        });
+
+        std::env::set_var("XAVIER_URL", format!("http://127.0.0.1:{}", port));
+        let result = revoke_lease("test-token").await;
+        std::env::remove_var("XAVIER_URL");
+        let _ = server.await;
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to revoke lease: 500"));
+    }
+
+    #[tokio::test]
+    async fn test_check_lease_status_failure_returns_err() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("local_addr").port();
+        let server = tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::AsyncWriteExt;
+                let response = b"HTTP/1.1 404 Not Found
+Content-Length: 0
+
+";
+                let _ = socket.write_all(response).await;
+            }
+        });
+
+        std::env::set_var("XAVIER_URL", format!("http://127.0.0.1:{}", port));
+        let result = check_lease_status("test-token").await;
+        std::env::remove_var("XAVIER_URL");
+        let _ = server.await;
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to get lease status: 404"));
     }
 }
