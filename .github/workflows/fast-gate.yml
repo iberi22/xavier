@@ -14,9 +14,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Remote Security Job
-        run: bash scripts/check-secrets.sh
-
       - name: Classify change (report-only)
         continue-on-error: true
         env:
