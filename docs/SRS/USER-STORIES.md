@@ -43,6 +43,26 @@
 | US-044 | As a user, I want to enter introspection sessions surfaced by Xavier | REQ-049 |
 | US-045 | As a user, I want my training data scrubbed of PII before any export | REQ-050 |
 | US-046 | As an enterprise admin, I want ZDR-verified Colab training jobs | REQ-051 |
+| US-101 | Agent operator | feat-cg-honest-confidence | REQ-053 |
+| US-102 | System auditor | feat-cg-honest-confidence | REQ-053 |
+| US-103 | Language maintainer | feat-cg-language-registry | REQ-054 |
+| US-104 | Developer | feat-cg-language-registry | REQ-054 |
+| US-105 | Developer | feat-cg-blast-testgate | REQ-055 |
+| US-106 | Qa engineer | feat-cg-blast-testgate | REQ-055 |
+| US-107 | Database administrator | feat-cg-incremental-ids | REQ-056 |
+| US-108 | Developer | feat-cg-incremental-ids | REQ-056 |
+| US-109 | Api consumer | feat-cg-budget-query | REQ-057 |
+| US-110 | System designer | feat-cg-budget-query | REQ-057 |
+| US-111 | Data scientist | feat-cg-pagerank-router | REQ-058 |
+| US-112 | Search user | feat-cg-pagerank-router | REQ-058 |
+| US-113 | Code reviewer | feat-cg-contracts-arch | REQ-059 |
+| US-114 | Software architect | feat-cg-contracts-arch | REQ-059 |
+| US-115 | Agent operator | feat-skill-scan-paths | REQ-060 |
+| US-116 | Agent user | feat-skill-semantic-rank | REQ-061 |
+| US-117 | Skill author | feat-skill-loader-fix | REQ-062 |
+| US-118 | User | feat-skill-context-fusion | REQ-063 |
+| US-119 | External agent | feat-skill-mcp-tool | REQ-064 |
+| US-120 | Project manager | feat-skill-ledger-docs | REQ-065 |
 
 ---
 
@@ -394,5 +414,145 @@ As a **user**, I can register my VPS as a private SWAL node over SSH, so that **
 **Priority:** P2 — Medium | **Effort:** M | **REQ:** REQ-051 | **Wave:** 8
 
 ---
+
+## US-101: Code-Graph Honest Confidence (O1)
+
+As a **agent operator**, I want a distinct confidence rubric and labeled honesty signals on code graph queries so that **I can reliably trust automated inferences vs exact extractions**.
+
+- **Feature:** `feat-cg-honest-confidence` · **REQ:** REQ-053
+- **Acceptance:** Single confidence rubric (EXTRACTED 1.0 / INFERRED 0.95-0.55 / AMBIGUOUS) plus labeled honesty (floors, caps, amb, refuse-vs-empty) on all graph answers. Sources: ripwire R1 + graphify G1. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md, ADR-032.
+
+## US-102: Code-Graph Honest Confidence (O1)
+
+As a **system auditor**, I want ambiguity markers and refusal-vs-empty explanations in graph answers so that **I can understand why certain relationships could not be definitively resolved**.
+
+- **Feature:** `feat-cg-honest-confidence` · **REQ:** REQ-053
+- **Acceptance:** Single confidence rubric (EXTRACTED 1.0 / INFERRED 0.95-0.55 / AMBIGUOUS) plus labeled honesty (floors, caps, amb, refuse-vs-empty) on all graph answers. Sources: ripwire R1 + graphify G1. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md, ADR-032.
+
+## US-103: Code-Graph Language Registry (O2)
+
+As a **language maintainer**, I want a unified LanguageConfig and suffix-ordered resolver registry so that **I can easily plug in support for new languages without touching the core indexer**.
+
+- **Feature:** `feat-cg-language-registry` · **REQ:** REQ-054
+- **Acceptance:** Unified LanguageConfig plus suffix-ordered resolver registry so new languages plug in without touching indexer core. Source: graphify G2. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.
+
+## US-104: Code-Graph Language Registry (O2)
+
+As a **developer**, I want the code graph to auto-detect language configurations via suffix ordering so that **my diverse polyglot projects are indexed seamlessly**.
+
+- **Feature:** `feat-cg-language-registry` · **REQ:** REQ-054
+- **Acceptance:** Unified LanguageConfig plus suffix-ordered resolver registry so new languages plug in without touching indexer core. Source: graphify G2. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.
+
+## US-105: Code-Graph Blast Radius + Test Gate (O3)
+
+As a **developer**, I want a transitive blast radius mapping with use roles so that **I instantly know which components might break due to my code changes**.
+
+- **Feature:** `feat-cg-blast-testgate` · **REQ:** REQ-055
+- **Acceptance:** Transitive blast radius with use roles plus tests-to-run mapping and pre-merge test gate (exit 4 on untested radius). Source: ripwire R2. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.
+
+## US-106: Code-Graph Blast Radius + Test Gate (O3)
+
+As a **qa engineer**, I want a pre-merge test gate that maps blast radius to tests-to-run (exit 4 on untested radius) so that **I can enforce safety standards and prevent unverified regressions**.
+
+- **Feature:** `feat-cg-blast-testgate` · **REQ:** REQ-055
+- **Acceptance:** Transitive blast radius with use roles plus tests-to-run mapping and pre-merge test gate (exit 4 on untested radius). Source: ripwire R2. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.
+
+## US-107: Code-Graph Incremental IDs (O4)
+
+As a **database administrator**, I want real multi-project stable IDs so that **I can reference exact graph nodes deterministically across environments**.
+
+- **Feature:** `feat-cg-incremental-ids` · **REQ:** REQ-056
+- **Acceptance:** Real multi-project stable IDs plus content-hash incremental reindex plus 2-phase call resolution with god-guard. Sources: graphify G3+G4. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md, ADR-033.
+
+## US-108: Code-Graph Incremental IDs (O4)
+
+As a **developer**, I want content-hash incremental reindexing so that **subsequent indexing cycles are fast and only process modified files**.
+
+- **Feature:** `feat-cg-incremental-ids` · **REQ:** REQ-056
+- **Acceptance:** Real multi-project stable IDs plus content-hash incremental reindex plus 2-phase call resolution with god-guard. Sources: graphify G3+G4. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md, ADR-033.
+
+## US-109: Code-Graph Budget Query (O5)
+
+As a **api consumer**, I want a strict token budget with early gates so that **I can confidently run intensive queries without exceeding LLM context windows**.
+
+- **Feature:** `feat-cg-budget-query` · **REQ:** REQ-057
+- **Acceptance:** Token budget with gate plus cheap pre-vector query (vocab expansion, bounded BFS/DFS). Sources: ripwire R3 + graphify G6. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.
+
+## US-110: Code-Graph Budget Query (O5)
+
+As a **system designer**, I want cheap pre-vector queries like bounded BFS/DFS and vocab expansion so that **I can efficiently filter large graphs before doing costly vector distance calculations**.
+
+- **Feature:** `feat-cg-budget-query` · **REQ:** REQ-057
+- **Acceptance:** Token budget with gate plus cheap pre-vector query (vocab expansion, bounded BFS/DFS). Sources: ripwire R3 + graphify G6. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.
+
+## US-111: Code-Graph PageRank Router (O6)
+
+As a **data scientist**, I want structural graph ranking with deterministic PageRank so that **the most central and critical nodes are naturally prioritized**.
+
+- **Feature:** `feat-cg-pagerank-router` · **REQ:** REQ-058
+- **Acceptance:** Structural ranking (edge weights plus deterministic PageRank) plus lexical router with confidence margin. Source: ripwire R4. Needs petgraph as direct dependency. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.
+
+## US-112: Code-Graph PageRank Router (O6)
+
+As a **search user**, I want a lexical router enriched with confidence margins from structural ranking so that **my search results intelligently blend keyword relevance with architectural importance**.
+
+- **Feature:** `feat-cg-pagerank-router` · **REQ:** REQ-058
+- **Acceptance:** Structural ranking (edge weights plus deterministic PageRank) plus lexical router with confidence margin. Source: ripwire R4. Needs petgraph as direct dependency. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.
+
+## US-113: Code-Graph Contracts + Architecture Signals (O7)
+
+As a **code reviewer**, I want pre-merge contracts (edit-check, safe-delete, 3-valued verify) so that **I get immediate, evidence-backed verdicts on code safety during PR review**.
+
+- **Feature:** `feat-cg-contracts-arch` · **REQ:** REQ-059
+- **Acceptance:** Pre-merge contracts (edit-check, safe-delete, 3-valued verify) plus architecture signals (god-nodes, surprising links, import cycles, rationale nodes). Sources: ripwire R5 + graphify G7 (+G5 Leiden as optional O8). See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.
+
+## US-114: Code-Graph Contracts + Architecture Signals (O7)
+
+As a **software architect**, I want automated architecture signals (god-nodes, surprising links, import cycles) so that **I can proactively spot structural decay and technical debt**.
+
+- **Feature:** `feat-cg-contracts-arch` · **REQ:** REQ-059
+- **Acceptance:** Pre-merge contracts (edit-check, safe-delete, 3-valued verify) plus architecture signals (god-nodes, surprising links, import cycles, rationale nodes). Sources: ripwire R5 + graphify G7 (+G5 Leiden as optional O8). See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.
+
+## US-115: Skill Registry Scans Canonical Store
+
+As a **agent operator**, I want the SkillRegistry to safely scan ~/.hermes/skills while respecting disabled lists so that **I have an up-to-date catalog of active local skills without symlink loops**.
+
+- **Feature:** `feat-skill-scan-paths` · **REQ:** REQ-060
+- **Acceptance:** SkillRegistry indexes ~/.hermes/skills (canonical 349-skill store) with symlink-cycle-safe traversal and Hermes disabled-list respect
+
+## US-116: Semantic Skill Ranking via Local Embeddings
+
+As a **agent user**, I want skills to be semantically ranked using local SQLite vector embeddings so that **the right skill is surfaced exactly when I need it based on meaning, not just keywords**.
+
+- **Feature:** `feat-skill-semantic-rank` · **REQ:** REQ-061
+- **Acceptance:** Rank skills by cosine similarity over local embeddings (EmbeddingPort + sqlite-vec) with keyword score as tiebreak and calibrated 0-1 confidence
+
+## US-117: SkillLoader Frontmatter Validation or Removal
+
+As a **skill author**, I want strict frontmatter validation for skills so that **I get clear feedback if my skill definition is improperly formatted**.
+
+- **Feature:** `feat-skill-loader-fix` · **REQ:** REQ-062
+- **Acceptance:** Decide SkillLoader fate: validate real SKILL.md frontmatter (name:) or delete module and migrate its tests to the registry
+
+## US-118: Session Context Fusion Injects Matched Skills
+
+As a **user**, I want top-matched skills to be automatically injected via session context fusion so that **the agent acts with appropriate capabilities immediately without manual prompting**.
+
+- **Feature:** `feat-skill-context-fusion` · **REQ:** REQ-063
+- **Acceptance:** session/compact path injects top-1 skill content within remaining token budget on ContextLevel::Maximum with confidence >= 0.5, injects nothing below threshold or on trivial prompts
+
+## US-119: MCP Skill Dispatch Tools
+
+As a **external agent**, I want MCP tools like xavier_dispatch_skill and xavier_skill_list so that **I can programmatically discover and invoke Xavier skills over standard MCP**.
+
+- **Feature:** `feat-skill-mcp-tool` · **REQ:** REQ-064
+- **Acceptance:** Expose xavier_dispatch_skill {task, max_tokens?, project?} and xavier_skill_list MCP tools wrapping the same dispatcher as the REST endpoints
+
+## US-120: Skill Wave Ledger, SRS and Ack-Gate Docs
+
+As a **project manager**, I want the Skill Wave Ledger to generate formal SRS and ack-gate documentation so that **we maintain 100% traceability from raw features to user requirements**.
+
+- **Feature:** `feat-skill-ledger-docs` · **REQ:** REQ-065
+- **Acceptance:** Add REQ-060..065 to SRS, polish wave specs, document local trivial-prompt ack gate; close wave only on green verify-pipeline
 
 *Domain-specific US-033..040 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04. US-042..043 added 2026-08-14 (node provisioning — Olas M6/M7). US-041 reserved by `feat-issue-context-packager`.*
