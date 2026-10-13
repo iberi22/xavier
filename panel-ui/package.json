@@ -20,13 +20,11 @@
   },
   "dependencies": {
     "@swal/maloca-embed": "workspace:*",
-    "@swal/ui": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/api": "^2.12.2",
     "@tauri-apps/plugin-dialog": "2.8.1",
     "lucide-react": "1.54.0",
     "motion": "14.0.0",
-    "prismjs": "^1.30.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-force-graph-2d": "1.29.2",
@@ -36,7 +34,6 @@
     "sharp": "^0.35.5"
   },
   "devDependencies": {
-    "@astrojs/node": "^11.1.7",
     "@biomejs/biome": "^2.5.15",
     "@playwright/test": "^1.64.0",
     "@tauri-apps/cli": "2.12.1",
@@ -47,16 +44,16 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/coverage-v8": "5.0.3",
-    "astro": "^7.3.8",
-    "defu": "^6.1.5",
     "jsdom": "^30.1.2",
-    "picomatch": "^4.0.7",
     "postcss": "^8.5.29",
     "typescript": "^5.8.3",
     "vite": "^8.3.4",
     "vitest": "^5.0.3"
   },
   "overrides": {
-    "sharp": "^0.35.5"
+    "sharp": "^0.35.5",
+    "prismjs": "^1.30.0",
+    "defu": "^6.1.5",
+    "picomatch@^4": "^4.0.7"
   }
 }
