@@ -23,13 +23,17 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::Builder::new()
+            .prefix("xavier-adapter-fixture-")
+            .tempdir_in("/tmp")
+            .unwrap();
         let home = temp.path().join("home");
         let project = temp.path().join("project");
         let source = temp.path().join("canonical");
         for dir in [&home, &project, &source] {
             fs::create_dir_all(dir).unwrap();
         }
+        fs::create_dir_all(temp.path().join("runtime")).unwrap();
         for relative in [
             ".codex",
             ".config",
@@ -196,6 +200,7 @@ fn offline_catalog(fixture: &Fixture, cli: &str, args: &[&str], expected: &[&str
         .env("XDG_DATA_HOME", fixture.home.join(".local/share"))
         .env("XDG_STATE_HOME", fixture.home.join(".local/state"))
         .env("XDG_CACHE_HOME", fixture.home.join(".cache"))
+        .env("XDG_RUNTIME_DIR", fixture.temp.path().join("runtime"))
         .env("CODEX_HOME", fixture.home.join(".codex"))
         .env("GEMINI_HOME", fixture.home.join(".gemini"))
         .env("HERMES_HOME", fixture.home.join(".hermes"))
@@ -365,31 +370,15 @@ fn codex_native_startup_global_and_project_catalog() {
 }
 
 #[test]
-#[ignore = "#2620: Claude Code 2.1.296 has no verified offline catalog command; authenticated model calls are not hermetic"]
+#[ignore = "#2620: UNSUPPORTED claude 2.1.296: no offline catalog command (2026-10-12)"]
 fn claude_native_startup_unsupported() {
     xavier::isolate_test_process!();
-    panic!("UNSUPPORTED: no verified offline Claude Code catalog probe");
+    panic!("UNSUPPORTED claude 2.1.296: no offline catalog command");
 }
 
 #[test]
-#[ignore = "#2620: OpenCode 2.0.27 not re-measured since 0.26; native discovery unverified"]
+#[ignore = "#2620: UNSUPPORTED opencode 2.0.27: no offline catalog command (2026-10-12)"]
 fn opencode_native_startup_unsupported() {
     xavier::isolate_test_process!();
-    let f = Fixture::new();
-    f.project_into(
-        &f.project.join(CODEX_PROJECT),
-        "opencode",
-        &["alpha-visible"],
-    );
-    f.project_into(
-        &f.project.join(CLAUDE_PROJECT),
-        "opencode",
-        &["beta-visible"],
-    );
-    offline_catalog(
-        &f,
-        "opencode",
-        &["debug", "skill"],
-        &["alpha-visible", "beta-visible"],
-    );
+    panic!("UNSUPPORTED opencode 2.0.27: no offline catalog command");
 }

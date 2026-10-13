@@ -22,13 +22,17 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::Builder::new()
+            .prefix("xavier-adapter-fixture-")
+            .tempdir_in("/tmp")
+            .unwrap();
         let home = temp.path().join("home");
         let project = temp.path().join("project");
         let source = temp.path().join("canonical");
         for dir in [&home, &project, &source] {
             fs::create_dir_all(dir).unwrap();
         }
+        fs::create_dir_all(temp.path().join("runtime")).unwrap();
         for relative in [
             ".codex",
             ".config",
@@ -195,6 +199,7 @@ fn offline_catalog(fixture: &Fixture, cli: &str, args: &[&str], expected: &[&str
         .env("XDG_DATA_HOME", fixture.home.join(".local/share"))
         .env("XDG_STATE_HOME", fixture.home.join(".local/state"))
         .env("XDG_CACHE_HOME", fixture.home.join(".cache"))
+        .env("XDG_RUNTIME_DIR", fixture.temp.path().join("runtime"))
         .env("CODEX_HOME", fixture.home.join(".codex"))
         .env("GEMINI_HOME", fixture.home.join(".gemini"))
         .env("HERMES_HOME", fixture.home.join(".hermes"))
@@ -262,7 +267,26 @@ fn hermes_global_projection_without_project_leakage() {
 }
 
 #[test]
-fn openclaw_global_discovery_without_project_leakage() {
+fn openclaw_global_projection_without_project_leakage() {
+    xavier::isolate_test_process!();
+    let f = Fixture::new();
+    f.project_into(
+        &f.home.join(OPENCLAW_GLOBAL),
+        "openclaw",
+        &["alpha-visible"],
+    );
+    f.project_into(
+        &f.project.join(".agents/skills"),
+        "openclaw",
+        &["beta-visible"],
+    );
+    f.assert_view(&f.home.join(".openclaw/skills"), &["alpha-visible"]);
+    f.assert_view(&f.project.join(".agents/skills"), &["beta-visible"]);
+}
+
+#[test]
+#[ignore = "#2621: requires openclaw CLI on PATH; run with --ignored"]
+fn openclaw_native_startup_global_catalog() {
     xavier::isolate_test_process!();
     let f = Fixture::new();
     f.project_into(
@@ -300,7 +324,7 @@ fn gemini_global_and_project_projection() {
 }
 
 #[test]
-#[ignore = "#2621: gemini not installed; run with --ignored where available"]
+#[ignore = "#2621: UNAVAILABLE: standalone gemini CLI not installed; Gemini models are covered through agy (2026-10-12)"]
 fn gemini_native_startup_global_and_project_catalog() {
     xavier::isolate_test_process!();
     let f = Fixture::new();
@@ -333,22 +357,15 @@ fn agy_global_and_project_projection() {
 }
 
 #[test]
-#[ignore = "#2621: installed agy wrapper ignores HOME and writes real account cache; unsafe to launch hermetically"]
+#[ignore = "#2621: UNSUPPORTED agy 1.3.3: no offline catalog command (2026-10-12)"]
 fn agy_native_startup_unsupported() {
     xavier::isolate_test_process!();
-    panic!("UNSUPPORTED: agy wrapper must honor isolated HOME before native discovery is verified");
+    panic!("UNSUPPORTED agy 1.3.3: no offline catalog command");
 }
 
 #[test]
-#[ignore = "#2621: installed Hermes launcher attempts dependency downloads in offline startup; native discovery unverified"]
+#[ignore = "#2621: UNSUPPORTED hermes 0.21.5: offline startup attempts dependency downloads (2026-10-12)"]
 fn hermes_native_startup_unsupported() {
     xavier::isolate_test_process!();
-    let f = Fixture::new();
-    f.project_into(&f.home.join(HERMES_GLOBAL), "hermes", &["alpha-visible"]);
-    f.project_into(
-        &f.project.join(".agents/skills"),
-        "hermes",
-        &["beta-visible"],
-    );
-    offline_catalog(&f, "hermes", &["skills", "list"], &["alpha-visible"]);
+    panic!("UNSUPPORTED hermes 0.21.5: offline startup attempts dependency downloads");
 }
