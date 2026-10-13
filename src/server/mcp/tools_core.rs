@@ -1345,9 +1345,18 @@ pub(crate) mod tests {
         .expect("should not panic and should succeed");
 
         let content = output["structuredContent"].as_object().unwrap();
+        // `MCPContextResult` renames its fields to camelCase on the wire, so the
+        // record count arrives as `totalRecords` (see `server::mcp::types`);
+        // indexing it by the Rust field name panics instead of asserting.
+        let total_records = content
+            .get("totalRecords")
+            .or_else(|| content.get("total_records"))
+            .unwrap_or_else(|| panic!("no record count in structuredContent: {output}"));
+        assert_eq!(total_records, 0, "Huge page should return 0 records");
         assert_eq!(
-            content["total_records"], 0,
-            "Huge page should return 0 records"
+            content.get("page").and_then(|page| page.as_u64()),
+            Some(1000),
+            "Huge page should be clamped to the maximum supported page"
         );
     }
 
