@@ -15,6 +15,7 @@ use xavier::secrets::keygen::{
 use xavier::secrets::vault::HardwareVault;
 use xavier::secrets::SecretError;
 
+
 struct VaultGuard {
     vault: HardwareVault,
     #[allow(dead_code)]
@@ -43,22 +44,17 @@ impl VaultGuard {
         std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
 
         let nonce = rand::random::<u64>();
-        let vault = HardwareVault::new(&format!("{service_name}-{nonce:016x}"))
-            .isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
+        let vault = HardwareVault::new(&format!("{service_name}-{nonce:016x}")).isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
 
-        let guard_vault = HardwareVault::new(&format!("{service_name}-{nonce:016x}"))
-            .isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
-        (
-            vault,
-            Self {
-                vault: guard_vault,
-                tmp_dir,
-                original_home,
-                original_data,
-                original_xdg,
-                original_dbus,
-            },
-        )
+        let guard_vault = HardwareVault::new(&format!("{service_name}-{nonce:016x}")).isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
+        (vault, Self {
+            vault: guard_vault,
+            tmp_dir,
+            original_home,
+            original_data,
+            original_xdg,
+            original_dbus,
+        })
     }
 }
 
@@ -89,13 +85,10 @@ impl Drop for VaultGuard {
         }
 
         // Ensure this drop guard refuses to work on a non-stubbed vault to prevent deleting real keyring entries
-        assert_eq!(
-            self.vault.keyring_stub_ok(),
-            Some(false),
-            "VaultGuard must only be used with a fully stubbed isolated vault"
-        );
+        assert_eq!(self.vault.keyring_stub_ok(), Some(false), "VaultGuard must only be used with a fully stubbed isolated vault");
     }
 }
+
 
 fn test_now() -> chrono::DateTime<Utc> {
     chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("valid timestamp")

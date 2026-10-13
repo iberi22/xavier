@@ -73,8 +73,7 @@ impl VaultGuard {
         std::env::set_var("XDG_RUNTIME_DIR", &xdg_dir);
         std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
 
-        let vault =
-            HardwareVault::new("xavier-clavis").isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
+        let vault = HardwareVault::new("xavier-clavis").isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
         let arc_vault = std::sync::Arc::new(vault);
         xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(arc_vault.clone());
 
@@ -116,26 +115,21 @@ impl Drop for VaultGuard {
         }
 
         // Ensure this drop guard refuses to work on a non-stubbed vault to prevent deleting real keyring entries
-        assert_eq!(
-            self.vault.keyring_stub_ok(),
-            Some(false),
-            "VaultGuard must only be used with a fully stubbed isolated vault"
-        );
+        assert_eq!(self.vault.keyring_stub_ok(), Some(false), "VaultGuard must only be used with a fully stubbed isolated vault");
 
-        // Leave an isolated vault installed so a later test can never reach the OS keyring
-        let fallback = HardwareVault::new("xavier-clavis")
-            .isolated(self.tmp_dir.path().to_path_buf(), [0u8; 32]);
-        xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(std::sync::Arc::new(
-            fallback,
-        ));
+        // Reset the vault override to default (non-isolated) to prevent state bleeding across tests
+        let fallback = HardwareVault::new("xavier-clavis");
+        xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(std::sync::Arc::new(fallback));
     }
 }
+
 
 #[tokio::test]
 #[serial_test::serial]
 async fn test_put_then_get_round_trip() {
     let _tmp = VaultGuard::new();
     let secret_key = "api_key_openai";
+    let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
     let secret_value = "sk-proj-e2e-test-secret-value-98765";
 
     // 1. PUT /v1/clavis/keys/api_key_openai -> HTTP 201 CREATED
@@ -181,6 +175,8 @@ async fn test_put_then_get_round_trip() {
     let get_body = get_resp.into_body().collect().await.unwrap().to_bytes();
     let get_json: serde_json::Value = serde_json::from_slice(&get_body).expect("valid JSON");
     assert_eq!(get_json["value"], secret_value);
+
+    let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
 }
 
 #[tokio::test]
@@ -295,6 +291,7 @@ async fn test_log_safety_and_vault_isolation() {
     let tmp_guard = VaultGuard::new();
     let tmp = &tmp_guard.tmp_dir;
     let secret_key = "api_key_log_safety";
+    let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
     let raw_secret = "sk-live-super-secret-token-abcdef123456";
 
     // Store via HTTP endpoint
@@ -358,6 +355,8 @@ async fn test_log_safety_and_vault_isolation() {
     let get_body = get_resp.into_body().collect().await.unwrap().to_bytes();
     let get_json: serde_json::Value = serde_json::from_slice(&get_body).expect("valid JSON");
     assert_eq!(get_json["value"], raw_secret);
+
+    let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
 }
 
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.

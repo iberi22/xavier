@@ -8,6 +8,7 @@ use xavier::adapters::inbound::http::handlers::clavis::get_clavis_key_handler;
 use xavier::secrets::keygen::{self, KeyScope};
 use xavier::secrets::vault::HardwareVault;
 
+
 struct VaultGuard {
     vault: std::sync::Arc<HardwareVault>,
     #[allow(dead_code)]
@@ -35,8 +36,7 @@ impl VaultGuard {
         std::env::set_var("XDG_RUNTIME_DIR", &xdg_dir);
         std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
 
-        let vault =
-            HardwareVault::new("xavier-clavis").isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
+        let vault = HardwareVault::new("xavier-clavis").isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
         let arc_vault = std::sync::Arc::new(vault);
         xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(arc_vault.clone());
 
@@ -78,20 +78,14 @@ impl Drop for VaultGuard {
         }
 
         // Ensure this drop guard refuses to work on a non-stubbed vault to prevent deleting real keyring entries
-        assert_eq!(
-            self.vault.keyring_stub_ok(),
-            Some(false),
-            "VaultGuard must only be used with a fully stubbed isolated vault"
-        );
+        assert_eq!(self.vault.keyring_stub_ok(), Some(false), "VaultGuard must only be used with a fully stubbed isolated vault");
 
-        // Leave an isolated vault installed so a later test can never reach the OS keyring
-        let fallback = HardwareVault::new("xavier-clavis")
-            .isolated(self.tmp_dir.path().to_path_buf(), [0u8; 32]);
-        xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(std::sync::Arc::new(
-            fallback,
-        ));
+        // Reset the vault override to default (non-isolated) to prevent state bleeding across tests
+        let fallback = HardwareVault::new("xavier-clavis");
+        xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(std::sync::Arc::new(fallback));
     }
 }
+
 
 #[tokio::test]
 #[serial_test::serial]
@@ -190,8 +184,7 @@ async fn test_security_gate_general_secrets_unreachable_via_clavis_handler() {
 
     // Seed a general secret under "xavier" service namespace (e.g. XAVIER_OPENROUTER_API_KEY)
     let general_vault = HardwareVault::new("xavier").with_keyring_stub(false);
-    let clavis_vault =
-        HardwareVault::new("xavier-clavis").isolated(_tmp.tmp_dir.path().to_path_buf(), [0u8; 32]);
+    let clavis_vault = HardwareVault::new("xavier-clavis").isolated(_tmp.tmp_dir.path().to_path_buf(), [0u8; 32]);
 
     let _ = general_vault.delete_secret("XAVIER_OPENROUTER_API_KEY");
     let _ = clavis_vault.delete_secret("XAVIER_OPENROUTER_API_KEY");
