@@ -351,7 +351,7 @@ fn unzip_memory_to_dir(zip_bytes: &[u8], dest_dir: &Path) -> Result<()> {
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
         // enclosed_name() would silently strip a leading root; refuse absolute entry names instead.
-        if file.name().starts_with(['/', '\\']) {
+        if file.name()?.starts_with(['/', '\\']) {
             bail!("Absolute archive entry paths are not supported");
         }
         let name = file
