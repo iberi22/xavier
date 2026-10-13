@@ -40,6 +40,8 @@ pub struct IngestStats {
     pub read: usize,
     /// Records returned to the caller.
     pub records: usize,
+    /// Records that were skipped because they already existed with identical content and metadata.
+    pub unchanged_records: usize,
     /// `store.get()` calls issued. Non-zero only for re-read files.
     pub store_reads: usize,
     /// Whether this pass skipped any file as unchanged.
@@ -374,12 +376,20 @@ impl HermesImporter {
             let workspace_id = format!("hermes:{}", session_id);
             let record_id = stable_key("memory", &[&workspace_id, &record_path]);
 
+            let metadata = json!({
+                "source": "hermes_sessions",
+                "session_id": session_id,
+                "role": role,
+                "item_id": item_id,
+            });
+
             // Incremental skip (stability): identical content already stored
             // reuses the existing record without re-embedding. Fail-open:
             // on store error fall through to the normal embed+put path.
             stats.store_reads += 1;
             if let Ok(Some(existing)) = store.get(&workspace_id, &record_id).await {
-                if existing.content == content {
+                if existing.content == content && existing.metadata == metadata {
+                    stats.unchanged_records += 1;
                     final_records.push(existing);
                     continue;
                 }
@@ -390,12 +400,7 @@ impl HermesImporter {
                 workspace_id: workspace_id.clone(),
                 path: record_path.clone(),
                 content: content.clone(),
-                metadata: json!({
-                    "source": "hermes_sessions",
-                    "session_id": session_id,
-                    "role": role,
-                    "item_id": item_id,
-                }),
+                metadata,
                 embedding: vec![],
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
@@ -470,11 +475,22 @@ impl HermesImporter {
                 let workspace_id = "agent:hermes".to_string();
                 let record_id = stable_key("memory", &[&workspace_id, &record_path]);
 
+                let metadata = json!({
+                    "source_app": "hermes",
+                    "agent_id": "hermes",
+                    "session_id": session_id,
+                    "role": role,
+                    "model": model,
+                    "turn_index": idx,
+                    "importer_version": env!("CARGO_PKG_VERSION"),
+                });
+
                 // Incremental skip (stability): identical content already
                 // stored reuses the existing record without re-embedding.
                 stats.store_reads += 1;
                 if let Ok(Some(existing)) = store.get(&workspace_id, &record_id).await {
-                    if existing.content == msg_content {
+                    if existing.content == msg_content && existing.metadata == metadata {
+                        stats.unchanged_records += 1;
                         final_records.push(existing);
                         continue;
                     }
@@ -485,15 +501,7 @@ impl HermesImporter {
                     workspace_id: workspace_id.clone(),
                     path: record_path.clone(),
                     content: msg_content.to_string(),
-                    metadata: json!({
-                        "source_app": "hermes",
-                        "agent_id": "hermes",
-                        "session_id": session_id,
-                        "role": role,
-                        "model": model,
-                        "turn_index": idx,
-                        "importer_version": env!("CARGO_PKG_VERSION"),
-                    }),
+                    metadata,
                     embedding: vec![],
                     created_at: chrono::Utc::now(),
                     updated_at: chrono::Utc::now(),
@@ -992,6 +1000,232 @@ mod tests {
         assert_eq!(stats.read, 1, "only the changed file is re-read");
         assert_eq!(stats.skipped, 1, "the untouched file is skipped");
         assert!(stats.store_reads > 0, "the changed file is queried");
+        Ok(())
+    }
+
+    struct WriteCountingStore {
+        inner: InMemoryMemoryStore,
+        writes: AtomicUsize,
+    }
+
+    impl WriteCountingStore {
+        fn new() -> Self {
+            Self {
+                inner: InMemoryMemoryStore::new(),
+                writes: AtomicUsize::new(0),
+            }
+        }
+
+        fn writes(&self) -> usize {
+            self.writes.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MemoryStore for WriteCountingStore {
+        fn backend(&self) -> crate::memory::store::MemoryBackend {
+            self.inner.backend()
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        async fn health(&self) -> Result<String> {
+            self.inner.health().await
+        }
+
+        async fn put(&self, record: MemoryRecord) -> Result<()> {
+            self.writes.fetch_add(1, Ordering::SeqCst);
+            self.inner.put(record).await
+        }
+
+        async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>> {
+            self.inner.get(workspace_id, id_or_path).await
+        }
+
+        async fn update(&self, record: MemoryRecord) -> Result<()> {
+            self.writes.fetch_add(1, Ordering::SeqCst);
+            self.inner.update(record).await
+        }
+
+        async fn delete(
+            &self,
+            workspace_id: &str,
+            id_or_path: &str,
+        ) -> Result<Option<MemoryRecord>> {
+            self.inner.delete(workspace_id, id_or_path).await
+        }
+
+        async fn list(&self, workspace_id: &str) -> Result<Vec<MemoryRecord>> {
+            self.inner.list(workspace_id).await
+        }
+
+        async fn search(
+            &self,
+            workspace_id: &str,
+            query: &str,
+            filters: Option<&crate::memory::schema::MemoryQueryFilters>,
+        ) -> Result<Vec<MemoryRecord>> {
+            self.inner.search(workspace_id, query, filters).await
+        }
+
+        async fn load_workspace_state(
+            &self,
+            workspace_id: &str,
+        ) -> Result<crate::memory::store::DurableWorkspaceState> {
+            self.inner.load_workspace_state(workspace_id).await
+        }
+
+        async fn save_beliefs(
+            &self,
+            workspace_id: &str,
+            beliefs: Vec<crate::domain::memory::belief::BeliefEdge>,
+        ) -> Result<()> {
+            self.inner.save_beliefs(workspace_id, beliefs).await
+        }
+
+        async fn save_session_token(
+            &self,
+            workspace_id: &str,
+            token: crate::memory::store::SessionTokenRecord,
+        ) -> Result<()> {
+            self.inner.save_session_token(workspace_id, token).await
+        }
+
+        async fn is_session_token_valid(&self, workspace_id: &str, token: &str) -> Result<bool> {
+            self.inner.is_session_token_valid(workspace_id, token).await
+        }
+
+        async fn save_checkpoint(
+            &self,
+            workspace_id: &str,
+            checkpoint: crate::checkpoint::Checkpoint,
+        ) -> Result<()> {
+            self.inner.save_checkpoint(workspace_id, checkpoint).await
+        }
+
+        async fn load_checkpoint(
+            &self,
+            workspace_id: &str,
+            task_id: &str,
+            name: &str,
+        ) -> Result<Option<crate::checkpoint::Checkpoint>> {
+            self.inner
+                .load_checkpoint(workspace_id, task_id, name)
+                .await
+        }
+
+        async fn list_checkpoints(
+            &self,
+            workspace_id: &str,
+            task_id: &str,
+        ) -> Result<Vec<crate::checkpoint::Checkpoint>> {
+            self.inner.list_checkpoints(workspace_id, task_id).await
+        }
+
+        async fn delete_checkpoint(
+            &self,
+            workspace_id: &str,
+            task_id: &str,
+            name: &str,
+        ) -> Result<()> {
+            self.inner
+                .delete_checkpoint(workspace_id, task_id, name)
+                .await
+        }
+    }
+
+    #[tokio::test]
+    async fn test_hermes_second_pass_zero_writes_and_changed_rewritten() -> Result<()> {
+        let dir = tempdir()?;
+        let db_path = dir.path().join("session_test.db");
+
+        {
+            let conn = Connection::open(&db_path)?;
+            conn.execute(
+                "CREATE TABLE messages (id TEXT PRIMARY KEY, role TEXT, content TEXT)",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO messages (id, role, content) VALUES ('msg1', 'user', 'First question')",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO messages (id, role, content) VALUES ('msg2', 'assistant', 'First answer')",
+                [],
+            )?;
+        }
+
+        let store = WriteCountingStore::new();
+        let importer = HermesImporter::with_dir(dir.path());
+
+        // First pass: imports 2 records, 2 writes
+        let (records_pass1, _stats1) = importer.import_all_with(&store, true).await?;
+        assert_eq!(records_pass1.len(), 2);
+        assert_eq!(store.writes(), 2, "first pass must write both records");
+
+        let rec1_before = store
+            .get("hermes:session_test", &records_pass1[0].id)
+            .await?
+            .expect("msg1 must exist");
+        let rec2_before = store
+            .get("hermes:session_test", &records_pass1[1].id)
+            .await?
+            .expect("msg2 must exist");
+
+        // Second pass with force=true (or cursor cleared): identical content must perform 0 writes
+        let (records_pass2, _stats2) = importer.import_all_with(&store, true).await?;
+        assert_eq!(records_pass2.len(), 2);
+        assert_eq!(
+            store.writes(),
+            2,
+            "second pass over identical records must perform 0 additional writes"
+        );
+
+        let rec1_after = store
+            .get("hermes:session_test", &records_pass1[0].id)
+            .await?
+            .expect("msg1 must exist");
+        let rec2_after = store
+            .get("hermes:session_test", &records_pass1[1].id)
+            .await?
+            .expect("msg2 must exist");
+        assert_eq!(rec1_before.updated_at, rec1_after.updated_at);
+        assert_eq!(rec1_before.revision, rec1_after.revision);
+        assert_eq!(rec2_before.updated_at, rec2_after.updated_at);
+        assert_eq!(rec2_before.revision, rec2_after.revision);
+
+        // Modify one message in the sqlite session fixture
+        {
+            let conn = Connection::open(&db_path)?;
+            conn.execute(
+                "UPDATE messages SET content = 'First answer MODIFIED' WHERE id = 'msg2'",
+                [],
+            )?;
+        }
+
+        // Third pass with force=true: exactly the changed record is written (1 write)
+        let (records_pass3, _stats3) = importer.import_all_with(&store, true).await?;
+        assert_eq!(records_pass3.len(), 2);
+        assert_eq!(
+            store.writes(),
+            3,
+            "third pass with one changed message must perform exactly 1 write"
+        );
+
+        let rec1_third = store
+            .get("hermes:session_test", &records_pass1[0].id)
+            .await?
+            .expect("msg1 must exist");
+        let rec2_third = store
+            .get("hermes:session_test", &records_pass1[1].id)
+            .await?
+            .expect("msg2 must exist");
+        assert_eq!(rec1_third.content, "First question");
+        assert_eq!(rec1_third.updated_at, rec1_before.updated_at);
+        assert_eq!(rec2_third.content, "First answer MODIFIED");
+
         Ok(())
     }
 }
