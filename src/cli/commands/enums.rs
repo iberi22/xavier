@@ -1143,6 +1143,11 @@ pub enum UsersCommand {
         /// Output as JSON instead of human-readable text
         #[arg(long, default_value_t = false)]
         json: bool,
+        /// Allow printing the one-time recovery phrase even when stdout is not a TTY
+        /// (e.g. piped/redirected). Off by default: secrets are never dumped to a
+        /// non-interactive stdout unless you explicitly opt in.
+        #[arg(long, default_value_t = false)]
+        i_understand_output_is_not_a_tty: bool,
     },
     /// Create the first (or a new) local account interactively, with no server running.
     ///
@@ -1269,6 +1274,11 @@ pub enum NodeCommand {
         /// Write Shamir shares JSON to this path (0600)
         #[arg(long)]
         shares_out: Option<PathBuf>,
+        /// Allow printing the one-time recovery phrase even when stdout is not a TTY
+        /// (e.g. piped/redirected). Off by default: secrets are never dumped to a
+        /// non-interactive stdout unless you explicitly opt in.
+        #[arg(long, default_value_t = false)]
+        i_understand_output_is_not_a_tty: bool,
     },
     /// Recover from ≥2 Shamir shares + ordered check-code challenge
     Recover {
