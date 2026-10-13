@@ -15,7 +15,7 @@ pub mod cache;
 pub mod consolidation;
 
 use crate::tgd::cache::TgdCache;
-pub use consolidation::TgdConsolidationScheduler;
+pub use consolidation::{tgd_scheduler_enabled, TgdConsolidationScheduler, TGD_SCHEDULER_ENV};
 
 /// Configuration for the Textual Gradient Descent (TGD) engine.
 #[derive(Debug, Clone)]

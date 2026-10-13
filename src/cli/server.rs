@@ -2326,8 +2326,14 @@ pub async fn start_http_server(
         info!("SessionSyncTask cron already running; skipped duplicate start");
     }
 
-    // TGD Consolidation Scheduler (Nightly)
-    if settings.tgd.enabled {
+    // TGD Consolidation Scheduler (Nightly). Opt-in: the cycle deletes and rewrites memories.
+    let tgd_scheduler_env = std::env::var(xavier::tgd::TGD_SCHEDULER_ENV).ok();
+    if settings.tgd.enabled && !xavier::tgd::tgd_scheduler_enabled(tgd_scheduler_env.as_deref()) {
+        info!(
+            "Scheduled TGD consolidation is disabled (enable with {}=1)",
+            xavier::tgd::TGD_SCHEDULER_ENV
+        );
+    } else if settings.tgd.enabled {
         let tgd_engine = state.tgd_engine().await;
         let tgd_state_path = state
             .workspace_dir
