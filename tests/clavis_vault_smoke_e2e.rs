@@ -78,18 +78,22 @@ impl VaultGuard {
         std::env::set_var("XDG_RUNTIME_DIR", &xdg_dir);
         std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
 
-        let vault = HardwareVault::new("xavier-clavis").isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
+        let vault =
+            HardwareVault::new("xavier-clavis").isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
         let arc_vault = std::sync::Arc::new(vault);
         xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(arc_vault.clone());
 
-        (Self {
-            vault: arc_vault.clone(),
-            tmp_dir,
-            original_home,
-            original_data,
-            original_xdg,
-            original_dbus,
-        }, arc_vault)
+        (
+            Self {
+                vault: arc_vault.clone(),
+                tmp_dir,
+                original_home,
+                original_data,
+                original_xdg,
+                original_dbus,
+            },
+            arc_vault,
+        )
     }
 }
 
@@ -120,14 +124,20 @@ impl Drop for VaultGuard {
         }
 
         // Ensure this drop guard refuses to work on a non-stubbed vault to prevent deleting real keyring entries
-        assert_eq!(self.vault.keyring_stub_ok(), Some(false), "VaultGuard must only be used with a fully stubbed isolated vault");
+        assert_eq!(
+            self.vault.keyring_stub_ok(),
+            Some(false),
+            "VaultGuard must only be used with a fully stubbed isolated vault"
+        );
 
-        // Reset the vault override to default (non-isolated) to prevent state bleeding across tests
-        let fallback = HardwareVault::new("xavier-clavis");
-        xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(std::sync::Arc::new(fallback));
+        // Leave an isolated vault installed so a later test can never reach the OS keyring
+        let fallback = HardwareVault::new("xavier-clavis")
+            .isolated(self.tmp_dir.path().to_path_buf(), [0u8; 32]);
+        xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(std::sync::Arc::new(
+            fallback,
+        ));
     }
 }
-
 
 #[tokio::test]
 #[serial_test::serial]
@@ -339,7 +349,11 @@ async fn test_isolated_vault_never_reaches_os_keyring() {
 
     // Attempting to delete or get without stub should reach the OS keyring.
     // We assert that the stub is active and reports Some(false).
-    assert_eq!(vault.keyring_stub_ok(), Some(false), "Vault must be stubbed to prevent OS keyring access");
+    assert_eq!(
+        vault.keyring_stub_ok(),
+        Some(false),
+        "Vault must be stubbed to prevent OS keyring access"
+    );
 
     // Explicitly confirm that `try_keyring_get` and `try_keyring_store`
     // do not trigger OS access by storing a secret and reading it back from the fallback file store instead.
@@ -348,9 +362,15 @@ async fn test_isolated_vault_never_reaches_os_keyring() {
     assert_eq!(value, "fallback_value");
 
     // Finally verify that `DBUS_SESSION_BUS_ADDRESS` was actually stripped out
-    assert!(std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none(), "DBUS must be unset inside hermetic scope");
+    assert!(
+        std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none(),
+        "DBUS must be unset inside hermetic scope"
+    );
 
     // Verify that XDG_RUNTIME_DIR points inside tempdir
     let xdg = std::env::var_os("XDG_RUNTIME_DIR").unwrap();
-    assert!(xdg.to_string_lossy().contains("xdg"), "XDG must point inside tempdir");
+    assert!(
+        xdg.to_string_lossy().contains("xdg"),
+        "XDG must point inside tempdir"
+    );
 }
