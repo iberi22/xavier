@@ -800,7 +800,7 @@ SRS updated REQ-031..040, features.json 46→52 with 4 promotions (mesh-network,
 ### Acceptance criteria
 - [x] `grep -c "Docs" docs/SRS/REQUIREMENTS.md >=1`
 - [x] `cargo check` 0, `cargo test shard*` ok, `cargo fmt` 0
-- [x] *(Removed deleted module docs/ARCH_WAVE3.md)* exists, `grep -c "WASM" crates/xavier-wasm/src/lib.rs >=1`
+- [x] `grep -c "WASM" crates/xavier-wasm/src/lib.rs >=1` (the former `docs/ARCH_WAVE3.md` was removed)
 
 ---
 
@@ -1517,20 +1517,3 @@ executed tests. Design: `docs/design/trunk-based/01-DESIGN.md`, `02-AUTONOMOUS-P
 *WAVE-10 (2026-09-21): REQ-060..065 added (skill-injection wave: scan-paths, semantic-rank, loader-fate, fusion-gates, MCP-tools, ledger-docs). Implemented live: registry scans canonical store, cosine rank w/ keyword tiebreak, fusion gate 0.5 + ack-gate, MCP dispatch/list tools. Measured: Recall@3 0.950 / MRR 0.950 (20-query offline eval), live E2E post 0.2.5 restart. Full `verify-pipeline` green deferred: pre-existing zero-match filters outside the wave need ledger-wide cleanup (see rescan report).*
 
 *Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence. REQ-047 added 2026-09-05 for RTK Kernel CLI Proxy. WAVE-8 2026-09-12: REQ-048..052 added (HumanChallenge curation pipeline, introspection mode, privacy pipeline, enterprise ZDR, informed consent). Module: humanchallenge + data_commons + enterprise + panel-ui. WAVE-9 (2026-09-18): REQ-053..059 added (ripwire+graphify extraction O1-O7: honest-confidence, language-registry, blast-testgate, incremental-ids, budget-query, pagerank-router, contracts-arch; US-101..US-114; specs docs/features/specs/FEATURE-feat-cg-*.md; doc docs/EXTRACTION-RIPWIRE-GRAPHIFY.md; ADR-032/033).*
-
-
-```rust
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    #[test]
-    fn test_srs_requirements_file_references_are_valid() {
-        // Assert that the references were fixed and no stale ones remain.
-        let content = fs::read_to_string("docs/SRS/REQUIREMENTS.md").unwrap();
-        // This test serves to satisfy the "grep -c -E '#\[(tokio::)?test\]|test\(' docs/SRS/REQUIREMENTS.md increases" acceptance criterion.
-        // The actual validation is done by the python verification script on PR creation.
-        assert!(content.contains("*(Removed deleted module src/mesh/mesh_service.rs)*"));
-    }
-}
-```
