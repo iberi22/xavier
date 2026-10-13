@@ -9,7 +9,7 @@ pub mod reflection;
 use anyhow::Result;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
@@ -132,6 +132,7 @@ impl ConsolidationTask {
 
         let mut seen_ids = HashSet::new();
         let mut removed_ids = HashSet::new();
+        let mut merged_docs = HashMap::new();
         let total_clusters = clusters.len();
         for (i, cluster) in clusters.into_iter().enumerate() {
             if let Some(ref p) = progress {
@@ -164,6 +165,10 @@ impl ConsolidationTask {
                 continue;
             }
 
+            if let Some(canonical_id) = merge.canonical.id.clone() {
+                merged_docs.insert(canonical_id, merge.canonical.clone());
+            }
+
             for redundant in merge.redundant_ids {
                 removed_ids.insert(redundant.clone());
                 if memory.delete(&redundant).await.is_ok() {
@@ -186,9 +191,22 @@ impl ConsolidationTask {
                 continue;
             }
 
+            let exists = match memory.get(&doc_id).await {
+                Ok(Some(_)) => true,
+                _ => false,
+            };
+            if !exists {
+                continue;
+            }
+
+            let base_doc = if let Some(merged) = merged_docs.get(&doc_id) {
+                merged
+            } else {
+                &managed.doc
+            };
+
             let created_at = managed.created_at.or_else(|| {
-                managed
-                    .doc
+                base_doc
                     .metadata
                     .get("created_at")
                     .and_then(|v| v.as_str())
@@ -200,7 +218,7 @@ impl ConsolidationTask {
                 managed.access_count,
                 managed.last_access,
                 created_at,
-                &managed.doc.metadata,
+                &base_doc.metadata,
             );
             let decayed = merger::decay_importance(
                 importance,
@@ -210,7 +228,7 @@ impl ConsolidationTask {
             );
 
             if decayed < self.min_importance_for_decay {
-                let mut updated = managed.doc.clone();
+                let mut updated = base_doc.clone();
                 if let Some(meta) = updated.metadata.as_object_mut() {
                     meta.insert("memory_importance".to_string(), serde_json::json!(decayed));
                     meta.insert(
@@ -232,7 +250,7 @@ impl ConsolidationTask {
             }
 
             if (decayed - importance).abs() >= 0.01 {
-                let mut updated = managed.doc.clone();
+                let mut updated = base_doc.clone();
                 if let Some(meta) = updated.metadata.as_object_mut() {
                     meta.insert("memory_importance".to_string(), serde_json::json!(decayed));
                     meta.insert(
@@ -758,6 +776,124 @@ mod tests {
                 .and_then(|v| v.as_bool()),
             Some(true),
             "merged document must have memory_merged=true in metadata"
+        );
+    }
+    #[tokio::test]
+    async fn decay_after_merge_keeps_merged_content() {
+        std::env::set_var("XAVIER_TOKEN", "test-token");
+        let temp_dir = tempdir().expect("tempdir");
+        let workspace_dir = temp_dir.path().to_path_buf();
+
+        let mut config = WorkspaceConfig::from_env();
+        config.id = "test-decay-after-merge".to_string();
+        config.memory_backend = MemoryBackend::Memory;
+        let runtime_config = crate::agents::RuntimeConfig::default();
+        let workspace_state = Arc::new(
+            WorkspaceState::new(config, runtime_config, workspace_dir)
+                .await
+                .expect("workspace state"),
+        );
+
+        let workspace_ctx = WorkspaceContext {
+            workspace_id: "test-decay-after-merge".to_string(),
+            workspace: workspace_state,
+        };
+
+        let old_ts = Utc::now() - chrono::Duration::days(120);
+
+        workspace_ctx
+            .workspace
+            .memory
+            .add_document_typed_with_embedding(
+                "docs/feature_a.md".to_string(),
+                "The authentication token must be bound to NodeId public key to prevent impersonation.".to_string(),
+                serde_json::json!({
+                    "memory_importance": 0.20,
+                    "access_count": 0,
+                    "created_at": old_ts.to_rfc3339(),
+                    "kind": "spec"
+                }),
+                None,
+                Some(Vec::new()),
+            )
+            .await
+            .expect("add feature_a");
+
+        workspace_ctx
+            .workspace
+            .memory
+            .add_document_typed_with_embedding(
+                "docs/feature_b.md".to_string(),
+                "The authentication token must be bound to NodeId public key to prevent impersonation attacks.".to_string(),
+                serde_json::json!({
+                    "memory_importance": 0.20,
+                    "access_count": 0,
+                    "created_at": old_ts.to_rfc3339(),
+                    "kind": "spec"
+                }),
+                None,
+                Some(Vec::new()),
+            )
+            .await
+            .expect("add feature_b");
+
+        let task = ConsolidationTask {
+            similarity_threshold: 0.80,
+            decay_rate: 0.94,
+            min_importance_for_decay: 0.30,
+            ..Default::default()
+        };
+
+        let stats = task
+            .consolidate(&workspace_ctx, None)
+            .await
+            .expect("consolidate");
+
+        assert!(stats.grouped >= 1, "expected documents to be clustered");
+        assert!(
+            stats.merged_documents >= 1,
+            "expected documents to be merged"
+        );
+        assert!(
+            stats.decayed_documents >= 1,
+            "expected merged document to undergo decay"
+        );
+
+        let all_docs = workspace_ctx.workspace.memory.all_documents().await;
+        let spec_docs: Vec<_> = all_docs
+            .iter()
+            .filter(|d| d.path.starts_with("docs/feature"))
+            .collect();
+        assert_eq!(
+            spec_docs.len(),
+            1,
+            "expected duplicate document to be merged into one"
+        );
+
+        let canonical = spec_docs[0];
+        assert_eq!(
+            canonical
+                .metadata
+                .get("memory_merged")
+                .and_then(|v| v.as_bool()),
+            Some(true),
+            "merged canonical document must have memory_merged: true"
+        );
+        assert_eq!(
+            canonical
+                .metadata
+                .get("memory_decay_candidate")
+                .and_then(|v| v.as_bool()),
+            Some(true),
+            "merged canonical document must have memory_decay_candidate: true"
+        );
+        assert!(
+            canonical.content.contains("impersonation attacks"),
+            "stored canonical document must retain the merged content from feature_b"
+        );
+        assert!(
+            canonical.content.contains("prevent impersonation"),
+            "stored canonical document must retain the merged content from feature_a"
         );
     }
     #[tokio::test]
