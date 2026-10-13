@@ -12,6 +12,7 @@
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::fmt;
 
 use crate::clavis;
 use crate::secrets::vault::HardwareVault;
@@ -79,10 +80,19 @@ pub struct KeyMetadata {
 /// A generated key. The `value` field must never be printed by the default
 /// (generation) flow; it is returned to the caller so a deliberate export can
 /// use it without a second vault read.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GeneratedKey {
     pub metadata: KeyMetadata,
     pub value: String,
+}
+
+impl fmt::Debug for GeneratedKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GeneratedKey")
+            .field("metadata", &self.metadata)
+            .field("value", &"[REDACTED]")
+            .finish()
+    }
 }
 
 /// Minimal vault surface the generator needs. Implemented for
@@ -642,5 +652,24 @@ mod tests {
                 "expected the mask_key form; got: {masked}"
             );
         });
+    }
+
+    #[test]
+    fn test_generated_key_debug_redacts_value() {
+        let key = GeneratedKey {
+            metadata: KeyMetadata {
+                name: "test-key".to_string(),
+                scope: "test".to_string(),
+                ttl_secs: 0,
+                created_at: chrono::Utc::now(),
+                expires_at: None,
+                rotation_count: 0,
+                fingerprint: "fp".to_string(),
+            },
+            value: "super_secret_raw_key_material_12345".to_string(),
+        };
+        let debug_str = format!("{:?}", key);
+        assert!(!debug_str.contains("super_secret_raw_key_material_12345"));
+        assert!(debug_str.contains("[REDACTED]"));
     }
 }

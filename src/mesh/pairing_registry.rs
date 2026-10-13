@@ -9,6 +9,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn hash_pairing_secret(secret: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(secret.as_bytes());
+    crate::utils::crypto::hex_encode(&hasher.finalize())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PairingSecretMetadata {
     pub expires_at: u64,
@@ -57,18 +64,27 @@ impl PairingSecretRegistry {
         })
     }
 
-    /// Save.
+    /// Save using a private 0600 file and atomic rename.
     pub fn save(&self) -> Result<()> {
+        if let Some(parent) = self.storage_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         let json = serde_json::to_string_pretty(&self.secrets)?;
-        std::fs::write(&self.storage_path, json)
-            .context("Failed to write pairing secret registry file")?;
+        let temp_path = self
+            .storage_path
+            .with_extension(format!("tmp.{}", uuid::Uuid::new_v4()));
+        crate::keystore::create_private_file_new(&temp_path, json.as_bytes())
+            .context("Failed to write temporary pairing secret registry file")?;
+        std::fs::rename(&temp_path, &self.storage_path)
+            .context("Failed to replace pairing secret registry file")?;
         Ok(())
     }
 
     /// Register secret.
     pub fn register_secret(&mut self, secret: String, expires_at: u64) -> Result<()> {
+        let key = hash_pairing_secret(&secret);
         self.secrets.insert(
-            secret,
+            key,
             PairingSecretMetadata {
                 expires_at,
                 created_at: chrono::Utc::now().timestamp(),
@@ -84,15 +100,19 @@ impl PairingSecretRegistry {
             .unwrap()
             .as_secs();
 
-        if let Some(metadata) = self.secrets.get(secret) {
-            if metadata.expires_at >= now {
-                self.secrets.remove(secret);
+        let hashed = hash_pairing_secret(secret);
+        let key = if self.secrets.contains_key(&hashed) {
+            Some(hashed)
+        } else if self.secrets.contains_key(secret) {
+            Some(secret.to_string())
+        } else {
+            None
+        };
+
+        if let Some(k) = key {
+            if let Some(metadata) = self.secrets.remove(&k) {
                 self.save()?;
-                return Ok(true);
-            } else {
-                self.secrets.remove(secret);
-                self.save()?;
-                return Ok(false);
+                return Ok(metadata.expires_at >= now);
             }
         }
         Ok(false)
@@ -112,5 +132,39 @@ impl PairingSecretRegistry {
             self.save()?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pairing_registry_permissions_and_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pairing.json");
+        let mut reg = PairingSecretRegistry::load_from(path.clone()).unwrap();
+        let secret = "secret-token-xyz-123".to_string();
+        reg.register_secret(secret.clone(), 9_999_999_999).unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let meta = std::fs::metadata(&path).unwrap();
+            let mode = meta.permissions().mode() & 0o777;
+            assert_eq!(
+                mode, 0o600,
+                "pairing secret registry file must be mode 0600"
+            );
+        }
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !content.contains(&secret),
+            "pairing secret must not be stored in plaintext"
+        );
+
+        assert!(reg.verify_and_remove(&secret).unwrap());
+        assert!(!reg.verify_and_remove(&secret).unwrap());
     }
 }

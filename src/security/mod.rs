@@ -208,7 +208,8 @@ impl SecurityManager {
             hex_decode(signature).map_err(|e| anyhow!("invalid signature hex: {}", e))?;
         let actual = hmac_sha256(secret.as_bytes(), &data);
 
-        if actual != expected.as_slice() {
+        use subtle::ConstantTimeEq;
+        if !bool::from(actual.ct_eq(expected.as_slice())) {
             return Err(anyhow!("invalid signature"));
         }
         Ok(())
@@ -681,5 +682,28 @@ mod tests {
 
         // In paranoid mode, should block with lower confidence
         assert!(!result.allowed);
+    }
+
+    #[test]
+    fn test_validate_token_rejects_forged_signature() {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_TOKEN_SECRET", "super-secret-key-12345");
+        let service = SecurityManager::new();
+        let valid_token = service.generate_token("user1").expect("token generation");
+        assert!(service.validate_token(&valid_token).is_ok());
+
+        // Forged signature
+        let mut parts: Vec<&str> = valid_token.split(':').collect();
+        let forged_sig = "00".repeat(32);
+        parts[4] = &forged_sig;
+        let forged_token = parts.join(":");
+        assert!(service.validate_token(&forged_token).is_err());
+
+        // Single flipped character in signature
+        let mut chars: Vec<char> = valid_token.chars().collect();
+        let last = chars.len() - 1;
+        chars[last] = if chars[last] == 'a' { 'b' } else { 'a' };
+        let tampered_token: String = chars.into_iter().collect();
+        assert!(service.validate_token(&tampered_token).is_err());
     }
 }

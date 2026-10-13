@@ -158,12 +158,22 @@ impl MeshKeyringStore {
         } else {
             let mut s = [0u8; 16];
             rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut s);
-            std::fs::write(&salt_path, s)?;
+            let mut opts = std::fs::OpenOptions::new();
+            opts.write(true).create(true).truncate(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600);
+            }
+            use std::io::Write;
+            let mut file = opts.open(&salt_path)?;
+            file.write_all(&s)?;
+            file.sync_all()?;
+            drop(file);
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ =
-                    std::fs::set_permissions(&salt_path, std::fs::Permissions::from_mode(0o600));
+                std::fs::set_permissions(&salt_path, std::fs::Permissions::from_mode(0o600))?;
             }
             s.to_vec()
         };
@@ -188,12 +198,22 @@ impl MeshKeyringStore {
         let file_bytes = blob.to_bytes();
         let file_path = self.fallback_dir.join(format!("{}.enc", node_id));
 
-        std::fs::write(&file_path, &file_bytes)?;
-
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        use std::io::Write;
+        let mut file = opts.open(&file_path)?;
+        file.write_all(&file_bytes)?;
+        file.sync_all()?;
+        drop(file);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o600));
+            std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o600))?;
         }
 
         Ok(())
