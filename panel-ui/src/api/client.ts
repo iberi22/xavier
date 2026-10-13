@@ -278,7 +278,7 @@ export class ApiClient {
       workspace_id: activeWorkspace,
     });
     if (kind) params.set("kind", kind);
-    return this.fetch<MemoryEntry[]>(`/api/memory/search?${params}`);
+    return this.fetch<MemoryEntry[]>(`/memory/search?${params}`);
   }
 
   async addMemory(
@@ -287,7 +287,7 @@ export class ApiClient {
     priority = "medium",
     source = "panel-ui",
   ) {
-    return this.fetch<MemoryEntry>("/api/memory/add", {
+    return this.fetch<MemoryEntry>("/memory/add", {
       method: "POST",
       body: JSON.stringify({ content, kind, priority, source }),
     });
@@ -326,7 +326,7 @@ export class ApiClient {
 
   // Agents
   async getAgents() {
-    return this.fetch<Agent[]>("/api/agents");
+    return this.fetch<Agent[]>("/agents");
   }
 
   // Cloud relay

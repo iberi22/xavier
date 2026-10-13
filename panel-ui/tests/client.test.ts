@@ -128,12 +128,16 @@ describe("ApiClient unit tests", () => {
     const searchRes = await client.searchMemories("query", "note", 10);
     expect(searchRes).toEqual(mockMemories);
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/memory/search?"),
+      expect.stringContaining("/memory/search?"),
       expect.anything()
     );
 
     const addRes = await client.addMemory("new content");
     expect(addRes).toEqual(mockMemories[0]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/memory/add"),
+      expect.anything()
+    );
   });
 
   it("fetches agents, cloud node, updates cloud node, and data commons", async () => {
@@ -148,6 +152,10 @@ describe("ApiClient unit tests", () => {
 
     const agents = await client.getAgents();
     expect(agents).toEqual([{ id: "a1", name: "Agent1" }]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/agents"),
+      expect.anything()
+    );
 
     const cloudNode = await client.getCloudNode();
     expect(cloudNode.data.url).toBe("http://cloud");
