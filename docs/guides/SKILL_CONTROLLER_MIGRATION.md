@@ -71,4 +71,4 @@ Following a successful migration, retain the previous stores and backups. Deleti
 
 ## Adapter Compatibility
 
-The following table tracks the discovery root and status for each adapter based on measured compatibility tests. For adapter compatibility and discovery roots, please refer to the [Skill Adapter Discovery Matrix in ADR-044](../adr/ADR-044-skill-adapter-discovery-matrix.md) as the single source of truth.
+Adapter discovery roots and their measured status live in one place: the [Skill Adapter Discovery Matrix in ADR-044](../adr/ADR-044-skill-adapter-discovery-matrix.md).
