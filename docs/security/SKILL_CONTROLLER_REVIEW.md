@@ -6,7 +6,7 @@ Status: **no unresolved release-blocking finding.** Reviewed at `main` 59a29d97 
 
 **Threat model:** `docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md` (threats section) and the checklist in `docs/security/skill-controller-review.md`.
 
-**Method:** a static review by an independent model, then verification of every finding against the code by the maintainer. Each finding below has a regression test that failed before its fix.
+**Method:** a static review by an independent model, then verification of every finding against the code by the maintainer. Each resolved finding (F-01–F-03, F-06, F-07) has a regression test that failed before its fix. Accepted findings list the existing tests that cover current behavior and a closure criterion for the follow-up.
 
 ## Findings
 
@@ -15,10 +15,14 @@ Status: **no unresolved release-blocking finding.** Reviewed at `main` 59a29d97 
 | F-01 | Low | Package secrets | Resolved | #2979: task-scoped skill publication runs the same secret classes as package projection (`policy::scan_text`) and writes nothing on a finding | `context::skill_controller::lease::tests::test_secret_finding_blocks_publication_without_creating_link` |
 | F-02 | Low | Path containment | Resolved | #2979: skill names passed to spawn must be valid manifest slugs before any path is built | `cli::commands::spawn::tests::test_load_skill_rejects_invalid_slugs` |
 | F-03 | Low | Migration safety | Resolved | #2979: the batch migration runs `tar` without inherited `TAR_OPTIONS`, so backups store symlinks as symlinks | `scripts/tests/skills-migrate-batch-test.sh` → `test_backup_symlink_does_not_dereference` |
-| F-04 | Info | Race-resistant paths | Accepted limitation | Writes happen by pathname after `authorize` + `revalidate`. The remaining window needs a local process with write access to an allowlisted root. Follow-up: Linux `openat2(RESOLVE_BENEATH)` writes relative to the pinned directory | Existing: `lease::tests::escaped_parent_and_changed_link_are_preserved`, `planner::tests::test_changed_package_or_destination_identity_invalidates_the_saved_plan` |
-| F-05 | Info | Lease hygiene | Accepted, follow-up | `lease::cleanup_stale` is tested but not yet scheduled, so expired task skills from crashed sessions remain until removed by hand. Not a security boundary | `lease::tests::stale_cleanup_requires_expiry_and_confirmed_inactivity` |
+| F-04 | Info | Race-resistant paths | Accepted limitation | Writes happen by pathname after `authorize` + `revalidate`. The remaining window needs a local process with write access to an allowlisted root. Follow-up: Linux `openat2(RESOLVE_BENEATH)` writes relative to the pinned directory. Closure criterion: every controller write and rollback restore goes through a pinned directory handle, with a test that swaps a path component between authorization and write and asserts the write fails | Existing: `lease::tests::escaped_parent_and_changed_link_are_preserved`, `planner::tests::test_changed_package_or_destination_identity_invalidates_the_saved_plan` |
+| F-05 | Info | Lease hygiene | Accepted, follow-up | `lease::cleanup_stale` (`src/context/skill_controller/lease.rs`, `pub fn cleanup_stale`) is tested but not yet scheduled, so expired task skills from crashed sessions remain until removed by hand. Not a security boundary. Closure criterion: a scheduled caller (daemon task or `xavier skills gc`) with an integration test showing an expired, inactive lease removed and an active one kept | `lease::tests::stale_cleanup_requires_expiry_and_confirmed_inactivity` |
+| F-06 | Low | Migration safety | Resolved | #2992: the batch migration reads plan destinations into an array and quotes every use, so roots with spaces or glob characters are backed up and verified as exactly that path | `scripts/tests/skills-migrate-batch-test.sh` → `test_destination_with_spaces_and_glob` |
+| F-07 | Low | Telemetry privacy | Resolved | #2992: usage events run every text field through the shared secret classes and are rejected (field name only in the error) on a match | `context::skill_controller::telemetry::tests::credential_shaped_values_are_rejected` |
+| F-08 | Info | Journal recovery | Accepted limitation | Rollback checks each destination's identity once before restoring. An edit made by another local process after that check can be overwritten. Same class and same follow-up as F-04 | `rollback::tests::test_rollback_leaves_user_edited_destination_intact_and_reports_conflict` (edits before the check) |
+| F-09 | Info | Package secrets | Documented behavior | `apply_plan` publishes per entry: an entry with a secret finding is reported as blocked and not published, while other entries in the same plan proceed. A scanner error aborts the call, and entries already applied stay journaled and can be undone with `xavier skills rollback --tx-id` | `projector::tests::test_secret_finding_blocks_publication_without_creating_a_link` |
 
-Owner of the remediations: the Xavier maintainer. F-04 and F-05 are tracked as follow-ups and do not block release.
+Owner of the remediations: the Xavier maintainer. F-04, F-05 and F-08 are tracked as follow-ups and do not block release.
 
 ## Areas Checked OK
 
@@ -75,7 +79,7 @@ Owner of the remediations: the Xavier maintainer. F-04 and F-05 are tracked as f
 - `rollback.rs:438–462` — `test_repeated_rollback_is_idempotent`.
 - `backup.rs:219–279` — `atomic_write` is the atomic-rename primitive used by the journal.
 
-**Verdict:** Write-ahead journaling with atomic rename is correctly implemented. A crash mid-apply leaves a recoverable `Pending` transaction; rollback restores prior state precisely and never destroys user edits.
+**Verdict:** Write-ahead journaling with atomic rename is correctly implemented. A crash mid-apply leaves a recoverable `Pending` transaction; rollback restores prior state and leaves untouched any destination edited before its identity check (see F-08 for edits made after it).
 
 ---
 
@@ -91,7 +95,7 @@ Owner of the remediations: the Xavier maintainer. F-04 and F-05 are tracked as f
 - `policy.rs:214–225` — `PackageScan::Display` emits only `class at location` pairs; no secret bytes.
 - Tests: `policy.rs:607–631` (secret in references blocks with class+location only), `policy.rs:632–655` (dry run reports without touching disk), `projector.rs:522–556` (secret finding blocks publication without creating a link), `rules.rs:68–71` (extra patterns: PKCS#8, OpenSSH, `KEY=VALUE` shapes).
 
-**Verdict:** Whole-package secret scanning is enforced before any publication, with redacted findings. The scanner rejects unscannable content rather than skipping it.
+**Verdict:** Whole-package secret scanning is enforced before each entry is published, with redacted findings (see F-09 for per-entry behavior). The scanner rejects unscannable content rather than skipping it.
 
 ---
 
@@ -132,7 +136,7 @@ Owner of the remediations: the Xavier maintainer. F-04 and F-05 are tracked as f
 - `tools_context.rs:447, 508` — MCP skill tools use `caller_clearance()` for clearance filtering.
 - Tests: `tools_context.rs:758–801` (clearance filtering on list), `tools_context.rs:803–858` (clearance filtering on dispatch), `tools_context.rs:860–900` (anonymous identity defaults to unclassified).
 
-**Verdict:** No MCP tool or unauthenticated HTTP route can mutate skills or the filesystem. The only mutation surface is the CLI `xavier skills apply` command, which runs locally and is behind no network exposure.
+**Verdict:** No skill-specific MCP tool or skill REST route can mutate skills or the filesystem. Out of scope here: the general `xavier_run_command` MCP tool runs commands, is refused over HTTP MCP without admin clearance, and is available to the local stdio client by design, so an admin or local caller could run the CLI apply command. The only mutation surface is the CLI `xavier skills apply` command, which runs locally and is behind no network exposure.
 
 ---
 
@@ -151,7 +155,7 @@ Owner of the remediations: the Xavier maintainer. F-04 and F-05 are tracked as f
 - `skill_dispatcher.rs:258–269` — `dispatch_event`: `task_id` is a SHA-256 hash of the task text (first 16 hex chars), not the raw text.
 - Tests: `telemetry.rs:620–645` (workspace_id accepts namespaces, rejects paths), `telemetry.rs:647–681` (untrusted task text, absolute paths, free-text skill names rejected), `telemetry.rs:683–697` (unknown stage rejected by schema CHECK), `skills.rs:532–561` (usage summary leaks no private fields).
 
-**Verdict:** Only bounded opaque identifiers reach the telemetry table. Task text is hashed; workspace IDs are namespace-validated; the usage endpoint returns aggregates only. No credential, task text, or absolute path can be stored or logged.
+**Verdict:** Only bounded opaque identifiers reach the telemetry table. Task text is hashed; workspace IDs are namespace-validated; the usage endpoint returns aggregates only. Task text and absolute paths cannot be stored, and values matching the shared secret classes are rejected (F-07). Syntax validation cannot prove that an arbitrary opaque string is not secret.
 
 ---
 
@@ -171,7 +175,7 @@ Owner of the remediations: the Xavier maintainer. F-04 and F-05 are tracked as f
 - **Never deletes prior stores** — the script only creates a backup tar; it does not delete any existing store.
 - `tar` runs without inherited `TAR_OPTIONS`, so symlinks are archived as symlinks (F-03, resolved).
 
-**Verdict:** The script follows the ADR's backup-before-write, rollback-on-failure, never-delete-prior-stores requirements. The `done` file provides idempotency. 
+**Verdict:** The script follows the ADR's backup-before-write, rollback-on-failure, never-delete-prior-stores requirements. The `done` file provides idempotency, and destination paths are preserved exactly, including spaces and glob characters (F-06). 
 
 ---
 
