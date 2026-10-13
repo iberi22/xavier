@@ -17,7 +17,6 @@ export interface ErrorBoundaryState {
   error: Error | null;
   errorInfo: ErrorInfo | null;
   copied: boolean;
-  telemetryReport: TelemetryErrorReport | null;
 }
 
 export class ErrorBoundary extends Component<
@@ -29,7 +28,6 @@ export class ErrorBoundary extends Component<
     error: null,
     errorInfo: null,
     copied: false,
-    telemetryReport: null,
   };
 
   public static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
@@ -46,9 +44,7 @@ export class ErrorBoundary extends Component<
       this.props.onError(error, errorInfo);
     }
 
-    void reportError(error, errorInfo).then((report) => {
-      this.setState({ telemetryReport: report });
-    });
+    void reportError(error, errorInfo);
   }
 
   private handleReset = (): void => {
@@ -57,7 +53,6 @@ export class ErrorBoundary extends Component<
       error: null,
       errorInfo: null,
       copied: false,
-      telemetryReport: null,
     });
   };
 
@@ -71,9 +66,7 @@ export class ErrorBoundary extends Component<
   };
 
   private handleCopyDiagnostic = async (): Promise<void> => {
-    const report =
-      this.state.telemetryReport ||
-      generateDiagnosticReport(this.state.error, this.state.errorInfo);
+    const report = generateDiagnosticReport(this.state.error, this.state.errorInfo);
 
     const formattedPayload = JSON.stringify(report, null, 2);
 
