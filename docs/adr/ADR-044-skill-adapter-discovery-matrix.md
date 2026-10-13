@@ -45,15 +45,15 @@ Symlink projection is the default for every adapter. A copy fallback is allowed 
 
 Measurements are taken in an isolated HOME with Xavier not running (2026-10-11).
 
-| Adapter | Global Root | Project Root | Measurement Date | Result |
-|---------|-------------|--------------|------------------|--------|
-| Hermes | Yes | Yes | 2026-10-11 | `measured` (symlinked packages discovered, unprojected package absent, regular-copy control discovered) |
-| OpenClaw | Yes | Yes | 2026-10-11 | `measured` (symlinked packages discovered, unprojected package absent, regular-copy control discovered) |
-| Gemini | Unknown | Unknown | 2026-10-11 | `not installed` (Gemini CLI not installed) |
-| Codex | Unknown | Yes | 2026-10-11 | `pending` (needs an authenticated session) |
-| Claude Code | Unknown | Yes | 2026-10-11 | `pending` (needs an authenticated session) |
-| OpenCode | Unknown | Yes | 2026-10-11 | `pending` (needs an authenticated session) |
-| agy | Unknown | Yes | 2026-10-11 | `pending` (needs an authenticated session) |
+| Adapter | CLI version (2026-10-12) | Global root | Project root | Offline projection test (runs in CI) | Native discovery | Reason | Test name |
+|---------|--------------------------|-------------|--------------|--------------------------------------|------------------|--------|-----------|
+| Codex | 0.162.1 | `$HOME/.agents/skills` | `<project>/.agents/skills` | yes | `verified locally with --ignored` | not in CI (needs the CLI) | `codex_native_startup_global_and_project_catalog` |
+| Claude Code | 2.1.296 | `$HOME/.claude/skills` | `<project>/.claude/skills` | yes | `unsupported` | no offline catalog command; authenticated calls are not hermetic | `claude_native_startup_unsupported` |
+| OpenCode | 2.0.27 | `$HOME/.config/opencode/skills` | `<project>/.agents/skills`, `<project>/.claude/skills` | yes | `pending re-measurement` | the previous result was taken on 0.26 | `opencode_native_startup_unsupported` |
+| agy | 1.3.3 (Gemini 3.8 Flash models) | `$HOME/.gemini/config/skills` | `<project>/.agents/skills` | yes | `unsupported` | until the CLI is measured with an isolated `GEMINI_HOME` (the wrapper ignores HOME) | `agy_native_startup_unsupported` |
+| Gemini CLI | — | `$HOME/.gemini/skills` | `<project>/.agents/skills` | yes | `unavailable` | not installed; Gemini models are covered through agy (owner decision 2026-10-12) | `gemini_native_startup_global_and_project_catalog` |
+| Hermes | 0.21.5 | `$HOME/.hermes/skills` | `<project>/.agents/skills` | yes | `unsupported` | offline startup tries to download dependencies | `hermes_native_startup_unsupported` |
+| OpenClaw | — | `$HOME/.openclaw/skills` | `<project>/.agents/skills` | yes | `pending` | no native test yet | `openclaw_global_discovery_without_project_leakage` |
 
 ### Re-running measurements
 
