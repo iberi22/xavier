@@ -372,7 +372,7 @@ fn claude_native_startup_unsupported() {
 }
 
 #[test]
-#[ignore = "#2620: OpenCode 0.26 debug has no skill subcommand; native discovery unverified"]
+#[ignore = "#2620: OpenCode 2.0.27 not re-measured since 0.26; native discovery unverified"]
 fn opencode_native_startup_unsupported() {
     xavier::isolate_test_process!();
     let f = Fixture::new();
