@@ -299,6 +299,7 @@ jobs:
           cargo test --package xavier --features ci-safe --test clavis_namespace_e2e -- --test-threads=1
           cargo test --package xavier --features ci-safe --test clavis_vault_smoke_e2e -- --test-threads=1
           cargo test --package xavier --features ci-safe --test clavis_auth_pipeline_e2e -- --test-threads=1
+          cargo test --package xavier --features ci-safe --test production_router_smoke -- --test-threads=1
           cargo test --package xavier --features ci-safe --test skill_controller_core_adapters -- --test-threads=1
           cargo test --package xavier --features ci-safe --test skill_controller_other_adapters -- --test-threads=1
 
