@@ -1,13 +1,7 @@
 //! E2E integration test for the API key generator (`src/secrets/keygen.rs`)
 //! running against a real `HardwareVault` instance isolated in a temporary directory.
-//!
-//! Note on isolation: `HardwareVault::isolated` is `pub(crate)` + `#[cfg(test)]`
-//! within the `xavier` crate, making it inaccessible from external integration tests in `tests/`.
-//! Therefore, test isolation is achieved via `tempfile::tempdir()` and setting `XAVIER_DATA_DIR`
-//! to prevent touching `~/.xavier/secrets`.
 
 use chrono::Utc;
-use tempfile::tempdir;
 
 use xavier::secrets::keygen::{
     export_key, fingerprint, format_generate_output, generate_key, load_metadata, revoke_key,
@@ -15,14 +9,14 @@ use xavier::secrets::keygen::{
 };
 use xavier::secrets::vault::HardwareVault;
 use xavier::secrets::SecretError;
+use xavier::test_hardware_vault::{HermeticTestEnv, SecretKeyDropGuard};
 
-fn setup_isolated_vault(service_name: &str) -> (HardwareVault, tempfile::TempDir) {
-    let dir = tempdir().expect("failed to create temp directory for vault isolation");
-    std::env::set_var("HOME", dir.path());
-    std::env::set_var("XAVIER_DATA_DIR", dir.path());
+fn setup_isolated_vault(service_name: &str) -> (HardwareVault, HermeticTestEnv) {
+    let env = HermeticTestEnv::new();
     let nonce = rand::random::<u64>();
-    let vault = HardwareVault::new(&format!("{service_name}-{nonce:016x}"));
-    (vault, dir)
+    let service = format!("{service_name}-{nonce:016x}");
+    let vault = env.create_vault(&service);
+    (vault, env)
 }
 
 fn test_now() -> chrono::DateTime<Utc> {
@@ -31,9 +25,18 @@ fn test_now() -> chrono::DateTime<Utc> {
 
 #[test]
 fn test_e2e_keygen_persists_and_exports_exact_value() {
-    let (vault, _dir) = setup_isolated_vault("xavier-keygen-e2e-persist");
+    let (vault, env) = setup_isolated_vault("xavier-keygen-e2e-persist");
     let name = "service_auth";
     let now = test_now();
+
+    let _drop_guard = SecretKeyDropGuard::multi(
+        env.create_vault("xavier-keygen-e2e-persist-drop"),
+        vec![
+            format!("api_key_{}", name),
+            format!("api_key_{}_meta", name),
+            name.to_string(),
+        ],
+    );
 
     let gen_key =
         generate_key(&vault, name, KeyScope::Live, 3600, now).expect("generate_key failed");
@@ -67,7 +70,7 @@ fn test_e2e_keygen_persists_and_exports_exact_value() {
 
 #[test]
 fn test_e2e_keygen_export_missing_key_returns_err() {
-    let (vault, _dir) = setup_isolated_vault("xavier-keygen-e2e-missing");
+    let (vault, _env) = setup_isolated_vault("xavier-keygen-e2e-missing");
     let res = export_key(&vault, "nonexistent_key_name");
     assert!(res.is_err(), "exporting non-existent key must return Err");
     match res {
@@ -91,9 +94,18 @@ fn test_e2e_keygen_export_missing_key_returns_err() {
 
 #[test]
 fn test_e2e_keygen_rotation_increments_count_and_replaces_value() {
-    let (vault, _dir) = setup_isolated_vault("xavier-keygen-e2e-rotate");
+    let (vault, env) = setup_isolated_vault("xavier-keygen-e2e-rotate");
     let name = "rotatable_api_key";
     let now = test_now();
+
+    let _drop_guard = SecretKeyDropGuard::multi(
+        env.create_vault("xavier-keygen-e2e-rotate-drop"),
+        vec![
+            format!("api_key_{}", name),
+            format!("api_key_{}_meta", name),
+            name.to_string(),
+        ],
+    );
 
     let first = generate_key(&vault, name, KeyScope::Live, 86400, now).expect("first generation");
     assert_eq!(first.metadata.rotation_count, 0);
@@ -117,9 +129,18 @@ fn test_e2e_keygen_rotation_increments_count_and_replaces_value() {
 
 #[test]
 fn test_e2e_keygen_format_output_never_contains_secret_value() {
-    let (vault, _dir) = setup_isolated_vault("xavier-keygen-e2e-format");
+    let (vault, env) = setup_isolated_vault("xavier-keygen-e2e-format");
     let name = "redacted_key";
     let now = test_now();
+
+    let _drop_guard = SecretKeyDropGuard::multi(
+        env.create_vault("xavier-keygen-e2e-format-drop"),
+        vec![
+            format!("api_key_{}", name),
+            format!("api_key_{}_meta", name),
+            name.to_string(),
+        ],
+    );
 
     let key = generate_key(&vault, name, KeyScope::Live, 7200, now).expect("generate_key");
     let formatted = format_generate_output(&key);
@@ -176,9 +197,18 @@ fn test_e2e_keygen_fingerprint_stability_and_format() {
 
 #[test]
 fn test_e2e_keygen_revoke_deletes_value_and_metadata() {
-    let (vault, _dir) = setup_isolated_vault("xavier-keygen-e2e-revoke");
+    let (vault, env) = setup_isolated_vault("xavier-keygen-e2e-revoke");
     let name = "ephemeral_token";
     let now = test_now();
+
+    let _drop_guard = SecretKeyDropGuard::multi(
+        env.create_vault("xavier-keygen-e2e-revoke-drop"),
+        vec![
+            format!("api_key_{}", name),
+            format!("api_key_{}_meta", name),
+            name.to_string(),
+        ],
+    );
 
     generate_key(&vault, name, KeyScope::Test, 1800, now).expect("generate_key");
     assert!(export_key(&vault, name).is_ok());
@@ -232,8 +262,20 @@ fn test_e2e_keygen_validate_name_rejects_traversal_and_invalid_chars() {
 
 #[test]
 fn test_e2e_keygen_scope_prefixes_and_64_hex_chars() {
-    let (vault, _dir) = setup_isolated_vault("xavier-keygen-e2e-scopes");
+    let (vault, env) = setup_isolated_vault("xavier-keygen-e2e-scopes");
     let now = test_now();
+
+    let _drop_guard = SecretKeyDropGuard::multi(
+        env.create_vault("scopes-drop"),
+        vec![
+            "api_key_live_app".to_string(),
+            "api_key_live_app_meta".to_string(),
+            "live_app".to_string(),
+            "api_key_test_app".to_string(),
+            "api_key_test_app_meta".to_string(),
+            "test_app".to_string(),
+        ],
+    );
 
     let live_key =
         generate_key(&vault, "live_app", KeyScope::Live, 3600, now).expect("generate live key");

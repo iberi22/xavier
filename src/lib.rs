@@ -66,6 +66,8 @@ pub mod scheduler;
 pub mod search;
 pub mod secrets;
 pub mod security;
+#[path = "security/hardware_vault.rs"]
+pub mod test_hardware_vault;
 pub mod self_manage;
 pub mod server;
 pub mod session;

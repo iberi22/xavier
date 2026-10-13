@@ -5,8 +5,8 @@ use tower::util::ServiceExt;
 
 use xavier::adapters::inbound::http::routes::create_router;
 use xavier::clavis::mask_key;
-use xavier::secrets::vault::HardwareVault;
 use xavier::security::auth::{Claims, UserRole};
+use xavier::test_hardware_vault::{HermeticTestEnv, SecretKeyDropGuard};
 
 /// Helper to construct a request to the Clavis routes with or without auth claims.
 fn build_clavis_request(
@@ -41,24 +41,14 @@ fn build_clavis_request(
     req
 }
 
-/// Sets up isolated temporary directories for `HOME` and `XAVIER_DATA_DIR` so that
-/// integration tests never touch the developer's real `~/.xavier` vault files or keyring.
-/// Note: HardwareVault::isolated is #[cfg(test)] gated in src/secrets/vault.rs and thus not
-/// exported across the library boundary to tests/*. We achieve isolated storage by isolating env paths.
-fn setup_isolated_env() -> tempfile::TempDir {
-    let tmp_dir = tempfile::tempdir().expect("create tempdir");
-    let isolated_dir = tmp_dir.path().to_path_buf();
-    std::env::set_var("HOME", &isolated_dir);
-    std::env::set_var("XAVIER_DATA_DIR", &isolated_dir);
-    tmp_dir
-}
-
 #[tokio::test]
 #[serial_test::serial]
 async fn test_put_then_get_round_trip() {
-    let _tmp = setup_isolated_env();
+    let env = HermeticTestEnv::new();
     let secret_key = "api_key_openai";
-    let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
+    let vault = env.create_vault("xavier-clavis");
+    let _drop_guard = SecretKeyDropGuard::single(vault, secret_key);
+
     let secret_value = "sk-proj-e2e-test-secret-value-98765";
 
     // 1. PUT /v1/clavis/keys/api_key_openai -> HTTP 201 CREATED
@@ -104,14 +94,12 @@ async fn test_put_then_get_round_trip() {
     let get_body = get_resp.into_body().collect().await.unwrap().to_bytes();
     let get_json: serde_json::Value = serde_json::from_slice(&get_body).expect("valid JSON");
     assert_eq!(get_json["value"], secret_value);
-
-    let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
 }
 
 #[tokio::test]
 #[serial_test::serial]
 async fn test_get_nonexistent_key_returns_404() {
-    let _tmp = setup_isolated_env();
+    let _env = HermeticTestEnv::new();
 
     let req = build_clavis_request(
         Method::GET,
@@ -144,7 +132,7 @@ async fn test_get_nonexistent_key_returns_404() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_unauthenticated_and_unauthorized_access_rejected() {
-    let _tmp = setup_isolated_env();
+    let _env = HermeticTestEnv::new();
 
     // 1. Missing claims/token -> HTTP 403 (or 401) FORBIDDEN
     let anon_req =
@@ -185,7 +173,7 @@ async fn test_unauthenticated_and_unauthorized_access_rejected() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_put_empty_value_returns_400() {
-    let _tmp = setup_isolated_env();
+    let _env = HermeticTestEnv::new();
 
     let req = build_clavis_request(
         Method::PUT,
@@ -217,9 +205,11 @@ async fn test_put_empty_value_returns_400() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_log_safety_and_vault_isolation() {
-    let tmp = setup_isolated_env();
+    let env = HermeticTestEnv::new();
     let secret_key = "api_key_log_safety";
-    let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
+    let vault = env.create_vault("xavier-clavis");
+    let _drop_guard = SecretKeyDropGuard::single(vault, secret_key);
+
     let raw_secret = "sk-live-super-secret-token-abcdef123456";
 
     // Store via HTTP endpoint
@@ -249,7 +239,7 @@ async fn test_log_safety_and_vault_isolation() {
     );
 
     // 2. Vault file on disk check in isolated directory
-    let secrets_dir = tmp
+    let secrets_dir = env
         .path()
         .join(".xavier")
         .join("vaults")
@@ -283,8 +273,6 @@ async fn test_log_safety_and_vault_isolation() {
     let get_body = get_resp.into_body().collect().await.unwrap().to_bytes();
     let get_json: serde_json::Value = serde_json::from_slice(&get_body).expect("valid JSON");
     assert_eq!(get_json["value"], raw_secret);
-
-    let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
 }
 
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.

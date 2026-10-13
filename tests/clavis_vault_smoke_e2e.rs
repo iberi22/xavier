@@ -12,15 +12,14 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use std::sync::Arc;
 use tower::ServiceExt;
 
 use xavier::adapters::inbound::http::handlers::clavis::clavis_vault;
 use xavier::adapters::inbound::http::routes::create_router;
 use xavier::clavis;
 use xavier::secrets::keygen::{self, KeyScope};
-use xavier::secrets::vault::HardwareVault;
 use xavier::security::auth::{Claims, UserRole};
+use xavier::test_hardware_vault::{HermeticTestEnv, SecretKeyDropGuard};
 
 /// Helper to build an HTTP request for router execution, with optional auth claims.
 fn build_router_request(
@@ -51,23 +50,24 @@ fn build_router_request(
     req
 }
 
-/// Helper to install an isolated test vault for hermetic execution.
-fn setup_isolated_vault() -> (tempfile::TempDir, Arc<HardwareVault>) {
-    let temp_dir = tempfile::tempdir().expect("failed to create tempdir");
-    let isolated_dir = temp_dir.path().to_path_buf();
-    std::env::set_var("HOME", &isolated_dir);
-    std::env::set_var("XAVIER_DATA_DIR", &isolated_dir);
-    let vault = clavis_vault();
-    (temp_dir, vault)
-}
-
 #[tokio::test]
 #[serial_test::serial]
 async fn test_full_cycle_api_key_generate_http_read_revoke_404() {
-    let (_temp_dir, vault) = setup_isolated_vault();
+    let env = HermeticTestEnv::new();
+    let vault = clavis_vault();
 
     let unique_suffix = ulid::Ulid::new().to_string().to_lowercase();
     let key_name = format!("smoke_key_{}", unique_suffix);
+    let vault_entry_name = keygen::value_entry(&key_name); // "api_key_<key_name>"
+
+    let _drop_guard = SecretKeyDropGuard::multi(
+        env.create_vault("xavier-clavis"),
+        vec![
+            key_name.clone(),
+            vault_entry_name.clone(),
+            format!("{}_meta", vault_entry_name),
+        ],
+    );
 
     // Step 1: Generate key using keygen and persist in HardwareVault
     let mut writer_buf = Vec::new();
@@ -109,7 +109,6 @@ async fn test_full_cycle_api_key_generate_http_read_revoke_404() {
     );
 
     // Step 2: Read key via HTTP GET /v1/clavis/keys/<entry_name>
-    let vault_entry_name = keygen::value_entry(&key_name); // "api_key_<key_name>"
     let get_uri = format!("/v1/clavis/keys/{}", vault_entry_name);
 
     let get_req = build_router_request(Method::GET, &get_uri, None, Some(UserRole::Admin));
@@ -183,8 +182,10 @@ async fn test_full_cycle_api_key_generate_http_read_revoke_404() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_clavis_http_api_vault_contract() {
-    let (_temp_dir, vault) = setup_isolated_vault();
-    let _ = vault.delete_secret("api_key_probe");
+    let env = HermeticTestEnv::new();
+    let vault = clavis_vault();
+
+    let _drop_guard = SecretKeyDropGuard::single(env.create_vault("xavier-clavis"), "api_key_probe");
 
     // 1. PUT /v1/clavis/keys/api_key_probe -> 201 CREATED
     let put_req = build_router_request(
@@ -256,8 +257,6 @@ async fn test_clavis_http_api_vault_contract() {
         .await
         .expect("GET unauth failed");
     assert_eq!(unauth_resp.status(), StatusCode::FORBIDDEN);
-
-    let _ = vault.delete_secret("api_key_probe");
 }
 
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
