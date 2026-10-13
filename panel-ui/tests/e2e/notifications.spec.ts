@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("Notifications Dropdown & NotificationCenter E2E", () => {
+test.describe("Notifications Dropdown E2E", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.route("**/health", async (route) => {
 			await route.fulfill({
