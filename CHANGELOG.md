@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- skills inventory command (#2973)
+- read-only skills inventory script (#2974)
 - **`xavier users` onboarding CLI** (#2541): `create`, `totp-enroll`, `totp-disable`.
 - **Observability contract E2E** (#2578, WAVE-29.10): `tests/observability_contract.rs` boots a hermetic `xavier http` and asserts `/health` / MCP `health_check` / stats consistency; new CI job *Rust Integration (Observability Contract)*.
 - **`/health` reports `version` and `degraded_reasons`** (#2568, #2574): one `host:<cpu|memory|disk>` or `subsystem:<database|embedding|llm|vector_db|mesh>` entry per non-healthy component, empty iff `healthy`.
@@ -15,8 +15,8 @@
 - **Skill dispatch** returns `_none` below confidence 0.40 and wraps skill content in an UNTRUSTED boundary; registry rejects non-skill entries (#2567).
 - Repository hygiene: minimal root, community files under `.github/`, dead scripts/workflows removed (#2536, #2538).
 ### Fixed
-- fast-gate evidence collection (#2972)
-- compaction never truncates + opt-in (#2976)
+- fast-gate evidence notices (#2972)
+- compaction never truncates memories, scheduled run opt-in (#2978)
 - **Health honesty (WAVE-29)**: unmeasured embedding coverage no longer reported as 100% healthy (#2568); MCP `sys_health` uses a `-1.0` sentinel for unmeasured benchmarks and reports `db_integrity: null` when integrity was not measured instead of a fabricated Critical gap; `health_check.memoryStoreOk` reflects a store that answers (#2577).
 - **`xavier doctor`** bounds every probe and always prints its report (#2571); **`xavier improve`** no longer hangs after its banner (#2579).
 - **Guardian**: `env_status` queries the `--user` systemd scope; `log_scan` reads newest-first, resets stale cursors with a reason and never skips lines dropped on overflow (#2575).
@@ -26,19 +26,19 @@
 - **Maloca**: unified store path, CORS/auth on Maloca routes (#2540).
 - **Dead `/v1/auth/*` user-login API removed** (#2546): `/v1/auth/login`, `/register`, `/refresh`, `/logout`, `/totp/verify` and `/totp/setup` were backed by `security::auth_store::AuthStore`, a user store nothing in the codebase ever wrote a user into — every login against it failed forever, on every fresh install. These paths now answer `308 Permanent Redirect` (login/register/refresh/logout/recover, same or superset request body) or `410 Gone` (totp/verify, totp/setup — no compatible successor) with a JSON body naming the real `/auth/*` route. The dead `AuthStore` login/TOTP/recovery methods were removed; `AuthStore` itself stays (still backs the unrelated `/v1/auth/sessions` root-token session endpoints). `docs/api/openapi.yaml`, `docs/api/README.md` and the Postman collection now document the real `/auth/*` flow (register, login with inline `totp_code`, refresh, logout, 2FA setup/verify, recovery) instead of the dead one.
 ### Security
-- hardened skill publication checks (#2978)
+- consistent checks across skill publication paths (#2979)
 - skill controller security review (#2990)
 - **Constant-time OAuth state validation** (#2551).
 - `POST /code/dump` / `/code/load` accept arbitrary paths behind the API token (pre-existing); hardening tracked in #2580.
 
 ### Documentation
 - ADR-045 (#2993)
-- CLI reference update (#2974)
-- migration runbook (#2977)
-- README version/MSRV updates (#2979)
+- docs for skills and recovery disconnect CLI commands (#2973)
+- skill-controller migration runbook (#2976)
+- README/CLI docs aligned with v0.2.17 and MSRV (#2977)
 ### Maintenance
 - hermetic release-binary smoke test (#2991)
-- pin postcss version (#2975)
+- postcss-selector-parser pin (#2975)
 - Dependencies: 6 updates (#2980, #2981, #2982, #2983, #2986, #2988)
 
 ## [0.2.17] — 2026-09-29 — desktop attach fix
