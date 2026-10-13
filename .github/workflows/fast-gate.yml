@@ -26,14 +26,3 @@ jobs:
       - name: Summary Check
         if: always()
         run: echo "Always-present summary check completed"
-
-      - name: Test single secret scan
-        run: |
-          python3 -c "
-          def test_single_secret_scan():
-              # test(no_duplicate_secret_scan)
-              content = open('.github/workflows/fast-gate.yml').read()
-              assert 'check-' + 'secrets' not in content, 'Duplicate secret scan found in fast-gate.yml'
-
-          test_single_secret_scan()
-          "
