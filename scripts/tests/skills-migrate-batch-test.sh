@@ -17,14 +17,16 @@ echo "xavier $@" >> "$XAVIER_LOG"
 
 if [[ "$*" == *"skills plan"* ]]; then
   # Output fake plan.json
-  cat << 'JSON'
+  local_root="${MOCK_PLAN_ROOT:-/tmp/tools/skills}"
+  local_name="${MOCK_PLAN_NAME:-demo}"
+  cat << JSON
 {
   "manifest_version": 1,
   "manifest_hash": "abc",
   "entries": [
     {
-      "name": "demo",
-      "root": "/tmp/tools/skills",
+      "name": "$local_name",
+      "root": "$local_root",
       "mode": "symlink"
     }
   ],
@@ -47,8 +49,10 @@ elif [[ "$*" == *"skills apply"* ]]; then
 }
 JSON
   if [[ "$MOCK_APPLY_MISSING_DEST" != "1" ]]; then
-    mkdir -p /tmp/tools/skills
-    touch /tmp/tools/skills/demo
+    local_root="${MOCK_PLAN_ROOT:-/tmp/tools/skills}"
+    local_name="${MOCK_PLAN_NAME:-demo}"
+    mkdir -p "$local_root"
+    touch "$local_root/$local_name"
   fi
   exit 0
 elif [[ "$*" == *"skills rollback"* ]]; then
@@ -84,6 +88,8 @@ run_case() {
   export MOCK_APPLY_FAIL=0
   export MOCK_APPLY_MISSING_DEST=0
   export MOCK_ROLLBACK_FAIL=0
+  export MOCK_PLAN_ROOT="/tmp/tools/skills"
+  export MOCK_PLAN_NAME="demo"
   rm -rf /tmp/tools/skills/demo 2>/dev/null || true
 }
 
@@ -240,11 +246,61 @@ test_backup_symlink_does_not_dereference() {
   echo "test_backup_symlink_does_not_dereference passed"
 }
 
+test_destination_with_spaces_and_glob() {
+  run_case "test_destination_with_spaces_and_glob"
+  local STATE_DIR="$TEMP_DIR/state_space_glob"
+  mkdir -p "$STATE_DIR"
+
+  local SPECIAL_ROOT="$TEMP_DIR/dest space *"
+  local SPECIAL_NAME="demo"
+  export MOCK_PLAN_ROOT="$SPECIAL_ROOT"
+  export MOCK_PLAN_NAME="$SPECIAL_NAME"
+
+  mkdir -p "$SPECIAL_ROOT"
+  local INITIAL_FILE="$SPECIAL_ROOT/$SPECIAL_NAME"
+  echo "pre-existing" > "$INITIAL_FILE"
+
+  bash "$SCRIPT_TO_TEST" --manifest "$MOCK_MANIFEST" --batch 7 --state "$STATE_DIR" --execute
+
+  local BACKUP_TAR="$STATE_DIR/batch-7/backup.tar"
+  if [[ ! -f "$BACKUP_TAR" ]]; then
+    echo "test_destination_with_spaces_and_glob failed: backup.tar missing"
+    exit 1
+  fi
+
+  local TAR_LISTING
+  TAR_LISTING=$(tar -tf "$BACKUP_TAR")
+  echo "Backup tar listing for space/glob test:"
+  echo "$TAR_LISTING"
+
+  local EXPECTED_SUBPATH="${SPECIAL_ROOT#/}/$SPECIAL_NAME"
+  if ! echo "$TAR_LISTING" | grep -Fq "$EXPECTED_SUBPATH"; then
+    echo "test_destination_with_spaces_and_glob failed: backup.tar does not contain $EXPECTED_SUBPATH"
+    exit 1
+  fi
+
+  local ENTRY_COUNT
+  ENTRY_COUNT=$(echo "$TAR_LISTING" | grep -v '^$' | wc -l)
+  if [[ "$ENTRY_COUNT" -ne 1 ]]; then
+    echo "test_destination_with_spaces_and_glob failed: backup.tar contains $ENTRY_COUNT entries instead of 1: $TAR_LISTING"
+    exit 1
+  fi
+
+  if [[ ! -f "$STATE_DIR/batch-7/done" ]]; then
+    echo "test_destination_with_spaces_and_glob failed: done file not created"
+    exit 1
+  fi
+
+  echo "test_destination_with_spaces_and_glob passed"
+}
+
 test_dry_run
 test_execute_success
 test_idempotent
 test_failure_triggers_rollback
 test_verification_failure
 test_backup_symlink_does_not_dereference
+test_destination_with_spaces_and_glob
 
 echo "All tests passed."
+
