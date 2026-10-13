@@ -127,10 +127,14 @@ if has '\.rs$'; then
             cargo fmt -- --check $STAGED_RS >/dev/null 2>&1 || fail "cargo fmt failed on staged files"
         fi
     fi
-    if [ "${SWAL_HOOK_FULL:-0}" = "1" ] && command -v cargo >/dev/null 2>&1; then
-        note "🦀  [SWAL] cargo clippy -D warnings"
-        cargo clippy --all-targets --all-features -- -D warnings >/dev/null 2>&1 \
-            || fail "cargo clippy -- -D warnings"
+    # Clippy + tests of what this commit touches only (scripts/affected-tests.sh).
+    # Never the whole crate: lint diagnostics count only in the staged files.
+    # Bypass for a knowingly-unrelated commit: SWAL_SKIP_AFFECTED=1 git commit ...
+    if [ "${SWAL_SKIP_AFFECTED:-0}" = "1" ]; then
+        skip "clippy/tests afectados omitidos (SWAL_SKIP_AFFECTED=1)"
+    elif [ -x "scripts/affected-tests.sh" ]; then
+        note "🧪  [SWAL] clippy + tests de lo staged"
+        scripts/affected-tests.sh || fail "clippy o tests afectados fallaron (ver arriba)"
     fi
 fi
 
