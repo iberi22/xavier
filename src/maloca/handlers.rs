@@ -16,7 +16,7 @@ pub struct BacklogQuery {
 
 pub async fn pack(Extension(store): Extension<Arc<MalocaStore>>) -> Json<MalocaPack> {
     let mut pack = store.pack();
-    let projects = tokio::task::spawn_blocking(|| crate::maloca::universal::scan_projects())
+    let projects = tokio::task::spawn_blocking(crate::maloca::universal::scan_projects)
         .await
         .unwrap_or_default();
 
@@ -48,7 +48,7 @@ pub async fn backlog(
     Query(q): Query<BacklogQuery>,
 ) -> Json<serde_json::Value> {
     let _ = store;
-    let projects = tokio::task::spawn_blocking(|| crate::maloca::universal::scan_projects())
+    let projects = tokio::task::spawn_blocking(crate::maloca::universal::scan_projects)
         .await
         .unwrap_or_default();
     let mut items = Vec::new();

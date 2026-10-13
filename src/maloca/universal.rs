@@ -86,25 +86,29 @@ pub fn scan_projects_from_dir(base_dir: &Path) -> Vec<SwalProject> {
 /// Scan all projects under the canonical SWAL workspace directory.
 /// Resolves from XAVIER_SWAL_WORKSPACE, falling back to the repository's parent.
 pub fn scan_projects() -> Vec<SwalProject> {
-    use std::sync::OnceLock;
-    static PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
+    use std::sync::Once;
+    static WARN_ONCE: Once = Once::new();
 
-    let target = PATH.get_or_init(|| {
-        if let Ok(val) = std::env::var("XAVIER_SWAL_WORKSPACE") {
+    let target = if let Ok(val) = std::env::var("XAVIER_SWAL_WORKSPACE") {
+        if !val.trim().is_empty() {
             Some(PathBuf::from(val))
-        } else if let Ok(cwd) = std::env::current_dir() {
-            cwd.parent().map(|p| p.to_path_buf())
         } else {
+            None
+        }
+    } else if let Ok(cwd) = std::env::current_dir() {
+        cwd.parent().map(|p| p.to_path_buf())
+    } else {
+        None
+    };
+
+    if let Some(p) = target {
+        scan_projects_from_dir(&p)
+    } else {
+        WARN_ONCE.call_once(|| {
             tracing::warn!(
                 "XAVIER_SWAL_WORKSPACE is not set and fallback to parent directory failed"
             );
-            None
-        }
-    });
-
-    if let Some(p) = target {
-        scan_projects_from_dir(p)
-    } else {
+        });
         Vec::new()
     }
 }
@@ -112,9 +116,30 @@ pub fn scan_projects() -> Vec<SwalProject> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::EnvRestore;
     use std::fs::{create_dir_all, write};
     use tempfile::tempdir;
+
+    struct EnvRestore {
+        key: &'static str,
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl EnvRestore {
+        fn new(key: &'static str, value: &str) -> Self {
+            let prev = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            match self.prev.take() {
+                Some(prev) => std::env::set_var(self.key, prev),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     #[test]
     fn test_scan_projects_empty() {
@@ -181,6 +206,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_scan_projects_config_resolution() {
         crate::isolate_test_process!();
         let tmp = tempdir().unwrap();
