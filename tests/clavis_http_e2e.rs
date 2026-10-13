@@ -73,7 +73,8 @@ impl VaultGuard {
         std::env::set_var("XDG_RUNTIME_DIR", &xdg_dir);
         std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
 
-        let vault = HardwareVault::new("xavier-clavis").isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
+        let vault =
+            HardwareVault::new("xavier-clavis").isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
         let arc_vault = std::sync::Arc::new(vault);
         xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(arc_vault.clone());
 
@@ -115,14 +116,19 @@ impl Drop for VaultGuard {
         }
 
         // Ensure this drop guard refuses to work on a non-stubbed vault to prevent deleting real keyring entries
-        assert_eq!(self.vault.keyring_stub_ok(), Some(false), "VaultGuard must only be used with a fully stubbed isolated vault");
+        assert_eq!(
+            self.vault.keyring_stub_ok(),
+            Some(false),
+            "VaultGuard must only be used with a fully stubbed isolated vault"
+        );
 
         // Reset the vault override to default (non-isolated) to prevent state bleeding across tests
         let fallback = HardwareVault::new("xavier-clavis");
-        xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(std::sync::Arc::new(fallback));
+        xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(std::sync::Arc::new(
+            fallback,
+        ));
     }
 }
-
 
 #[tokio::test]
 #[serial_test::serial]
