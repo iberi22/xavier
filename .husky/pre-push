@@ -197,6 +197,17 @@ if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
     skip "árbol con cambios sin commitear (no bloquea el push, pero no va incluido)"
 fi
 
+# ── 4b. Tests the push can affect — only those, never the whole suite ─────────
+# scripts/affected-tests.sh maps the changed .rs files to their module and to the
+# integration targets that import them. Docs/panel-ui push nothing. Bypass for a
+# knowingly-unrelated push: SWAL_SKIP_AFFECTED=1 git push ...
+if [ "${SWAL_SKIP_AFFECTED:-0}" = "1" ]; then
+    skip "tests afectados omitidos (SWAL_SKIP_AFFECTED=1)"
+elif [ -x "$ROOT/scripts/affected-tests.sh" ] && git rev-parse --verify -q origin/main >/dev/null 2>&1; then
+    note "🧪  [SWAL] tests afectados vs origin/main"
+    "$ROOT/scripts/affected-tests.sh" --base origin/main || fail "tests afectados fallaron"
+fi
+
 # ── 5. Force-push to a shared branch ──────────────────────────────────────────
 # FORCE_PUSH is resolved from the refs git passed on stdin above (a remote sha
 # that is not an ancestor of the local sha is a history rewrite). main/master are

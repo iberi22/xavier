@@ -31,17 +31,12 @@ if ! cargo fmt --check; then
     exit 1
 fi
 
-# 2. cargo clippy
-echo -e "${YELLOW}Step 2: Running cargo clippy...${NC}"
-if ! cargo clippy --lib --features ci-safe -- -D warnings; then
-    echo -e "${RED}Error: cargo clippy failed.${NC}"
-    exit 1
-fi
+# 2. Clippy runs in CI (the crate-wide lint is too slow for every commit).
 
-# 3. cargo test
-echo -e "${YELLOW}Step 3: Running cargo test...${NC}"
-if ! cargo test --lib --features ci-safe -q; then
-    echo -e "${RED}Error: cargo test failed.${NC}"
+# 3. Tests: only the modules and integration targets this commit touches.
+echo -e "${YELLOW}Step 3: Running affected tests...${NC}"
+if [ -n "$STAGED_RS_FILES" ] && ! scripts/affected-tests.sh; then
+    echo -e "${RED}Error: affected tests failed.${NC}"
     exit 1
 fi
 
