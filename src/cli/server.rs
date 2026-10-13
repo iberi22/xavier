@@ -548,7 +548,11 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         .merge(clavis_routes())
         .route(
             "/v1/workspaces/db",
-            post(create_workspace_db_handler).get(list_workspace_dbs_handler),
+            post(create_workspace_db_handler)
+                .layer(middleware::from_fn(require_permission(|r| {
+                    r.can_manage_users()
+                })))
+                .get(list_workspace_dbs_handler),
         )
         .route(
             "/v1/workspaces/db/{id}",
