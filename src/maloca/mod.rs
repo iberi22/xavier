@@ -65,7 +65,8 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
 
 /// Convenience: nested `/maloca` tree with store + consent registry extensions.
 pub fn nested_router<S: Clone + Send + Sync + 'static>(store: Arc<MalocaStore>) -> Router<S> {
-    nested_router_with_consent(store, data_node::ConsentRegistry::new_std())
+    let state_dir = MalocaStore::resolve_state_dir();
+    nested_router_with_consent(store, data_node::ConsentRegistry::open(&state_dir))
 }
 
 /// Convenience: nested `/maloca` tree with both store and consent registry.
