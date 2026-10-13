@@ -226,7 +226,6 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    continue-on-error: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -253,6 +252,7 @@ jobs:
           echo "OK: all test/bench crate roots are sandboxed"
 
       - name: Check no test writes to the real home
+        continue-on-error: true
         run: bash scripts/check-test-writes.sh
 
   # Job: Observability contract gate (WAVE-29.10)
