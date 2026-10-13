@@ -109,11 +109,11 @@ fn init_backend(service_name: &str) -> &'static Option<VaultBackend> {
 
 pub struct HardwareVault {
     service_name: String,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-utils"))]
     custom_storage_dir: Option<std::path::PathBuf>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-utils"))]
     custom_vault_key: Option<[u8; 32]>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-utils"))]
     keyring_stub_ok: Option<bool>,
 }
 
@@ -122,11 +122,11 @@ impl HardwareVault {
     pub fn new(service_name: &str) -> Self {
         Self {
             service_name: service_name.to_string(),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-utils"))]
             custom_storage_dir: None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-utils"))]
             custom_vault_key: None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-utils"))]
             keyring_stub_ok: None,
         }
     }
@@ -135,16 +135,21 @@ impl HardwareVault {
     /// storage dir and key mean `backend()` is never reached, so
     /// `MasterKeyManager::load_or_init()` never reads or creates the real
     /// `master.key`.
-    #[cfg(test)]
-    pub(crate) fn isolated(mut self, storage: std::path::PathBuf, key: [u8; 32]) -> Self {
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn isolated(mut self, storage: std::path::PathBuf, key: [u8; 32]) -> Self {
         self.custom_storage_dir = Some(storage);
         self.custom_vault_key = Some(key);
         self.keyring_stub_ok = Some(false);
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn with_keyring_stub(mut self, succeed: bool) -> Self {
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn keyring_stub_ok(&self) -> Option<bool> {
+        self.keyring_stub_ok
+    }
+
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn with_keyring_stub(mut self, succeed: bool) -> Self {
         self.keyring_stub_ok = Some(succeed);
         self
     }
@@ -209,7 +214,7 @@ impl HardwareVault {
     // --- keyring helpers ---
 
     fn try_keyring_store(&self, key: &str, value: &str) -> SecretResult<()> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-utils"))]
         if let Some(stub_ok) = self.keyring_stub_ok {
             return if stub_ok {
                 Ok(())
@@ -226,7 +231,7 @@ impl HardwareVault {
     }
 
     fn try_keyring_get(&self, key: &str) -> SecretResult<String> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-utils"))]
         if let Some(false) = self.keyring_stub_ok {
             return Err(SecretError::NotFound(key.to_string()));
         }
@@ -239,7 +244,7 @@ impl HardwareVault {
     }
 
     fn try_keyring_delete(&self, key: &str) -> SecretResult<()> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-utils"))]
         if let Some(false) = self.keyring_stub_ok {
             return Err(SecretError::NotFound(key.to_string()));
         }
@@ -265,7 +270,7 @@ impl HardwareVault {
     /// master key, and it never creates directories. Writes create the
     /// directory through [`ensure_private_dir`] instead.
     fn storage_dir(&self) -> SecretResult<std::path::PathBuf> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-utils"))]
         if let Some(ref dir) = self.custom_storage_dir {
             return Ok(dir.clone());
         }
@@ -278,7 +283,7 @@ impl HardwareVault {
     /// Vault key for the local fallback files. Tests inject a synthetic key so
     /// the real master key file is never touched.
     fn fallback_key(&self) -> SecretResult<[u8; 32]> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-utils"))]
         if let Some(key) = self.custom_vault_key {
             return Ok(key);
         }
@@ -334,7 +339,7 @@ impl HardwareVault {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 mod tests {
     use super::*;
 
