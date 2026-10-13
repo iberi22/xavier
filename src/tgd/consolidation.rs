@@ -425,11 +425,38 @@ impl NightlyTgd for crate::memory::manager::MemoryManager {
     }
 }
 
+/// Env var that opts in to the scheduled nightly TGD consolidation.
+pub const TGD_SCHEDULER_ENV: &str = "XAVIER_TGD_SCHEDULER";
+
+/// The scheduled cycle merges, deletes and rewrites memories, so it runs only
+/// when the operator opts in: "1", "true" or "yes" (trimmed, any case).
+pub fn tgd_scheduler_enabled(value: Option<&str>) -> bool {
+    let Some(v) = value else {
+        return false;
+    };
+    let trimmed = v.trim();
+    trimmed.eq_ignore_ascii_case("1")
+        || trimmed.eq_ignore_ascii_case("true")
+        || trimmed.eq_ignore_ascii_case("yes")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Mutex;
     use std::time::Instant;
+
+    #[test]
+    fn tgd_scheduler_is_opt_in() {
+        assert!(!tgd_scheduler_enabled(None));
+        assert!(!tgd_scheduler_enabled(Some("")));
+        assert!(!tgd_scheduler_enabled(Some("0")));
+        assert!(!tgd_scheduler_enabled(Some("false")));
+        assert!(!tgd_scheduler_enabled(Some("random")));
+        assert!(tgd_scheduler_enabled(Some("1")));
+        assert!(tgd_scheduler_enabled(Some(" TRUE ")));
+        assert!(tgd_scheduler_enabled(Some("yes")));
+    }
 
     // ── #2732: a cycle that stops advancing must not spin the loop ────
     // `run_once` used to be awaited inline with no timeout and no gap, so a
