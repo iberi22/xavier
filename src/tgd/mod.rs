@@ -189,6 +189,8 @@ impl TgdEngine {
         let iterations = iterations.unwrap_or(self.config.iterations);
         let mut current_content = content.to_string();
         let mut total_score = 0.0;
+        let mut accepted = 0;
+        let mut best_score: Option<f32> = None;
 
         info!(
             "🧠 TGD: Starting memory refinement ({} iterations)...",
@@ -247,21 +249,22 @@ impl TgdEngine {
 
             debug!("TGD iteration {}: score={:.2}", i + 1, score);
 
-            // Update if it's the highest score so far
-            let prev_avg = if i > 0 { total_score / i as f32 } else { 0.0 };
+            accepted += 1;
+            total_score += score;
 
-            if total_score == 0.0 || score > prev_avg {
+            // Update if it's the highest score so far
+            if best_score.map_or(true, |best| score > best) {
+                best_score = Some(score);
                 current_content = refined;
             }
-            total_score += score;
         }
 
-        if total_score == 0.0 {
+        if accepted == 0 {
             info!("❌ TGD: All iterations failed. Returning original content.");
             return Ok((content.to_string(), 0.0));
         }
 
-        let avg_score = total_score / iterations as f32;
+        let avg_score = total_score / accepted as f32;
         info!("✅ TGD: Refinement complete. Avg score: {:.2}", avg_score);
 
         Ok((current_content, avg_score))
@@ -607,5 +610,158 @@ mod tests {
             score, 0.0,
             "score should be 0.0 when no iteration is accepted"
         );
+    }
+
+    struct RejectedMiddleIterationProvider {
+        counter: tokio::sync::Mutex<usize>,
+    }
+
+    impl RejectedMiddleIterationProvider {
+        fn new() -> Self {
+            Self {
+                counter: tokio::sync::Mutex::new(0),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl LlmProvider for RejectedMiddleIterationProvider {
+        async fn generate_text(
+            &self,
+            system: &str,
+            _user: &str,
+            _continuous: bool,
+        ) -> Result<LlmResponse> {
+            let mut count = self.counter.lock().await;
+            if system.contains("evaluator") {
+                let text = match *count {
+                    0 => "0.9",     // first score
+                    1 => "invalid", // second score (invalid)
+                    _ => "0.6",     // third score
+                };
+                *count += 1;
+                Ok(LlmResponse {
+                    text: text.to_string(),
+                    quota: None,
+                })
+            } else {
+                let text = match *count {
+                    0 => "content 0.9",
+                    1 => "content invalid", // will be skipped due to invalid score
+                    _ => "content 0.6",
+                };
+                Ok(LlmResponse {
+                    text: text.to_string(),
+                    quota: None,
+                })
+            }
+        }
+        async fn generate_response(
+            &self,
+            _q: &str,
+            _c: &[RetrievedDocument],
+        ) -> Result<LlmResponse> {
+            Ok(LlmResponse {
+                text: "Mock response".to_string(),
+                quota: None,
+            })
+        }
+        async fn generate_hypothetical_document(&self, _q: &str) -> Result<LlmResponse> {
+            Ok(LlmResponse {
+                text: "Mock hypothetical document".to_string(),
+                quota: None,
+            })
+        }
+        async fn evaluate_context(&self, _q: &str, _c: &[RetrievedDocument]) -> Result<f32> {
+            Ok(1.0)
+        }
+    }
+
+    #[tokio::test]
+    async fn refinement_keeps_best_when_a_middle_iteration_is_rejected() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let tgd_config = TgdConfig {
+            cache_path: temp_dir.path().join("cache.json"),
+            improvements_path: temp_dir.path().join("rules.md"),
+            iterations: 3,
+            ..Default::default()
+        };
+
+        let provider = Arc::new(RejectedMiddleIterationProvider::new());
+        let tgd = TgdEngine::with_config(provider, tgd_config);
+
+        let input = "Original content";
+        let (refined, score) = tgd.refine_memory_content(input, Some(3)).await.unwrap();
+
+        assert_eq!(
+            refined, "content 0.9",
+            "content from the highest scoring valid iteration (0.9) should be kept"
+        );
+        // (0.9 + 0.6) / 2 = 0.75
+        assert_eq!(
+            score, 0.75,
+            "average score should only include valid iterations"
+        );
+    }
+
+    struct SingleZeroScoreProvider;
+
+    #[async_trait]
+    impl LlmProvider for SingleZeroScoreProvider {
+        async fn generate_text(
+            &self,
+            system: &str,
+            _user: &str,
+            _continuous: bool,
+        ) -> Result<LlmResponse> {
+            let text = if system.contains("evaluator") {
+                "0.0".to_string()
+            } else {
+                "refined with zero score".to_string()
+            };
+            Ok(LlmResponse { text, quota: None })
+        }
+        async fn generate_response(
+            &self,
+            _q: &str,
+            _c: &[RetrievedDocument],
+        ) -> Result<LlmResponse> {
+            Ok(LlmResponse {
+                text: "Mock response".to_string(),
+                quota: None,
+            })
+        }
+        async fn generate_hypothetical_document(&self, _q: &str) -> Result<LlmResponse> {
+            Ok(LlmResponse {
+                text: "Mock hypothetical document".to_string(),
+                quota: None,
+            })
+        }
+        async fn evaluate_context(&self, _q: &str, _c: &[RetrievedDocument]) -> Result<f32> {
+            Ok(1.0)
+        }
+    }
+
+    #[tokio::test]
+    async fn single_zero_score_is_accepted() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let tgd_config = TgdConfig {
+            cache_path: temp_dir.path().join("cache.json"),
+            improvements_path: temp_dir.path().join("rules.md"),
+            iterations: 1,
+            ..Default::default()
+        };
+
+        let provider = Arc::new(SingleZeroScoreProvider);
+        let tgd = TgdEngine::with_config(provider, tgd_config);
+
+        let input = "Original content";
+        let (refined, score) = tgd.refine_memory_content(input, Some(1)).await.unwrap();
+
+        assert_eq!(
+            refined, "refined with zero score",
+            "content should be updated even if the only score is exactly 0.0"
+        );
+        assert_eq!(score, 0.0, "average score should be 0.0");
     }
 }
