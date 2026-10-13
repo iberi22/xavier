@@ -91,7 +91,7 @@ async fn export_training_bundle(output: PathBuf, seed: u64, eval_ratio: f32) -> 
             println!("Eval split: {}", bundle.eval_split.len());
         }
         Err(e) => {
-            println!("Export failed: {}", e);
+            bail!("Export failed: {}", e);
         }
     }
 
@@ -127,4 +127,29 @@ async fn validate_training_bundle(bundle_path: PathBuf) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_export_training_bundle_failure_returns_err() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let tmp = tempdir().expect("tempdir");
+        let fake_db = tmp.path().join("corrupt_telemetry.db");
+        std::fs::write(&fake_db, "not a valid sqlite database").expect("write fake db");
+
+        std::env::set_var(
+            "XAVIER_TELEMETRY_DB_PATH",
+            fake_db.to_str().expect("to_str"),
+        );
+        let out_dir = tmp.path().join("output");
+        let res = export_training_bundle(out_dir, 42, 0.2).await;
+        std::env::remove_var("XAVIER_TELEMETRY_DB_PATH");
+
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("Export failed:"));
+    }
 }

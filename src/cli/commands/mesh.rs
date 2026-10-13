@@ -2,7 +2,7 @@
 
 use crate::cli::commands::MeshCommand;
 use crate::cli::config::resolve_http_token;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 use xavier::mesh::{
@@ -113,7 +113,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    println!("❌ Ping failed: {}", e);
+                    bail!("❌ Ping failed: {}", e);
                 }
             }
         }
@@ -352,7 +352,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 );
             } else {
                 let err_text = resp.text().await?;
-                println!("❌ Private sync failed: {}", err_text);
+                bail!("❌ Private sync failed: {}", err_text);
             }
         }
         MeshCommand::PairingCode { endpoint } => {
@@ -435,4 +435,64 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_mesh_ping_failure_returns_err() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let tmp = tempdir().expect("tempdir");
+        let xavier_dir = tmp.path().join("xavier");
+        std::fs::create_dir_all(&xavier_dir).expect("create dir");
+
+        // Set mesh license in config
+        std::fs::write(
+            xavier_dir.join("xavier.config.json"),
+            r#"{"license": {"mesh_accepted": true}}"#,
+        )
+        .expect("write config");
+
+        let node_id_str = "xv1-pingfail0000000000000000000000";
+        let node_id = NodeId::parse(node_id_str).expect("parse node_id");
+
+        let mut registry =
+            PeerRegistry::load_from(xavier_dir.join("mesh_peers.json")).expect("load registry");
+        let peer = PeerInfo {
+            node_id: node_id.clone(),
+            alias: None,
+            endpoint_url: "http://127.0.0.1:1".to_string(),
+            public_key_hex: "00".repeat(32),
+            added_at: 0,
+            last_seen_at: None,
+            sync_enabled: true,
+            is_cloud: false,
+            iroh_addr: None,
+            shared_workspace_ids: Vec::new(),
+            shared_workspace_tokens: HashMap::new(),
+            capabilities: Vec::new(),
+        };
+        registry.add_peer(peer).expect("add peer");
+
+        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+        std::env::set_var("XDG_CONFIG_HOME", tmp.path());
+        std::env::set_var("XAVIER_CONFIG_DIR", &xavier_dir);
+
+        let res = handle_mesh_command(MeshCommand::Ping {
+            node_id: node_id_str.to_string(),
+        })
+        .await;
+
+        match prev_xdg {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+        std::env::remove_var("XAVIER_CONFIG_DIR");
+
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("❌ Ping failed:"));
+    }
 }
