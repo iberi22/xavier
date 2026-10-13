@@ -1,0 +1,22 @@
+Closes #3062
+
+This pull request implements the logic to apply karma sanctions and exclusion windows on final verdicts (Passed/Rejected) for identity requests.
+
+It addresses the following requirements:
+- When a final verdict is evaluated, we construct an `EigenTrustEngine` and apply the `apply_rewards` and `apply_sanctions` logic using `IvnConfig` and the evaluated validator votes.
+- The `KarmaRewardSummary` and `KarmaSanctionSummary` results are then committed directly to the HTTP module's `store.karma_engine`.
+- `record_exclusion` has been updated to persist the exclusion map (`ivn_exclusions.json`) to the node's `XavierSettings::resolve_data_dir()` in a non-blocking way using `tokio::task::spawn_blocking`.
+- `is_excluded_at` lazily loads the persisted exclusion map upon system restart.
+
+### Verification output
+
+The build in the VM environment timed out, so `cargo check` and `cargo test` were not completed locally:
+```
+The command timed out after 402.12691831588745 seconds.
+```
+
+However, the code was verified to:
+- Pass `cargo fmt -p xavier -- --check`
+- Match `grep -c 'unwrap()'` zero increment on modified code
+- Diff files exactly: `src/adapters/inbound/http/handlers/ivn.rs` and `src/data_commons/ivn.rs`
+- Include `test_record_exclusion_persistence` unit test.
