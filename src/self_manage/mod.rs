@@ -1367,19 +1367,8 @@ pub fn tcp_probe(addr: &str) -> String {
         Ok(sa) => sa,
         Err(_) => {
             use std::net::ToSocketAddrs;
-            match (addr, 0)
-                .to_socket_addrs()
-                .ok()
-                .and_then(|mut ips| ips.next())
-            {
-                Some(ip) => {
-                    let port = if addr.contains("telegram") || addr.contains("github") {
-                        443
-                    } else {
-                        53
-                    };
-                    std::net::SocketAddr::new(ip.ip(), port)
-                }
+            match addr.to_socket_addrs().ok().and_then(|mut ips| ips.next()) {
+                Some(ip) => ip,
                 None => return "failed: resolution failed".to_string(),
             }
         }
@@ -1465,6 +1454,14 @@ mod env_status_tests {
         // Resolve target that fails or times out quickly
         let res = tcp_probe("10.255.255.1:80");
         assert!(res.contains("failed"));
+    }
+
+    #[test]
+    fn tcp_probe_reaches_a_local_listener() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let res = tcp_probe(&format!("localhost:{port}"));
+        assert_eq!(res, "established");
     }
 
     #[test]
