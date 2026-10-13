@@ -1116,14 +1116,36 @@ impl WorkspaceState {
             return Ok(());
         }
         let payload = fs::read_to_string(&self.usage_state_path).await?;
-        let persisted: PersistedUsageState = serde_json::from_str(&payload)?;
-        self.requests_used
-            .store(persisted.requests_used, Ordering::Relaxed);
-        self.usage_metrics
-            .hydrate(persisted.total_units, &persisted.counters);
-        self.optimization_metrics
-            .hydrate(&persisted.optimization)
-            .await;
+        match serde_json::from_str::<PersistedUsageState>(&payload) {
+            Ok(persisted) => {
+                self.requests_used
+                    .store(persisted.requests_used, Ordering::Relaxed);
+                self.usage_metrics
+                    .hydrate(persisted.total_units, &persisted.counters);
+                self.optimization_metrics
+                    .hydrate(&persisted.optimization)
+                    .await;
+            }
+            Err(err) => {
+                let ext = self
+                    .usage_state_path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
+                let ts = Utc::now().timestamp_millis();
+                let corrupt_ext = format!("{}.corrupt-{}", ext, ts);
+                let corrupt_path = self.usage_state_path.with_extension(corrupt_ext);
+                tracing::warn!(
+                    "usage_state: corrupt payload in {}, moving to {}: {}",
+                    self.usage_state_path.display(),
+                    corrupt_path.display(),
+                    err
+                );
+                if let Err(e) = fs::rename(&self.usage_state_path, &corrupt_path).await {
+                    tracing::warn!("usage_state: failed to move corrupt usage file: {}", e);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1136,7 +1158,9 @@ impl WorkspaceState {
             optimization: self.optimization_metrics.snapshot().await,
         };
         let payload = serde_json::to_vec_pretty(&snapshot)?;
-        fs::write(&self.usage_state_path, payload).await?;
+        let tmp_path = self.usage_state_path.with_extension("json.tmp");
+        fs::write(&tmp_path, payload).await?;
+        fs::rename(&tmp_path, &self.usage_state_path).await?;
         Ok(())
     }
 
@@ -1716,6 +1740,44 @@ mod space_store_tests {
             .expect("default space");
         assert!(env_db.exists(), "env-based sqlite path must still be used");
         assert!(!tmp.path().join("ws/memory.sqlite").exists());
+    }
+
+    #[tokio::test]
+    async fn corrupt_usage_file_does_not_block_startup() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let ws_root = tmp.path().join("ws");
+        tokio::fs::create_dir_all(&ws_root).await.unwrap();
+
+        let usage_path = ws_root.join("usage.json");
+        tokio::fs::write(&usage_path, b"{").await.unwrap();
+
+        let _ws = WorkspaceState::new(
+            cfg("corrupt_test", MemoryBackend::File),
+            RuntimeConfig::default(),
+            ws_root.clone(),
+        )
+        .await
+        .expect("must successfully build workspace state despite corrupt usage.json");
+
+        assert!(
+            !usage_path.exists(),
+            "original corrupt file must have been moved"
+        );
+
+        let mut found_corrupt = false;
+        let mut entries = tokio::fs::read_dir(&ws_root).await.unwrap();
+        while let Some(entry) = entries.next_entry().await.unwrap() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("usage.json.corrupt-") {
+                found_corrupt = true;
+                break;
+            }
+        }
+        assert!(
+            found_corrupt,
+            "corrupt usage file was not moved aside correctly"
+        );
     }
 }
 
