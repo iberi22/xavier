@@ -222,10 +222,10 @@ function AppContent() {
 						const _cfg = await res.json();
 						setHasConfig(true);
 					} else {
-						setHasConfig(true);
+						setHasConfig(false);
 					}
 				} catch {
-					setHasConfig(true);
+					setHasConfig(false);
 				}
 			}
 		};
