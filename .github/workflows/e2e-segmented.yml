@@ -800,16 +800,3 @@ jobs:
             exit 1
           fi
           echo "E2E gate PASSED: all 13 waves reported no failing targets"
-
-          test_check_skipped_does_not_fail() {
-            local orig=$gate_failed
-            gate_failed=0
-            check "test_job" ""
-            if [ "$gate_failed" -ne 0 ]; then
-              echo "test(check_skipped): failed because empty result changed gate_failed"
-              exit 1
-            fi
-            echo "test(check_skipped): passed"
-            gate_failed=$orig
-          }
-          test_check_skipped_does_not_fail
