@@ -44,6 +44,14 @@ pub struct ShareDocArgs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateGroupArgs {
+    pub group_name: String,
+    pub clearance: String,
+    #[serde(default)]
+    pub initial_members: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolDescriptor {
     pub name: String,
     pub description: String,
@@ -179,6 +187,19 @@ impl TelecomMcpRegistry {
                     "room_id": args.room_id,
                     "file_name": args.file_name,
                     "bytes_shared": args.content_base64.len()
+                }))
+            }
+            "telecom_create_group" => {
+                let args: CreateGroupArgs = serde_json::from_value(arguments)
+                    .map_err(|e| TelecomMcpError::InvalidArguments(e.to_string()))?;
+                let mut rooms = self.active_rooms.write().await;
+                if !rooms.contains(&args.group_name) {
+                    rooms.push(args.group_name.clone());
+                }
+                Ok(serde_json::json!({
+                    "room_id": args.group_name,
+                    "clearance": args.clearance,
+                    "members": args.initial_members
                 }))
             }
             _ => Err(TelecomMcpError::UnknownTool(tool_name.to_string())),

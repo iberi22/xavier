@@ -1,37 +1,11 @@
 //! MCP Tools Extension for Telecom Messaging and Room Management (#2395 / WAVE-27.17)
 
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::server::mcp::types::{MCPContent, MCPTextContent, MCPTool, MCPToolResult};
+use crate::server::mcp::types::{MCPTool, MCPToolResult};
 use crate::telecom::mcp_tools::TelecomMcpRegistry;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TelecomSendPacketArgs {
-    pub room_id: String,
-    pub payload: String,
-    pub recipient: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TelecomListPeersArgs {
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TelecomCreateGroupArgs {
-    pub group_name: String,
-    pub clearance: String,
-    pub initial_members: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TelecomChatHistoryArgs {
-    pub room_id: String,
-    pub limit: Option<usize>,
-}
 
 /// Returns the expanded suite of Telecom MCP Tools.
 pub fn register_telecom_mcp_tools() -> Vec<MCPTool> {
@@ -96,56 +70,15 @@ pub fn register_telecom_mcp_tools() -> Vec<MCPTool> {
 pub async fn handle_telecom_tool(
     name: &str,
     arguments: Value,
-    _registry: Option<Arc<RwLock<TelecomMcpRegistry>>>,
+    registry: Option<Arc<RwLock<TelecomMcpRegistry>>>,
 ) -> anyhow::Result<Value> {
-    match name {
-        "telecom_send_packet" => {
-            let args: TelecomSendPacketArgs = serde_json::from_value(arguments)?;
-            let res = json!({
-                "status": "delivered",
-                "room_id": args.room_id,
-                "recipient": args.recipient.unwrap_or_else(|| "broadcast".to_string()),
-                "bytes_sent": args.payload.len(),
-            });
-            Ok(serde_json::to_value(MCPToolResult::structured(res, false))?)
-        }
-        "telecom_list_peers" => {
-            let args: TelecomListPeersArgs = serde_json::from_value(arguments)
-                .unwrap_or(TelecomListPeersArgs { limit: Some(20) });
-            let limit = args.limit.unwrap_or(20);
-            let peers = vec![
-                json!({ "node_id": "xv1-node-alpha", "latency_ms": 12.4, "status": "online" }),
-                json!({ "node_id": "xv1-node-beta", "latency_ms": 28.1, "status": "online" }),
-            ];
-            let res = json!({
-                "total_peers": peers.len().min(limit),
-                "peers": peers.into_iter().take(limit).collect::<Vec<_>>()
-            });
-            Ok(serde_json::to_value(MCPToolResult::structured(res, false))?)
-        }
-        "telecom_create_group" => {
-            let args: TelecomCreateGroupArgs = serde_json::from_value(arguments)?;
-            let room_id = format!("group-{}", uuid::Uuid::new_v4());
-            let res = json!({
-                "room_id": room_id,
-                "name": args.group_name,
-                "clearance": args.clearance,
-                "members": args.initial_members,
-                "created_at": chrono::Utc::now().to_rfc3339()
-            });
-            Ok(serde_json::to_value(MCPToolResult::structured(res, false))?)
-        }
-        "telecom_get_chat_history" => {
-            let args: TelecomChatHistoryArgs = serde_json::from_value(arguments)?;
-            let res = json!({
-                "room_id": args.room_id,
-                "limit": args.limit.unwrap_or(50),
-                "messages": []
-            });
-            Ok(serde_json::to_value(MCPToolResult::structured(res, false))?)
-        }
-        _ => Err(anyhow::anyhow!("Unknown telecom MCP tool: {}", name)),
-    }
+    let registry = registry.ok_or_else(|| anyhow::anyhow!("telecom backend unavailable"))?;
+    let res = registry
+        .read()
+        .await
+        .execute_telecom_tool(name, arguments)
+        .await?;
+    Ok(serde_json::to_value(MCPToolResult::structured(res, false))?)
 }
 
 #[cfg(test)]
@@ -164,25 +97,47 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_telecom_tool_send_and_group() {
+    async fn test_send_packet_without_backend_returns_error() {
         let send_args = json!({
             "room_id": "test-room",
             "payload": "encrypted-msg",
             "recipient": "node-b"
         });
-        let send_res = handle_telecom_tool("telecom_send_packet", send_args, None)
-            .await
-            .unwrap();
-        assert!(send_res.get("structuredContent").is_some());
+        let res = handle_telecom_tool("telecom_send_packet", send_args, None).await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "telecom backend unavailable");
+    }
 
+    #[tokio::test]
+    async fn test_list_peers_without_backend_returns_error() {
+        let res = handle_telecom_tool("telecom_list_peers", json!({}), None).await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "telecom backend unavailable");
+    }
+
+    #[tokio::test]
+    async fn test_create_group_accepts_call_without_initial_members() {
+        let registry = Arc::new(RwLock::new(TelecomMcpRegistry::new()));
         let group_args = json!({
             "group_name": "Ops War Room",
-            "clearance": "Confidential",
-            "initial_members": ["node-a", "node-b"]
+            "clearance": "Confidential"
         });
-        let group_res = handle_telecom_tool("telecom_create_group", group_args, None)
+        let group_res =
+            handle_telecom_tool("telecom_create_group", group_args, Some(registry.clone()))
+                .await
+                .unwrap();
+        assert!(group_res.get("structuredContent").is_some());
+
+        let rooms = registry
+            .read()
+            .await
+            .execute_telecom_tool("telecom_list_rooms", json!({}))
             .await
             .unwrap();
-        assert!(group_res.get("structuredContent").is_some());
+        assert!(rooms["rooms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r == "Ops War Room"));
     }
 }
