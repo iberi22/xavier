@@ -71,14 +71,4 @@ Following a successful migration, retain the previous stores and backups. Deleti
 
 ## Adapter Compatibility
 
-The following table tracks the discovery root and status for each adapter based on measured compatibility tests.
-
-| Adapter | Discovery Root | Project Root | Measured Result | Status |
-|---|---|---|---|---|
-| OpenClaw | `$HOME/.openclaw/skills` | `<project>/.agents/skills` | Symlinks followed successfully | `verified` |
-| Codex | `$HOME/.agents/skills` | `<project>/.agents/skills` | Symlinks followed successfully (only verified by the ignored native test run with --ignored) | `verified` |
-| Hermes | `$HOME/.hermes/skills` | `<project>/.agents/skills` | Hermes launcher attempts dependency downloads in offline startup; native discovery unverified | `unsupported` |
-| Claude Code | `$HOME/.claude/skills` | `<project>/.claude/skills` | Claude Code 2.1.296 has no verified offline catalog command; authenticated model calls are not hermetic | `unsupported` |
-| OpenCode | `$HOME/.config/opencode/skills` | `<project>/.agents/skills`, `<project>/.claude/skills` | OpenCode 0.26 debug has no skill subcommand; native discovery unverified | `unsupported` |
-| agy | `$HOME/.gemini/config/skills` | `<project>/.agents/skills` | installed agy wrapper ignores HOME and writes real account cache; unsafe to launch hermetically | `unsupported` |
-| Gemini CLI | `$HOME/.gemini/skills` | `<project>/.agents/skills` | gemini not installed | `unavailable` |
+Adapter discovery roots and their measured status live in one place: the [Skill Adapter Discovery Matrix in ADR-044](../adr/ADR-044-skill-adapter-discovery-matrix.md).
