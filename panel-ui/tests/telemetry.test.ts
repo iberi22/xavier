@@ -1,14 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  bufferErrorReport,
-  clearTelemetryBuffer,
-  flushTelemetryBuffer,
   generateDiagnosticReport,
-  getBufferedErrors,
   reportError,
   sanitizeObject,
   sanitizeTelemetryText,
-  TELEMETRY_QUEUE_KEY,
 } from "../src/api/telemetry";
 
 describe("Telemetry Subsystem", () => {
@@ -72,72 +67,17 @@ describe("Telemetry Subsystem", () => {
     });
   });
 
-  describe("Offline Queueing and Buffering", () => {
-    it("buffers error reports in localStorage when offline", async () => {
-      // Mock offline state
-      vi.stubGlobal("navigator", { onLine: false, userAgent: "Vitest" });
+  describe("Error Reporting", () => {
+    it("generates a report locally and returns false without sending", async () => {
+      const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-      const err = new Error("Network offline test");
-      const report = await reportError(err);
+      const err = new Error("Test error reporting");
+      const result = await reportError(err);
 
-      const buffered = getBufferedErrors();
-      expect(buffered).toHaveLength(1);
-      expect(buffered[0].message).toBe("Network offline test");
-      expect(report.id).toBe(buffered[0].id);
-    });
+      expect(result).toBe(false);
+      expect(consoleWarnSpy).toHaveBeenCalledWith("Remote error reporting is unavailable.");
 
-    it("buffers error report when online API request fails", async () => {
-      vi.stubGlobal("navigator", { onLine: true, userAgent: "Vitest" });
-      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
-
-      const err = new Error("Backend server down");
-      await reportError(err);
-
-      const buffered = getBufferedErrors();
-      expect(buffered).toHaveLength(1);
-      expect(buffered[0].message).toBe("Backend server down");
-    });
-
-    it("flushes buffered error reports upon successful reconnection", async () => {
-      vi.stubGlobal("navigator", { onLine: true, userAgent: "Vitest" });
-
-      const mockReport = generateDiagnosticReport(new Error("Queued error"));
-      bufferErrorReport(mockReport);
-
-      expect(getBufferedErrors()).toHaveLength(1);
-
-      // Mock successful fetch
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          json: async () => ({ status: "ok" }),
-        }),
-      );
-
-      const flushedCount = await flushTelemetryBuffer();
-
-      expect(flushedCount).toBe(1);
-      expect(getBufferedErrors()).toHaveLength(0);
-      expect(localStorage.getItem(TELEMETRY_QUEUE_KEY)).toBeNull();
-    });
-
-    it("flushes buffer automatically when window fires online event", async () => {
-      const mockReport = generateDiagnosticReport(new Error("Event queued error"));
-      bufferErrorReport(mockReport);
-
-      const fetchMock = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ status: "ok" }),
-      });
-      vi.stubGlobal("fetch", fetchMock);
-
-      window.dispatchEvent(new Event("online"));
-
-      await vi.waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled();
-        expect(getBufferedErrors()).toHaveLength(0);
-      });
+      consoleWarnSpy.mockRestore();
     });
   });
 });
