@@ -225,15 +225,40 @@ impl TgdEngine {
                 .provider
                 .generate_text(eval_system, &refined, false)
                 .await?;
-            let score: f32 = eval_response.text.trim().parse().unwrap_or(0.5);
+
+            let parsed_score = eval_response.text.trim().parse::<f32>();
+
+            let score = match parsed_score {
+                Ok(s) if s.is_finite() && (0.0..=1.0).contains(&s) => s,
+                _ => {
+                    warn!(
+                        "TGD iteration {}: evaluator returned invalid score: '{}'",
+                        i + 1,
+                        eval_response.text
+                    );
+                    continue; // Skip this iteration
+                }
+            };
+
+            if refined.trim().is_empty() {
+                warn!("TGD iteration {}: refined text is empty", i + 1);
+                continue;
+            }
 
             debug!("TGD iteration {}: score={:.2}", i + 1, score);
 
-            // Only update if it's an improvement or first iteration
-            if i == 0 || score > (total_score / i as f32) {
+            // Update if it's the highest score so far
+            let prev_avg = if i > 0 { total_score / i as f32 } else { 0.0 };
+
+            if total_score == 0.0 || score > prev_avg {
                 current_content = refined;
             }
             total_score += score;
+        }
+
+        if total_score == 0.0 {
+            info!("❌ TGD: All iterations failed. Returning original content.");
+            return Ok((content.to_string(), 0.0));
         }
 
         let avg_score = total_score / iterations as f32;
@@ -455,5 +480,132 @@ mod tests {
         let history = vec![mock_message("hello"), mock_message("hello")];
         let rules = tgd.generate_rules(&history, &[]).await.unwrap();
         assert!(!rules.is_empty());
+    }
+    struct UnparsableScoreProvider;
+
+    #[async_trait]
+    impl LlmProvider for UnparsableScoreProvider {
+        async fn generate_text(
+            &self,
+            system: &str,
+            _user: &str,
+            _continuous: bool,
+        ) -> Result<LlmResponse> {
+            let text = if system.contains("evaluator") {
+                "great".to_string()
+            } else {
+                "improved content".to_string()
+            };
+            Ok(LlmResponse { text, quota: None })
+        }
+        async fn generate_response(
+            &self,
+            _q: &str,
+            _c: &[RetrievedDocument],
+        ) -> Result<LlmResponse> {
+            Ok(LlmResponse {
+                text: "Mock response".to_string(),
+                quota: None,
+            })
+        }
+        async fn generate_hypothetical_document(&self, _q: &str) -> Result<LlmResponse> {
+            Ok(LlmResponse {
+                text: "Mock hypothetical document".to_string(),
+                quota: None,
+            })
+        }
+        async fn evaluate_context(&self, _q: &str, _c: &[RetrievedDocument]) -> Result<f32> {
+            Ok(1.0)
+        }
+    }
+
+    #[tokio::test]
+    async fn refinement_keeps_content_on_unparsable_score() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let tgd_config = TgdConfig {
+            cache_path: temp_dir.path().join("cache.json"),
+            improvements_path: temp_dir.path().join("rules.md"),
+            iterations: 2,
+            ..Default::default()
+        };
+
+        let provider = Arc::new(UnparsableScoreProvider);
+        let tgd = TgdEngine::with_config(provider, tgd_config);
+
+        let input = "Original unrefined content";
+        let (refined, score) = tgd.refine_memory_content(input, Some(2)).await.unwrap();
+
+        assert_eq!(
+            refined, input,
+            "content should remain unchanged when evaluator score is unparsable"
+        );
+        assert_eq!(
+            score, 0.0,
+            "score should be 0.0 when no iteration is accepted"
+        );
+    }
+
+    struct EmptyRefinementProvider;
+
+    #[async_trait]
+    impl LlmProvider for EmptyRefinementProvider {
+        async fn generate_text(
+            &self,
+            system: &str,
+            _user: &str,
+            _continuous: bool,
+        ) -> Result<LlmResponse> {
+            let text = if system.contains("evaluator") {
+                "0.95".to_string()
+            } else {
+                "".to_string()
+            };
+            Ok(LlmResponse { text, quota: None })
+        }
+        async fn generate_response(
+            &self,
+            _q: &str,
+            _c: &[RetrievedDocument],
+        ) -> Result<LlmResponse> {
+            Ok(LlmResponse {
+                text: "Mock response".to_string(),
+                quota: None,
+            })
+        }
+        async fn generate_hypothetical_document(&self, _q: &str) -> Result<LlmResponse> {
+            Ok(LlmResponse {
+                text: "Mock hypothetical document".to_string(),
+                quota: None,
+            })
+        }
+        async fn evaluate_context(&self, _q: &str, _c: &[RetrievedDocument]) -> Result<f32> {
+            Ok(1.0)
+        }
+    }
+
+    #[tokio::test]
+    async fn refinement_never_accepts_empty_text() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let tgd_config = TgdConfig {
+            cache_path: temp_dir.path().join("cache.json"),
+            improvements_path: temp_dir.path().join("rules.md"),
+            iterations: 2,
+            ..Default::default()
+        };
+
+        let provider = Arc::new(EmptyRefinementProvider);
+        let tgd = TgdEngine::with_config(provider, tgd_config);
+
+        let input = "Original memory content that should not become empty";
+        let (refined, score) = tgd.refine_memory_content(input, Some(2)).await.unwrap();
+
+        assert_eq!(
+            refined, input,
+            "content should remain unchanged when refinement is empty"
+        );
+        assert_eq!(
+            score, 0.0,
+            "score should be 0.0 when no iteration is accepted"
+        );
     }
 }

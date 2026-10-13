@@ -210,8 +210,20 @@ impl ConsolidationTask {
             );
 
             if decayed < self.min_importance_for_decay {
-                if memory.delete(&doc_id).await.is_ok() {
-                    stats.deleted_redundant_documents += 1;
+                let mut updated = managed.doc.clone();
+                if let Some(meta) = updated.metadata.as_object_mut() {
+                    meta.insert("memory_importance".to_string(), serde_json::json!(decayed));
+                    meta.insert(
+                        "memory_decay_candidate".to_string(),
+                        serde_json::json!(true),
+                    );
+                    meta.insert(
+                        "memory_last_consolidated_at".to_string(),
+                        serde_json::json!(chrono::Utc::now().to_rfc3339()),
+                    );
+                }
+                if memory.update(updated).await.is_ok() {
+                    stats.importance_updates += 1;
                     decay_updates += 1;
                 } else {
                     stats.errors += 1;
@@ -385,7 +397,12 @@ impl ConsolidationTask {
                 .refine_memory_content(&managed.doc.content, Some(self.tgd_iterations))
                 .await?;
 
-            if avg_score > managed.quality.overall {
+            let refined_content_trim = refined_content.trim();
+            if avg_score.is_finite()
+                && avg_score > managed.quality.overall
+                && !refined_content_trim.is_empty()
+                && refined_content_trim != managed.doc.content.trim()
+            {
                 let mut updated = managed.doc.clone();
                 updated.content = refined_content;
                 if let Some(meta) = updated.metadata.as_object_mut() {
@@ -626,10 +643,14 @@ mod tests {
 
         let stats = task.consolidate(&workspace_ctx, None).await.unwrap();
 
-        // Stale document should decay below 0.30 and get deleted
+        // Stale document should decay below 0.30 and be marked as decay candidate without deletion
+        assert_eq!(
+            stats.deleted_redundant_documents, 0,
+            "stale document must not be deleted by decay"
+        );
         assert!(
-            stats.deleted_redundant_documents >= 1,
-            "expected stale low-importance document to be deleted"
+            stats.importance_updates >= 1,
+            "expected stale low-importance document to receive importance update"
         );
 
         // Verify active note is still present
@@ -638,9 +659,17 @@ mod tests {
             all_docs.iter().any(|d| d.path == "notes/active.md"),
             "active document must remain present"
         );
-        assert!(
-            !all_docs.iter().any(|d| d.path == "notes/stale_low.md"),
-            "stale document must have been pruned"
+        let stale_doc = all_docs
+            .iter()
+            .find(|d| d.path == "notes/stale_low.md")
+            .expect("stale document must still exist");
+        assert_eq!(
+            stale_doc
+                .metadata
+                .get("memory_decay_candidate")
+                .and_then(|v| v.as_bool()),
+            Some(true),
+            "stale document must be marked with memory_decay_candidate: true"
         );
     }
 
@@ -729,6 +758,194 @@ mod tests {
                 .and_then(|v| v.as_bool()),
             Some(true),
             "merged document must have memory_merged=true in metadata"
+        );
+    }
+    #[tokio::test]
+    async fn decay_marks_candidate_without_deleting() {
+        std::env::set_var("XAVIER_TOKEN", "test-token");
+        let temp_dir = tempdir().unwrap();
+        let workspace_dir = temp_dir.path().to_path_buf();
+
+        let mut config = WorkspaceConfig::from_env();
+        config.id = "test-decay-candidate".to_string();
+        config.memory_backend = MemoryBackend::Memory;
+        let runtime_config = crate::agents::RuntimeConfig::default();
+        let workspace_state = Arc::new(
+            WorkspaceState::new(config, runtime_config, workspace_dir)
+                .await
+                .unwrap(),
+        );
+
+        let workspace_ctx = WorkspaceContext {
+            workspace_id: "test-decay-candidate".to_string(),
+            workspace: workspace_state,
+        };
+
+        let old_ts = Utc::now() - chrono::Duration::days(730);
+        workspace_ctx
+            .workspace
+            .memory
+            .add_document_typed_with_embedding(
+                "notes/ancient.md".to_string(),
+                "Ancient document with zero access count.".to_string(),
+                serde_json::json!({
+                    "memory_importance": 0.25,
+                    "access_count": 0,
+                    "created_at": old_ts.to_rfc3339(),
+                    "kind": "note"
+                }),
+                None,
+                Some(Vec::new()),
+            )
+            .await
+            .unwrap();
+
+        let task = ConsolidationTask {
+            decay_rate: 0.94,
+            min_importance_for_decay: 0.30,
+            ..Default::default()
+        };
+
+        let stats = task.consolidate(&workspace_ctx, None).await.unwrap();
+
+        assert_eq!(
+            stats.deleted_redundant_documents, 0,
+            "decay must not delete records"
+        );
+        assert!(
+            stats.importance_updates >= 1,
+            "expected importance update for decay candidate"
+        );
+
+        let all_docs = workspace_ctx.workspace.memory.all_documents().await;
+        let doc = all_docs
+            .iter()
+            .find(|d| d.path == "notes/ancient.md")
+            .expect("document must still exist");
+
+        assert_eq!(
+            doc.metadata
+                .get("memory_decay_candidate")
+                .and_then(|v| v.as_bool()),
+            Some(true),
+            "memory_decay_candidate must be true"
+        );
+    }
+
+    struct MockEmptyProvider;
+
+    #[async_trait::async_trait]
+    impl crate::agents::provider::LlmProvider for MockEmptyProvider {
+        async fn generate_text(
+            &self,
+            _s: &str,
+            _u: &str,
+            _c: bool,
+        ) -> Result<crate::agents::provider::types::LlmResponse> {
+            Ok(crate::agents::provider::types::LlmResponse {
+                text: "".to_string(),
+                quota: None,
+            })
+        }
+        async fn generate_response(
+            &self,
+            _q: &str,
+            _c: &[crate::agents::system1::RetrievedDocument],
+        ) -> Result<crate::agents::provider::types::LlmResponse> {
+            Ok(crate::agents::provider::types::LlmResponse {
+                text: "".to_string(),
+                quota: None,
+            })
+        }
+        async fn generate_hypothetical_document(
+            &self,
+            _q: &str,
+        ) -> Result<crate::agents::provider::types::LlmResponse> {
+            Ok(crate::agents::provider::types::LlmResponse {
+                text: "".to_string(),
+                quota: None,
+            })
+        }
+        async fn evaluate_context(
+            &self,
+            _q: &str,
+            _c: &[crate::agents::system1::RetrievedDocument],
+        ) -> Result<f32> {
+            Ok(1.0)
+        }
+    }
+
+    #[tokio::test]
+    async fn memory_refinement_does_not_overwrite_with_empty() {
+        std::env::set_var("XAVIER_TOKEN", "test-token");
+        let temp_dir = tempdir().unwrap();
+        let workspace_dir = temp_dir.path().to_path_buf();
+
+        let mut config = WorkspaceConfig::from_env();
+        config.id = "test-refinement-empty".to_string();
+        config.memory_backend = MemoryBackend::Memory;
+        let runtime_config = crate::agents::RuntimeConfig::default();
+        let workspace_state = Arc::new(
+            WorkspaceState::new(config, runtime_config, workspace_dir)
+                .await
+                .unwrap(),
+        );
+
+        let workspace_ctx = WorkspaceContext {
+            workspace_id: "test-refinement-empty".to_string(),
+            workspace: workspace_state,
+        };
+
+        let original_content = "Preserved original memory content before refinement.";
+        workspace_ctx
+            .workspace
+            .memory
+            .add_document_typed_with_embedding(
+                "notes/important.md".to_string(),
+                original_content.to_string(),
+                serde_json::json!({
+                    "memory_importance": 0.60,
+                    "kind": "note"
+                }),
+                None,
+                Some(Vec::new()),
+            )
+            .await
+            .unwrap();
+
+        let tgd_config = crate::tgd::TgdConfig {
+            cache_path: temp_dir.path().join("cache.json"),
+            improvements_path: temp_dir.path().join("rules.md"),
+            iterations: 1,
+            ..Default::default()
+        };
+        let tgd_engine = TgdEngine::with_config(Arc::new(MockEmptyProvider), tgd_config);
+
+        let task = ConsolidationTask {
+            enable_tgd_in_consolidation: true,
+            tgd_refinement_threshold: 0.99,
+            ..Default::default()
+        };
+
+        let stats = task
+            .run_tgd_memory_refinement(&workspace_ctx, Some(&tgd_engine))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            stats.memories_refined, 0,
+            "empty refinement must not be accepted or written"
+        );
+
+        let all_docs = workspace_ctx.workspace.memory.all_documents().await;
+        let doc = all_docs
+            .iter()
+            .find(|d| d.path == "notes/important.md")
+            .expect("document must still exist");
+
+        assert_eq!(
+            doc.content, original_content,
+            "stored content must remain unchanged when provider returns empty"
         );
     }
 }
