@@ -111,15 +111,6 @@ impl ConsentRegistry {
         })
     }
 
-    /// Create a registry in the user's standard data directory.
-    pub fn new_std() -> Arc<Self> {
-        let data_dir = dirs::data_local_dir()
-            .or_else(dirs::home_dir)
-            .unwrap_or_else(|| PathBuf::from("."));
-        crate::test_support::guard_user_path(&data_dir);
-        Self::open(&data_dir)
-    }
-
     /// Persist state to disk.
     fn persist(&self, state: &ConsentState) {
         if let Some(parent) = self.path.parent() {
@@ -544,5 +535,49 @@ mod tests {
         let meta = reg2.check("persist-meta").unwrap();
         assert!(meta.consented);
         assert_eq!(meta.scope, ConsentScope::MetadataOnly);
+    }
+
+    struct EnvRestore {
+        key: String,
+        old: Option<std::ffi::OsString>,
+    }
+
+    impl EnvRestore {
+        fn set(k: &str, v: &str) -> Self {
+            let old = std::env::var_os(k);
+            std::env::set_var(k, v);
+            Self {
+                key: k.to_string(),
+                old,
+            }
+        }
+    }
+
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            if let Some(ref val) = self.old {
+                std::env::set_var(&self.key, val);
+            } else {
+                std::env::remove_var(&self.key);
+            }
+        }
+    }
+
+    #[test]
+    fn test_consent_registry_follows_state_dir() {
+        let dir = TempDir::new().unwrap();
+        let _guard = EnvRestore::set("XAVIER_STATE_DIR", dir.path().to_str().unwrap());
+
+        let state_dir = crate::maloca::store::MalocaStore::resolve_state_dir();
+        let reg = ConsentRegistry::open(&state_dir);
+
+        reg.register(ConsentBody {
+            node_id: "test-state".into(),
+            consented: true,
+            scope: ConsentScope::Full,
+        });
+
+        let expected_path = dir.path().join("maloca").join("consent.json");
+        assert!(expected_path.exists());
     }
 }
