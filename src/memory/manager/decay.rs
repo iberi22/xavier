@@ -35,7 +35,6 @@ impl MemoryManager {
                 .or_else(|| {
                     doc.metadata
                         .get("last_accessed_at")
-                        .or_else(|| doc.metadata.get("updated_at"))
                         .and_then(|v| v.as_str())
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                         .map(|dt| dt.with_timezone(&chrono::Utc))
