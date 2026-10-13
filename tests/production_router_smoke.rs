@@ -240,4 +240,61 @@ async fn production_router_smoke() {
         StatusCode::FORBIDDEN,
         "POST /v1/memories/consolidate with Readonly JWT should return 403 Forbidden"
     );
+
+    // 5. PUT /v1/memories/{id} without token -> 401
+    let req = Request::builder()
+        .uri("/v1/memories/test-id-123")
+        .method(Method::PUT)
+        .header("Content-Type", "application/json")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "PUT /v1/memories/{{id}} without token should return 401 Unauthorized"
+    );
+
+    // 6. DELETE /v1/memories/{id} with Readonly JWT -> 403
+    let req = Request::builder()
+        .uri("/v1/memories/test-id-123")
+        .method(Method::DELETE)
+        .header("Authorization", format!("Bearer {}", readonly_token))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "DELETE /v1/memories/{{id}} with Readonly JWT should return 403 Forbidden"
+    );
+
+    // 7. GET /v1/config/providers -> not 404 with the root token
+    let req = Request::builder()
+        .uri("/v1/config/providers")
+        .method(Method::GET)
+        .header("Authorization", format!("Bearer {}", expected_root_token))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_ne!(
+        resp.status(),
+        StatusCode::NOT_FOUND,
+        "GET /v1/config/providers with root token should not return 404"
+    );
+
+    // 8. POST /v1/ollama/pull with Readonly JWT -> 403
+    let req = Request::builder()
+        .uri("/v1/ollama/pull")
+        .method(Method::POST)
+        .header("Authorization", format!("Bearer {}", readonly_token))
+        .header("Content-Type", "application/json")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "POST /v1/ollama/pull with Readonly JWT should return 403 Forbidden"
+    );
 }

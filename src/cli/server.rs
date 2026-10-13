@@ -274,7 +274,17 @@ pub fn memory_routes() -> Router<CliState> {
         )
         .route(
             "/v1/memories/{id}",
-            get(xavier::server::v1_api::v1_memories_get),
+            get(xavier::server::v1_api::v1_memories_get)
+                .put(
+                    xavier::server::v1_api::v1_memories_update.layer(middleware::from_fn(
+                        require_permission(|r| r.can_add_memory()),
+                    )),
+                )
+                .delete(
+                    xavier::server::v1_api::v1_memories_delete.layer(middleware::from_fn(
+                        require_permission(|r| r.can_delete_memory()),
+                    )),
+                ),
         )
         .route(
             "/v1/memories/{id}/outline",
@@ -785,7 +795,12 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
                 r.can_manage_users()
             }))),
         )
-        .route("/security/tokens/{id}/rotate", post(rotate_token_handler))
+        .route(
+            "/security/tokens/{id}/rotate",
+            post(rotate_token_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_manage_users()
+            }))),
+        )
         .route("/auth/recovery/seed/show", post(seed_show_handler))
         .route("/auth/recovery/seed/verify", post(seed_verify_handler))
         .route(
@@ -830,7 +845,9 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         )
         .route(
             "/v1/ollama/pull",
-            post(crate::cli::handlers::ollama_models::pull_model_handler),
+            post(crate::cli::handlers::ollama_models::pull_model_handler).layer(
+                middleware::from_fn(require_permission(|r| r.can_edit_config())),
+            ),
         )
         .route(
             "/v1/ollama/active",
@@ -856,7 +873,17 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         )
         .route(
             "/v1/offline/download",
-            post(crate::cli::handlers::offline_models::download_offline_model_handler),
+            post(crate::cli::handlers::offline_models::download_offline_model_handler).layer(
+                middleware::from_fn(require_permission(|r| r.can_edit_config())),
+            ),
+        )
+        .route(
+            "/v1/config/providers",
+            get(crate::cli::handlers::config::get_providers_config_handler).post(
+                crate::cli::handlers::config::update_providers_config_handler.layer(
+                    middleware::from_fn(require_permission(|r| r.can_edit_config())),
+                ),
+            ),
         )
         .route(
             "/v1/providers",
