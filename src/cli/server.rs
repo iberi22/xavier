@@ -385,754 +385,26 @@ fn build_session_importers(
     }
 }
 
-/// Start http server.
-pub async fn start_http_server(
-    port: u16,
-    mcp_port: Option<u16>,
-    #[cfg_attr(not(feature = "panel-ui"), allow(unused_variables))] no_ui: bool,
-) -> Result<()> {
-    // Initialize Prometheus exporter
-    let _ = autometrics::prometheus_exporter::try_init();
+/// Values `start_http_server` builds with side effects and passes to `build_app`.
+pub struct AppDeps {
+    pub workspace_ctx: xavier::workspace::WorkspaceContext,
+    pub space_manager: Option<std::sync::Arc<xavier::espacio::SpaceManager>>,
+    pub maloca_router: axum::Router<()>,
+    pub event_bus_for_ws: xavier::coordination::XavierEventBus,
+    pub no_ui: bool,
+}
 
-    // Initial health check run to populate the static HEALTH instance
-    tokio::spawn(async {
-        let _ = xavier::observability::health::HEALTH.run_checks().await;
-    });
-    Arc::clone(&*xavier::observability::health::HEALTH).spawn();
+/// Assemble the production router (routes and layers only, no boot side effects).
+pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
+    use axum::Extension;
 
-    let settings = XavierSettings::current();
-    settings.apply_to_env();
-
-    // Validate opencode CLI if active
-    if settings
-        .models
-        .provider
-        .trim()
-        .eq_ignore_ascii_case("opencode")
-    {
-        use std::process::Command;
-        let opencode_exists = if cfg!(windows) {
-            Command::new("where")
-                .arg("opencode")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        } else {
-            Command::new("which")
-                .arg("opencode")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        };
-
-        if !opencode_exists {
-            return Err(anyhow!("'opencode' binary not found in PATH. It is required when XAVIER_MODEL_PROVIDER=opencode.\nInstallation: npm install -g @opencode/cli"));
-        }
-    }
-
-    std::env::set_var("XAVIER_PORT", port.to_string());
-
-    let bind_host = resolve_http_bind_host();
-    let bind_addr = format!("{}:{}", bind_host, port);
-    info!("Starting Xavier HTTP server on {}", bind_addr);
-    let token = resolve_http_token()?;
-    ensure_http_token_configured(&token)?;
-    std::env::set_var("XAVIER_TOKEN", &token);
-
-    let cm = ConnectionManager::global();
-
-    // Register the sqlite-vec extension (vec_f32, vec_distance_cosine, ...) via
-    // `sqlite3_auto_extension` *before* any pool below opens its first
-    // connection. `sqlite3_auto_extension` only affects connections opened
-    // *after* this call — it does not retroactively patch a connection that
-    // was already established. `cm.connect("memory"/"metrics"/"security", ...)`
-    // just below used to run first, so those pools' connections could
-    // permanently lack `vec_f32` for the lifetime of the process (surfaced as
-    // `no such function: vec_f32` on memory writes through those pools; see
-    // issue #2544). Registration is idempotent, so calling it again later
-    // (e.g. inside `VecSqliteMemoryStore::new`) is harmless.
-    xavier::memory::sqlite_vec_store::VecSqliteMemoryStore::register_sqlite_vec_extension()?;
-
-    let config = VecSqliteStoreConfig::from_env();
-    // ── Startup guard: detect store fragmentation ────────────────────────────
-    // Warn if multiple vec-store*.sqlite3 files exist outside the canonical data/
-    // directory. This prevents silent data split across locations.
-    {
-        let mut fragment_count: u32 = 0;
-        let mut fragment_paths: Vec<String> = Vec::new();
-        // Scan workspace root for vec-store*.sqlite3 outside data/
-        if let Ok(entries) = std::fs::read_dir(".") {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.is_file() {
-                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if name.starts_with("vec-store") && name.ends_with(".sqlite3") {
-                        // Skip the canonical store
-                        if let Ok(canonical) = std::fs::canonicalize(&p)
-                            .and_then(|c| std::fs::canonicalize(&config.path).map(|k| (c, k)))
-                        {
-                            if canonical.0 == canonical.1 {
-                                continue;
-                            }
-                        }
-                        fragment_count += 1;
-                        fragment_paths.push(p.display().to_string());
-                    }
-                }
-            }
-        }
-        if fragment_count > 0 {
-            tracing::warn!(
-                fragment_count,
-                canonical = %config.path.display(),
-                ?fragment_paths,
-                "Store fragmentation detected — multiple vec-store files found outside canonical data/ dir. \
-                 Run scripts/consolidate-stores.py to merge."
-            );
-            xavier::server::alerts::SYSTEM_ALERTS.push_alert(
-                "WARN",
-                &format!(
-                    "Store fragmentation: {} legacy vec-store files detected outside data/. \
-                     Run scripts/consolidate-stores.py to merge.",
-                    fragment_count
-                ),
-                "storage",
-            );
-        }
-    }
-
-    if let Some(parent) = config.path.parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
-
-    cm.connect("memory", ".")?;
-    cm.connect("metrics", ".")?;
-    cm.connect("security", ".")?;
-    cm.set_active("default", ".").await?;
-
-    // VecSqliteMemoryStore::new registers sqlite-vec (vec_f32) via sqlite3_auto_extension
-    // *before* opening its hashed pool. Do not open the vec pool earlier or connections
-    // will lack vec_f32 and memory/add will 500.
-    //
-    // Opened through [`open_node_memory_store`], not directly, because the node
-    // master key has to exist before the store file it is going to sit next to;
-    // that function keeps the vec pool exactly where it is.
-    let (mut store_inner, node_master_key) = open_node_memory_store(config.clone()).await?;
-    info!(
-        kcv = %node_master_key.kcv_hex(),
-        "node master key ready before opening the memory store"
-    );
-    let (event_tx, _) = tokio::sync::broadcast::channel(100);
-    store_inner.set_event_tx(event_tx);
-    let store = Arc::new(store_inner);
-    let vec_project_id_for_vacuum = store.connection_project_id().to_string();
-
-    // Encrypted Xavier Cloud backup: runs only with PGHEART_URL/PGHEART_TOKEN AND a
-    // backup passphrase; XAVIER_CLOUD_BACKUP_INTERVAL_MINS=0 disables it.
-    if let Some(cloud_cfg) = xavier::sync::xavier_cloud::CloudBackupConfig::from_env() {
-        match (
-            xavier::sync::xavier_cloud::passphrase_from_env(),
-            xavier::sync::xavier_cloud::interval_from_env(),
-        ) {
-            (Ok(Some(pass)), Some(interval)) => {
-                tracing::info!(
-                    instance = %cloud_cfg.instance_id,
-                    interval_mins = interval.as_secs() / 60,
-                    "cloud_backup: periodic encrypted backup enabled"
-                );
-                let backup_store: Arc<dyn xavier::memory::store::MemoryStore> = store.clone();
-                tokio::spawn(xavier::sync::xavier_cloud::periodic_backup_loop(
-                    backup_store,
-                    cloud_cfg,
-                    pass,
-                    interval,
-                ));
-            }
-            (Ok(None), _) => tracing::warn!(
-                "cloud_backup: PGHEART_* is set but {} is not: periodic cloud backup disabled, nothing is uploaded",
-                xavier::sync::xavier_cloud::PASSPHRASE_ENV
-            ),
-            (Err(e), _) => tracing::warn!("cloud_backup: disabled: {e:#}"),
-            (Ok(Some(_)), None) => {
-                tracing::info!("cloud_backup: periodic backup disabled by interval 0")
-            }
-        }
-    }
-
-    let time_store = Arc::new(TimeMetricsStore::new());
-    let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new());
-    let rate_manager = Arc::new(RateLimitManager::new());
-    let threat_store = Arc::new(SecurityThreatStore::new());
-
-    let state_dir_str = std::env::var("XAVIER_STATE_DIR")
-        .or_else(|_| std::env::var("HOME"))
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| ".".to_string());
-    let state_dir = PathBuf::from(&state_dir_str);
-    let xavier_dir = state_dir.join(".xavier");
-    std::fs::create_dir_all(&xavier_dir)?;
-
-    let auth_store_file_path = xavier_dir.join("auth_store.db");
-    let auth_db_path = auth_store_file_path.to_string_lossy().to_string();
-    let auth_store = Arc::new(AuthStore::open(&auth_db_path)?);
-
-    let auth_db_file_path = xavier_dir.join("auth.db");
-
-    let auth2_db = Arc::new(parking_lot::Mutex::new(xavier::auth2::db::AuthDb::new(
-        &auth_db_file_path,
-    )?));
-
-    time_store.init_schema_async().await?;
-    audit_logger.init_schema_async().await?;
-    rate_manager.init_schema_async().await?;
-    threat_store.init_schema_async().await?;
-    xavier::security::tokens::TokenStore::new()
-        .init_schema_async()
-        .await?;
-
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-            let _ = ConnectionManager::global()
-                .with_conn(&vec_project_id_for_vacuum, |conn| {
-                    conn.execute("PRAGMA incremental_vacuum(100)", ())?;
-                    Ok(())
-                })
-                .await;
-        }
-    });
-
-    let workspace_id = XavierSettings::current().workspace.default_workspace_id;
-
-    // LAZY LOADING: Skip loading all 30K+ documents into RAM at startup.
-    // The pool is loaded on first access (search, get, ls, etc.) instead.
-    // Env var XAVIER_MEMORY_EAGER_LOAD=1 restores the old behavior.
-    let eager_load = std::env::var("XAVIER_MEMORY_EAGER_LOAD")
-        .map(|v| v == "1" || v == "true")
-        .unwrap_or(false);
-
-    let memory = if eager_load {
-        tracing::info!("Memory pool: EAGER mode (XAVIER_MEMORY_EAGER_LOAD=1)");
-        let durable_state = store.load_workspace_state(&workspace_id).await?;
-        let docs = Arc::new(RwLock::new(
-            durable_state
-                .memories
-                .iter()
-                .map(MemoryRecord::to_document)
-                .collect::<Vec<MemoryDocument>>(),
-        ));
-        Arc::new(QmdMemory::new_with_workspace(docs, workspace_id.clone()))
-    } else {
-        tracing::info!("Memory pool: LAZY mode (docs load on first access)");
-        Arc::new(QmdMemory::new_lazy(workspace_id.clone()))
-    };
-
-    let dyn_store: Arc<dyn MemoryStore> = store.clone();
-    memory.set_store(dyn_store.clone()).await;
-    memory.init().await?;
-    let memory_port =
-        Arc::new(QmdMemoryAdapter::new(Arc::clone(&memory))) as Arc<dyn MemoryQueryPort>;
-
-    let http_client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .user_agent(concat!("xavier-server/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))?;
-
-    let embedder = build_embedder_from_env()
-        .await
-        .map_err(|e| anyhow!("Failed to build embedder: {}", e))?;
-
-    use xavier::adapters::inbound::http::routes::{init_health_port, init_time_store};
-    use xavier::adapters::inbound::http::time_metrics_adapter::TimeMetricsAdapter;
-    use xavier::domain::cycle_breaks::w30_02::TimeMetricSink;
-    let health_adapter = Arc::new(HttpHealthAdapter::new(
-        resolve_base_url_for_port(port),
-        http_client.clone(),
-    ));
-    let time_adapter = Arc::new(TimeMetricsAdapter::new(
-        Arc::clone(&time_store) as Arc<dyn TimeMetricSink>
-    )) as Arc<dyn TimeMetricsPort>;
-    init_time_store(time_adapter);
-    init_health_port(health_adapter.clone());
-
-    // Update the global health monitor with the embedder
-    xavier::observability::health::HEALTH
-        .set_embedder(embedder.clone())
-        .await;
-    if let Ok(peers) = xavier::mesh::PeerRegistry::load() {
-        xavier::observability::health::HEALTH
-            .set_peer_registry(Arc::new(peers))
-            .await;
-    }
-
-    // ── Keepalive del mesh ────────────────────────────────────────────────────
-    // El health marca un peer como "degraded" si lleva mas de 60 s sin contacto
-    // (observability/health.rs). Sin este latido, un emparejamiento recien verificado
-    // pasaba a "degraded" al minuto aunque el peer estuviera vivo y accesible, que es
-    // justo lo que no puede pasar en una demo. Se refresca last_seen_at de los peers
-    // con endpoint conocido haciendo el handshake firmado normal.
-    tokio::spawn(async move {
-        let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
-        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        loop {
-            tick.tick().await;
-
-            let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() else {
-                continue;
-            };
-            let Ok(mut registry) = xavier::mesh::PeerRegistry::load() else {
-                continue;
-            };
-            let peers: Vec<xavier::mesh::PeerInfo> =
-                registry.list_peers().into_iter().cloned().collect();
-            if peers.is_empty() {
-                continue;
-            }
-
-            let transport = xavier::mesh::MeshTransport::new(Arc::new(identity));
-            let token = xavier::security::auth::resolve_xavier_token();
-            let mut refreshed = 0usize;
-
-            for peer in peers {
-                // Sin endpoint no hay a quien saludar (los peers emparejados por handshake
-                // entrante quedan asi hasta que se les registra el endpoint).
-                if peer.endpoint_url.trim().is_empty() {
-                    continue;
-                }
-                if transport
-                    .handshake_with_secret(&peer.endpoint_url, &token, None)
-                    .await
-                    .is_ok()
-                {
-                    if let Some(entry) = registry.get_peer_mut(&peer.node_id) {
-                        entry.last_seen_at = Some(chrono::Utc::now().timestamp());
-                    }
-                    refreshed += 1;
-                }
-            }
-
-            if refreshed > 0 {
-                // Persistir para que /health (que lee el disco) vea el latido.
-                let _ = registry.save();
-                tracing::debug!(refreshed, "mesh keepalive: last_seen_at actualizado");
-            }
-        }
-    });
-
-    let code_db_path = code_graph_db_path();
-    if let Some(parent) = code_db_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let code_db = Arc::new(::code_graph::db::CodeGraphDB::new(&code_db_path)?);
-    // Skip symbol embeddings for bulk indexing when XAVIER_CODE_GRAPH_SKIP_EMBED=1
-    // (embeddings per symbol at ~1.5/s CPU make bulk index of 1k+ files take hours;
-    //  populate later via maintenance reindex or GPU-enabled embedding)
-    let skip_symbol_embed = std::env::var("XAVIER_CODE_GRAPH_SKIP_EMBED")
-        .map(|v| v == "1" || v == "true")
-        .unwrap_or(false);
-    let mut code_indexer_obj = ::code_graph::indexer::Indexer::new(Arc::clone(&code_db));
-    if !skip_symbol_embed {
-        let symbol_embedder = Arc::new(crate::cli::handlers::code::XavierSymbolEmbedder::new(
-            embedder.clone(),
-        ));
-        code_indexer_obj.set_embedder(symbol_embedder);
-    } else {
-        tracing::info!("code-graph: symbol embeddings SKIPPED (XAVIER_CODE_GRAPH_SKIP_EMBED=1) — bulk index mode");
-    }
-    let code_indexer = Arc::new(code_indexer_obj);
-    let code_query = Arc::new(::code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
-    let code_graph_state = Arc::new(tokio::sync::RwLock::new(
-        crate::cli::state::CodeGraphState {
-            db: code_db.clone(),
-            indexer: code_indexer.clone(),
-            query: code_query.clone(),
-        },
-    ));
-
-    let workspace_dir = PathBuf::from(XavierSettings::current().memory.workspace_dir);
-    info!(
-        "Workspace root for path security: {}",
-        workspace_dir.display()
-    );
-
-    // Consent-first Colby sidecar (usually non-TTY on boot → skip/honour env). Soft-fail.
-    let sidecar =
-        xavier::codebase::codegraph_sidecar::ensure_codegraph_sidecar_soft(&workspace_dir);
-    info!("codegraph sidecar: {}", sidecar.message);
-
-    let panel_root = state_panel_root(&workspace_dir, &workspace_id);
-    let panel_store = Arc::new(ConversationsDb::open("default").await?);
-    panel_store.create_schema().await?;
-    panel_store.migrate_legacy_sessions(&panel_root).await?;
-
-    let prompt_cache = Arc::new(parking_lot::Mutex::new(HashMap::new()));
-    let security_service = Arc::new(AppSecurityService::new());
-    let event_bus = XavierEventBus::new(100);
-    // Durable mirror of the in-memory bus; a failure here must not stop boot.
-    match xavier::coordination::event_log::EventLog::open(
-        &xavier::maloca::MalocaStore::resolve_state_dir(),
-        xavier::coordination::event_log::RetentionConfig::from_env(),
-    ) {
-        Ok(log) => {
-            xavier::coordination::event_log::spawn_subscriber(&event_bus, Arc::clone(&log));
-            xavier::coordination::event_log::install_global(log);
-        }
-        Err(e) => tracing::error!(error = %e, "event log unavailable; bus events are RAM-only"),
-    }
-    let secrets_engine = Arc::new(KeyLendingEngine::new(
-        Box::new(xavier::secrets::audit::QmdAuditLogger::new()),
-        Some(event_bus.clone()),
-    ));
-    let tasks = Arc::new(
-        TaskService::new(Arc::new(InMemoryTaskStore::new())).with_event_bus(event_bus.clone()),
-    );
-
-    let secrets_engine_for_bus = secrets_engine.clone();
-    let mut receiver = event_bus.subscribe();
-    tokio::spawn(async move {
-        info!("Secrets engine listening for task events...");
-        while let Ok(event) = receiver.recv().await {
-            match event {
-                xavier::coordination::events::XavierEvent::TaskCompleted { task } => {
-                    let _ = xavier::notifications::NOTIFICATIONS
-                        .notify(
-                            xavier::notifications::IslandId::Agents,
-                            "Agent Task Complete",
-                            &format!(
-                                "Task {} completed by agent {}.",
-                                task.id,
-                                task.assignee.as_deref().unwrap_or("unknown")
-                            ),
-                            "success",
-                        )
-                        .await;
-
-                    if let Some(agent_id) = &task.assignee {
-                        info!(
-                            "Task {} completed by agent {}. Revoking ephemeral keys...",
-                            task.id, agent_id
-                        );
-                        secrets_engine_for_bus
-                            .revoke_for_agent(agent_id, "Task Completed")
-                            .await;
-                    }
-                }
-                xavier::coordination::events::XavierEvent::TaskFailed { task, reason } => {
-                    let _ = xavier::notifications::NOTIFICATIONS
-                        .notify(
-                            xavier::notifications::IslandId::Errors,
-                            "Agent Task Failed",
-                            &format!("Task {} failed: {}.", task.id, reason),
-                            "error",
-                        )
-                        .await;
-
-                    if let Some(agent_id) = &task.assignee {
-                        info!(
-                            "Task {} failed for agent {}. Revoking ephemeral keys...",
-                            task.id, agent_id
-                        );
-                        secrets_engine_for_bus
-                            .revoke_for_agent(agent_id, "Task Failed")
-                            .await;
-                    }
-                }
-                xavier::coordination::events::XavierEvent::AgentTaskCompleted {
-                    agent_id, ..
-                } => {
-                    info!(
-                        "Agent {} task completed. Revoking ephemeral keys...",
-                        agent_id
-                    );
-                    secrets_engine_for_bus
-                        .revoke_for_agent(&agent_id, "Agent Task Completed")
-                        .await;
-                }
-                xavier::coordination::events::XavierEvent::AgentTaskFailed {
-                    agent_id,
-                    reason,
-                    ..
-                } => {
-                    info!(
-                        "Agent {} task failed ({}). Revoking ephemeral keys...",
-                        agent_id, reason
-                    );
-                    secrets_engine_for_bus
-                        .revoke_for_agent(&agent_id, &format!("Agent Task Failed: {}", reason))
-                        .await;
-                }
-                _ => {}
-            }
-        }
-    });
-
-    let secrets_engine_for_cleanup = secrets_engine.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(60));
-        loop {
-            interval.tick().await;
-            let removed = secrets_engine_for_cleanup.cleanup_expired().await;
-            if removed > 0 {
-                info!("Cleaned up {} expired secret leases", removed);
-            }
-        }
-    });
-
-    let configured_providers =
-        xavier::agents::provider::config::ModelProviderConfig::get_all_configured()
-            .iter()
-            .filter_map(|c| {
-                xavier::agents::provider::router::ProviderKind::from_str(&c.provider_label)
-            })
-            .collect::<Vec<_>>();
-
-    let fallback_chain = xavier::agents::provider::router::ProviderRouter::build_default_chain(
-        &configured_providers,
-    )
-    .await;
-    let initial_provider = fallback_chain
-        .first()
-        .cloned()
-        .unwrap_or(xavier::agents::provider::router::ProviderKind::OpenAI);
-
-    let provider_router = xavier::agents::provider::router::ProviderRouter::new(initial_provider);
-    let mut provider_router = provider_router;
-    provider_router.set_fallback_chain(fallback_chain);
-    // Log the chain BEFORE moving `provider_router` into the Arc below.
-    let chain_str = provider_router
-        .fallback_chain()
-        .iter()
-        .map(|k| k.as_str())
-        .collect::<Vec<_>>()
-        .join(" → ");
-    info!("Provider fallback chain: [{}]", chain_str);
-    println!("Provider fallback chain: [{}]", chain_str);
-    let provider_router_shared = Arc::new(tokio::sync::RwLock::new(provider_router));
-
-    let usage_counters = Arc::new(xavier::observability::UsageCounters::new());
-    let proxy_use_case = Arc::new(
-        ProxyUseCase::new(rate_manager.clone(), prompt_cache.clone())
-            .with_usage_counters(usage_counters.clone())
-            .with_threat_detector(security_service.clone())
-            .with_provider_router(provider_router_shared.clone()),
-    );
-
-    let multi_db = xavier::storage::multi_db::MultiDbManager::open_default().unwrap_or_else(|e| {
-        tracing::warn!("multi_db registry unavailable ({e}); using RAM-only registry");
-        xavier::storage::multi_db::MultiDbManager::new()
-    });
-
-    // Clone the bus for the WebSocket layer before it moves into CliState.
-    let event_bus_for_ws = event_bus.clone();
-
-    let state = CliState {
-        memory: memory_port,
-        qmd_memory: Arc::clone(&memory),
-        session_manager: Arc::new(SessionManager::new(60)),
-        store,
-        workspace_id,
-        workspace_dir,
-        state_dir: state_dir.clone(),
-        auth_db: Some(auth2_db),
-        code_graph: code_graph_state,
-        security: security_service.clone() as Arc<dyn InputSecurityPort>,
-        security_scan: security_service.clone() as Arc<dyn SecurityScanPort>,
-        _time_store: Some(time_store),
-        agent_registry: SimpleAgentRegistry::new_with_engines(
-            Some(secrets_engine.clone()),
-            Some(event_bus.clone()),
-        ) as Arc<dyn AgentLifecyclePort>,
-        panel_store,
-        secrets_engine,
-        event_bus,
-        tasks,
-        rate_manager: rate_manager.clone(),
-        prompt_cache,
-        proxy_use_case,
-        usage_counters,
-        http_client,
-        provider_router: provider_router_shared,
-        embedder: embedder.clone(),
-        agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(
-            crate::memory::file_indexer::FileIndexer::new(
-                crate::memory::file_indexer::FileIndexerConfig::default(),
-                Some(code_indexer.clone()),
-            ),
-        )),
-        auth_store: Some(auth_store),
-        openclaw_indexer: Arc::new(crate::memory::openclaw_indexer::OpenClawAgentIndexer::new(
-            embedder.clone(),
-        )),
-        system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
-        multi_db,
-        maloca: xavier::maloca::MalocaStore::open_default(),
-    };
-
-    info!(
-        "Memory store initialized for workspace: {}",
-        state.workspace_id
-    );
-
-    // Espacio: one long-lived SpaceManager under the daemon data dir. Key
-    // init failure or XAVIER_SPACES=off leaves espacio disabled, never a crash.
-    let space_manager =
-        crate::cli::state::open_space_manager(&xavier::maloca::MalocaStore::resolve_state_dir());
-    if let Some(m) = &space_manager {
-        xavier::adapters::inbound::http::routes::init_space_manager(m.clone());
-    }
-
-    // Initialize and wire up the Memory Sync singleton
-    let node_id = if let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() {
-        identity.node_id.0
-    } else {
-        "local".to_string()
-    };
-    // Shared mesh token: peers in the same SWAL mesh authenticate with the
-    // same XAVIER_TOKEN (fallback: XAVIER_MESH_TOKEN, then none).
-    let mesh_token = std::env::var("XAVIER_TOKEN")
-        .ok()
-        .or_else(|| std::env::var("XAVIER_MESH_TOKEN").ok());
-    let sync_service = Arc::new(xavier::memory::sync::PeerMemorySync::with_peer_token(
-        state.store.clone(),
-        node_id,
-        mesh_token,
-    ));
-    xavier::adapters::inbound::http::handlers::sync::init_memory_sync(Arc::clone(&sync_service));
-
-    // ── Background sync loop ──────────────────────────────────────────────
-    // Spawns a periodic background task that syncs memory with all configured
-    // peers. Reads peer URLs from the XAVIER_PEERS env var (comma-separated)
-    // or from an explicit list. If neither is configured, the loop idles.
-    let (_sync_handle, _sync_stop) = sync_service.spawn_background_sync(vec![]);
-    tracing::info!("Background memory sync loop spawned");
-
-    // ── Universal Agent Session Ingestion Background Loop ────────────────
-    // Periodically ingests transcripts from Antigravity, OpenCode, Hermes, and Codex.
-    // Interval via XAVIER_INGESTION_INTERVAL_SECS (default 600); 0 disables
-    // the loop (emergency brake for embedding storms).
-    let ingestion_interval_secs = ingestion_interval_secs();
-    let ingestion_store = state.store.clone();
-    let ingestion_embedder = state.embedder.clone();
-    let ingestion_in_flight = Arc::new(AtomicBool::new(false));
-    if ingestion_interval_secs == 0 {
-        tracing::warn!(
-            "Universal agent session ingestion DISABLED (XAVIER_INGESTION_INTERVAL_SECS=0)"
-        );
-    } else {
-        tracing::info!(
-            interval_secs = ingestion_interval_secs,
-            "Universal agent session ingestion loop spawned"
-        );
-        let in_flight = Arc::clone(&ingestion_in_flight);
-        // The importers are built ONCE, here, and not inside the cycle loop.
-        // Each one carries a cursor (fingerprint / watermark of what it already
-        // ingested), loaded from and saved to `ingest-cursors/` under the daemon
-        // data dir, and `sync` consults it to skip work. A constructor inside
-        // the loop discards that state every cycle, which silently degrades
-        // every `sync` back into a full scan — the exact regression this wiring
-        // fixes. The structural tests in `ingestion_wiring_tests` guard the
-        // position of these constructors. This stays inside the enabled branch:
-        // `XAVIER_INGESTION_INTERVAL_SECS=0` does not build importers or cursor
-        // files.
-        let ingestion_data_dir = xavier::maloca::MalocaStore::resolve_state_dir();
-        let SessionImporters {
-            antigravity: ag_importer,
-            opencode: oc_importer,
-            hermes: hermes_importer,
-            codex: codex_importer,
-        } = build_session_importers(&ingestion_data_dir, ingestion_embedder);
-        tokio::spawn(async move {
-            // Initial grace period to allow server start
-            tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
-            loop {
-                if !try_begin_cycle(&in_flight) {
-                    tracing::warn!("skipping ingestion cycle: previous still running");
-                    tokio::time::sleep(tokio::time::Duration::from_secs(ingestion_interval_secs))
-                        .await;
-                    continue;
-                }
-
-                tracing::info!("🔄 Running universal agent session ingestion cycle...");
-
-                // All three importers use `sync`, not `import_all`: the periodic
-                // pass skips sources whose fingerprint is unchanged.
-                // `import_all` is the explicit re-index path used by the /index
-                // handlers, which report a count and so must read everything.
-                //
-                // Stats go to `info`, not `debug`: an idle node must be able to
-                // show `read=0 skipped=N` in the journal or /health to prove the
-                // cursor is working. At debug level the fix is unobservable in
-                // production, which is how the previous full-scan regression ran
-                // for days unnoticed.
-                match ag_importer.sync(ingestion_store.as_ref()).await {
-                    Ok(stats) => tracing::info!(
-                        source = "antigravity",
-                        candidates = stats.candidates,
-                        read = stats.read,
-                        skipped = stats.skipped,
-                        records = stats.records,
-                        store_reads = stats.store_reads,
-                        "session ingestion cursor pass"
-                    ),
-                    Err(e) => {
-                        tracing::warn!(source = "antigravity", error = %e, "ingestion pass failed")
-                    }
-                }
-
-                match oc_importer.sync(ingestion_store.as_ref()).await {
-                    Ok(stats) => tracing::info!(
-                        source = "opencode",
-                        candidates = stats.candidates,
-                        read = stats.read,
-                        skipped = stats.skipped,
-                        hot_deferred = stats.hot_deferred,
-                        message_rows = stats.message_rows,
-                        records = stats.records,
-                        store_reads = stats.store_reads,
-                        "session ingestion cursor pass"
-                    ),
-                    Err(e) => {
-                        tracing::warn!(source = "opencode", error = %e, "ingestion pass failed")
-                    }
-                }
-
-                match hermes_importer.sync(ingestion_store.as_ref()).await {
-                    Ok(stats) => tracing::info!(
-                        source = "hermes",
-                        read = stats.read,
-                        skipped = stats.skipped,
-                        records = stats.records,
-                        store_reads = stats.store_reads,
-                        "session ingestion cursor pass"
-                    ),
-                    Err(e) => {
-                        tracing::warn!(source = "hermes", error = %e, "ingestion pass failed")
-                    }
-                }
-
-                match codex_importer.sync(ingestion_store.as_ref()).await {
-                    Ok(stats) => tracing::info!(
-                        source = "codex",
-                        candidates = stats.candidates,
-                        read = stats.read,
-                        skipped = stats.skipped,
-                        errors = stats.errors,
-                        records = stats.records,
-                        "session ingestion cursor pass"
-                    ),
-                    Err(e) => {
-                        tracing::warn!(source = "codex", error = %e, "ingestion pass failed")
-                    }
-                }
-
-                end_cycle(&in_flight);
-
-                // Ingestion cadence is operator-tunable without a rebuild.
-                tokio::time::sleep(tokio::time::Duration::from_secs(ingestion_interval_secs)).await;
-            }
-        });
-    }
+    let AppDeps {
+        workspace_ctx,
+        space_manager,
+        maloca_router,
+        event_bus_for_ws,
+        no_ui,
+    } = deps;
 
     let protected_routes = Router::new()
         .merge(
@@ -1895,36 +1167,6 @@ pub async fn start_http_server(
             .route("/plugins/sync", post(plugins_sync_handler))
     };
 
-    use axum::Extension;
-    use xavier::agents::RuntimeConfig;
-    use xavier::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
-
-    let workspace_config = WorkspaceConfig::from_env();
-    let runtime_config = RuntimeConfig::from_env();
-    let workspace_state = Arc::new(
-        WorkspaceState::new(
-            workspace_config,
-            runtime_config,
-            state.workspace_dir.clone(),
-        )
-        .await?,
-    );
-    let workspace_ctx = WorkspaceContext {
-        workspace_id: state.workspace_id.clone(),
-        workspace: workspace_state.clone(),
-    };
-    let working_snapshot_path =
-        xavier::memory::working::snapshot_path(&xavier::maloca::MalocaStore::resolve_state_dir());
-    xavier::memory::working::spawn_persistence(
-        Arc::clone(&workspace_state.working_memory),
-        working_snapshot_path.clone(),
-        xavier::memory::working::snapshot_interval_from_env(),
-    );
-    let working_memory_for_shutdown = Arc::clone(&workspace_state.working_memory);
-
-    // Maloca ops API — public local dogfood (matches @swal/maloca-client; no token).
-    let maloca_store = state.maloca.clone();
-
     let app = Router::new()
         .nest(
             "/auth",
@@ -1990,6 +1232,808 @@ pub async fn start_http_server(
     let app = crate::cli::state::install_space_manager(app, space_manager.clone());
 
     let app = app.with_state(state.clone());
+
+    let app = app
+        .merge(maloca_router)
+        .layer(CorsLayer::permissive())
+        .layer(middleware::from_fn(
+            xavier::adapters::inbound::http::middleware::timeout::timeout_middleware,
+        ));
+
+    #[cfg(feature = "enterprise")]
+    let app = {
+        use std::sync::{Arc, Mutex};
+        use xavier::enterprise::http::{enterprise_router, EnterpriseState};
+        let enterprise_state = Arc::new(Mutex::new(EnterpriseState::init_default()));
+        app.merge(
+            enterprise_router(enterprise_state).layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth_middleware,
+            )),
+        )
+    };
+
+    app
+}
+
+/// Start http server.
+pub async fn start_http_server(
+    port: u16,
+    mcp_port: Option<u16>,
+    #[cfg_attr(not(feature = "panel-ui"), allow(unused_variables))] no_ui: bool,
+) -> Result<()> {
+    // Initialize Prometheus exporter
+    let _ = autometrics::prometheus_exporter::try_init();
+
+    // Initial health check run to populate the static HEALTH instance
+    tokio::spawn(async {
+        let _ = xavier::observability::health::HEALTH.run_checks().await;
+    });
+    Arc::clone(&*xavier::observability::health::HEALTH).spawn();
+
+    let settings = XavierSettings::current();
+    settings.apply_to_env();
+
+    // Validate opencode CLI if active
+    if settings
+        .models
+        .provider
+        .trim()
+        .eq_ignore_ascii_case("opencode")
+    {
+        use std::process::Command;
+        let opencode_exists = if cfg!(windows) {
+            Command::new("where")
+                .arg("opencode")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        } else {
+            Command::new("which")
+                .arg("opencode")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
+
+        if !opencode_exists {
+            return Err(anyhow!("'opencode' binary not found in PATH. It is required when XAVIER_MODEL_PROVIDER=opencode.\nInstallation: npm install -g @opencode/cli"));
+        }
+    }
+
+    std::env::set_var("XAVIER_PORT", port.to_string());
+
+    let bind_host = resolve_http_bind_host();
+    let bind_addr = format!("{}:{}", bind_host, port);
+    info!("Starting Xavier HTTP server on {}", bind_addr);
+    let token = resolve_http_token()?;
+    ensure_http_token_configured(&token)?;
+    std::env::set_var("XAVIER_TOKEN", &token);
+
+    let cm = ConnectionManager::global();
+
+    // Register the sqlite-vec extension (vec_f32, vec_distance_cosine, ...) via
+    // `sqlite3_auto_extension` *before* any pool below opens its first
+    // connection. `sqlite3_auto_extension` only affects connections opened
+    // *after* this call — it does not retroactively patch a connection that
+    // was already established. `cm.connect("memory"/"metrics"/"security", ...)`
+    // just below used to run first, so those pools' connections could
+    // permanently lack `vec_f32` for the lifetime of the process (surfaced as
+    // `no such function: vec_f32` on memory writes through those pools; see
+    // issue #2544). Registration is idempotent, so calling it again later
+    // (e.g. inside `VecSqliteMemoryStore::new`) is harmless.
+    xavier::memory::sqlite_vec_store::VecSqliteMemoryStore::register_sqlite_vec_extension()?;
+
+    let config = VecSqliteStoreConfig::from_env();
+    // ── Startup guard: detect store fragmentation ────────────────────────────
+    // Warn if multiple vec-store*.sqlite3 files exist outside the canonical data/
+    // directory. This prevents silent data split across locations.
+    {
+        let mut fragment_count: u32 = 0;
+        let mut fragment_paths: Vec<String> = Vec::new();
+        // Scan workspace root for vec-store*.sqlite3 outside data/
+        if let Ok(entries) = std::fs::read_dir(".") {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if name.starts_with("vec-store") && name.ends_with(".sqlite3") {
+                        // Skip the canonical store
+                        if let Ok(canonical) = std::fs::canonicalize(&p)
+                            .and_then(|c| std::fs::canonicalize(&config.path).map(|k| (c, k)))
+                        {
+                            if canonical.0 == canonical.1 {
+                                continue;
+                            }
+                        }
+                        fragment_count += 1;
+                        fragment_paths.push(p.display().to_string());
+                    }
+                }
+            }
+        }
+        if fragment_count > 0 {
+            tracing::warn!(
+                fragment_count,
+                canonical = %config.path.display(),
+                ?fragment_paths,
+                "Store fragmentation detected — multiple vec-store files found outside canonical data/ dir. \
+                 Run scripts/consolidate-stores.py to merge."
+            );
+            xavier::server::alerts::SYSTEM_ALERTS.push_alert(
+                "WARN",
+                &format!(
+                    "Store fragmentation: {} legacy vec-store files detected outside data/. \
+                     Run scripts/consolidate-stores.py to merge.",
+                    fragment_count
+                ),
+                "storage",
+            );
+        }
+    }
+
+    if let Some(parent) = config.path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    cm.connect("memory", ".")?;
+    cm.connect("metrics", ".")?;
+    cm.connect("security", ".")?;
+    cm.set_active("default", ".").await?;
+
+    // VecSqliteMemoryStore::new registers sqlite-vec (vec_f32) via sqlite3_auto_extension
+    // *before* opening its hashed pool. Do not open the vec pool earlier or connections
+    // will lack vec_f32 and memory/add will 500.
+    //
+    // Opened through [`open_node_memory_store`], not directly, because the node
+    // master key has to exist before the store file it is going to sit next to;
+    // that function keeps the vec pool exactly where it is.
+    let (mut store_inner, node_master_key) = open_node_memory_store(config.clone()).await?;
+    info!(
+        kcv = %node_master_key.kcv_hex(),
+        "node master key ready before opening the memory store"
+    );
+    let (event_tx, _) = tokio::sync::broadcast::channel(100);
+    store_inner.set_event_tx(event_tx);
+    let store = Arc::new(store_inner);
+    let vec_project_id_for_vacuum = store.connection_project_id().to_string();
+
+    // Encrypted Xavier Cloud backup: runs only with PGHEART_URL/PGHEART_TOKEN AND a
+    // backup passphrase; XAVIER_CLOUD_BACKUP_INTERVAL_MINS=0 disables it.
+    if let Some(cloud_cfg) = xavier::sync::xavier_cloud::CloudBackupConfig::from_env() {
+        match (
+            xavier::sync::xavier_cloud::passphrase_from_env(),
+            xavier::sync::xavier_cloud::interval_from_env(),
+        ) {
+            (Ok(Some(pass)), Some(interval)) => {
+                tracing::info!(
+                    instance = %cloud_cfg.instance_id,
+                    interval_mins = interval.as_secs() / 60,
+                    "cloud_backup: periodic encrypted backup enabled"
+                );
+                let backup_store: Arc<dyn xavier::memory::store::MemoryStore> = store.clone();
+                tokio::spawn(xavier::sync::xavier_cloud::periodic_backup_loop(
+                    backup_store,
+                    cloud_cfg,
+                    pass,
+                    interval,
+                ));
+            }
+            (Ok(None), _) => tracing::warn!(
+                "cloud_backup: PGHEART_* is set but {} is not: periodic cloud backup disabled, nothing is uploaded",
+                xavier::sync::xavier_cloud::PASSPHRASE_ENV
+            ),
+            (Err(e), _) => tracing::warn!("cloud_backup: disabled: {e:#}"),
+            (Ok(Some(_)), None) => {
+                tracing::info!("cloud_backup: periodic backup disabled by interval 0")
+            }
+        }
+    }
+
+    let time_store = Arc::new(TimeMetricsStore::new());
+    let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new());
+    let rate_manager = Arc::new(RateLimitManager::new());
+    let threat_store = Arc::new(SecurityThreatStore::new());
+
+    let state_dir_str = std::env::var("XAVIER_STATE_DIR")
+        .or_else(|_| std::env::var("HOME"))
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string());
+    let state_dir = PathBuf::from(&state_dir_str);
+    let xavier_dir = state_dir.join(".xavier");
+    std::fs::create_dir_all(&xavier_dir)?;
+
+    let auth_store_file_path = xavier_dir.join("auth_store.db");
+    let auth_db_path = auth_store_file_path.to_string_lossy().to_string();
+    let auth_store = Arc::new(AuthStore::open(&auth_db_path)?);
+
+    let auth_db_file_path = xavier_dir.join("auth.db");
+
+    let auth2_db = Arc::new(parking_lot::Mutex::new(xavier::auth2::db::AuthDb::new(
+        &auth_db_file_path,
+    )?));
+
+    time_store.init_schema_async().await?;
+    audit_logger.init_schema_async().await?;
+    rate_manager.init_schema_async().await?;
+    threat_store.init_schema_async().await?;
+    xavier::security::tokens::TokenStore::new()
+        .init_schema_async()
+        .await?;
+
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+            let _ = ConnectionManager::global()
+                .with_conn(&vec_project_id_for_vacuum, |conn| {
+                    conn.execute("PRAGMA incremental_vacuum(100)", ())?;
+                    Ok(())
+                })
+                .await;
+        }
+    });
+
+    let workspace_id = XavierSettings::current().workspace.default_workspace_id;
+
+    // LAZY LOADING: Skip loading all 30K+ documents into RAM at startup.
+    // The pool is loaded on first access (search, get, ls, etc.) instead.
+    // Env var XAVIER_MEMORY_EAGER_LOAD=1 restores the old behavior.
+    let eager_load = std::env::var("XAVIER_MEMORY_EAGER_LOAD")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
+
+    let memory = if eager_load {
+        tracing::info!("Memory pool: EAGER mode (XAVIER_MEMORY_EAGER_LOAD=1)");
+        let durable_state = store.load_workspace_state(&workspace_id).await?;
+        let docs = Arc::new(RwLock::new(
+            durable_state
+                .memories
+                .iter()
+                .map(MemoryRecord::to_document)
+                .collect::<Vec<MemoryDocument>>(),
+        ));
+        Arc::new(QmdMemory::new_with_workspace(docs, workspace_id.clone()))
+    } else {
+        tracing::info!("Memory pool: LAZY mode (docs load on first access)");
+        Arc::new(QmdMemory::new_lazy(workspace_id.clone()))
+    };
+
+    let dyn_store: Arc<dyn MemoryStore> = store.clone();
+    memory.set_store(dyn_store.clone()).await;
+    memory.init().await?;
+    let memory_port =
+        Arc::new(QmdMemoryAdapter::new(Arc::clone(&memory))) as Arc<dyn MemoryQueryPort>;
+
+    let http_client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .user_agent(concat!("xavier-server/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))?;
+
+    let embedder = build_embedder_from_env()
+        .await
+        .map_err(|e| anyhow!("Failed to build embedder: {}", e))?;
+
+    use xavier::adapters::inbound::http::routes::{init_health_port, init_time_store};
+    use xavier::adapters::inbound::http::time_metrics_adapter::TimeMetricsAdapter;
+    use xavier::domain::cycle_breaks::w30_02::TimeMetricSink;
+    let health_adapter = Arc::new(HttpHealthAdapter::new(
+        resolve_base_url_for_port(port),
+        http_client.clone(),
+    ));
+    let time_adapter = Arc::new(TimeMetricsAdapter::new(
+        Arc::clone(&time_store) as Arc<dyn TimeMetricSink>
+    )) as Arc<dyn TimeMetricsPort>;
+    init_time_store(time_adapter);
+    init_health_port(health_adapter.clone());
+
+    // Update the global health monitor with the embedder
+    xavier::observability::health::HEALTH
+        .set_embedder(embedder.clone())
+        .await;
+    if let Ok(peers) = xavier::mesh::PeerRegistry::load() {
+        xavier::observability::health::HEALTH
+            .set_peer_registry(Arc::new(peers))
+            .await;
+    }
+
+    // ── Keepalive del mesh ────────────────────────────────────────────────────
+    // El health marca un peer como "degraded" si lleva mas de 60 s sin contacto
+    // (observability/health.rs). Sin este latido, un emparejamiento recien verificado
+    // pasaba a "degraded" al minuto aunque el peer estuviera vivo y accesible, que es
+    // justo lo que no puede pasar en una demo. Se refresca last_seen_at de los peers
+    // con endpoint conocido haciendo el handshake firmado normal.
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tick.tick().await;
+
+            let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() else {
+                continue;
+            };
+            let Ok(mut registry) = xavier::mesh::PeerRegistry::load() else {
+                continue;
+            };
+            let peers: Vec<xavier::mesh::PeerInfo> =
+                registry.list_peers().into_iter().cloned().collect();
+            if peers.is_empty() {
+                continue;
+            }
+
+            let transport = xavier::mesh::MeshTransport::new(Arc::new(identity));
+            let token = xavier::security::auth::resolve_xavier_token();
+            let mut refreshed = 0usize;
+
+            for peer in peers {
+                // Sin endpoint no hay a quien saludar (los peers emparejados por handshake
+                // entrante quedan asi hasta que se les registra el endpoint).
+                if peer.endpoint_url.trim().is_empty() {
+                    continue;
+                }
+                if transport
+                    .handshake_with_secret(&peer.endpoint_url, &token, None)
+                    .await
+                    .is_ok()
+                {
+                    if let Some(entry) = registry.get_peer_mut(&peer.node_id) {
+                        entry.last_seen_at = Some(chrono::Utc::now().timestamp());
+                    }
+                    refreshed += 1;
+                }
+            }
+
+            if refreshed > 0 {
+                // Persistir para que /health (que lee el disco) vea el latido.
+                let _ = registry.save();
+                tracing::debug!(refreshed, "mesh keepalive: last_seen_at actualizado");
+            }
+        }
+    });
+
+    let code_db_path = code_graph_db_path();
+    if let Some(parent) = code_db_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let code_db = Arc::new(::code_graph::db::CodeGraphDB::new(&code_db_path)?);
+    // Skip symbol embeddings for bulk indexing when XAVIER_CODE_GRAPH_SKIP_EMBED=1
+    // (embeddings per symbol at ~1.5/s CPU make bulk index of 1k+ files take hours;
+    //  populate later via maintenance reindex or GPU-enabled embedding)
+    let skip_symbol_embed = std::env::var("XAVIER_CODE_GRAPH_SKIP_EMBED")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
+    let mut code_indexer_obj = ::code_graph::indexer::Indexer::new(Arc::clone(&code_db));
+    if !skip_symbol_embed {
+        let symbol_embedder = Arc::new(crate::cli::handlers::code::XavierSymbolEmbedder::new(
+            embedder.clone(),
+        ));
+        code_indexer_obj.set_embedder(symbol_embedder);
+    } else {
+        tracing::info!("code-graph: symbol embeddings SKIPPED (XAVIER_CODE_GRAPH_SKIP_EMBED=1) — bulk index mode");
+    }
+    let code_indexer = Arc::new(code_indexer_obj);
+    let code_query = Arc::new(::code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
+    let code_graph_state = Arc::new(tokio::sync::RwLock::new(
+        crate::cli::state::CodeGraphState {
+            db: code_db.clone(),
+            indexer: code_indexer.clone(),
+            query: code_query.clone(),
+        },
+    ));
+
+    let workspace_dir = PathBuf::from(XavierSettings::current().memory.workspace_dir);
+    info!(
+        "Workspace root for path security: {}",
+        workspace_dir.display()
+    );
+
+    // Consent-first Colby sidecar (usually non-TTY on boot → skip/honour env). Soft-fail.
+    let sidecar =
+        xavier::codebase::codegraph_sidecar::ensure_codegraph_sidecar_soft(&workspace_dir);
+    info!("codegraph sidecar: {}", sidecar.message);
+
+    let panel_root = state_panel_root(&workspace_dir, &workspace_id);
+    let panel_store = Arc::new(ConversationsDb::open("default").await?);
+    panel_store.create_schema().await?;
+    panel_store.migrate_legacy_sessions(&panel_root).await?;
+
+    let prompt_cache = Arc::new(parking_lot::Mutex::new(HashMap::new()));
+    let security_service = Arc::new(AppSecurityService::new());
+    let event_bus = XavierEventBus::new(100);
+    // Durable mirror of the in-memory bus; a failure here must not stop boot.
+    match xavier::coordination::event_log::EventLog::open(
+        &xavier::maloca::MalocaStore::resolve_state_dir(),
+        xavier::coordination::event_log::RetentionConfig::from_env(),
+    ) {
+        Ok(log) => {
+            xavier::coordination::event_log::spawn_subscriber(&event_bus, Arc::clone(&log));
+            xavier::coordination::event_log::install_global(log);
+        }
+        Err(e) => tracing::error!(error = %e, "event log unavailable; bus events are RAM-only"),
+    }
+    let secrets_engine = Arc::new(KeyLendingEngine::new(
+        Box::new(xavier::secrets::audit::QmdAuditLogger::new()),
+        Some(event_bus.clone()),
+    ));
+    let tasks = Arc::new(
+        TaskService::new(Arc::new(InMemoryTaskStore::new())).with_event_bus(event_bus.clone()),
+    );
+
+    let secrets_engine_for_bus = secrets_engine.clone();
+    let mut receiver = event_bus.subscribe();
+    tokio::spawn(async move {
+        info!("Secrets engine listening for task events...");
+        while let Ok(event) = receiver.recv().await {
+            match event {
+                xavier::coordination::events::XavierEvent::TaskCompleted { task } => {
+                    let _ = xavier::notifications::NOTIFICATIONS
+                        .notify(
+                            xavier::notifications::IslandId::Agents,
+                            "Agent Task Complete",
+                            &format!(
+                                "Task {} completed by agent {}.",
+                                task.id,
+                                task.assignee.as_deref().unwrap_or("unknown")
+                            ),
+                            "success",
+                        )
+                        .await;
+
+                    if let Some(agent_id) = &task.assignee {
+                        info!(
+                            "Task {} completed by agent {}. Revoking ephemeral keys...",
+                            task.id, agent_id
+                        );
+                        secrets_engine_for_bus
+                            .revoke_for_agent(agent_id, "Task Completed")
+                            .await;
+                    }
+                }
+                xavier::coordination::events::XavierEvent::TaskFailed { task, reason } => {
+                    let _ = xavier::notifications::NOTIFICATIONS
+                        .notify(
+                            xavier::notifications::IslandId::Errors,
+                            "Agent Task Failed",
+                            &format!("Task {} failed: {}.", task.id, reason),
+                            "error",
+                        )
+                        .await;
+
+                    if let Some(agent_id) = &task.assignee {
+                        info!(
+                            "Task {} failed for agent {}. Revoking ephemeral keys...",
+                            task.id, agent_id
+                        );
+                        secrets_engine_for_bus
+                            .revoke_for_agent(agent_id, "Task Failed")
+                            .await;
+                    }
+                }
+                xavier::coordination::events::XavierEvent::AgentTaskCompleted {
+                    agent_id, ..
+                } => {
+                    info!(
+                        "Agent {} task completed. Revoking ephemeral keys...",
+                        agent_id
+                    );
+                    secrets_engine_for_bus
+                        .revoke_for_agent(&agent_id, "Agent Task Completed")
+                        .await;
+                }
+                xavier::coordination::events::XavierEvent::AgentTaskFailed {
+                    agent_id,
+                    reason,
+                    ..
+                } => {
+                    info!(
+                        "Agent {} task failed ({}). Revoking ephemeral keys...",
+                        agent_id, reason
+                    );
+                    secrets_engine_for_bus
+                        .revoke_for_agent(&agent_id, &format!("Agent Task Failed: {}", reason))
+                        .await;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let secrets_engine_for_cleanup = secrets_engine.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            let removed = secrets_engine_for_cleanup.cleanup_expired().await;
+            if removed > 0 {
+                info!("Cleaned up {} expired secret leases", removed);
+            }
+        }
+    });
+
+    let configured_providers =
+        xavier::agents::provider::config::ModelProviderConfig::get_all_configured()
+            .iter()
+            .filter_map(|c| {
+                xavier::agents::provider::router::ProviderKind::from_str(&c.provider_label)
+            })
+            .collect::<Vec<_>>();
+
+    let fallback_chain = xavier::agents::provider::router::ProviderRouter::build_default_chain(
+        &configured_providers,
+    )
+    .await;
+    let initial_provider = fallback_chain
+        .first()
+        .cloned()
+        .unwrap_or(xavier::agents::provider::router::ProviderKind::OpenAI);
+
+    let provider_router = xavier::agents::provider::router::ProviderRouter::new(initial_provider);
+    let mut provider_router = provider_router;
+    provider_router.set_fallback_chain(fallback_chain);
+    // Log the chain BEFORE moving `provider_router` into the Arc below.
+    let chain_str = provider_router
+        .fallback_chain()
+        .iter()
+        .map(|k| k.as_str())
+        .collect::<Vec<_>>()
+        .join(" → ");
+    info!("Provider fallback chain: [{}]", chain_str);
+    println!("Provider fallback chain: [{}]", chain_str);
+    let provider_router_shared = Arc::new(tokio::sync::RwLock::new(provider_router));
+
+    let usage_counters = Arc::new(xavier::observability::UsageCounters::new());
+    let proxy_use_case = Arc::new(
+        ProxyUseCase::new(rate_manager.clone(), prompt_cache.clone())
+            .with_usage_counters(usage_counters.clone())
+            .with_threat_detector(security_service.clone())
+            .with_provider_router(provider_router_shared.clone()),
+    );
+
+    let multi_db = xavier::storage::multi_db::MultiDbManager::open_default().unwrap_or_else(|e| {
+        tracing::warn!("multi_db registry unavailable ({e}); using RAM-only registry");
+        xavier::storage::multi_db::MultiDbManager::new()
+    });
+
+    // Clone the bus for the WebSocket layer before it moves into CliState.
+    let event_bus_for_ws = event_bus.clone();
+
+    let state = CliState {
+        memory: memory_port,
+        qmd_memory: Arc::clone(&memory),
+        session_manager: Arc::new(SessionManager::new(60)),
+        store,
+        workspace_id,
+        workspace_dir,
+        state_dir: state_dir.clone(),
+        auth_db: Some(auth2_db),
+        code_graph: code_graph_state,
+        security: security_service.clone() as Arc<dyn InputSecurityPort>,
+        security_scan: security_service.clone() as Arc<dyn SecurityScanPort>,
+        _time_store: Some(time_store),
+        agent_registry: SimpleAgentRegistry::new_with_engines(
+            Some(secrets_engine.clone()),
+            Some(event_bus.clone()),
+        ) as Arc<dyn AgentLifecyclePort>,
+        panel_store,
+        secrets_engine,
+        event_bus,
+        tasks,
+        rate_manager: rate_manager.clone(),
+        prompt_cache,
+        proxy_use_case,
+        usage_counters,
+        http_client,
+        provider_router: provider_router_shared,
+        embedder: embedder.clone(),
+        agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(
+            crate::memory::file_indexer::FileIndexer::new(
+                crate::memory::file_indexer::FileIndexerConfig::default(),
+                Some(code_indexer.clone()),
+            ),
+        )),
+        auth_store: Some(auth_store),
+        openclaw_indexer: Arc::new(crate::memory::openclaw_indexer::OpenClawAgentIndexer::new(
+            embedder.clone(),
+        )),
+        system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
+        multi_db,
+        maloca: xavier::maloca::MalocaStore::open_default(),
+    };
+
+    info!(
+        "Memory store initialized for workspace: {}",
+        state.workspace_id
+    );
+
+    // Espacio: one long-lived SpaceManager under the daemon data dir. Key
+    // init failure or XAVIER_SPACES=off leaves espacio disabled, never a crash.
+    let space_manager =
+        crate::cli::state::open_space_manager(&xavier::maloca::MalocaStore::resolve_state_dir());
+    if let Some(m) = &space_manager {
+        xavier::adapters::inbound::http::routes::init_space_manager(m.clone());
+    }
+
+    // Initialize and wire up the Memory Sync singleton
+    let node_id = if let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() {
+        identity.node_id.0
+    } else {
+        "local".to_string()
+    };
+    // Shared mesh token: peers in the same SWAL mesh authenticate with the
+    // same XAVIER_TOKEN (fallback: XAVIER_MESH_TOKEN, then none).
+    let mesh_token = std::env::var("XAVIER_TOKEN")
+        .ok()
+        .or_else(|| std::env::var("XAVIER_MESH_TOKEN").ok());
+    let sync_service = Arc::new(xavier::memory::sync::PeerMemorySync::with_peer_token(
+        state.store.clone(),
+        node_id,
+        mesh_token,
+    ));
+    xavier::adapters::inbound::http::handlers::sync::init_memory_sync(Arc::clone(&sync_service));
+
+    // ── Background sync loop ──────────────────────────────────────────────
+    // Spawns a periodic background task that syncs memory with all configured
+    // peers. Reads peer URLs from the XAVIER_PEERS env var (comma-separated)
+    // or from an explicit list. If neither is configured, the loop idles.
+    let (_sync_handle, _sync_stop) = sync_service.spawn_background_sync(vec![]);
+    tracing::info!("Background memory sync loop spawned");
+
+    // ── Universal Agent Session Ingestion Background Loop ────────────────
+    // Periodically ingests transcripts from Antigravity, OpenCode, Hermes, and Codex.
+    // Interval via XAVIER_INGESTION_INTERVAL_SECS (default 600); 0 disables
+    // the loop (emergency brake for embedding storms).
+    let ingestion_interval_secs = ingestion_interval_secs();
+    let ingestion_store = state.store.clone();
+    let ingestion_embedder = state.embedder.clone();
+    let ingestion_in_flight = Arc::new(AtomicBool::new(false));
+    if ingestion_interval_secs == 0 {
+        tracing::warn!(
+            "Universal agent session ingestion DISABLED (XAVIER_INGESTION_INTERVAL_SECS=0)"
+        );
+    } else {
+        tracing::info!(
+            interval_secs = ingestion_interval_secs,
+            "Universal agent session ingestion loop spawned"
+        );
+        let in_flight = Arc::clone(&ingestion_in_flight);
+        // The importers are built ONCE, here, and not inside the cycle loop.
+        // Each one carries a cursor (fingerprint / watermark of what it already
+        // ingested), loaded from and saved to `ingest-cursors/` under the daemon
+        // data dir, and `sync` consults it to skip work. A constructor inside
+        // the loop discards that state every cycle, which silently degrades
+        // every `sync` back into a full scan — the exact regression this wiring
+        // fixes. The structural tests in `ingestion_wiring_tests` guard the
+        // position of these constructors. This stays inside the enabled branch:
+        // `XAVIER_INGESTION_INTERVAL_SECS=0` does not build importers or cursor
+        // files.
+        let ingestion_data_dir = xavier::maloca::MalocaStore::resolve_state_dir();
+        let SessionImporters {
+            antigravity: ag_importer,
+            opencode: oc_importer,
+            hermes: hermes_importer,
+            codex: codex_importer,
+        } = build_session_importers(&ingestion_data_dir, ingestion_embedder);
+        tokio::spawn(async move {
+            // Initial grace period to allow server start
+            tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+            loop {
+                if !try_begin_cycle(&in_flight) {
+                    tracing::warn!("skipping ingestion cycle: previous still running");
+                    tokio::time::sleep(tokio::time::Duration::from_secs(ingestion_interval_secs))
+                        .await;
+                    continue;
+                }
+
+                tracing::info!("🔄 Running universal agent session ingestion cycle...");
+
+                // All three importers use `sync`, not `import_all`: the periodic
+                // pass skips sources whose fingerprint is unchanged.
+                // `import_all` is the explicit re-index path used by the /index
+                // handlers, which report a count and so must read everything.
+                //
+                // Stats go to `info`, not `debug`: an idle node must be able to
+                // show `read=0 skipped=N` in the journal or /health to prove the
+                // cursor is working. At debug level the fix is unobservable in
+                // production, which is how the previous full-scan regression ran
+                // for days unnoticed.
+                match ag_importer.sync(ingestion_store.as_ref()).await {
+                    Ok(stats) => tracing::info!(
+                        source = "antigravity",
+                        candidates = stats.candidates,
+                        read = stats.read,
+                        skipped = stats.skipped,
+                        records = stats.records,
+                        store_reads = stats.store_reads,
+                        "session ingestion cursor pass"
+                    ),
+                    Err(e) => {
+                        tracing::warn!(source = "antigravity", error = %e, "ingestion pass failed")
+                    }
+                }
+
+                match oc_importer.sync(ingestion_store.as_ref()).await {
+                    Ok(stats) => tracing::info!(
+                        source = "opencode",
+                        candidates = stats.candidates,
+                        read = stats.read,
+                        skipped = stats.skipped,
+                        hot_deferred = stats.hot_deferred,
+                        message_rows = stats.message_rows,
+                        records = stats.records,
+                        store_reads = stats.store_reads,
+                        "session ingestion cursor pass"
+                    ),
+                    Err(e) => {
+                        tracing::warn!(source = "opencode", error = %e, "ingestion pass failed")
+                    }
+                }
+
+                match hermes_importer.sync(ingestion_store.as_ref()).await {
+                    Ok(stats) => tracing::info!(
+                        source = "hermes",
+                        read = stats.read,
+                        skipped = stats.skipped,
+                        records = stats.records,
+                        store_reads = stats.store_reads,
+                        "session ingestion cursor pass"
+                    ),
+                    Err(e) => {
+                        tracing::warn!(source = "hermes", error = %e, "ingestion pass failed")
+                    }
+                }
+
+                match codex_importer.sync(ingestion_store.as_ref()).await {
+                    Ok(stats) => tracing::info!(
+                        source = "codex",
+                        candidates = stats.candidates,
+                        read = stats.read,
+                        skipped = stats.skipped,
+                        errors = stats.errors,
+                        records = stats.records,
+                        "session ingestion cursor pass"
+                    ),
+                    Err(e) => {
+                        tracing::warn!(source = "codex", error = %e, "ingestion pass failed")
+                    }
+                }
+
+                end_cycle(&in_flight);
+
+                // Ingestion cadence is operator-tunable without a rebuild.
+                tokio::time::sleep(tokio::time::Duration::from_secs(ingestion_interval_secs)).await;
+            }
+        });
+    }
+
+    use axum::Extension;
+    use xavier::agents::RuntimeConfig;
+    use xavier::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
+
+    let workspace_config = WorkspaceConfig::from_env();
+    let runtime_config = RuntimeConfig::from_env();
+    let workspace_state = Arc::new(
+        WorkspaceState::new(
+            workspace_config,
+            runtime_config,
+            state.workspace_dir.clone(),
+        )
+        .await?,
+    );
+    let workspace_ctx = WorkspaceContext {
+        workspace_id: state.workspace_id.clone(),
+        workspace: workspace_state.clone(),
+    };
+    let working_snapshot_path =
+        xavier::memory::working::snapshot_path(&xavier::maloca::MalocaStore::resolve_state_dir());
+    xavier::memory::working::spawn_persistence(
+        Arc::clone(&workspace_state.working_memory),
+        working_snapshot_path.clone(),
+        xavier::memory::working::snapshot_interval_from_env(),
+    );
+    let working_memory_for_shutdown = Arc::clone(&workspace_state.working_memory);
+
+    // Maloca ops API — public local dogfood (matches @swal/maloca-client; no token).
+    let maloca_store = state.maloca.clone();
 
     // Maloca ops API — public local dogfood for reads (matches @swal/maloca-client;
     // no token needed on GET/HEAD), but every mutating verb (POST/PUT/PATCH/DELETE)
@@ -2059,27 +2103,16 @@ pub async fn start_http_server(
             maloca_mutation_auth_middleware,
         ));
 
+    let deps = AppDeps {
+        workspace_ctx: workspace_ctx.clone(),
+        space_manager,
+        maloca_router,
+        event_bus_for_ws,
+        no_ui,
+    };
+    let app = build_app(state.clone(), deps);
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
-    let app = app
-        .merge(maloca_router)
-        .layer(CorsLayer::permissive())
-        .layer(middleware::from_fn(
-            xavier::adapters::inbound::http::middleware::timeout::timeout_middleware,
-        ));
-
-    #[cfg(feature = "enterprise")]
-    let app = {
-        use std::sync::{Arc, Mutex};
-        use xavier::enterprise::http::{enterprise_router, EnterpriseState};
-        let enterprise_state = Arc::new(Mutex::new(EnterpriseState::init_default()));
-        app.merge(
-            enterprise_router(enterprise_state).layer(middleware::from_fn_with_state(
-                state.clone(),
-                auth_middleware,
-            )),
-        )
-    };
 
     let listener = TcpListener::bind(&bind_addr).await?;
     let bound_addr = listener.local_addr()?;
