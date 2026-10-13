@@ -163,11 +163,11 @@ impl McpSessionManager {
             .get_mut(id)
             .ok_or_else(|| McpSessionError::SessionNotFound(id.to_string()))?;
 
-        if session.bytes_transferred + bytes > session.payload_limit_bytes {
+        if bytes > session.payload_limit_bytes {
             session.state = McpSessionState::Closed;
             return Err(McpSessionError::PayloadLimitExceeded {
                 limit: session.payload_limit_bytes,
-                actual: session.bytes_transferred + bytes,
+                actual: bytes,
             });
         }
 
@@ -316,13 +316,30 @@ pub async fn mcp_post_handler(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    static PRUNE_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let manager = McpSessionManager::global();
+
+    if PRUNE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 100 == 0 {
+        manager.prune_stale_sessions(DEFAULT_TIMEOUT_DURATION);
+    }
+
     let session_id = headers
         .get("mcp-session-id")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("default");
 
-    let manager = McpSessionManager::global();
     if manager.get_session(session_id).is_none() {
+        if manager.active_session_count() > 10_000 {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(error_response(
+                    None,
+                    XAVIER_ERROR_INTERNAL,
+                    "Server at capacity: too many active MCP sessions".to_string(),
+                )),
+            )
+                .into_response();
+        }
         manager.create_session(session_id, None, None);
     }
 
@@ -881,5 +898,47 @@ async fn read_xavier_resource(
             Ok(Some(("application/json".to_string(), text)))
         }
         _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Method, Request, StatusCode};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn header_less_clients_are_not_blocked_after_4mb() {
+        xavier::isolate_test_process!();
+
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let app = crate::server::mcp::tests::test_router(state, workspace);
+
+        // 1MB payload (simulate 5 header-less requests)
+        let payload_1mb = vec![b'a'; 1024 * 1024];
+
+        for _ in 0..5 {
+            let req = Request::builder()
+                .method(Method::POST)
+                .uri("/mcp")
+                .header("content-type", "application/json")
+                .body(Body::from(payload_1mb.clone()))
+                .unwrap();
+            let res = app.clone().oneshot(req).await.unwrap();
+            // Since it's invalid JSON, it will fail with BAD_REQUEST, not PAYLOAD_TOO_LARGE.
+            assert_ne!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        }
+
+        // 5MB payload (exceeds 4MB limit, should be rejected)
+        let payload_5mb = vec![b'a'; 5 * 1024 * 1024];
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/mcp")
+            .header("content-type", "application/json")
+            .body(Body::from(payload_5mb))
+            .unwrap();
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 }
