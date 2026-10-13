@@ -8,6 +8,9 @@ use tracing::info;
 
 use super::core::MemoryManager;
 use super::types::{ManagementResult, MemoryManagementAction, MemoryPriority};
+use crate::memory::access;
+use crate::memory::store::MemoryRecord;
+use chrono::Utc;
 
 impl MemoryManager {
     /// Evict memories based on quality threshold and priority
@@ -15,9 +18,20 @@ impl MemoryManager {
         let threshold = self.config.quality_threshold;
         let low_quality = self.get_low_quality_memories(threshold).await?;
 
+        let store_opt = self.memory.store().await;
+        let observation_started_at = if let Some(store) = &store_opt {
+            access::observation_started_at(store.as_ref())
+                .await
+                .unwrap_or(None)
+        } else {
+            None
+        };
+        let gate = access::prune_block_reason(observation_started_at, Utc::now());
+
         let mut actions = Vec::new();
         let mut bytes_freed: u64 = 0;
         let mut evicted_count = 0;
+        let mut kept_no_evidence = 0;
 
         for memory in low_quality {
             let Some(doc_id) = &memory.doc.id else {
@@ -38,6 +52,18 @@ impl MemoryManager {
             };
 
             if should_evict {
+                let record =
+                    MemoryRecord::from_document(&self.memory.workspace_id, &memory.doc, true, None);
+                let is_observable = access::record_is_observable(&record);
+                let has_evidence_of_disuse = is_observable
+                    && gate == access::PruneBlockReason::Eligible
+                    && memory.access_count == 0;
+
+                if !has_evidence_of_disuse {
+                    kept_no_evidence += 1;
+                    continue;
+                }
+
                 let size = memory.doc.estimated_bytes();
                 if self.memory.delete(doc_id).await?.is_some() {
                     bytes_freed += size;
@@ -61,8 +87,8 @@ impl MemoryManager {
         }
 
         info!(
-            "Eviction complete: {} evicted, {} bytes freed",
-            evicted_count, bytes_freed
+            "Eviction complete: {} evicted, {} bytes freed (kept_no_evidence={})",
+            evicted_count, bytes_freed, kept_no_evidence
         );
 
         Ok(ManagementResult {
@@ -162,5 +188,131 @@ impl MemoryManager {
             total_actions
         );
         Ok(total_actions)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::access;
+    use crate::memory::manager::types::MemoryManagerConfig;
+    use crate::memory::qmd_memory::{MemoryDocument, QmdMemory};
+    use crate::memory::schema::MemoryLevel;
+    use crate::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+    use crate::memory::store::{InMemoryMemoryStore, MemoryStore};
+    use std::sync::Arc;
+    use tokio::sync::RwLock as AsyncRwLock;
+
+    fn seed_aged_clock(path: &std::path::Path, days: i64) {
+        let started = chrono::Utc::now() - chrono::Duration::days(days);
+        let conn = rusqlite::Connection::open(path).expect("open new db");
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS maintenance_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );",
+        )
+        .expect("create maintenance_meta");
+        conn.execute(
+            "INSERT OR IGNORE INTO maintenance_meta (key, value, updated_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![
+                access::OBSERVATION_STARTED_AT_KEY,
+                started.to_rfc3339(),
+                started.to_rfc3339()
+            ],
+        )
+        .expect("seed clock");
+        conn.close().expect("close");
+    }
+
+    async fn setup_manager_with_store(store: Arc<dyn MemoryStore>) -> MemoryManager {
+        let memory = Arc::new(QmdMemory::new_with_workspace(
+            Arc::new(AsyncRwLock::new(Vec::new())),
+            "test_ws",
+        ));
+        memory.set_store(store).await;
+        MemoryManager::with_config(
+            Arc::clone(&memory),
+            None,
+            MemoryManagerConfig {
+                quality_threshold: 0.5,
+                ..Default::default()
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn eviction_keeps_low_priority_record_without_access_evidence() {
+        crate::isolate_test_process!();
+        let store = Arc::new(InMemoryMemoryStore::new());
+        let manager = setup_manager_with_store(store).await;
+
+        let doc = MemoryDocument {
+            id: Some("doc_1".to_string()),
+            path: "test/doc1".to_string(),
+            content: "test".to_string(),
+            embedding: vec![0.1, 0.2],
+            level: MemoryLevel::Raw,
+            metadata: serde_json::json!({
+                "memory_priority": "low",
+                "priority": "low"
+            }),
+            ..Default::default()
+        };
+        manager.memory.docs.write().await.push(doc);
+        manager
+            .access_counts
+            .lock()
+            .unwrap()
+            .insert("doc_1".to_string(), 0);
+
+        let result = manager.evict_low_quality().await.unwrap();
+        assert_eq!(
+            result.documents_affected, 0,
+            "No access evidence, should be kept"
+        );
+    }
+
+    #[tokio::test]
+    async fn eviction_removes_low_priority_record_with_evidence_of_disuse() {
+        crate::isolate_test_process!();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("eviction_disuse.sqlite3");
+        seed_aged_clock(&path, 40);
+        let store = Arc::new(
+            VecSqliteMemoryStore::new(VecSqliteStoreConfig {
+                path,
+                embedding_dimensions: 8,
+            })
+            .await
+            .expect("store construction"),
+        );
+        let manager = setup_manager_with_store(store).await;
+
+        let doc = MemoryDocument {
+            id: Some("doc_1".to_string()),
+            path: "test/doc1".to_string(),
+            content: "test".to_string(),
+            embedding: vec![0.1, 0.2],
+            level: MemoryLevel::Raw,
+            metadata: serde_json::json!({
+                "memory_priority": "low",
+                "priority": "low"
+            }),
+            ..Default::default()
+        };
+        manager.memory.docs.write().await.push(doc);
+        manager
+            .access_counts
+            .lock()
+            .unwrap()
+            .insert("doc_1".to_string(), 0);
+
+        let result = manager.evict_low_quality().await.unwrap();
+        assert_eq!(
+            result.documents_affected, 1,
+            "Evidence of disuse, should be evicted"
+        );
     }
 }
