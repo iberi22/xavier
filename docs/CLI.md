@@ -647,14 +647,6 @@ Revoke a key and its metadata from the vault.
 |---|---|---|
 | `--name <name>` | required | Name of the key to revoke. |
 
-```rust
-#[test]
-fn test_keys_cli_documented() {
-    xavier::isolate_test_process!();
-    // Verify isolated process context execution
-    assert!(true);
-}
-```
 
 ### `xavier secrets put <name>`
 
