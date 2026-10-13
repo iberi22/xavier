@@ -253,7 +253,7 @@ impl TgdEngine {
             total_score += score;
 
             // Update if it's the highest score so far
-            if best_score.map_or(true, |best| score > best) {
+            if best_score.is_none_or(|best| score > best) {
                 best_score = Some(score);
                 current_content = refined;
             }
