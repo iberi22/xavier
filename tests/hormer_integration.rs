@@ -108,7 +108,7 @@ async fn test_hormer_lifecycle() {
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "requires external LLM provider API call; run with --ignored"]
 async fn test_tgd_generation() {
     let provider = ModelProviderClient::from_env();
     let config = TgdConfig {

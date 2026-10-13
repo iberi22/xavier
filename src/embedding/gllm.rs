@@ -135,7 +135,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires large model download and local-gllm feature; run with --ignored"]
     #[cfg(feature = "local-gllm")]
     async fn test_gllm_embedder_load() {
         let model = DEFAULT_GLLM_MODEL.to_string();
@@ -145,7 +145,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires large model download and local-gllm feature; run with --ignored"]
     #[cfg(feature = "local-gllm")]
     async fn test_gllm_embedder_encode() {
         let model = DEFAULT_GLLM_MODEL.to_string();
