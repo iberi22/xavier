@@ -758,11 +758,17 @@ pub async fn v1_mesh_manifest(
     let nonce = payload.get("nonce");
     let signature_hex = payload.get("signature");
 
-    let acl = crate::mesh::acl::MeshAcl::load().unwrap_or_else(|e| {
-        tracing::error!("Failed to load mesh ACL: {}", e);
-        crate::mesh::acl::MeshAcl::load_from(std::path::PathBuf::from("/tmp/mesh_acl.json"))
-            .unwrap()
-    });
+    let acl = match crate::mesh::acl::MeshAcl::load() {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::error!("Failed to load mesh ACL: {}", e);
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({ "error": "Mesh ACL access denied" })),
+            )
+                .into_response();
+        }
+    };
 
     let (clearance, namespaces) = if let Some(id) = node_id_str {
         if let Some(entry) = acl.get_entry(&crate::mesh::node::NodeId(id.clone())) {
@@ -899,11 +905,17 @@ pub async fn v1_mesh_chunks_request(
 
     use std::collections::HashMap;
 
-    let acl = crate::mesh::acl::MeshAcl::load().unwrap_or_else(|e| {
-        tracing::error!("Failed to load mesh ACL: {}", e);
-        crate::mesh::acl::MeshAcl::load_from(std::path::PathBuf::from("/tmp/mesh_acl.json"))
-            .unwrap()
-    });
+    let acl = match crate::mesh::acl::MeshAcl::load() {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::error!("Failed to load mesh ACL: {}", e);
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({ "error": "Mesh ACL access denied" })),
+            )
+                .into_response();
+        }
+    };
 
     let (clearance, namespaces) = if let Some(entry) = acl.get_entry(&payload.requesting_node_id) {
         // VERIFY SIGNATURE
@@ -4524,6 +4536,59 @@ mod tests {
         assert!(val.get("peers").is_some());
         assert!(val.get("maturity").is_some());
         assert!(val.get("bandwidth").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_v1_mesh_manifest_acl_load_failure_forbidden() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let invalid_acl_path = temp_dir.path().join("mesh_acl.json");
+        std::fs::write(&invalid_acl_path, "invalid json content").unwrap();
+
+        let old_config_dir = std::env::var("XAVIER_CONFIG_DIR").ok();
+        std::env::set_var("XAVIER_CONFIG_DIR", temp_dir.path().to_str().unwrap());
+
+        let mut settings = crate::settings::XavierSettings::default();
+        settings.license.mesh_accepted = true;
+        let test_config_path = temp_dir.path().join("test_xavier_config.json");
+        std::fs::write(
+            &test_config_path,
+            serde_json::to_string_pretty(&settings).unwrap(),
+        )
+        .unwrap();
+        let old_config_path = std::env::var("XAVIER_CONFIG_PATH").ok();
+        std::env::set_var("XAVIER_CONFIG_PATH", test_config_path.to_str().unwrap());
+
+        struct CleanEnv {
+            old_dir: Option<String>,
+            old_path: Option<String>,
+        }
+        impl Drop for CleanEnv {
+            fn drop(&mut self) {
+                if let Some(ref d) = self.old_dir {
+                    std::env::set_var("XAVIER_CONFIG_DIR", d);
+                } else {
+                    std::env::remove_var("XAVIER_CONFIG_DIR");
+                }
+                if let Some(ref p) = self.old_path {
+                    std::env::set_var("XAVIER_CONFIG_PATH", p);
+                } else {
+                    std::env::remove_var("XAVIER_CONFIG_PATH");
+                }
+            }
+        }
+        let _clean = CleanEnv {
+            old_dir: old_config_dir,
+            old_path: old_config_path,
+        };
+
+        let (_state, workspace) = test_state().await;
+        let resp = v1_mesh_manifest(
+            Extension(workspace),
+            Query(std::collections::HashMap::new()),
+        )
+        .await
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
