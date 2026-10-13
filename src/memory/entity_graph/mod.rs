@@ -1135,6 +1135,21 @@ mod knowledge_tests {
         };
         store.put(old_record).await.unwrap();
 
+        let ancient_time = Utc::now() - Duration::days(3650);
+        let ancient_record = MemoryRecord {
+            id: "rec-ancient-ephemeral".into(),
+            workspace_id: ws.into(),
+            content: "Ephemeral memory far beyond any age limit".into(),
+            score: 0.05,
+            created_at: ancient_time,
+            updated_at: ancient_time,
+            metadata: serde_json::json!({
+                "memory_priority": "ephemeral"
+            }),
+            ..Default::default()
+        };
+        store.put(ancient_record).await.unwrap();
+
         let k = KnowledgeConsolidator::default();
         let report = k.run_consolidation(&store, ws).await.unwrap();
 
@@ -1146,6 +1161,14 @@ mod knowledge_tests {
         assert!(
             retrieved.is_some(),
             "old low-priority record must survive offline consolidate"
+        );
+        assert!(
+            store
+                .get(ws, "rec-ancient-ephemeral")
+                .await
+                .unwrap()
+                .is_some(),
+            "a record past its hard age limit must survive offline consolidate"
         );
     }
 }
