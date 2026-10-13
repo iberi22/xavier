@@ -278,11 +278,7 @@ fn audit_token(name: &str, config_val: Option<&str>) -> TokenAuditItem {
     };
 
     let masked_value = if let Some(v) = raw_value {
-        if v.len() > 8 {
-            format!("{}...{}", &v[..4], &v[v.len() - 4..])
-        } else {
-            "****".to_string()
-        }
+        crate::cli::handlers::system_scan::mask_secret(&v)
     } else {
         "not configured".to_string()
     };
