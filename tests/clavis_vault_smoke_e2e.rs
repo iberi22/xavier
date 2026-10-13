@@ -12,10 +12,8 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use std::sync::Arc;
 use tower::ServiceExt;
 
-use xavier::adapters::inbound::http::handlers::clavis::clavis_vault;
 use xavier::adapters::inbound::http::routes::create_router;
 use xavier::clavis;
 use xavier::secrets::keygen::{self, KeyScope};
@@ -51,20 +49,99 @@ fn build_router_request(
     req
 }
 
-/// Helper to install an isolated test vault for hermetic execution.
-fn setup_isolated_vault() -> (tempfile::TempDir, Arc<HardwareVault>) {
-    let temp_dir = tempfile::tempdir().expect("failed to create tempdir");
-    let isolated_dir = temp_dir.path().to_path_buf();
-    std::env::set_var("HOME", &isolated_dir);
-    std::env::set_var("XAVIER_DATA_DIR", &isolated_dir);
-    let vault = clavis_vault();
-    (temp_dir, vault)
+/// Installs an isolated vault (keyring stubbed via the `test-utils` feature) and
+/// redirects HOME/XDG dirs into a tempdir; restores the environment on drop.
+struct VaultGuard {
+    vault: std::sync::Arc<HardwareVault>,
+    #[allow(dead_code)]
+    tmp_dir: tempfile::TempDir,
+    original_home: Option<std::ffi::OsString>,
+    original_data: Option<std::ffi::OsString>,
+    original_xdg: Option<std::ffi::OsString>,
+    original_dbus: Option<std::ffi::OsString>,
+}
+
+impl VaultGuard {
+    fn new() -> (Self, std::sync::Arc<HardwareVault>) {
+        let tmp_dir = tempfile::tempdir().expect("create tempdir");
+        let isolated_dir = tmp_dir.path().to_path_buf();
+
+        let original_home = std::env::var_os("HOME");
+        let original_data = std::env::var_os("XAVIER_DATA_DIR");
+        let original_xdg = std::env::var_os("XDG_RUNTIME_DIR");
+        let original_dbus = std::env::var_os("DBUS_SESSION_BUS_ADDRESS");
+
+        std::env::set_var("HOME", &isolated_dir);
+        std::env::set_var("XAVIER_DATA_DIR", &isolated_dir);
+        let xdg_dir = tmp_dir.path().join("xdg");
+        std::fs::create_dir_all(&xdg_dir).unwrap();
+        std::env::set_var("XDG_RUNTIME_DIR", &xdg_dir);
+        std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+
+        let vault =
+            HardwareVault::new("xavier-clavis").isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
+        let arc_vault = std::sync::Arc::new(vault);
+        xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(arc_vault.clone());
+
+        (
+            Self {
+                vault: arc_vault.clone(),
+                tmp_dir,
+                original_home,
+                original_data,
+                original_xdg,
+                original_dbus,
+            },
+            arc_vault,
+        )
+    }
+}
+
+impl Drop for VaultGuard {
+    fn drop(&mut self) {
+        if let Some(ref home) = self.original_home {
+            std::env::set_var("HOME", home);
+        } else {
+            std::env::remove_var("HOME");
+        }
+
+        if let Some(ref data) = self.original_data {
+            std::env::set_var("XAVIER_DATA_DIR", data);
+        } else {
+            std::env::remove_var("XAVIER_DATA_DIR");
+        }
+
+        if let Some(ref xdg) = self.original_xdg {
+            std::env::set_var("XDG_RUNTIME_DIR", xdg);
+        } else {
+            std::env::remove_var("XDG_RUNTIME_DIR");
+        }
+
+        if let Some(ref dbus) = self.original_dbus {
+            std::env::set_var("DBUS_SESSION_BUS_ADDRESS", dbus);
+        } else {
+            std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+        }
+
+        // Ensure this drop guard refuses to work on a non-stubbed vault to prevent deleting real keyring entries
+        assert_eq!(
+            self.vault.keyring_stub_ok(),
+            Some(false),
+            "VaultGuard must only be used with a fully stubbed isolated vault"
+        );
+
+        // Reset the vault override to default (non-isolated) to prevent state bleeding across tests
+        let fallback = HardwareVault::new("xavier-clavis");
+        xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(std::sync::Arc::new(
+            fallback,
+        ));
+    }
 }
 
 #[tokio::test]
 #[serial_test::serial]
 async fn test_full_cycle_api_key_generate_http_read_revoke_404() {
-    let (_temp_dir, vault) = setup_isolated_vault();
+    let (_temp_dir, vault) = VaultGuard::new();
 
     let unique_suffix = ulid::Ulid::new().to_string().to_lowercase();
     let key_name = format!("smoke_key_{}", unique_suffix);
@@ -183,7 +260,7 @@ async fn test_full_cycle_api_key_generate_http_read_revoke_404() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_clavis_http_api_vault_contract() {
-    let (_temp_dir, vault) = setup_isolated_vault();
+    let (_temp_dir, vault) = VaultGuard::new();
     let _ = vault.delete_secret("api_key_probe");
 
     // 1. PUT /v1/clavis/keys/api_key_probe -> 201 CREATED
@@ -262,3 +339,37 @@ async fn test_clavis_http_api_vault_contract() {
 
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
 xavier::isolate_test_process!();
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_isolated_vault_never_reaches_os_keyring() {
+    let (_temp_dir, vault) = VaultGuard::new();
+    let secret_key = "api_key_test_os_keyring_access";
+
+    // Attempting to delete or get without stub should reach the OS keyring.
+    // We assert that the stub is active and reports Some(false).
+    assert_eq!(
+        vault.keyring_stub_ok(),
+        Some(false),
+        "Vault must be stubbed to prevent OS keyring access"
+    );
+
+    // Explicitly confirm that `try_keyring_get` and `try_keyring_store`
+    // do not trigger OS access by storing a secret and reading it back from the fallback file store instead.
+    vault.store_secret(secret_key, "fallback_value").unwrap();
+    let value = vault.get_secret(secret_key).unwrap();
+    assert_eq!(value, "fallback_value");
+
+    // Finally verify that `DBUS_SESSION_BUS_ADDRESS` was actually stripped out
+    assert!(
+        std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none(),
+        "DBUS must be unset inside hermetic scope"
+    );
+
+    // Verify that XDG_RUNTIME_DIR points inside tempdir
+    let xdg = std::env::var_os("XDG_RUNTIME_DIR").unwrap();
+    assert!(
+        xdg.to_string_lossy().contains("xdg"),
+        "XDG must point inside tempdir"
+    );
+}

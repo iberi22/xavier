@@ -41,22 +41,96 @@ fn build_clavis_request(
     req
 }
 
-/// Sets up isolated temporary directories for `HOME` and `XAVIER_DATA_DIR` so that
-/// integration tests never touch the developer's real `~/.xavier` vault files or keyring.
-/// Note: HardwareVault::isolated is #[cfg(test)] gated in src/secrets/vault.rs and thus not
-/// exported across the library boundary to tests/*. We achieve isolated storage by isolating env paths.
-fn setup_isolated_env() -> tempfile::TempDir {
-    let tmp_dir = tempfile::tempdir().expect("create tempdir");
-    let isolated_dir = tmp_dir.path().to_path_buf();
-    std::env::set_var("HOME", &isolated_dir);
-    std::env::set_var("XAVIER_DATA_DIR", &isolated_dir);
-    tmp_dir
+/// Installs an isolated vault (keyring stubbed via the `test-utils` feature) and
+/// redirects HOME/XDG dirs into a tempdir; restores the environment on drop.
+struct VaultGuard {
+    vault: std::sync::Arc<HardwareVault>,
+    #[allow(dead_code)]
+    tmp_dir: tempfile::TempDir,
+    original_home: Option<std::ffi::OsString>,
+    original_data: Option<std::ffi::OsString>,
+    original_xdg: Option<std::ffi::OsString>,
+    original_dbus: Option<std::ffi::OsString>,
+}
+
+impl VaultGuard {
+    fn new() -> Self {
+        let tmp_dir = tempfile::tempdir().expect("create tempdir");
+        let isolated_dir = tmp_dir.path().to_path_buf();
+
+        let original_home = std::env::var_os("HOME");
+        let original_data = std::env::var_os("XAVIER_DATA_DIR");
+        let original_xdg = std::env::var_os("XDG_RUNTIME_DIR");
+        let original_dbus = std::env::var_os("DBUS_SESSION_BUS_ADDRESS");
+
+        std::env::set_var("HOME", &isolated_dir);
+        std::env::set_var("XAVIER_DATA_DIR", &isolated_dir);
+        let xdg_dir = tmp_dir.path().join("xdg");
+        std::fs::create_dir_all(&xdg_dir).unwrap();
+        std::env::set_var("XDG_RUNTIME_DIR", &xdg_dir);
+        std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+
+        let vault =
+            HardwareVault::new("xavier-clavis").isolated(tmp_dir.path().to_path_buf(), [0u8; 32]);
+        let arc_vault = std::sync::Arc::new(vault);
+        xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(arc_vault.clone());
+
+        Self {
+            vault: arc_vault,
+            tmp_dir,
+            original_home,
+            original_data,
+            original_xdg,
+            original_dbus,
+        }
+    }
+}
+
+impl Drop for VaultGuard {
+    fn drop(&mut self) {
+        if let Some(ref home) = self.original_home {
+            std::env::set_var("HOME", home);
+        } else {
+            std::env::remove_var("HOME");
+        }
+
+        if let Some(ref data) = self.original_data {
+            std::env::set_var("XAVIER_DATA_DIR", data);
+        } else {
+            std::env::remove_var("XAVIER_DATA_DIR");
+        }
+
+        if let Some(ref xdg) = self.original_xdg {
+            std::env::set_var("XDG_RUNTIME_DIR", xdg);
+        } else {
+            std::env::remove_var("XDG_RUNTIME_DIR");
+        }
+
+        if let Some(ref dbus) = self.original_dbus {
+            std::env::set_var("DBUS_SESSION_BUS_ADDRESS", dbus);
+        } else {
+            std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+        }
+
+        // Ensure this drop guard refuses to work on a non-stubbed vault to prevent deleting real keyring entries
+        assert_eq!(
+            self.vault.keyring_stub_ok(),
+            Some(false),
+            "VaultGuard must only be used with a fully stubbed isolated vault"
+        );
+
+        // Reset the vault override to default (non-isolated) to prevent state bleeding across tests
+        let fallback = HardwareVault::new("xavier-clavis");
+        xavier::adapters::inbound::http::handlers::clavis::set_clavis_vault(std::sync::Arc::new(
+            fallback,
+        ));
+    }
 }
 
 #[tokio::test]
 #[serial_test::serial]
 async fn test_put_then_get_round_trip() {
-    let _tmp = setup_isolated_env();
+    let _tmp = VaultGuard::new();
     let secret_key = "api_key_openai";
     let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
     let secret_value = "sk-proj-e2e-test-secret-value-98765";
@@ -111,7 +185,7 @@ async fn test_put_then_get_round_trip() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_get_nonexistent_key_returns_404() {
-    let _tmp = setup_isolated_env();
+    let _tmp = VaultGuard::new();
 
     let req = build_clavis_request(
         Method::GET,
@@ -144,7 +218,7 @@ async fn test_get_nonexistent_key_returns_404() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_unauthenticated_and_unauthorized_access_rejected() {
-    let _tmp = setup_isolated_env();
+    let _tmp = VaultGuard::new();
 
     // 1. Missing claims/token -> HTTP 403 (or 401) FORBIDDEN
     let anon_req =
@@ -185,7 +259,7 @@ async fn test_unauthenticated_and_unauthorized_access_rejected() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_put_empty_value_returns_400() {
-    let _tmp = setup_isolated_env();
+    let _tmp = VaultGuard::new();
 
     let req = build_clavis_request(
         Method::PUT,
@@ -217,7 +291,8 @@ async fn test_put_empty_value_returns_400() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_log_safety_and_vault_isolation() {
-    let tmp = setup_isolated_env();
+    let tmp_guard = VaultGuard::new();
+    let tmp = &tmp_guard.tmp_dir;
     let secret_key = "api_key_log_safety";
     let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
     let raw_secret = "sk-live-super-secret-token-abcdef123456";
