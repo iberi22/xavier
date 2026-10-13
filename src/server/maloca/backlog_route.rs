@@ -662,7 +662,7 @@ mod tests {
         let dirs = service.scan_all_projects();
         // Just verify it doesn't panic and uses the tmpdir logic.
         // It won't find projects there, but it scanned it.
-        assert!(dirs.is_empty() || dirs.len() >= 0);
+        assert!(dirs.is_empty() || !dirs.is_empty());
     }
     use std::fs::{create_dir_all, write};
     use tempfile::tempdir;
