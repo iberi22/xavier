@@ -267,7 +267,7 @@ mod tests {
         );
 
         // Use epsilon for float comparison to avoid precision issues
-        let expected_total_savings = savings * (iters as f32);
+        let expected_total_savings = f64::from(savings) * (iters as f64);
         assert!(
             (state.total_savings_usd - expected_total_savings).abs() < 1e-4,
             "Total savings should be exact"
@@ -277,6 +277,6 @@ mod tests {
         assert_eq!(stats.operation_count, iters);
         assert_eq!(stats.total_original_tokens, original_tokens * iters);
         assert_eq!(stats.total_optimized_tokens, optimized_tokens * iters);
-        assert!((stats.total_savings_usd - expected_total_savings).abs() < 1e-4);
+        assert!((f64::from(stats.total_savings_usd) - expected_total_savings).abs() < 1e-4);
     }
 }
