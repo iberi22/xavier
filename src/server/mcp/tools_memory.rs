@@ -438,7 +438,7 @@ async fn handle_mem_search(
         .get("page")
         .and_then(|v| v.as_u64())
         .unwrap_or(1)
-        .max(1) as usize;
+        .clamp(1, 1000) as usize;
     let limit = arguments
         .get("limit")
         .and_then(|v| v.as_u64())
@@ -499,7 +499,7 @@ async fn handle_mem_search(
         || filters.include_activity.is_some();
     let filter_ref = if has_filters { Some(&filters) } else { None };
 
-    let fetch_limit = (page * limit).saturating_add(1);
+    let fetch_limit = page.saturating_mul(limit).saturating_add(1);
     let (results, search_mode) = workspace
         .workspace
         .memory
@@ -516,9 +516,9 @@ async fn handle_mem_search(
         results
     };
 
-    let offset = (page - 1) * limit;
+    let offset = page.saturating_sub(1).saturating_mul(limit);
     let total_matched = results.len();
-    let has_more = total_matched > page * limit;
+    let has_more = total_matched > page.saturating_mul(limit);
     let paged_results: Vec<_> = results.into_iter().skip(offset).take(limit).collect();
 
     // Phase 1 access instrumentation (D6): record only the page actually
@@ -1744,13 +1744,13 @@ mod tests {
         let total_items = 12;
         let items: Vec<usize> = (0..total_items).collect();
 
-        let offset = (page - 1) * limit;
+        let offset = page.saturating_sub(1).saturating_mul(limit);
         let paged: Vec<usize> = items.into_iter().skip(offset).take(limit).collect();
 
         assert_eq!(paged, vec![5, 6, 7, 8, 9]);
         assert_eq!(paged.len(), 5);
 
-        let has_more = total_items > page * limit;
+        let has_more = total_items > page.saturating_mul(limit);
         assert!(has_more);
 
         let total_pages = total_items.div_ceil(limit);
