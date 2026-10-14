@@ -889,42 +889,89 @@ impl GovernanceEngine {
             }
         }
 
-        // Aplicar cambios
+        // Aplicar cambios sobre una copia: si un cambio falla, nada queda aplicado
+        // (la propuesta sigue sin ejecutar y un reintento no duplica efectos).
+        let mut next_params = system_params.clone();
+        let mut newly_blocked: Vec<WalletAddress> = Vec::new();
         for (key, value) in &proposal.changes {
             match key.as_str() {
                 "reference_price" => {
                     if let Ok(v) = value.parse::<u64>() {
-                        system_params.reference_price = v;
+                        next_params.reference_price = v;
+                    } else {
+                        return Err(GovernanceError::InvalidChange {
+                            key: key.clone(),
+                            value: value.clone(),
+                        });
                     }
                 }
                 "burn_rate" => {
                     if let Ok(v) = value.parse::<u8>() {
-                        system_params.burn_rate = v.min(100);
+                        next_params.burn_rate = v.min(100);
+                    } else {
+                        return Err(GovernanceError::InvalidChange {
+                            key: key.clone(),
+                            value: value.clone(),
+                        });
                     }
                 }
                 "voting_period_days" => {
                     if let Ok(v) = value.parse::<u32>() {
-                        system_params.voting_period_days = v;
+                        next_params.voting_period_days = v;
+                    } else {
+                        return Err(GovernanceError::InvalidChange {
+                            key: key.clone(),
+                            value: value.clone(),
+                        });
                     }
                 }
                 "quorum_minimum" => {
                     if let Ok(v) = value.parse::<f32>() {
-                        system_params.quorum_minimum = v.min(100.0);
+                        next_params.quorum_minimum = v.min(100.0);
+                    } else {
+                        return Err(GovernanceError::InvalidChange {
+                            key: key.clone(),
+                            value: value.clone(),
+                        });
                     }
                 }
                 "min_price" => {
                     if let Ok(v) = value.parse::<u64>() {
-                        system_params.min_price = v;
+                        next_params.min_price = v;
+                    } else {
+                        return Err(GovernanceError::InvalidChange {
+                            key: key.clone(),
+                            value: value.clone(),
+                        });
                     }
                 }
                 "max_price" => {
                     if let Ok(v) = value.parse::<u64>() {
-                        system_params.max_price = v;
+                        next_params.max_price = v;
+                    } else {
+                        return Err(GovernanceError::InvalidChange {
+                            key: key.clone(),
+                            value: value.clone(),
+                        });
                     }
                 }
-                _ => {} // ignorar cambios desconocidos
+                "block_wallet" => {
+                    newly_blocked.push(WalletAddress(value.clone()));
+                }
+                "evidence" => {
+                    // Do nothing, just record it
+                }
+                _ => {
+                    return Err(GovernanceError::InvalidChange {
+                        key: key.clone(),
+                        value: value.clone(),
+                    });
+                }
             }
         }
+
+        *system_params = next_params;
+        self.blocked_wallets.extend(newly_blocked);
 
         proposal.status = ProposalStatus::Executed;
         proposal.xip_state = XipState::Complete { entered_at: now };
@@ -1004,6 +1051,7 @@ pub enum GovernanceError {
     OverruleThresholdNotReached,
     NoVetoToAppeal,
     InvalidStateTransition { from: String, to: String },
+    InvalidChange { key: String, value: String },
 }
 
 impl std::fmt::Display for GovernanceError {
@@ -1039,6 +1087,9 @@ impl std::fmt::Display for GovernanceError {
             Self::NoVetoToAppeal => write!(f, "No hay veto activo para apelar"),
             Self::InvalidStateTransition { from, to } => {
                 write!(f, "Transición de estado inválida: {from} → {to}")
+            }
+            Self::InvalidChange { key, value } => {
+                write!(f, "Cambio inválido: key='{key}', value='{value}'")
             }
         }
     }
@@ -1680,5 +1731,258 @@ mod tests {
         // The static values should be 10.0 for user and 51.0 for council
         assert_eq!(config.user_quorum_minimum, 10.0);
         assert_eq!(config.council_quorum_minimum, 51.0);
+    }
+
+    #[test]
+    fn test_execute_proposal_is_atomic_on_failure() {
+        let config = GovernanceConfig::default();
+        let mut engine = GovernanceEngine::new(config);
+
+        let mut changes = HashMap::new();
+        changes.insert("reference_price".into(), "42".into());
+        changes.insert("block_wallet".into(), "xv1_bad".into());
+        changes.insert("unknown_key".into(), "some_value".into());
+
+        let prop_id = "atomic-test".to_string();
+        engine.proposals.push(XipProposal {
+            id: prop_id.clone(),
+            title: "Test".into(),
+            description: "Test".into(),
+            author: WalletAddress("xv1".into()),
+            created_at: 0,
+            status: ProposalStatus::Approved,
+            xip_state: XipState::Execution {
+                entered_at: GovernanceEngine::now_secs() - 100,
+                expires_at: GovernanceEngine::now_secs() - 10,
+            },
+            changes,
+            discussion_end: 0,
+            voting_end: 0,
+            execution_at: 0,
+            user_votes: HashMap::new(),
+            weighted_user_votes: HashMap::new(),
+            council_votes: HashMap::new(),
+            supports: vec![],
+            council_veto: false,
+            veto_reason: None,
+            appealed: false,
+        });
+
+        let mut system_params = SystemParams {
+            reference_price: 5,
+            category_multipliers: HashMap::new(),
+            reward_split: [0, 0, 0],
+            rate_limit_low_trust: 0,
+            burn_rate: 80,
+            voting_period_days: 7,
+            quorum_minimum: 10.0,
+            min_price: 1,
+            max_price: 10000,
+        };
+
+        let result = engine.execute_proposal(&prop_id, &mut system_params);
+        assert!(result.is_err());
+        assert_eq!(
+            system_params.reference_price, 5,
+            "a failed proposal must not partially apply its changes"
+        );
+        assert!(
+            engine.blocked_wallets.is_empty(),
+            "a failed proposal must not block wallets"
+        );
+    }
+
+    #[test]
+    fn test_execute_proposal_fails_on_unknown_change() {
+        let config = GovernanceConfig::default();
+        let mut engine = GovernanceEngine::new(config);
+
+        let author = WalletAddress("xv1_author".into());
+        engine.register_activity(author.clone());
+
+        let mut changes = HashMap::new();
+        changes.insert("unknown_key".into(), "some_value".into());
+
+        let mut proposal = engine
+            .create_proposal(
+                "Test unknown key".into(),
+                "Testing failure".into(),
+                changes,
+                author,
+            )
+            .unwrap();
+
+        // Force state to Execution
+        proposal.xip_state = XipState::Execution {
+            entered_at: GovernanceEngine::now_secs() - 100,
+            expires_at: GovernanceEngine::now_secs() - 10,
+        };
+        proposal.status = ProposalStatus::Approved;
+
+        // We need to overwrite it in engine
+        let prop_id = proposal.id.clone();
+        engine.proposals.push(proposal);
+        engine.proposals.clear();
+
+        let mut changes2 = HashMap::new();
+        changes2.insert("unknown_key".into(), "some_value".into());
+
+        let proposal = XipProposal {
+            id: prop_id.clone(),
+            title: "Test".into(),
+            description: "Test".into(),
+            author: WalletAddress("xv1".into()),
+            created_at: 0,
+            status: ProposalStatus::Approved,
+            xip_state: XipState::Execution {
+                entered_at: GovernanceEngine::now_secs() - 100,
+                expires_at: GovernanceEngine::now_secs() - 10,
+            },
+            changes: changes2,
+            discussion_end: 0,
+            voting_end: 0,
+            execution_at: 0,
+            user_votes: HashMap::new(),
+            weighted_user_votes: HashMap::new(),
+            council_votes: HashMap::new(),
+            supports: vec![],
+            council_veto: false,
+            veto_reason: None,
+            appealed: false,
+        };
+        engine.proposals.push(proposal);
+
+        let mut system_params = SystemParams {
+            reference_price: 5,
+            category_multipliers: HashMap::new(),
+            reward_split: [0, 0, 0],
+            rate_limit_low_trust: 0,
+            burn_rate: 80,
+            voting_period_days: 7,
+            quorum_minimum: 10.0,
+            min_price: 1,
+            max_price: 10000,
+        };
+
+        let result = engine.execute_proposal(&prop_id, &mut system_params);
+        assert!(result.is_err());
+        if let Err(GovernanceError::InvalidChange { key, value }) = result {
+            assert_eq!(key, "unknown_key");
+            assert_eq!(value, "some_value");
+        } else {
+            panic!("Expected InvalidChange error");
+        }
+
+        // Proposal status should not be Executed
+        let prop = engine.get_proposal(&prop_id).unwrap();
+        assert_eq!(prop.status, ProposalStatus::Approved);
+    }
+
+    #[test]
+    fn test_execute_proposal_fails_on_invalid_value() {
+        let config = GovernanceConfig::default();
+        let mut engine = GovernanceEngine::new(config);
+
+        let prop_id = "test_prop_invalid_value".to_string();
+        let mut changes = HashMap::new();
+        changes.insert("burn_rate".into(), "not_a_number".into());
+
+        let proposal = XipProposal {
+            id: prop_id.clone(),
+            title: "Test".into(),
+            description: "Test".into(),
+            author: WalletAddress("xv1".into()),
+            created_at: 0,
+            status: ProposalStatus::Approved,
+            xip_state: XipState::Execution {
+                entered_at: GovernanceEngine::now_secs() - 100,
+                expires_at: GovernanceEngine::now_secs() - 10,
+            },
+            changes,
+            discussion_end: 0,
+            voting_end: 0,
+            execution_at: 0,
+            user_votes: HashMap::new(),
+            weighted_user_votes: HashMap::new(),
+            council_votes: HashMap::new(),
+            supports: vec![],
+            council_veto: false,
+            veto_reason: None,
+            appealed: false,
+        };
+        engine.proposals.push(proposal);
+
+        let mut system_params = SystemParams {
+            reference_price: 5,
+            category_multipliers: HashMap::new(),
+            reward_split: [0, 0, 0],
+            rate_limit_low_trust: 0,
+            burn_rate: 80,
+            voting_period_days: 7,
+            quorum_minimum: 10.0,
+            min_price: 1,
+            max_price: 10000,
+        };
+
+        let result = engine.execute_proposal(&prop_id, &mut system_params);
+        assert!(result.is_err());
+        if let Err(GovernanceError::InvalidChange { key, value }) = result {
+            assert_eq!(key, "burn_rate");
+            assert_eq!(value, "not_a_number");
+        } else {
+            panic!("Expected InvalidChange error");
+        }
+
+        // Ensure status didn't change
+        let prop = engine.get_proposal(&prop_id).unwrap();
+        assert_eq!(prop.status, ProposalStatus::Approved);
+    }
+
+    #[test]
+    fn test_execute_proposal_expulsion_works() {
+        let config = GovernanceConfig::default();
+        let mut engine = GovernanceEngine::new(config);
+
+        let author = WalletAddress("xv1_author".into());
+        engine.register_activity(author.clone());
+
+        let target = WalletAddress("xv1_bad_actor".into());
+        let evidence = "Some evidence".to_string();
+
+        let mut proposal = engine
+            .propose_expulsion(target.clone(), evidence, author)
+            .unwrap();
+        let prop_id = proposal.id.clone();
+
+        proposal.status = ProposalStatus::Approved;
+        proposal.xip_state = XipState::Execution {
+            entered_at: GovernanceEngine::now_secs() - 100,
+            expires_at: GovernanceEngine::now_secs() - 10,
+        };
+
+        // Remove the drafted one and push the ready one
+        engine.proposals.clear();
+        engine.proposals.push(proposal);
+
+        let mut system_params = SystemParams {
+            reference_price: 5,
+            category_multipliers: HashMap::new(),
+            reward_split: [0, 0, 0],
+            rate_limit_low_trust: 0,
+            burn_rate: 80,
+            voting_period_days: 7,
+            quorum_minimum: 10.0,
+            min_price: 1,
+            max_price: 10000,
+        };
+
+        let result = engine.execute_proposal(&prop_id, &mut system_params);
+        assert!(result.is_ok());
+
+        // Ensure wallet is blocked
+        assert!(engine.blocked_wallets.contains(&target));
+
+        let prop = engine.get_proposal(&prop_id).unwrap();
+        assert_eq!(prop.status, ProposalStatus::Executed);
     }
 }
