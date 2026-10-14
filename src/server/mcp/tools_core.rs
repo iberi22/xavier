@@ -411,7 +411,7 @@ fn validate_memory_write_clearance(
             .clearance;
     crate::security::clearance::check_write_clearance(
         effective,
-        super::tools_memory::caller_clearance(),
+        crate::server::mcp::tools_memory::caller_clearance(),
     )
     .map_err(anyhow::Error::msg)
 }
@@ -828,7 +828,7 @@ pub async fn handle_core_tool(
         "health_check" => {
             let health = crate::health::collect_health_sync();
             let tools_count = get_xavier_core_tools().len()
-                + super::tools_memory::get_xavier_memory_tools().len()
+                + crate::server::mcp::tools_memory::get_xavier_memory_tools().len()
                 + super::tools_context::get_xavier_context_tools().len();
 
             // The store is OK when it actually answers a query; a measured SQLite
@@ -1741,11 +1741,11 @@ pub(crate) mod tests {
         .expect("write README");
 
         // 1. Caller with Unclassified clearance (below default Internal clearance) must be rejected
-        let caller_low = super::tools_memory::McpCaller {
+        let caller_low = crate::server::mcp::tools_memory::McpCaller {
             clearance: crate::security::clearance::ClearanceLevel::Unclassified,
             space: None,
         };
-        let err = super::tools_memory::with_mcp_caller(
+        let err = crate::server::mcp::tools_memory::with_mcp_caller(
             caller_low,
             handle_core_tool(
                 state.clone(),
@@ -1766,11 +1766,11 @@ pub(crate) mod tests {
         );
 
         // 2. Caller with Admin / TopSecret clearance must succeed
-        let caller_high = super::tools_memory::McpCaller {
+        let caller_high = crate::server::mcp::tools_memory::McpCaller {
             clearance: crate::security::clearance::ClearanceLevel::TopSecret,
             space: None,
         };
-        let res = super::tools_memory::with_mcp_caller(
+        let res = crate::server::mcp::tools_memory::with_mcp_caller(
             caller_high,
             handle_core_tool(
                 state,
