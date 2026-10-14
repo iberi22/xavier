@@ -464,8 +464,15 @@ fn allowed_project_roots(workspace: &WorkspaceContext) -> Vec<std::path::PathBuf
         }
     }
 
-    roots.dedup();
-    roots
+    // Only git repository roots may receive gitcore writes. A root that cannot be
+    // canonicalized is dropped (fail closed) rather than used unresolved.
+    let mut git_roots: Vec<std::path::PathBuf> = roots
+        .into_iter()
+        .filter_map(|r| r.canonicalize().ok())
+        .filter(|r| r.join(".git").exists())
+        .collect();
+    git_roots.dedup();
+    git_roots
 }
 
 /// Validates that project_path has no traversal and sits under allowed roots.
@@ -494,13 +501,20 @@ fn resolve_gitcore_project_path(
         workspace_root.join(&raw_path)
     };
 
-    let canonical = target.canonicalize().unwrap_or_else(|_| target.clone());
-    let allowed_roots = allowed_project_roots(workspace);
-
     #[cfg(test)]
     let is_mock_fixture = project_path == "/non/existent/path";
     #[cfg(not(test))]
     let is_mock_fixture = false;
+
+    // Fail closed: a path that cannot be resolved cannot be proven to stay inside a root.
+    let canonical = if is_mock_fixture {
+        target.clone()
+    } else {
+        target
+            .canonicalize()
+            .map_err(|e| anyhow::anyhow!("cannot resolve project path {project_path}: {e}"))?
+    };
+    let allowed_roots = allowed_project_roots(workspace);
 
     let is_allowed =
         is_mock_fixture || allowed_roots.iter().any(|root| canonical.starts_with(root));
