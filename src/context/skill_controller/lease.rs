@@ -4,7 +4,7 @@ use super::backup::{atomic_write, current_timestamp, BackupError, BackupKind};
 use super::policy::{FsPolicy, PolicyError, RootKind};
 use super::projector::{ProjectorError, RootLock, LOCKS_SUBDIR};
 use super::rollback::{rollback_transaction, RollbackError, RollbackReport};
-use super::state::{Journal, JournalAction, StateError};
+use super::state::{Journal, JournalAction, JournalEntry, StateError, TransactionRecord};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -334,6 +334,20 @@ pub fn list_stale(
     Ok(stale)
 }
 
+/// True when a pending journal transaction targets the task's own `eph-{task_id}`
+/// path component (an exact component match, so `eph-task2` never marks `task`).
+pub fn task_has_pending_tx(pending: &[TransactionRecord], task_id: &str) -> bool {
+    let needle = format!("eph-{task_id}");
+    pending.iter().any(|tx| {
+        tx.entries.iter().any(|entry| {
+            entry
+                .target_path
+                .components()
+                .any(|c| c.as_os_str() == needle.as_str())
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::rollback::RollbackOutcome;
@@ -556,5 +570,66 @@ mod tests {
                 .file_type()
                 .is_symlink());
         }
+    }
+
+    #[test]
+    fn gc_sees_a_transaction_written_after_start() {
+        let (w, _s, j) = fixture();
+        let out =
+            publish_task_skill(&j, w.path(), "late_task", "body").expect("publish task skill");
+        let path = out.skill_path.parent().expect("parent dir").join(".lease");
+        let mut lease: Lease =
+            serde_json::from_slice(&fs::read(&path).expect("read lease")).expect("parse lease");
+        lease.expires_at = 99;
+        atomic_write(&path, &serde_json::to_vec(&lease).expect("serialize lease"))
+            .expect("write lease");
+
+        let inactive_out =
+            publish_task_skill(&j, w.path(), "inactive", "body").expect("publish task skill");
+        let inactive_path = inactive_out
+            .skill_path
+            .parent()
+            .expect("parent dir")
+            .join(".lease");
+        let mut inactive_lease: Lease =
+            serde_json::from_slice(&fs::read(&inactive_path).expect("read lease"))
+                .expect("parse lease");
+        inactive_lease.expires_at = 99;
+        atomic_write(
+            &inactive_path,
+            &serde_json::to_vec(&inactive_lease).expect("serialize lease"),
+        )
+        .expect("write lease");
+
+        // Before cleanup starts, journal has no pending transactions.
+        assert!(j.pending_transactions().expect("pending").is_empty());
+
+        let j_clone = j.clone();
+        let target_path = out.skill_path.clone();
+        let is_active = move |task_id: &str| {
+            if task_id == "late_task" {
+                let entry = JournalEntry {
+                    target_path: target_path.clone(),
+                    action: JournalAction::Remove,
+                    prior_state: BackupKind::Absent,
+                    owned_hash: None,
+                };
+                let _ = j_clone.begin_transaction("tx_writer_late", vec![entry], false);
+            }
+            match j_clone.pending_transactions() {
+                Ok(pending) => task_has_pending_tx(&pending, task_id),
+                Err(_) => false,
+            }
+        };
+
+        let reports = cleanup_stale(&j, w.path(), 100, is_active).expect("cleanup stale");
+
+        assert_eq!(reports.len(), 1);
+        assert!(!inactive_out.skill_path.exists());
+        assert!(out.skill_path.exists());
+        assert!(fs::symlink_metadata(&out.link_path)
+            .expect("metadata")
+            .file_type()
+            .is_symlink());
     }
 }
