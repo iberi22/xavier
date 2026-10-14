@@ -907,41 +907,44 @@ async fn read_xavier_resource(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::body::Body;
-    use axum::http::{Method, Request, StatusCode};
-    use tower::ServiceExt;
+    use crate::server::mcp::tests::{post_json, test_router, test_state};
+    use axum::http::StatusCode;
+    use serde_json::json;
 
     #[tokio::test]
     async fn header_less_clients_are_not_blocked_after_4mb() {
         xavier::isolate_test_process!();
 
-        let (state, workspace) = crate::server::mcp::tests::test_state().await;
-        let app = crate::server::mcp::tests::test_router(state, workspace);
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
 
-        // 1MB payload (simulate 5 header-less requests)
-        let payload_1mb = vec![b'a'; 1024 * 1024];
+        // 1MB payload (simulate 5 header-less requests with valid JSON)
+        let valid_1mb_json = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {
+                "padding": "a".repeat(1024 * 1024)
+            }
+        });
 
         for _ in 0..5 {
-            let req = Request::builder()
-                .method(Method::POST)
-                .uri("/mcp")
-                .header("content-type", "application/json")
-                .body(Body::from(payload_1mb.clone()))
-                .unwrap();
-            let res = app.clone().oneshot(req).await.unwrap();
-            // Since it's invalid JSON, it will fail with BAD_REQUEST, not PAYLOAD_TOO_LARGE.
+            let res = post_json(app.clone(), valid_1mb_json.clone()).await;
+            assert_ne!(res.status(), StatusCode::FORBIDDEN);
             assert_ne!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+            assert_eq!(res.status(), StatusCode::OK);
         }
 
         // 5MB payload (exceeds 4MB limit, should be rejected)
-        let payload_5mb = vec![b'a'; 5 * 1024 * 1024];
-        let req = Request::builder()
-            .method(Method::POST)
-            .uri("/mcp")
-            .header("content-type", "application/json")
-            .body(Body::from(payload_5mb))
-            .unwrap();
-        let res = app.clone().oneshot(req).await.unwrap();
+        let valid_5mb_json = json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {
+                "padding": "a".repeat(5 * 1024 * 1024)
+            }
+        });
+        let res = post_json(app.clone(), valid_5mb_json).await;
         assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 }
