@@ -163,11 +163,11 @@ impl McpSessionManager {
             .get_mut(id)
             .ok_or_else(|| McpSessionError::SessionNotFound(id.to_string()))?;
 
-        if session.bytes_transferred + bytes > session.payload_limit_bytes {
+        if bytes > session.payload_limit_bytes {
             session.state = McpSessionState::Closed;
             return Err(McpSessionError::PayloadLimitExceeded {
                 limit: session.payload_limit_bytes,
-                actual: session.bytes_transferred + bytes,
+                actual: bytes,
             });
         }
 
@@ -316,13 +316,33 @@ pub async fn mcp_post_handler(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    static PRUNE_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let manager = McpSessionManager::global();
+
+    if PRUNE_COUNTER
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        .is_multiple_of(100)
+    {
+        manager.prune_stale_sessions(DEFAULT_TIMEOUT_DURATION);
+    }
+
     let session_id = headers
         .get("mcp-session-id")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("default");
 
-    let manager = McpSessionManager::global();
     if manager.get_session(session_id).is_none() {
+        if manager.active_session_count() > 10_000 {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(error_response(
+                    None,
+                    XAVIER_ERROR_INTERNAL,
+                    "Server at capacity: too many active MCP sessions".to_string(),
+                )),
+            )
+                .into_response();
+        }
         manager.create_session(session_id, None, None);
     }
 
@@ -881,5 +901,50 @@ async fn read_xavier_resource(
             Ok(Some(("application/json".to_string(), text)))
         }
         _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::mcp::tests::{post_json, test_router, test_state};
+    use axum::http::StatusCode;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn header_less_clients_are_not_blocked_after_4mb() {
+        xavier::isolate_test_process!();
+
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        // 1MB payload (simulate 5 header-less requests with valid JSON)
+        let valid_1mb_json = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {
+                "padding": "a".repeat(1024 * 1024)
+            }
+        });
+
+        for _ in 0..5 {
+            let res = post_json(app.clone(), valid_1mb_json.clone()).await;
+            assert_ne!(res.status(), StatusCode::FORBIDDEN);
+            assert_ne!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+            assert_eq!(res.status(), StatusCode::OK);
+        }
+
+        // 5MB payload (exceeds 4MB limit, should be rejected)
+        let valid_5mb_json = json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {
+                "padding": "a".repeat(5 * 1024 * 1024)
+            }
+        });
+        let res = post_json(app.clone(), valid_5mb_json).await;
+        assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 }
