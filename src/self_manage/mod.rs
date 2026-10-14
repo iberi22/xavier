@@ -1360,35 +1360,32 @@ pub fn check_service_status(service: &str) -> String {
 
 /// Performs a synchronous TCP connection check with 2s timeout
 pub fn tcp_probe(addr: &str) -> String {
-    use std::net::TcpStream;
+    use std::net::{TcpStream, ToSocketAddrs};
     use std::time::Duration;
 
-    let resolved_addr = match addr.parse::<std::net::SocketAddr>() {
-        Ok(sa) => sa,
-        Err(_) => {
-            use std::net::ToSocketAddrs;
-            match (addr, 0)
-                .to_socket_addrs()
-                .ok()
-                .and_then(|mut ips| ips.next())
-            {
-                Some(ip) => {
-                    let port = if addr.contains("telegram") || addr.contains("github") {
-                        443
-                    } else {
-                        53
-                    };
-                    std::net::SocketAddr::new(ip.ip(), port)
-                }
-                None => return "failed: resolution failed".to_string(),
-            }
-        }
+    // localhost resolves to ::1 before 127.0.0.1: try every resolved address, not only the first.
+    let candidates: Vec<std::net::SocketAddr> = match addr.parse::<std::net::SocketAddr>() {
+        Ok(sa) => vec![sa],
+        Err(_) => addr
+            .to_socket_addrs()
+            .map(|ips| ips.collect())
+            .unwrap_or_default(),
     };
-
-    match TcpStream::connect_timeout(&resolved_addr, Duration::from_secs(2)) {
-        Ok(_) => "established".to_string(),
-        Err(e) => format!("failed: {e}"),
+    if candidates.is_empty() {
+        return "failed: resolution failed".to_string();
     }
+
+    let mut last_err = None;
+    for sa in candidates {
+        match TcpStream::connect_timeout(&sa, Duration::from_secs(2)) {
+            Ok(_) => return "established".to_string(),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    format!(
+        "failed: {}",
+        last_err.map(|e| e.to_string()).unwrap_or_default()
+    )
 }
 
 /// Snapshot and status of node environment and dependencies
@@ -1465,6 +1462,14 @@ mod env_status_tests {
         // Resolve target that fails or times out quickly
         let res = tcp_probe("10.255.255.1:80");
         assert!(res.contains("failed"));
+    }
+
+    #[test]
+    fn tcp_probe_reaches_a_local_listener() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let res = tcp_probe(&format!("localhost:{port}"));
+        assert_eq!(res, "established");
     }
 
     #[test]
