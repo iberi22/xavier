@@ -661,7 +661,9 @@ async fn handle_skills_command(cmd: enums::SkillsCommand) -> Result<()> {
                 let reports = tokio::task::spawn_blocking(move || {
                     let is_active = |task_id: &str| match journal.pending_transactions() {
                         Ok(pending) => task_has_pending_tx(&pending, task_id),
-                        Err(_) => false,
+                        // Fail closed: if the journal cannot be read, treat the task as active
+                        // so the gc never removes a worktree it could not verify.
+                        Err(_) => true,
                     };
                     xavier::context::skill_controller::lease::cleanup_stale(
                         &journal,
@@ -685,7 +687,9 @@ async fn handle_skills_command(cmd: enums::SkillsCommand) -> Result<()> {
                 let stale = tokio::task::spawn_blocking(move || {
                     let is_active = |task_id: &str| match journal.pending_transactions() {
                         Ok(pending) => task_has_pending_tx(&pending, task_id),
-                        Err(_) => false,
+                        // Fail closed: if the journal cannot be read, treat the task as active
+                        // so the gc never removes a worktree it could not verify.
+                        Err(_) => true,
                     };
                     xavier::context::skill_controller::lease::list_stale(
                         &journal,
