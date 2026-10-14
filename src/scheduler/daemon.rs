@@ -221,16 +221,14 @@ impl MemoryDaemon {
 
         // Autonomous Self-Management Cron loop (Fase P3 & P4)
         tokio::spawn(async move {
-            let sleep_minutes = std::env::var("XAVIER_CRON_SLEEP_MINUTES")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5);
+            let interval =
+                cron_interval(std::env::var("XAVIER_CRON_SLEEP_MINUTES").ok().as_deref());
             info!(
-                "MemoryDaemon: Scheduled self-manage loop started ({}m interval)",
-                sleep_minutes
+                "MemoryDaemon: Scheduled self-manage loop started ({}s interval)",
+                interval.as_secs()
             );
             loop {
-                sleep(Duration::from_secs(sleep_minutes * 60)).await;
+                sleep(interval).await;
                 info!("MemoryDaemon: Running scheduled self-management checks...");
                 if let Err(e) = run_self_manage_checks().await {
                     error!(
@@ -243,9 +241,24 @@ impl MemoryDaemon {
     }
 }
 
+/// Self-management interval from `XAVIER_CRON_SLEEP_MINUTES`: unset or unparsable
+/// values use 5 minutes; anything below 1 minute is raised to 1 minute, and the
+/// multiplication saturates instead of overflowing.
+fn cron_interval(env: Option<&str>) -> Duration {
+    let minutes = env.and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(5);
+    Duration::from_secs(minutes.max(1).saturating_mul(60))
+}
+
 /// Run-once autonomous SRE monitoring check: monitors environment alerts,
 /// scans logs for Telegram failures, maps environment gaps and creates support tickets.
+/// The checks use blocking I/O, so they run on the blocking pool, not an async worker.
 async fn run_self_manage_checks() -> anyhow::Result<()> {
+    tokio::task::spawn_blocking(run_self_manage_checks_blocking)
+        .await
+        .map_err(|e| anyhow::anyhow!("self-manage checks task failed: {e}"))?
+}
+
+fn run_self_manage_checks_blocking() -> anyhow::Result<()> {
     let args = crate::self_manage::EnvStatusArgs {
         include_processes: Some(true),
         top_n: Some(10),
@@ -522,5 +535,22 @@ mod gc_destructive_tests {
         assert!(gc_destructive_enabled(Some("1")));
         assert!(gc_destructive_enabled(Some("TRUE")));
         assert!(gc_destructive_enabled(Some(" yes ")));
+    }
+}
+
+#[cfg(test)]
+mod cron_interval_tests {
+    use super::*;
+
+    #[test]
+    fn cron_interval_has_a_floor() {
+        assert!(cron_interval(Some("0")) >= Duration::from_secs(60));
+        assert_eq!(
+            cron_interval(Some("not-a-number")),
+            Duration::from_secs(300)
+        );
+        assert_eq!(cron_interval(None), Duration::from_secs(300));
+        // A huge value must not overflow the seconds multiplication.
+        assert!(cron_interval(Some("18446744073709551615")) >= Duration::from_secs(60));
     }
 }
