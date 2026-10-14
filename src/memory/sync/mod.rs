@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::cycle_breaks::w30_09::{MemoryIsland, SyncNotifier};
 use crate::memory::store::MemoryStore;
+use crate::security::clearance::ClearanceLevel;
 
 // ---------------------------------------------------------------------------
 // SyncError — structured error for peer sync operations
@@ -160,6 +161,10 @@ pub struct PeerMemorySync {
     /// via the old `/v1/memory/*` data-plane or the new `/api/v1/memory/sync/*`
     /// control-plane endpoints.
     endpoint_adapter: adapter::SyncEndpointAdapter,
+    /// Clearance ceiling applied when validating received diffs.
+    /// Defaults to `ClearanceLevel::Unclassified` (the lowest ceiling,
+    /// matching unauthenticated push requests).
+    pub clearance_ceiling: ClearanceLevel,
 }
 
 impl PeerMemorySync {
@@ -189,6 +194,10 @@ impl PeerMemorySync {
             node_id,
             peer_token,
             last_sync_map: tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            clearance_ceiling: std::env::var("XAVIER_SYNC_CLEARANCE_CEILING")
+                .ok()
+                .map(|v| crate::security::clearance::parse_requester_level(&v))
+                .unwrap_or(ClearanceLevel::Unclassified),
         }
     }
 
@@ -211,12 +220,46 @@ impl PeerMemorySync {
             node_id,
             peer_token,
             last_sync_map: tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            clearance_ceiling: std::env::var("XAVIER_SYNC_CLEARANCE_CEILING")
+                .ok()
+                .map(|v| crate::security::clearance::parse_requester_level(&v))
+                .unwrap_or(ClearanceLevel::Unclassified),
         }
     }
 
     /// Access the endpoint adapter (for testing / reconfiguration).
     pub fn adapter(&self) -> &adapter::SyncEndpointAdapter {
         &self.endpoint_adapter
+    }
+
+    /// Set the clearance ceiling for incoming sync diffs.
+    pub fn with_clearance_ceiling(mut self, ceiling: ClearanceLevel) -> Self {
+        self.clearance_ceiling = ceiling;
+        self
+    }
+
+    /// Update the clearance ceiling for incoming sync diffs.
+    pub fn set_clearance_ceiling(&mut self, ceiling: ClearanceLevel) {
+        self.clearance_ceiling = ceiling;
+    }
+
+    /// Get the current clearance ceiling for incoming sync diffs.
+    pub fn clearance_ceiling(&self) -> ClearanceLevel {
+        self.clearance_ceiling
+    }
+
+    /// Validate and apply a batch of received diffs with LWW merge.
+    /// Returns Ok(()) if validated and applied, or Err(reason) if rejected.
+    pub async fn apply_received_diffs(
+        &self,
+        diffs: &[ChunkDiff],
+        conflicts: &mut u64,
+    ) -> Result<(), &'static str> {
+        crate::memory::sync::merge::validate_changes_received(diffs, self.clearance_ceiling)?;
+        crate::memory::sync::merge::apply_changes_received(&*self.store, diffs, conflicts)
+            .await
+            .map_err(|_| "failed to apply changes")?;
+        Ok(())
     }
 
     /// Retrieve the last successful sync timestamp for a given peer URL.
@@ -268,15 +311,19 @@ impl PeerMemorySync {
 
         // 6. Apply received diffs with LWW merge
         let mut conflicts = 0u64;
-        crate::memory::sync::merge::apply_changes_received(&*self.store, &received, &mut conflicts)
-            .await
-            .map_err(SyncError::Other)?;
+        let applied_chunks = match self.apply_received_diffs(&received, &mut conflicts).await {
+            Ok(()) => chunks_received,
+            Err(e) => {
+                tracing::warn!("sync_with {peer_url}: rejected invalid diff batch: {e}");
+                0
+            }
+        };
 
         let duration_ms = start.elapsed().as_millis() as u64;
         let session = SyncSession {
             peer_id: peer_url.to_string(),
             chunks_sent,
-            chunks_received,
+            chunks_received: applied_chunks,
             conflicts,
             duration_ms,
             success: true,
@@ -338,14 +385,18 @@ impl PeerMemorySync {
         let received = self.pull_diffs_since(peer_url, workspace_id, since).await?;
         let chunks_received = received.len() as u64;
         let mut conflicts = 0u64;
-        crate::memory::sync::merge::apply_changes_received(&*self.store, &received, &mut conflicts)
-            .await
-            .map_err(SyncError::Other)?;
+        let applied_chunks = match self.apply_received_diffs(&received, &mut conflicts).await {
+            Ok(()) => chunks_received,
+            Err(e) => {
+                tracing::warn!("pull_from {peer_url}: rejected invalid diff batch: {e}");
+                0
+            }
+        };
         let duration_ms = start.elapsed().as_millis() as u64;
         Ok(SyncSession {
             peer_id: peer_url.to_string(),
             chunks_sent: 0,
-            chunks_received,
+            chunks_received: applied_chunks,
             conflicts,
             duration_ms,
             success: true,
@@ -580,5 +631,84 @@ mod tests {
         let peers = PeerMemorySync::peers_from_env();
         assert_eq!(peers, vec!["http://a:8080", "http://b:9090"]);
         std::env::remove_var("XAVIER_PEERS");
+    }
+
+    #[tokio::test]
+    async fn apply_step_refuses_invalid_batch() {
+        let store = Arc::new(manifest::tests::TestStore {
+            records: std::sync::Mutex::new(Vec::new()),
+        });
+        let sync = PeerMemorySync::new(store.clone(), "test-node".to_string());
+
+        // 1. Delete diff outside workspace
+        let invalid_delete = ChunkDiff {
+            chunk_hash: "hash_escape".to_string(),
+            namespace: "working".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some("../outside/forbidden".to_string()),
+        };
+
+        let mut conflicts = 0;
+        let res = sync
+            .apply_received_diffs(&[invalid_delete], &mut conflicts)
+            .await;
+        assert!(
+            res.is_err(),
+            "delete diff outside workspace must be refused"
+        );
+
+        // 2. Add diff above default unauthenticated ceiling (Unclassified)
+        let high_record = crate::memory::store::MemoryRecord {
+            id: "secret1".to_string(),
+            workspace_id: "working".to_string(),
+            path: "test/secret1".to_string(),
+            content: "sensitive content".to_string(),
+            clearance: ClearanceLevel::Secret,
+            ..Default::default()
+        };
+        let serialized = serde_json::to_vec(&high_record).expect("serialization");
+        let invalid_add = ChunkDiff {
+            chunk_hash: "hash_secret".to_string(),
+            namespace: "working".to_string(),
+            action: DiffAction::Add,
+            data: Some(serialized),
+            timestamp: std::time::SystemTime::now(),
+            record_path: None,
+        };
+
+        let res2 = sync
+            .apply_received_diffs(&[invalid_add], &mut conflicts)
+            .await;
+        assert!(res2.is_err(), "add diff above ceiling must be refused");
+
+        // Verify that store remains untouched: zero records were applied
+        assert!(store.records.lock().expect("lock").is_empty());
+
+        // 3. Valid batch is accepted and applied
+        let valid_record = crate::memory::store::MemoryRecord {
+            id: "ok1".to_string(),
+            workspace_id: "working".to_string(),
+            path: "test/ok1".to_string(),
+            content: "ok content".to_string(),
+            metadata: serde_json::json!({"clearance": "unclassified"}),
+            clearance: ClearanceLevel::Unclassified,
+            ..Default::default()
+        };
+        let serialized_ok = serde_json::to_vec(&valid_record).expect("serialization");
+        let valid_diff = ChunkDiff {
+            chunk_hash: "hash_ok".to_string(),
+            namespace: "working".to_string(),
+            action: DiffAction::Add,
+            data: Some(serialized_ok),
+            timestamp: std::time::SystemTime::now(),
+            record_path: None,
+        };
+        let res_ok = sync
+            .apply_received_diffs(&[valid_diff], &mut conflicts)
+            .await;
+        assert!(res_ok.is_ok(), "valid batch must be accepted");
+        assert_eq!(store.records.lock().expect("lock").len(), 1);
     }
 }

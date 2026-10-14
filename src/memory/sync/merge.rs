@@ -107,32 +107,117 @@ pub async fn apply_changes_received(
 /// smuggle a record above the ceiling. A record that cannot be parsed or
 /// normalized is treated as the highest level (fail closed) instead of being
 /// silently skipped.
+/// Helper to verify that a record path stays within the receiving workspace boundary.
+///
+/// Rejects empty paths, absolute paths, and any path component containing directory traversal (`..`).
+fn is_path_inside_workspace(path: &str) -> bool {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let p = std::path::Path::new(trimmed);
+    if p.is_absolute() {
+        return false;
+    }
+    for component in p.components() {
+        match component {
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => return false,
+            _ => {}
+        }
+    }
+    if trimmed.starts_with('/')
+        || trimmed.starts_with('\\')
+        || trimmed.split('/').any(|s| s == "..")
+        || trimmed.split('\\').any(|s| s == "..")
+    {
+        return false;
+    }
+    true
+}
+
+/// Validate every incoming record against the caller's write ceiling before a
+/// single record is applied.
+///
+/// The whole batch is refused on the first violation: a batch applied record by
+/// record would leave the store holding some records the caller was allowed to
+/// write and some it was not. The metadata is normalized exactly like the
+/// single-record write path, and the typed `clearance` field is compared too;
+/// the effective level is the higher of the two, so neither can be used to
+/// smuggle a record above the ceiling. A record that cannot be parsed or
+/// normalized is treated as the highest level (fail closed) instead of being
+/// silently skipped.
+///
+/// For Delete diffs, validation verifies that the delete names a path inside the
+/// receiving workspace and does not target a record above the caller's ceiling.
 pub fn validate_changes_received(
     diffs: &[ChunkDiff],
     ceiling: ClearanceLevel,
 ) -> Result<(), &'static str> {
     for diff in diffs {
-        if !matches!(diff.action, DiffAction::Add | DiffAction::Update) {
-            continue;
+        match diff.action {
+            DiffAction::Add | DiffAction::Update => {
+                let Some(data) = &diff.data else {
+                    continue;
+                };
+                let Ok(incoming) = serde_json::from_slice::<MemoryRecord>(data) else {
+                    return Err("Memory clearance exceeds caller clearance");
+                };
+                let metadata_level = match crate::memory::schema::normalize_metadata(
+                    &incoming.path,
+                    incoming.metadata.clone(),
+                    &incoming.workspace_id,
+                    None,
+                ) {
+                    Ok(normalized) => level_from_metadata(&normalized),
+                    // An unnormalizable payload is not trusted: treat it as the top level.
+                    Err(_) => ClearanceLevel::TopSecret,
+                };
+                let effective = metadata_level.max(incoming.clearance);
+                check_write_clearance(effective, ceiling)?;
+            }
+            DiffAction::Delete => {
+                if diff.namespace.trim().is_empty() {
+                    return Err("Delete path outside workspace");
+                }
+                let path = match &diff.record_path {
+                    Some(p) if is_path_inside_workspace(p) => p.as_str(),
+                    _ => return Err("Delete path outside workspace"),
+                };
+
+                let effective = if let Some(data) = &diff.data {
+                    let Ok(incoming) = serde_json::from_slice::<MemoryRecord>(data) else {
+                        return Err("Memory clearance exceeds caller clearance");
+                    };
+                    if !is_path_inside_workspace(&incoming.path) {
+                        return Err("Delete path outside workspace");
+                    }
+                    let metadata_level = match crate::memory::schema::normalize_metadata(
+                        &incoming.path,
+                        incoming.metadata.clone(),
+                        &incoming.workspace_id,
+                        None,
+                    ) {
+                        Ok(normalized) => level_from_metadata(&normalized),
+                        Err(_) => ClearanceLevel::TopSecret,
+                    };
+                    metadata_level.max(incoming.clearance)
+                } else {
+                    let metadata_level = match crate::memory::schema::normalize_metadata(
+                        path,
+                        serde_json::Value::Object(serde_json::Map::new()),
+                        &diff.namespace,
+                        None,
+                    ) {
+                        Ok(normalized) => level_from_metadata(&normalized),
+                        Err(_) => ClearanceLevel::TopSecret,
+                    };
+                    metadata_level
+                };
+                check_write_clearance(effective, ceiling)?;
+            }
         }
-        let Some(data) = &diff.data else {
-            continue;
-        };
-        let Ok(incoming) = serde_json::from_slice::<MemoryRecord>(data) else {
-            return Err("Memory clearance exceeds caller clearance");
-        };
-        let metadata_level = match crate::memory::schema::normalize_metadata(
-            &incoming.path,
-            incoming.metadata.clone(),
-            &incoming.workspace_id,
-            None,
-        ) {
-            Ok(normalized) => level_from_metadata(&normalized),
-            // An unnormalizable payload is not trusted: treat it as the top level.
-            Err(_) => ClearanceLevel::TopSecret,
-        };
-        let effective = metadata_level.max(incoming.clearance);
-        check_write_clearance(effective, ceiling)?;
     }
     Ok(())
 }
@@ -487,6 +572,174 @@ mod tests {
                 .content,
             "brand new",
             "new record added"
+        );
+    }
+
+    #[test]
+    fn delete_diff_outside_workspace_is_rejected() {
+        // Path traversal with parent directory
+        let diff_traversal = ChunkDiff {
+            chunk_hash: "hash_trav".to_string(),
+            namespace: "workspace1".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some("../outside/record.md".to_string()),
+        };
+        assert!(
+            validate_changes_received(&[diff_traversal], ClearanceLevel::TopSecret).is_err(),
+            "parent traversal path must be rejected"
+        );
+
+        // Path traversal embedded in subpath
+        let diff_embedded_trav = ChunkDiff {
+            chunk_hash: "hash_emb".to_string(),
+            namespace: "workspace1".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some("docs/../../escaped.md".to_string()),
+        };
+        assert!(
+            validate_changes_received(&[diff_embedded_trav], ClearanceLevel::TopSecret).is_err(),
+            "embedded traversal path must be rejected"
+        );
+
+        // Absolute path
+        let diff_abs = ChunkDiff {
+            chunk_hash: "hash_abs".to_string(),
+            namespace: "workspace1".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some("/etc/passwd".to_string()),
+        };
+        assert!(
+            validate_changes_received(&[diff_abs], ClearanceLevel::TopSecret).is_err(),
+            "absolute path must be rejected"
+        );
+
+        // Missing record path (None)
+        let diff_none = ChunkDiff {
+            chunk_hash: "hash_none".to_string(),
+            namespace: "workspace1".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: None,
+        };
+        assert!(
+            validate_changes_received(&[diff_none], ClearanceLevel::TopSecret).is_err(),
+            "missing record path on delete must be rejected"
+        );
+
+        // Empty record path
+        let diff_empty = ChunkDiff {
+            chunk_hash: "hash_empty".to_string(),
+            namespace: "workspace1".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some("   ".to_string()),
+        };
+        assert!(
+            validate_changes_received(&[diff_empty], ClearanceLevel::TopSecret).is_err(),
+            "empty record path on delete must be rejected"
+        );
+
+        // Empty namespace
+        let diff_empty_ns = ChunkDiff {
+            chunk_hash: "hash_empty_ns".to_string(),
+            namespace: "   ".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some("valid/path".to_string()),
+        };
+        assert!(
+            validate_changes_received(&[diff_empty_ns], ClearanceLevel::TopSecret).is_err(),
+            "empty namespace on delete must be rejected"
+        );
+
+        // Valid inside workspace path
+        let diff_valid = ChunkDiff {
+            chunk_hash: "hash_valid".to_string(),
+            namespace: "workspace1".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some("docs/valid_file.md".to_string()),
+        };
+        assert!(
+            validate_changes_received(&[diff_valid], ClearanceLevel::TopSecret).is_ok(),
+            "valid path inside workspace must be accepted"
+        );
+    }
+
+    #[test]
+    fn delete_diff_above_ceiling_is_rejected() {
+        // 1. Delete diff with segment path requiring TopSecret clearance
+        let diff_top_secret = ChunkDiff {
+            chunk_hash: "hash_ts".to_string(),
+            namespace: "workspace1".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some("segments/seg-admin/secret_plan.md".to_string()),
+        };
+        assert!(
+            validate_changes_received(&[diff_top_secret.clone()], ClearanceLevel::Confidential)
+                .is_err(),
+            "delete targeting seg-admin TopSecret record must be rejected for Confidential caller"
+        );
+        assert!(
+            validate_changes_received(&[diff_top_secret.clone()], ClearanceLevel::Internal)
+                .is_err(),
+            "delete targeting seg-admin TopSecret record must be rejected for Internal caller"
+        );
+        assert!(
+            validate_changes_received(&[diff_top_secret], ClearanceLevel::TopSecret).is_ok(),
+            "delete targeting seg-admin TopSecret record must be accepted for TopSecret caller"
+        );
+
+        // 2. Delete diff with attached record data having Secret clearance
+        let mut rec = make_record("sec1", "workspace1", "content", Utc::now(), 1, "node_a");
+        rec.clearance = ClearanceLevel::Secret;
+        let serialized = serialise_chunk(&rec).expect("serialise_chunk");
+        let diff_secret = ChunkDiff {
+            chunk_hash: "hash_sec".to_string(),
+            namespace: "workspace1".to_string(),
+            action: DiffAction::Delete,
+            data: Some(serialized),
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some("test/sec1".to_string()),
+        };
+        assert!(
+            validate_changes_received(&[diff_secret.clone()], ClearanceLevel::Internal).is_err(),
+            "delete targeting Secret record must be rejected for Internal caller"
+        );
+        assert!(
+            validate_changes_received(&[diff_secret], ClearanceLevel::Secret).is_ok(),
+            "delete targeting Secret record must be accepted for Secret caller"
+        );
+
+        // 3. Normal path with default clearance (Internal) rejected for Unclassified caller
+        let diff_internal = ChunkDiff {
+            chunk_hash: "hash_internal".to_string(),
+            namespace: "workspace1".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some("docs/note.md".to_string()),
+        };
+        assert!(
+            validate_changes_received(&[diff_internal.clone()], ClearanceLevel::Unclassified)
+                .is_err(),
+            "delete targeting default Internal record must be rejected for Unclassified caller"
+        );
+        assert!(
+            validate_changes_received(&[diff_internal], ClearanceLevel::Internal).is_ok(),
+            "delete targeting default Internal record must be accepted for Internal caller"
         );
     }
 }
