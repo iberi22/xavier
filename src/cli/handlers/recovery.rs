@@ -480,6 +480,7 @@ mod tests {
             .expect("connect");
 
         let email = format!("test_rec_{}@example.com", Uuid::new_v4());
+        let email_for_db = email.clone();
         let seed = RecoverySystem::generate_seed_phrase().expect("seed");
         let seed_hash = RecoverySystem::hash_seed_phrase(&seed);
         let sec_mgr = xavier::security::SecurityManager::new();
@@ -502,7 +503,7 @@ mod tests {
                 conn.execute(
                     "INSERT INTO users (id, email, password_hash, recovery_seed_hash, two_factor_enabled, created_at, updated_at)
                      VALUES (?1, ?2, ?3, ?4, 0, datetime('now'), datetime('now'));",
-                    rusqlite::params![Uuid::new_v4().to_string(), email, pass_hash, seed_hash],
+                    rusqlite::params![Uuid::new_v4().to_string(), email_for_db, pass_hash, seed_hash],
                 )?;
                 Ok(())
             })
@@ -535,6 +536,7 @@ mod tests {
             .expect("connect");
 
         let email = format!("test_reset_{}@example.com", Uuid::new_v4());
+        let email_for_db = email.clone();
         let seed = RecoverySystem::generate_seed_phrase().expect("seed");
         let seed_hash = RecoverySystem::hash_seed_phrase(&seed);
         let sec_mgr = xavier::security::SecurityManager::new();
@@ -557,7 +559,7 @@ mod tests {
                 conn.execute(
                     "INSERT INTO users (id, email, password_hash, recovery_seed_hash, two_factor_enabled, created_at, updated_at)
                      VALUES (?1, ?2, ?3, ?4, 0, datetime('now'), datetime('now'));",
-                    rusqlite::params![Uuid::new_v4().to_string(), email, pass_hash, seed_hash],
+                    rusqlite::params![Uuid::new_v4().to_string(), email_for_db, pass_hash, seed_hash],
                 )?;
                 Ok(())
             })
@@ -591,6 +593,7 @@ mod tests {
             .expect("connect");
 
         let email = format!("test_verify_{}@example.com", Uuid::new_v4());
+        let email_for_db = email.clone();
         let seed = RecoverySystem::generate_seed_phrase().expect("seed");
         let seed_hash = RecoverySystem::hash_seed_phrase(&seed);
         let sec_mgr = xavier::security::SecurityManager::new();
@@ -613,7 +616,7 @@ mod tests {
                 conn.execute(
                     "INSERT INTO users (id, email, password_hash, recovery_seed_hash, two_factor_enabled, created_at, updated_at)
                      VALUES (?1, ?2, ?3, ?4, 0, datetime('now'), datetime('now'));",
-                    rusqlite::params![Uuid::new_v4().to_string(), email, pass_hash, seed_hash],
+                    rusqlite::params![Uuid::new_v4().to_string(), email_for_db, pass_hash, seed_hash],
                 )?;
                 Ok(())
             })
@@ -646,6 +649,7 @@ mod tests {
             .expect("connect");
 
         let email = format!("test_success_{}@example.com", Uuid::new_v4());
+        let email_for_db = email.clone();
         let seed = RecoverySystem::generate_seed_phrase().expect("seed");
         let seed_hash = RecoverySystem::hash_seed_phrase(&seed);
         let sec_mgr = xavier::security::SecurityManager::new();
@@ -677,7 +681,7 @@ mod tests {
                 conn.execute(
                     "INSERT INTO users (id, email, password_hash, recovery_seed_hash, two_factor_enabled, created_at, updated_at)
                      VALUES (?1, ?2, ?3, ?4, 0, datetime('now'), datetime('now'));",
-                    rusqlite::params![Uuid::new_v4().to_string(), email, pass_hash, seed_hash],
+                    rusqlite::params![Uuid::new_v4().to_string(), email_for_db, pass_hash, seed_hash],
                 )?;
                 Ok(())
             })
