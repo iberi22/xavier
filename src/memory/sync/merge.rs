@@ -703,7 +703,11 @@ mod tests {
             "delete targeting seg-admin TopSecret record must be rejected for Internal caller"
         );
         assert!(
-            validate_changes_received(&[diff_top_secret], ClearanceLevel::TopSecret).is_ok(),
+            validate_changes_received(
+                std::slice::from_ref(&diff_top_secret),
+                ClearanceLevel::TopSecret
+            )
+            .is_ok(),
             "delete targeting seg-admin TopSecret record must be accepted for TopSecret caller"
         );
 
@@ -720,11 +724,13 @@ mod tests {
             record_path: Some("test/sec1".to_string()),
         };
         assert!(
-            validate_changes_received(&[diff_secret.clone()], ClearanceLevel::Internal).is_err(),
+            validate_changes_received(std::slice::from_ref(&diff_secret), ClearanceLevel::Internal)
+                .is_err(),
             "delete targeting Secret record must be rejected for Internal caller"
         );
         assert!(
-            validate_changes_received(&[diff_secret], ClearanceLevel::Secret).is_ok(),
+            validate_changes_received(std::slice::from_ref(&diff_secret), ClearanceLevel::Secret)
+                .is_ok(),
             "delete targeting Secret record must be accepted for Secret caller"
         );
 
@@ -738,12 +744,19 @@ mod tests {
             record_path: Some("docs/note.md".to_string()),
         };
         assert!(
-            validate_changes_received(&[diff_internal.clone()], ClearanceLevel::Unclassified)
-                .is_err(),
+            validate_changes_received(
+                std::slice::from_ref(&diff_internal),
+                ClearanceLevel::Unclassified
+            )
+            .is_err(),
             "delete targeting default Internal record must be rejected for Unclassified caller"
         );
         assert!(
-            validate_changes_received(&[diff_internal], ClearanceLevel::Internal).is_ok(),
+            validate_changes_received(
+                std::slice::from_ref(&diff_internal),
+                ClearanceLevel::Internal
+            )
+            .is_ok(),
             "delete targeting default Internal record must be accepted for Internal caller"
         );
     }
