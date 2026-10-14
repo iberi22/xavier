@@ -4,9 +4,9 @@ pages_build_output_dir = "dist"
 
 # Production & Subdomain bindings
 # Target URLs: https://xavier.swal.network / xavier-panel.pages.dev
-# Cloud Platform Gateway: REDACTED
+# Cloud Platform Gateway: https://xavier-cloud.swal.network
 [vars]
 ENVIRONMENT = "production"
 DEFAULT_MEMORY_NAMESPACE = "swal/xavier/community"
-XAVIER_CLOUD_ENDPOINT = "REDACTED"
+XAVIER_CLOUD_ENDPOINT = "https://xavier-cloud.swal.network"
 
