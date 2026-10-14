@@ -260,7 +260,12 @@ impl MemoryRecord {
                 v.as_str()
                     .and_then(|s| crate::utils::crypto::hex_decode(s).ok())
             }),
-            deleted_at: None,
+            deleted_at: document
+                .metadata
+                .get("deleted_at")
+                .and_then(|value| value.as_str())
+                .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+                .map(|value| value.with_timezone(&Utc)),
             score: document.score,
             embedding_status: "pending".to_string(),
             embedding_attempts: 0,
@@ -313,6 +318,12 @@ impl MemoryRecord {
                 object.insert(
                     "metadata_iv".to_string(),
                     serde_json::json!(crate::utils::crypto::hex_encode(metadata_iv)),
+                );
+            }
+            if let Some(deleted_at) = &self.deleted_at {
+                object.insert(
+                    "deleted_at".to_string(),
+                    serde_json::json!(deleted_at.to_rfc3339()),
                 );
             }
         }
@@ -772,7 +783,12 @@ impl MemoryStore for FileMemoryStore {
                 workspace
                     .memories
                     .iter()
-                    .find(|item| item.id == id_or_path || item.path == id_or_path)
+                    .filter(|item| item.id == id_or_path || item.path == id_or_path)
+                    .max_by(|a, b| {
+                        a.updated_at
+                            .cmp(&b.updated_at)
+                            .then_with(|| a.id.cmp(&b.id))
+                    })
             })
             .cloned())
     }
@@ -782,11 +798,17 @@ impl MemoryStore for FileMemoryStore {
         {
             let mut state = self.state.write().await;
             let workspace = Self::workspace_mut(&mut state, &workspace_id);
-            if let Some(existing) = workspace
+            let existing = workspace
                 .memories
                 .iter_mut()
-                .find(|item| item.id == record.id || item.path == record.path)
-            {
+                .find(|item| item.id == record.id)
+                .or_else(|| {
+                    workspace
+                        .memories
+                        .iter_mut()
+                        .find(|item| item.path == record.path)
+                });
+            if let Some(existing) = existing {
                 *existing = revisioned_record(existing.clone(), record);
             } else {
                 workspace.memories.push(record);

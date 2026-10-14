@@ -2575,3 +2575,72 @@ pub async fn timeline_query_handler(
         ),
     }
 }
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct DedupeAgentSessionsRequest {
+    #[serde(default = "default_true_dedupe")]
+    pub dry_run: bool,
+}
+
+fn default_true_dedupe() -> bool {
+    true
+}
+
+/// HTTP Admin handler for agent session deduplication:
+/// POST /v1/admin/memory/dedupe-agent-sessions
+///
+/// Accepts optional JSON body with `{"dry_run": true}` (default) or `{"dry_run": false}`.
+/// Returns counts: routes, to_forget, to_keep.
+pub async fn dedupe_agent_sessions_handler(
+    State(state): State<CliState>,
+    body: bytes::Bytes,
+) -> Response {
+    let req: DedupeAgentSessionsRequest = if body.is_empty() {
+        DedupeAgentSessionsRequest { dry_run: true }
+    } else {
+        match serde_json::from_slice(&body) {
+            Ok(r) => r,
+            Err(e) => {
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    serde_json::json!({
+                        "status": "error",
+                        "message": format!("Invalid JSON payload: {e}")
+                    }),
+                );
+            }
+        }
+    };
+
+    let dry_run = req.dry_run;
+
+    match xavier::memory::dedupe::dedupe_agent_sessions(&*state.store, &state.workspace_id, dry_run)
+        .await
+    {
+        Ok(result) => {
+            if !dry_run {
+                state.qmd_memory.invalidate_cache().await;
+            }
+            json_response(
+                StatusCode::OK,
+                serde_json::json!({
+                    "status": "ok",
+                    "dry_run": dry_run,
+                    "routes": result.routes,
+                    "to_forget": result.to_forget,
+                    "to_keep": result.to_keep,
+                    "rutas": result.routes,
+                    "filas_a_olvidar": result.to_forget,
+                    "filas_a_conservar": result.to_keep,
+                }),
+            )
+        }
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({
+                "status": "error",
+                "message": format!("Deduplication failed: {e}")
+            }),
+        ),
+    }
+}

@@ -329,36 +329,12 @@ pub async fn agent_index_handler(
     match state.agent_indexer.index_agents().await {
         Ok(indexed_files) => {
             let mut count = 0;
-            for file in indexed_files {
-                let record = MemoryRecord {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    workspace_id: state.workspace_id.clone(),
-                    path: file.path,
-                    content: file.content,
-                    metadata: serde_json::json!({
-                        "source": "agent_scanner",
-                        "last_modified": file.last_modified,
-                        "size": file.size,
-                    }),
-                    embedding: vec![],
-                    created_at: chrono::Utc::now(),
-                    updated_at: chrono::Utc::now(),
-                    revision: 1,
-                    primary: true,
-                    score: 0.0,
-                    deleted_at: None,
-                    parent_id: None,
-                    cluster_id: None,
-                    level: MemoryLevel::Raw,
-                    relation: None,
-                    clearance: Default::default(),
-                    revisions: vec![],
-                    encrypted_dek: None,
-                    content_iv: None,
-                    metadata_iv: None,
-                    ..Default::default()
-                };
-                if state.memory.add(record).await.is_ok() {
+            for file in &indexed_files {
+                if let Ok(Some(_)) = state
+                    .agent_indexer
+                    .ingest_file(&*state.store, &state.workspace_id, file)
+                    .await
+                {
                     count += 1;
                 }
             }

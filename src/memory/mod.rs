@@ -14,6 +14,7 @@ pub mod codex_importer;
 pub mod compression;
 pub mod connection_provider;
 pub mod decay;
+pub mod dedupe;
 pub mod embedder;
 pub mod entities;
 pub mod entity_graph;

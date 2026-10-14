@@ -216,7 +216,14 @@ impl VecSqliteMemoryStore {
                 .unwrap_or_else(|| "pending".to_string()),
             embedding_attempts: row.get::<_, Option<u32>>(19).ok().flatten().unwrap_or(0),
             score: 0.0,
-            deleted_at: None,
+            deleted_at: serde_json::from_str::<serde_json::Value>(&metadata_str)
+                .ok()
+                .and_then(|m| {
+                    m.get("deleted_at")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                }),
         })
     }
 

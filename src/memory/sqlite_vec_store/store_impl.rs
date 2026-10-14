@@ -173,9 +173,9 @@ impl MemoryStore for VecSqliteMemoryStore {
                 }
             }
 
-            // Fallback: try by path
+            // Fallback: try by path (pick newest canonical row first)
             let mut stmt = conn.prepare(&format!(
-                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE workspace_id = ? AND path = ?",
+                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE workspace_id = ? AND path = ? ORDER BY updated_at DESC, id DESC LIMIT 1",
                 TABLE_MEMORIES
             ))?;
 
@@ -1530,6 +1530,19 @@ impl VecSqliteMemoryStore {
             vector::serialize_embedding(&record.embedding)
         };
 
+        let mut metadata_val = record.metadata.clone();
+        if let Some(deleted_at) = &record.deleted_at {
+            if let Some(obj) = metadata_val.as_object_mut() {
+                if !obj.contains_key("deleted_at") {
+                    obj.insert(
+                        "deleted_at".to_string(),
+                        serde_json::json!(deleted_at.to_rfc3339()),
+                    );
+                }
+            }
+        }
+        let metadata_str = serde_json::to_string(&metadata_val).unwrap_or_default();
+
         conn.execute(
             &format!(
                 "INSERT OR REPLACE INTO {} (id, workspace_id, path, content, metadata, embedding, encrypted_dek, content_iv, metadata_iv, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, embedding_status, embedding_attempts) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
@@ -1540,7 +1553,7 @@ impl VecSqliteMemoryStore {
                 record.workspace_id,
                 record.path,
                 record.content,
-                serde_json::to_string(&record.metadata).unwrap_or_default(),
+                metadata_str,
                 embedding_blob,
                 record.encrypted_dek,
                 record.content_iv,

@@ -52,6 +52,8 @@ const ROOT_ONLY_PREFIXES: &[&str] = &[
     // tokens only pass the narrow own-space allowlist in
     // `space_token_may_access`, which also refuses these paths.
     "/api/v1/espacio/admin",
+    // Admin maintenance and management routes (memory deduplication, etc.)
+    "/v1/admin",
 ];
 
 /// POST routes that only read, so they need `read` and not `write`.
@@ -1002,6 +1004,27 @@ mod scope_policy_tests {
                 required_scope(&Method::POST, path),
                 RequiredScope::RootOnly,
                 "{path} is inside the Clavis namespace and must stay root-only"
+            );
+        }
+    }
+
+    #[test]
+    fn admin_es_root_only_para_todos_los_scopes() {
+        for scope_list in [
+            vec!["all"],
+            vec!["read", "write", "all"],
+            vec!["read", "write", "admin", "secrets", "proxy"],
+        ] {
+            let path = "/v1/admin/memory/dedupe-agent-sessions";
+            let required = required_scope(&Method::POST, path);
+            assert_eq!(
+                required,
+                RequiredScope::RootOnly,
+                "{path} must be root-only"
+            );
+            assert!(
+                !token_satisfies(&scopes(&scope_list), &required),
+                "{scope_list:?} must not unlock {path}"
             );
         }
     }

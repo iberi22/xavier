@@ -182,6 +182,14 @@ pub fn memory_routes() -> Router<CliState> {
                 })),
             ),
         )
+        .route(
+            "/v1/admin/memory/dedupe-agent-sessions",
+            post(crate::cli::handlers::memory::dedupe_agent_sessions_handler).layer(
+                middleware::from_fn(xavier::middleware::require_permission(|r| {
+                    r.can_edit_config()
+                })),
+            ),
+        )
         .route("/memory/stats", get(stats_handler))
         .route("/v1/stats", get(stats_handler))
         .route("/memory/export", get(export_handler))
@@ -2147,6 +2155,7 @@ pub async fn start_http_server(
     let app = build_app(state.clone(), deps);
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
+    let store_cron = state.store.clone();
 
     let listener = TcpListener::bind(&bind_addr).await?;
     let bound_addr = listener.local_addr()?;
@@ -2473,36 +2482,10 @@ pub async fn start_http_server(
             interval.tick().await;
             info!("Running scheduled Agentic Scanner pass...");
             if let Ok(indexed_files) = agent_indexer_cron.index_agents().await {
-                for file in indexed_files {
-                    let record = xavier::memory::store::MemoryRecord {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        workspace_id: "default".to_string(),
-                        path: file.path,
-                        content: file.content,
-                        metadata: serde_json::json!({
-                            "source": "agent_scanner",
-                            "last_modified": file.last_modified,
-                            "size": file.size,
-                        }),
-                        embedding: vec![],
-                        created_at: chrono::Utc::now(),
-                        updated_at: chrono::Utc::now(),
-                        revision: 1,
-                        primary: true,
-                        score: 0.0,
-                        deleted_at: None,
-                        parent_id: None,
-                        cluster_id: None,
-                        level: Default::default(),
-                        relation: None,
-                        clearance: Default::default(),
-                        revisions: vec![],
-                        encrypted_dek: None,
-                        content_iv: None,
-                        metadata_iv: None,
-                        ..Default::default()
-                    };
-                    let _ = memory_port_cron.add(record).await;
+                for file in &indexed_files {
+                    let _ = agent_indexer_cron
+                        .ingest_file(&*store_cron, "default", file)
+                        .await;
                 }
             }
         }

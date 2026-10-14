@@ -204,7 +204,14 @@ impl SqliteMemoryStore {
                 .unwrap_or_else(|| "pending".to_string()),
             embedding_attempts: row.get::<_, Option<u32>>(19).ok().flatten().unwrap_or(0),
             score: 0.0,
-            deleted_at: None,
+            deleted_at: serde_json::from_str::<serde_json::Value>(&metadata_str)
+                .ok()
+                .and_then(|m| {
+                    m.get("deleted_at")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                }),
         })
     }
 }
@@ -498,6 +505,19 @@ impl MemoryStore for SqliteMemoryStore {
             record.metadata_iv = Some(metadata_nonce.as_bytes().to_vec());
         }
 
+        let mut metadata_val = record.metadata.clone();
+        if let Some(deleted_at) = &record.deleted_at {
+            if let Some(obj) = metadata_val.as_object_mut() {
+                if !obj.contains_key("deleted_at") {
+                    obj.insert(
+                        "deleted_at".to_string(),
+                        serde_json::json!(deleted_at.to_rfc3339()),
+                    );
+                }
+            }
+        }
+        let metadata_str = serde_json::to_string(&metadata_val).unwrap_or_default();
+
         self.conn_provider.with_conn(&self.project_id, move |conn| {
             conn.execute(
                 &format!(
@@ -509,7 +529,7 @@ impl MemoryStore for SqliteMemoryStore {
                     record.workspace_id,
                     record.path,
                     record.content,
-                    serde_json::to_string(&record.metadata).unwrap_or_default(),
+                    metadata_str,
                     Self::serialize_embedding(&record.embedding),
                     record.encrypted_dek,
                     record.content_iv,
@@ -548,9 +568,9 @@ impl MemoryStore for SqliteMemoryStore {
             drop(rows);
             drop(stmt);
 
-            // Fallback: try by path
+            // Fallback: try by path (pick newest canonical row first)
             let mut stmt = conn.prepare(&format!(
-                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE workspace_id = ? AND path = ?",
+                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE workspace_id = ? AND path = ? ORDER BY updated_at DESC, id DESC LIMIT 1",
                 TABLE_MEMORIES
             ))?;
 
