@@ -202,7 +202,7 @@ of showing defaults.
 | Variable | Used by | Default |
 |---|---|---|
 | `XAVIER_BILLING_URL` | `plans`, `checkout` | `http://127.0.0.1:8787` (`pnpm dev` in swal-billing; there is no public deployment yet) |
-| `PGHEART_URL` (alias `XAVIER_PGHEART_URL`) | `status`, `checkout` | `REDACTED` |
+| `PGHEART_URL` (alias `XAVIER_PGHEART_URL`) | `status`, `checkout` | `https://xavier-cloud.swal.network` |
 | `PGHEART_TOKEN` (alias `XAVIER_PGHEART_TOKEN`) | `status`, `checkout` | none: your xavier-cloud tenant API key, sent as `Authorization: Bearer` |
 
 The `PGHEART_*` names win over the `XAVIER_PGHEART_*` aliases when both are set.

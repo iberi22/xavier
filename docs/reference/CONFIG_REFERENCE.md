@@ -122,7 +122,7 @@ To use OpenRouter for embeddings, configure the following in `config/xavier.conf
     "embedding_model": "text-embedding-3-small"
   },
   "embedding": {
-    "api_key": "REDACTED"
+    "api_key": "sk-or-v1-your-key-here"
   }
 }
 ```
@@ -132,7 +132,7 @@ Alternatively, use environment variables:
 ```bash
 export XAVIER_EMBEDDING_URL=https://openrouter.ai/api/v1/embeddings
 export XAVIER_EMBEDDING_MODEL=text-embedding-3-small
-export XAVIER_OPENROUTER_API_KEY=REDACTED
+export XAVIER_OPENROUTER_API_KEY=sk-or-v1-your-key-here
 ```
 
 ---

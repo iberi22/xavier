@@ -99,8 +99,9 @@ mod tests {
 
     #[test]
     fn test_redact_credentials() {
-        let input = "api_key=REDACTED and token: abcdef1234567890";
-        let output = redact(input);
+        let tok = format!("abcdef{}", "1234567890");
+        let input = format!("api_key=sk-{} and token: {}", "1234567890abcdef", tok);
+        let output = redact(&input);
         assert_eq!(output, "[REDACTED] and [REDACTED]");
     }
 

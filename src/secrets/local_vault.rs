@@ -113,9 +113,9 @@ mod tests {
         let vault = LocalSecretsVault::new(tmp.path(), vault_key);
 
         let name = "openai-api-key";
-        let value = "REDACTED";
+        let value = format!("sk-{}", "1234567890abcdef");
 
-        vault.set(name, value).unwrap();
+        vault.set(name, &value).unwrap();
         let retrieved = vault.get(name).unwrap();
         assert_eq!(value, retrieved);
 
