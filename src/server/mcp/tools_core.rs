@@ -1746,6 +1746,8 @@ pub(crate) mod tests {
             .expect("workspace parent")
             .to_path_buf();
 
+        // The workspace root must be a git repository to be an allowed gitcore root.
+        std::fs::create_dir_all(ws_root.join(".git")).expect("mark workspace root as git repo");
         let project_dir = ws_root.join("sample_gitcore_proj");
         std::fs::create_dir_all(&project_dir).expect("create sample project dir");
         std::fs::write(
