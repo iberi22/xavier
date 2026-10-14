@@ -31,6 +31,16 @@ pub struct AgentScanner {
     search_paths: Vec<PathBuf>,
 }
 
+/// Real modification time of the source file, so a re-scan of an unchanged
+/// session stamps the same `updated_at` and does not create a new record.
+/// Falls back to the scan time only when the file's mtime cannot be read.
+fn source_mtime_rfc3339(path: &std::path::Path) -> String {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+        .unwrap_or_else(|_| chrono::Utc::now().to_rfc3339())
+}
+
 impl Default for AgentScanner {
     fn default() -> Self {
         Self::new()
@@ -152,7 +162,7 @@ impl AgentScanner {
 
             let mut rows = stmt.query([]).ok()?;
             let mut messages = Vec::new();
-            let updated_at = chrono::Utc::now().to_rfc3339();
+            let updated_at = source_mtime_rfc3339(&path_clone);
 
             while let Some(row) = rows.next().ok().flatten() {
                 let key: String = row.get(0).ok()?;
@@ -209,7 +219,7 @@ impl AgentScanner {
             Ok(Some(AgentSession {
                 ide: "JSON_Agent".to_string(),
                 project_path: None,
-                updated_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: source_mtime_rfc3339(path),
                 messages,
                 source_file: path.to_string_lossy().to_string(),
             }))
