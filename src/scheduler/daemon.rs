@@ -133,6 +133,10 @@ impl MemoryDaemon {
             info!("MemoryDaemon: Scheduled GC loop started (24h interval)");
             loop {
                 sleep(Duration::from_secs(24 * 3600)).await;
+                if !gc_destructive_enabled(std::env::var("XAVIER_GC_DESTRUCTIVE").ok().as_deref()) {
+                    info!("MemoryDaemon: Scheduled GC is report-only (enable deletes with XAVIER_GC_DESTRUCTIVE=1); skipping this pass");
+                    continue;
+                }
                 info!("MemoryDaemon: Running scheduled garbage_collect()");
                 match manager_gc.garbage_collect().await {
                     Ok(stats) => info!(
@@ -445,6 +449,16 @@ pub fn semantic_compaction_enabled(value: Option<&str>) -> bool {
         || trimmed.eq_ignore_ascii_case("yes")
 }
 
+/// Scheduled GC deletes records only when the operator opts in with
+/// `XAVIER_GC_DESTRUCTIVE` set to `1`, `true` or `yes` (case-insensitive).
+/// Any other value, including unset, keeps the scheduled pass report-only.
+fn gc_destructive_enabled(env: Option<&str>) -> bool {
+    matches!(
+        env.map(|v| v.trim().to_ascii_lowercase()).as_deref(),
+        Some("1" | "true" | "yes")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -491,5 +505,22 @@ mod tests {
             res.is_ok(),
             "auto-tune on empty memory must succeed (no-op)"
         );
+    }
+}
+
+#[cfg(test)]
+mod gc_destructive_tests {
+    use super::*;
+
+    #[test]
+    fn gc_destructive_enabled_is_opt_in() {
+        assert!(!gc_destructive_enabled(None));
+        assert!(!gc_destructive_enabled(Some("")));
+        assert!(!gc_destructive_enabled(Some("0")));
+        assert!(!gc_destructive_enabled(Some("false")));
+        assert!(!gc_destructive_enabled(Some("maybe")));
+        assert!(gc_destructive_enabled(Some("1")));
+        assert!(gc_destructive_enabled(Some("TRUE")));
+        assert!(gc_destructive_enabled(Some(" yes ")));
     }
 }
