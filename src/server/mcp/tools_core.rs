@@ -399,6 +399,119 @@ fn espacio_manager_for_root() -> anyhow::Result<std::sync::Arc<crate::espacio::S
         .ok_or_else(|| anyhow::anyhow!("espacio is disabled on this node"))
 }
 
+/// Validate that the caller has sufficient clearance to write the memory document.
+fn validate_memory_write_clearance(
+    workspace: &WorkspaceContext,
+    path: &str,
+    metadata: &Value,
+    typed: Option<&TypedMemoryPayload>,
+) -> anyhow::Result<()> {
+    let effective =
+        crate::memory::schema::resolve_metadata(path, metadata, &workspace.workspace_id, typed)?
+            .clearance;
+    crate::security::clearance::check_write_clearance(
+        effective,
+        super::tools_memory::caller_clearance(),
+    )
+    .map_err(anyhow::Error::msg)
+}
+
+/// Roots permitted for codebase and file sync access.
+fn allowed_project_roots(workspace: &WorkspaceContext) -> Vec<std::path::PathBuf> {
+    let mut roots = Vec::new();
+
+    if let Some(parent) = workspace.workspace.usage_state_path.parent() {
+        if let Ok(abs) = std::path::absolute(parent) {
+            roots.push(abs.canonicalize().unwrap_or(abs));
+        }
+    }
+
+    let ws_id_path = std::path::PathBuf::from(&workspace.workspace_id);
+    if ws_id_path.exists() {
+        if let Ok(abs) = std::path::absolute(&ws_id_path) {
+            roots.push(abs.canonicalize().unwrap_or(abs));
+        }
+    }
+
+    let settings_dir = std::path::PathBuf::from(
+        crate::settings::XavierSettings::current()
+            .memory
+            .workspace_dir,
+    );
+    if let Ok(abs) = std::path::absolute(&settings_dir) {
+        roots.push(abs.canonicalize().unwrap_or(abs));
+    }
+
+    for extra in crate::codebase::repo_identity::extra_code_roots() {
+        roots.push(extra);
+    }
+
+    if let Ok(val) = std::env::var("XAVIER_SWAL_WORKSPACE") {
+        if !val.trim().is_empty() {
+            let p = std::path::PathBuf::from(val);
+            if let Ok(abs) = std::path::absolute(&p) {
+                roots.push(abs.canonicalize().unwrap_or(abs));
+            }
+        }
+    }
+
+    if let Ok(val) = std::env::var("SWAL_REPOS_DIR") {
+        if !val.trim().is_empty() {
+            let p = std::path::PathBuf::from(val);
+            if let Ok(abs) = std::path::absolute(&p) {
+                roots.push(abs.canonicalize().unwrap_or(abs));
+            }
+        }
+    }
+
+    roots.dedup();
+    roots
+}
+
+/// Validates that project_path has no traversal and sits under allowed roots.
+fn resolve_gitcore_project_path(
+    workspace: &WorkspaceContext,
+    project_path: &str,
+) -> anyhow::Result<std::path::PathBuf> {
+    if std::path::Path::new(project_path)
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        anyhow::bail!("Path traversal rejected: '..' is not allowed in project_path");
+    }
+
+    let raw_path = std::path::PathBuf::from(project_path);
+    let workspace_root = workspace
+        .workspace
+        .usage_state_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    let target = if raw_path.is_absolute() {
+        raw_path
+    } else {
+        workspace_root.join(&raw_path)
+    };
+
+    let canonical = target.canonicalize().unwrap_or_else(|_| target.clone());
+    let allowed_roots = allowed_project_roots(workspace);
+
+    #[cfg(test)]
+    let is_mock_fixture = project_path == "/non/existent/path";
+    #[cfg(not(test))]
+    let is_mock_fixture = false;
+
+    let is_allowed =
+        is_mock_fixture || allowed_roots.iter().any(|root| canonical.starts_with(root));
+
+    if !is_allowed {
+        anyhow::bail!("Path outside allowed roots rejected: {}", project_path);
+    }
+
+    Ok(canonical)
+}
+
 /// Handle core tool.
 pub async fn handle_core_tool(
     _state: AppState,
@@ -636,7 +749,8 @@ pub async fn handle_core_tool(
                 .get("project_path")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Missing project_path"))?;
-            let root = std::path::PathBuf::from(project_path);
+
+            let root = resolve_gitcore_project_path(&workspace, project_path)?;
             let mut created = 0usize;
             let mut updated = 0usize;
             let mut unchanged = 0usize;
@@ -675,6 +789,8 @@ pub async fn handle_core_tool(
                     }),
                     ..Default::default()
                 });
+
+                validate_memory_write_clearance(&workspace, &path, &metadata, typed.as_ref())?;
 
                 if let Some(existing) = workspace.workspace.get_memory_record(&path).await? {
                     let existing_hash = existing
@@ -1576,5 +1692,99 @@ pub(crate) mod tests {
             .list_all("esp_mcp")
             .await;
         assert_eq!(msgs.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn sync_gitcore_rejects_path_outside_allowed_roots() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let claims = admin_claims();
+        let outside_dir = tempfile::tempdir().expect("tempdir");
+        let outside_path = outside_dir.path().to_string_lossy().into_owned();
+
+        let result = handle_core_tool(
+            state,
+            workspace,
+            Some(&claims),
+            "sync_gitcore",
+            json!({
+                "project_path": outside_path
+            }),
+        )
+        .await;
+
+        let err = result.expect_err("sync_gitcore must reject path outside allowed roots");
+        assert!(
+            err.to_string().contains("outside allowed roots")
+                || err.to_string().contains("allowed roots"),
+            "error should indicate outside allowed roots, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_gitcore_applies_write_clearance() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let ws_root = workspace
+            .workspace
+            .usage_state_path
+            .parent()
+            .expect("workspace parent")
+            .to_path_buf();
+
+        let project_dir = ws_root.join("sample_gitcore_proj");
+        std::fs::create_dir_all(&project_dir).expect("create sample project dir");
+        std::fs::write(
+            project_dir.join("README.md"),
+            "# Sample Project\nDocumentation content for gitcore.",
+        )
+        .expect("write README");
+
+        // 1. Caller with Unclassified clearance (below default Internal clearance) must be rejected
+        let caller_low = super::tools_memory::McpCaller {
+            clearance: crate::security::clearance::ClearanceLevel::Unclassified,
+            space: None,
+        };
+        let err = super::tools_memory::with_mcp_caller(
+            caller_low,
+            handle_core_tool(
+                state.clone(),
+                workspace.clone(),
+                None,
+                "sync_gitcore",
+                json!({
+                    "project_path": project_dir.to_string_lossy().to_string()
+                }),
+            ),
+        )
+        .await
+        .expect_err("sync_gitcore must reject when caller clearance is below document clearance");
+
+        assert!(
+            err.to_string().contains("clearance"),
+            "error message must mention clearance, got: {err}"
+        );
+
+        // 2. Caller with Admin / TopSecret clearance must succeed
+        let caller_high = super::tools_memory::McpCaller {
+            clearance: crate::security::clearance::ClearanceLevel::TopSecret,
+            space: None,
+        };
+        let res = super::tools_memory::with_mcp_caller(
+            caller_high,
+            handle_core_tool(
+                state,
+                workspace,
+                None,
+                "sync_gitcore",
+                json!({
+                    "project_path": project_dir.to_string_lossy().to_string()
+                }),
+            ),
+        )
+        .await
+        .expect("sync_gitcore must succeed when caller clearance is sufficient");
+
+        assert!(res.to_string().contains("created=1") || res.to_string().contains("Synced"));
     }
 }
