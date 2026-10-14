@@ -204,7 +204,7 @@ pub fn validate_changes_received(
                     };
                     metadata_level.max(incoming.clearance)
                 } else {
-                    let metadata_level = match crate::memory::schema::normalize_metadata(
+                    match crate::memory::schema::normalize_metadata(
                         path,
                         serde_json::Value::Object(serde_json::Map::new()),
                         &diff.namespace,
@@ -212,8 +212,7 @@ pub fn validate_changes_received(
                     ) {
                         Ok(normalized) => level_from_metadata(&normalized),
                         Err(_) => ClearanceLevel::TopSecret,
-                    };
-                    metadata_level
+                    }
                 };
                 check_write_clearance(effective, ceiling)?;
             }
@@ -688,13 +687,19 @@ mod tests {
             record_path: Some("segments/seg-admin/secret_plan.md".to_string()),
         };
         assert!(
-            validate_changes_received(&[diff_top_secret.clone()], ClearanceLevel::Confidential)
-                .is_err(),
+            validate_changes_received(
+                std::slice::from_ref(&diff_top_secret),
+                ClearanceLevel::Confidential
+            )
+            .is_err(),
             "delete targeting seg-admin TopSecret record must be rejected for Confidential caller"
         );
         assert!(
-            validate_changes_received(&[diff_top_secret.clone()], ClearanceLevel::Internal)
-                .is_err(),
+            validate_changes_received(
+                std::slice::from_ref(&diff_top_secret),
+                ClearanceLevel::Internal
+            )
+            .is_err(),
             "delete targeting seg-admin TopSecret record must be rejected for Internal caller"
         );
         assert!(
