@@ -73,7 +73,8 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
         hormer_metrics = context.workspace.hormer.get_metrics().await;
     }
 
-    let xavier_health = crate::health::collect_health_sync();
+    let xavier_health =
+        crate::health::collect_health(&crate::settings::XavierSettings::current(), None).await;
 
     Json(HealthEndpointResponse {
         status: xavier_health.status.clone(),
@@ -247,4 +248,39 @@ pub async fn build_info(State(state): State<AppState>) -> impl IntoResponse {
                 audit_chain_enabled: VecSqliteMemoryStore::audit_chain_enabled(),
             }),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::mcp::tests::test_state;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn health_handler_does_not_block_the_runtime() {
+        crate::isolate_test_process!();
+
+        let (state, _) = test_state().await;
+        let counter = Arc::new(Mutex::new(0));
+
+        let ticker_counter = Arc::clone(&counter);
+        tokio::spawn(async move {
+            loop {
+                let mut guard = ticker_counter.lock().await;
+                *guard += 1;
+                drop(guard);
+                tokio::task::yield_now().await;
+            }
+        });
+
+        // The handler should yield so the ticker runs
+        let _ = health(State(state)).await;
+
+        let final_count = *counter.lock().await;
+        assert!(
+            final_count > 0,
+            "Ticker did not advance while health handler ran - possible blocking in async context"
+        );
+    }
 }
