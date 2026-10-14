@@ -8,6 +8,17 @@ use tracing::{debug, info};
 use crate::memory::agent_scanner::{AgentScanner, AgentSession};
 use crate::memory::file_indexer::{FileChunk, FileIndexer, IndexedFile};
 
+/// Stable virtual path of an agent session: `agent_memory://<ide>/<source stem>`.
+/// The same transcript always maps to the same path, so `add()` upserts it
+/// instead of creating a new record on every scan.
+pub fn virtual_path_for(session: &AgentSession) -> String {
+    let source_stem = std::path::Path::new(&session.source_file)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| format!("x-{}", uuid::Uuid::new_v4()));
+    format!("agent_memory://{}/{}", session.ide, source_stem)
+}
+
 /// AgentIndexer se encarga de formatear e indexar las sesiones de agentes (Cursor, Windsurf, etc.)
 #[derive(Clone)]
 pub struct AgentIndexer {
@@ -49,11 +60,7 @@ impl AgentIndexer {
             // path → add() hace UPSERT por path (sin duplicados entre pasadas).
             // El UUID aleatorio anterior (uuid::new_v4) duplicaba TODO el corpus
             // de Cursor en cada escaneo de 6h (42k+ registros de ~414 archivos).
-            let source_stem = std::path::Path::new(&session.source_file)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| format!("x-{}", uuid::Uuid::new_v4()));
-            let virtual_path = format!("agent_memory://{}/{}", session.ide, source_stem);
+            let virtual_path = virtual_path_for(&session);
 
             let indexed_file = IndexedFile {
                 path: virtual_path.clone(),
@@ -132,5 +139,66 @@ impl AgentIndexer {
         }
 
         chunks
+    }
+}
+
+#[cfg(test)]
+mod stable_path_tests {
+    use super::*;
+
+    fn session(ide: &str, source: &str, updated_at: &str) -> AgentSession {
+        AgentSession {
+            ide: ide.to_string(),
+            project_path: None,
+            updated_at: updated_at.to_string(),
+            messages: vec![],
+            source_file: source.to_string(),
+        }
+    }
+
+    #[test]
+    fn two_scans_of_unchanged_source_keep_one_path() {
+        let first = session(
+            "cursor",
+            "/home/u/.cursor/chat-1.json",
+            "2026-10-13T10:00:00Z",
+        );
+        let second = session(
+            "cursor",
+            "/home/u/.cursor/chat-1.json",
+            "2026-10-13T10:00:00Z",
+        );
+        assert_eq!(virtual_path_for(&first), virtual_path_for(&second));
+    }
+
+    #[test]
+    fn changed_source_keeps_the_same_path_so_add_updates_in_place() {
+        let before = session(
+            "cursor",
+            "/home/u/.cursor/chat-1.json",
+            "2026-10-13T10:00:00Z",
+        );
+        let after = session(
+            "cursor",
+            "/home/u/.cursor/chat-1.json",
+            "2026-10-13T12:30:00Z",
+        );
+        assert_eq!(virtual_path_for(&before), virtual_path_for(&after));
+        assert_eq!(virtual_path_for(&after), "agent_memory://cursor/chat-1");
+    }
+
+    #[test]
+    fn different_sources_get_different_paths() {
+        let a = session(
+            "cursor",
+            "/home/u/.cursor/chat-1.json",
+            "2026-10-13T10:00:00Z",
+        );
+        let b = session(
+            "cursor",
+            "/home/u/.cursor/chat-2.json",
+            "2026-10-13T10:00:00Z",
+        );
+        assert_ne!(virtual_path_for(&a), virtual_path_for(&b));
     }
 }
