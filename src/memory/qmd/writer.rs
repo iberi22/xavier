@@ -17,9 +17,12 @@ use anyhow::Result;
 
 // ── Write-time integrity ────────────────────────────────────────────
 
-/// Paths the writer treats as canonical: exactly one record per path.
+/// Paths the writer treats as canonical: exactly one record per path. Agent
+/// session records (`agent_memory://`) are one record per session, updated in place.
 fn is_canonical_path(path: &str) -> bool {
-    path.starts_with("stability/") || path.starts_with("features/")
+    path.starts_with("stability/")
+        || path.starts_with("features/")
+        || path.starts_with("agent_memory://")
 }
 
 /// Stamp the integrity verdict on the metadata of a record being written.
