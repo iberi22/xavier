@@ -659,10 +659,10 @@ async fn handle_skills_command(cmd: enums::SkillsCommand) -> Result<()> {
             let worktree_path = std::path::PathBuf::from(worktree);
             if apply {
                 let reports = tokio::task::spawn_blocking(move || {
-                    let pending = journal.pending_transactions().map_err(|e| {
-                        anyhow::anyhow!("failed to read journal pending transactions: {e}")
-                    })?;
-                    let is_active = |task_id: &str| task_has_pending_tx(&pending, task_id);
+                    let is_active = |task_id: &str| match journal.pending_transactions() {
+                        Ok(pending) => task_has_pending_tx(&pending, task_id),
+                        Err(_) => false,
+                    };
                     xavier::context::skill_controller::lease::cleanup_stale(
                         &journal,
                         std::path::Path::new(&worktree_path),
@@ -683,10 +683,10 @@ async fn handle_skills_command(cmd: enums::SkillsCommand) -> Result<()> {
                 );
             } else {
                 let stale = tokio::task::spawn_blocking(move || {
-                    let pending = journal.pending_transactions().map_err(|e| {
-                        anyhow::anyhow!("failed to read journal pending transactions: {e}")
-                    })?;
-                    let is_active = |task_id: &str| task_has_pending_tx(&pending, task_id);
+                    let is_active = |task_id: &str| match journal.pending_transactions() {
+                        Ok(pending) => task_has_pending_tx(&pending, task_id),
+                        Err(_) => false,
+                    };
                     xavier::context::skill_controller::lease::list_stale(
                         &journal,
                         std::path::Path::new(&worktree_path),
@@ -716,15 +716,7 @@ fn task_has_pending_tx(
     pending: &[xavier::context::skill_controller::state::TransactionRecord],
     task_id: &str,
 ) -> bool {
-    let needle = format!("eph-{task_id}");
-    pending.iter().any(|tx| {
-        tx.entries.iter().any(|entry| {
-            entry
-                .target_path
-                .components()
-                .any(|c| c.as_os_str() == needle.as_str())
-        })
-    })
+    xavier::context::skill_controller::lease::task_has_pending_tx(pending, task_id)
 }
 
 #[cfg(test)]
