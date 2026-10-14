@@ -15,8 +15,21 @@ pub struct TokenAccountingEntry {
     pub savings_usd: f32,
 }
 
+const MAX_TRACKER_ENTRIES: usize = 100;
+
+#[derive(Default)]
+struct TrackerState {
+    entries: std::collections::VecDeque<TokenAccountingEntry>,
+    total_original_tokens: usize,
+    total_optimized_tokens: usize,
+    // Money accumulates in f64: thousands of f32 additions drift far past the
+    // resolution the public f32 figure can express.
+    total_savings_usd: f64,
+    operation_count: usize,
+}
+
 pub struct TokenAccountingTracker {
-    entries: Arc<RwLock<Vec<TokenAccountingEntry>>>,
+    state: Arc<RwLock<TrackerState>>,
 }
 
 impl Default for TokenAccountingTracker {
@@ -29,7 +42,7 @@ impl TokenAccountingTracker {
     /// New.
     pub fn new() -> Self {
         Self {
-            entries: Arc::new(RwLock::new(Vec::new())),
+            state: Arc::new(RwLock::new(TrackerState::default())),
         }
     }
 
@@ -56,29 +69,36 @@ impl TokenAccountingTracker {
             savings_usd: savings,
         };
 
-        let mut entries = self.entries.write().await;
-        entries.push(entry);
+        let mut state = self.state.write().await;
+        state.total_original_tokens += original_tokens;
+        state.total_optimized_tokens += optimized_tokens;
+        state.total_savings_usd += f64::from(savings);
+        state.operation_count += 1;
+
+        if state.entries.len() >= MAX_TRACKER_ENTRIES {
+            state.entries.pop_front();
+        }
+        state.entries.push_back(entry);
     }
 
     /// Get stats.
     pub async fn get_stats(&self) -> TokenStats {
-        let entries = self.entries.read().await;
-        let total_original: usize = entries.iter().map(|e| e.original_tokens).sum();
-        let total_optimized: usize = entries.iter().map(|e| e.optimized_tokens).sum();
-        let total_savings_usd: f32 = entries.iter().map(|e| e.savings_usd).sum();
+        let state = self.state.read().await;
 
-        let savings_percentage = if total_original > 0 {
-            (total_original as f32 - total_optimized as f32) / total_original as f32 * 100.0
+        let savings_percentage = if state.total_original_tokens > 0 {
+            (state.total_original_tokens as f32 - state.total_optimized_tokens as f32)
+                / state.total_original_tokens as f32
+                * 100.0
         } else {
             0.0
         };
 
         TokenStats {
-            total_original_tokens: total_original,
-            total_optimized_tokens: total_optimized,
-            total_savings_usd,
+            total_original_tokens: state.total_original_tokens,
+            total_optimized_tokens: state.total_optimized_tokens,
+            total_savings_usd: state.total_savings_usd as f32,
             savings_percentage,
-            operation_count: entries.len(),
+            operation_count: state.operation_count,
         }
     }
 }
@@ -191,3 +211,72 @@ pub static SEARCH_STATS: std::sync::LazyLock<SearchTokenStats> =
 
 pub static TRACKER: std::sync::LazyLock<TokenAccountingTracker> =
     std::sync::LazyLock::new(TokenAccountingTracker::new);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn tracker_storage_is_bounded() {
+        let tracker = TokenAccountingTracker::new();
+        let iters = 10_000;
+        let original_tokens = 1000;
+        let optimized_tokens = 500;
+        let price = 0.01;
+
+        // Expected single cost differences
+        let cost_optimized = (optimized_tokens as f32 / 1000.0) * price;
+        let cost_original = (original_tokens as f32 / 1000.0) * price;
+        let savings = cost_original - cost_optimized;
+
+        for i in 0..iters {
+            tracker
+                .track(
+                    format!("session_{}", i),
+                    original_tokens,
+                    optimized_tokens,
+                    price,
+                )
+                .await;
+        }
+
+        let state = tracker.state.read().await;
+        assert!(
+            state.entries.len() <= MAX_TRACKER_ENTRIES,
+            "Entries exceeded MAX_TRACKER_ENTRIES"
+        );
+        assert_eq!(
+            state.entries.len(),
+            MAX_TRACKER_ENTRIES,
+            "Entries should be exactly MAX_TRACKER_ENTRIES after 10000 tracks"
+        );
+
+        assert_eq!(
+            state.operation_count, iters,
+            "Operation count should match iterations"
+        );
+        assert_eq!(
+            state.total_original_tokens,
+            original_tokens * iters,
+            "Total original tokens should be exact"
+        );
+        assert_eq!(
+            state.total_optimized_tokens,
+            optimized_tokens * iters,
+            "Total optimized tokens should be exact"
+        );
+
+        // Use epsilon for float comparison to avoid precision issues
+        let expected_total_savings = f64::from(savings) * (iters as f64);
+        assert!(
+            (state.total_savings_usd - expected_total_savings).abs() < 1e-4,
+            "Total savings should be exact"
+        );
+
+        let stats = tracker.get_stats().await;
+        assert_eq!(stats.operation_count, iters);
+        assert_eq!(stats.total_original_tokens, original_tokens * iters);
+        assert_eq!(stats.total_optimized_tokens, optimized_tokens * iters);
+        assert!((f64::from(stats.total_savings_usd) - expected_total_savings).abs() < 1e-4);
+    }
+}
