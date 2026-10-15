@@ -1,6 +1,6 @@
 # FEATURE: Generative UI (OpenUI)
 
-**Status:** `beta` | **Score:** 100% | **Last Tested:** 2026-10-15
+**Status:** `planned` | **Score:** 0% (promoted only by the post-merge Full Ledger run)
 
 ## Overview
 Generative UI (OpenUI) provides dynamic visual presentation surfaces for assistant messages in Xavier's panel UI. When the agent produces structured answers or reasoning execution traces, `UiRenderAgent` formats the output into typed OpenUI pseudo-XML markup. The frontend parses this markup into an abstract component tree and renders native React components (Cards, Accordions, ListBlocks, SpecialCards, TextCallouts) within the chat stream.
@@ -42,4 +42,4 @@ Generative UI (OpenUI) provides dynamic visual presentation surfaces for assista
 
 ## Known Issues & Notes
 - Merged via PRs #3164 (frontend surface and parser), #3166 (backend persistence and thread deletion), and #3167 (Playwright E2E CI integration).
-- Status is `beta` pending production runtime telemetry and validation across diverse agent workloads.
+- Status stays `planned` until the post-merge Full Ledger run promotes it; production telemetry is still pending.
