@@ -33,12 +33,26 @@ pub struct AgentScanner {
 
 /// Real modification time of the source file, so a re-scan of an unchanged
 /// session stamps the same `updated_at` and does not create a new record.
-/// Falls back to the scan time only when the file's mtime cannot be read.
-fn source_mtime_rfc3339(path: &std::path::Path) -> String {
+/// An unreadable mtime is an extraction error, never a synthetic scan timestamp.
+fn source_mtime_rfc3339(path: &Path) -> std::io::Result<String> {
     std::fs::metadata(path)
         .and_then(|m| m.modified())
         .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
-        .unwrap_or_else(|_| chrono::Utc::now().to_rfc3339())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn missing_source_mtime_is_an_error() {
+        let temp = tempfile::tempdir().expect("temporary source directory");
+        let result = super::source_mtime_rfc3339(&temp.path().join("missing.json"));
+        assert_eq!(
+            result
+                .expect_err("missing source must not get a scan timestamp")
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+    }
 }
 
 impl Default for AgentScanner {
@@ -48,6 +62,11 @@ impl Default for AgentScanner {
 }
 
 impl AgentScanner {
+    #[cfg(test)]
+    pub(crate) fn with_search_paths(search_paths: Vec<PathBuf>) -> Self {
+        Self { search_paths }
+    }
+
     /// New.
     pub fn new() -> Self {
         let mut paths = Vec::new();
@@ -162,7 +181,7 @@ impl AgentScanner {
 
             let mut rows = stmt.query([]).ok()?;
             let mut messages = Vec::new();
-            let updated_at = source_mtime_rfc3339(&path_clone);
+            let updated_at = source_mtime_rfc3339(&path_clone).ok()?;
 
             while let Some(row) = rows.next().ok().flatten() {
                 let key: String = row.get(0).ok()?;
@@ -204,6 +223,10 @@ impl AgentScanner {
     /// Extracción genérica de JSON (e.g. Copilot chat history)
     async fn extract_from_json(&self, path: &Path) -> Result<Option<AgentSession>> {
         let content = fs::read_to_string(path).await?;
+        let updated_at = fs::metadata(path)
+            .await?
+            .modified()
+            .map(|time| chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339())?;
 
         // Naive heuristic for JSON that looks like chat history
         if content.contains("\"role\"")
@@ -219,7 +242,7 @@ impl AgentScanner {
             Ok(Some(AgentSession {
                 ide: "JSON_Agent".to_string(),
                 project_path: None,
-                updated_at: source_mtime_rfc3339(path),
+                updated_at,
                 messages,
                 source_file: path.to_string_lossy().to_string(),
             }))
