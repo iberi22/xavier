@@ -21,7 +21,7 @@ pub const BILLING_URL_ENV: &str = "XAVIER_BILLING_URL";
 pub const DEFAULT_BILLING_URL: &str = "http://127.0.0.1:8787";
 /// Default xavier-cloud URL (production) when neither `PGHEART_URL` nor
 /// `XAVIER_PGHEART_URL` is set.
-pub const DEFAULT_CLOUD_URL: &str = "REDACTED";
+pub const DEFAULT_CLOUD_URL: &str = "https://xavier-cloud.swal.network";
 
 /// Env vars for the xavier-cloud URL, in priority order.
 pub const CLOUD_URL_ENVS: [&str; 2] = ["PGHEART_URL", "XAVIER_PGHEART_URL"];
