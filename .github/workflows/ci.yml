@@ -500,7 +500,7 @@ jobs:
         run: bash scripts/verify-pipeline.sh > ledger.log 2>&1 || (cat ledger.log && exit 1)
       - name: Upload Logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ledger-logs
           path: ledger.log
