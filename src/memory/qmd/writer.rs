@@ -339,7 +339,7 @@ pub async fn add(memory: &QmdMemory, mut doc: MemoryDocument) -> Result<()> {
     let check = validate_write(&doc.content)
         .map_err(|reason| anyhow::anyhow!("Content validation failed: {reason}"))?;
     stamp_integrity(&mut doc.metadata, &check);
-    add_validated(memory, doc).await
+    add_validated(memory, doc).await.map(|_| ())
 }
 
 /// Add a document whose content and metadata already passed the write-time gate.
@@ -349,9 +349,9 @@ pub async fn add(memory: &QmdMemory, mut doc: MemoryDocument) -> Result<()> {
 /// variant would pay for the same decision twice and could reject a write
 /// whose own content is perfectly fine because a derived summary tripped a
 /// rule.
-async fn add_validated(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
+async fn add_validated(memory: &QmdMemory, mut doc: MemoryDocument) -> Result<Option<String>> {
     if bus_quota_exceeded(&doc.path) {
-        return Ok(());
+        return Ok(doc.id);
     }
 
     let canonical_path = is_canonical_path(&doc.path);
@@ -365,7 +365,7 @@ async fn add_validated(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
         // Idempotent retry: the record is already stored, so there is nothing to
         // add and no second index entry to create. Checked against the store
         // first, before the guard, because that lookup awaits.
-        return Ok(());
+        return Ok(doc.id);
     }
 
     {
@@ -375,6 +375,17 @@ async fn add_validated(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
         let mut docs = memory.docs.write().await;
         if canonical_path {
             if let Some(existing) = docs.iter_mut().find(|d| d.path == doc.path) {
+                // The initial lookup may predate a concurrent insert. Reconcile
+                // identity under the write guard before persisting or returning.
+                // An in-memory doc without an id keeps the caller's id, so the
+                // returned id is always the one persisted.
+                let stored_id = existing.id.clone();
+                doc.id = stored_id.clone().or(doc.id.take());
+                if stored_id.is_some()
+                    && is_identical_document(existing, &doc.path, &doc.content, &doc.metadata)
+                {
+                    return Ok(doc.id);
+                }
                 *existing = doc.clone();
                 updated_in_memory = true;
             }
@@ -382,7 +393,7 @@ async fn add_validated(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
             .iter()
             .any(|d| is_identical_document(d, &doc.path, &doc.content, &doc.metadata))
         {
-            return Ok(());
+            return Ok(doc.id);
         }
 
         if !updated_in_memory {
@@ -399,7 +410,7 @@ async fn add_validated(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
             .put(memory_record_from_document(&memory.workspace_id, &doc))
             .await?;
     }
-    Ok(())
+    Ok(doc.id)
 }
 
 /// Update.
@@ -568,7 +579,7 @@ pub async fn add_document_typed_with_embedding(
         // content and metadata all have to match for this to be the same record.
         return Ok(identical_id);
     }
-    let id = existing_id.unwrap_or_else(|| ulid::Ulid::new().to_string());
+    let mut id = existing_id.unwrap_or_else(|| ulid::Ulid::new().to_string());
     let variants = expand_document_variants(&path, &content, &metadata);
     let is_locomo_benchmark = metadata
         .get("benchmark")
@@ -600,7 +611,7 @@ pub async fn add_document_typed_with_embedding(
                 .unwrap_or_else(|_| Vec::new())
         };
 
-        add_validated(
+        let persisted_id = add_validated(
             memory,
             MemoryDocument {
                 id: Some(if index == 0 {
@@ -627,6 +638,11 @@ pub async fn add_document_typed_with_embedding(
             },
         )
         .await?;
+        if index == 0 {
+            if let Some(persisted_id) = persisted_id {
+                id = persisted_id;
+            }
+        }
     }
 
     // A concurrent identical write may have won the race inside `add_validated`,
@@ -1205,7 +1221,6 @@ mod write_integrity_tests {
 
     /// Queue every initial lookup before allowing any writer to insert.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "BUG: canonical writes select IDs before the cache write lock, allowing concurrent retries to persist multiple IDs"]
     async fn feat_memory_write_integrity_concurrent_identical_canonical_writes() {
         const PATH: &str = "features/concurrent-write-integrity";
         const CONTENT: &str =
