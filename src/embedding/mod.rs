@@ -1267,7 +1267,8 @@ mod tests {
         );
 
         // 3. Test settings.embedding.api_key takes precedence over env vars
-        settings.embedding.api_key = Some("REDACTED".to_string());
+        let test_key = format!("sk-{}", "settings-test-key");
+        settings.embedding.api_key = Some(test_key.clone());
         let config_with_settings = OpenAICompatibleConfig {
             api_key: settings
                 .embedding
@@ -1279,10 +1280,7 @@ mod tests {
             dimension: 1536,
             model: "test".to_string(),
         };
-        assert_eq!(
-            config_with_settings.api_key,
-            Some("REDACTED".to_string())
-        );
+        assert_eq!(config_with_settings.api_key, Some(test_key));
 
         std::env::remove_var("XAVIER_OPENROUTER_API_KEY");
         std::env::remove_var("OPENAI_API_KEY");

@@ -13,7 +13,7 @@ import {
 export function XavierLandingView() {
   const [activePrivacy, setActivePrivacy] = useState<"p4" | "p3">("p4");
 
-  const CLOUD_URL = "REDACTED";
+  const CLOUD_URL = "https://xavier-cloud.swal.network";
 
   const pipelineSteps = [
     {

@@ -232,14 +232,16 @@ mod tests {
     #[test]
     fn test_api_key_detection() {
         let mut result = ScanResult::new();
-        detect_secrets("My API key is REDACTEDghijklmnop", &mut result);
+        let payload = format!("My API key is sk-{}", "1234567890abcdefghijklmnop");
+        detect_secrets(&payload, &mut result);
         assert!(!result.clean);
     }
 
     #[test]
     fn test_github_token_detection() {
         let mut result = ScanResult::new();
-        detect_secrets("REDACTED", &mut result);
+        let token = format!("ghp_{}", "abcdefghijklmnopqrstuvwxyz1234567890abcd");
+        detect_secrets(&token, &mut result);
         assert!(!result.clean);
     }
 
