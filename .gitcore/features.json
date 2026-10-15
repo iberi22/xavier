@@ -3431,8 +3431,8 @@
       "id": "feat-generative-ui",
       "name": "Generative UI (OpenUI)",
       "category": "ui",
-      "status": "beta",
-      "progress_pct": 100,
+      "status": "planned",
+      "progress_pct": 0,
       "description": "Generative UI rendering pipeline translating structured assistant answers and trace outputs into OpenUI pseudo-XML markup with client-side parser, React render surface in ChatHistory, conversation database persistence, and thread lifecycle management.",
       "steps": [
         "Implement UiRenderAgent backend to transform agent responses and execution traces into OpenUI markup with attribute escaping",
@@ -3445,10 +3445,10 @@
         "Add Vitest unit tests for openuiParser, OpenUiRenderSurface, and ChatHistoryOpenUi",
         "Add Playwright E2E test suite in generative-ui.spec.ts running in CI"
       ],
-      "passes": true,
-      "verified_by": "unit-tests+integration+e2e",
-      "last_tested": "2026-10-15",
-      "notes": "Generative UI (OpenUI) provides dynamic visual components for agent outputs and reasoning traces. Verified with Rust unit tests in ui_render and conversations_db, backend integration tests in panel_openui_backend (persisting OpenUI markup and thread deletion), Vitest component tests in panel-ui, and Playwright E2E generative-ui.spec.ts in CI (#3164, #3166, #3167). Beta status pending prolonged production validation.",
+      "passes": false,
+      "verified_by": null,
+      "last_tested": null,
+      "notes": "Generative UI (OpenUI) provides dynamic visual components for agent outputs and reasoning traces. Verified with Rust unit tests in ui_render and conversations_db, backend integration tests in panel_openui_backend (persisting OpenUI markup and thread deletion), Vitest component tests in panel-ui, and Playwright E2E generative-ui.spec.ts in CI (#3164, #3166, #3167). Added as planned per AGENTS.md; the post-merge Full Ledger run promotes it.",
       "implemented_in": "src/agents/ui_render.rs, src/codebase/conversations_db.rs, src/cli/handlers/panel.rs, tests/panel_openui_backend.rs, panel-ui/src/utils/openuiParser.ts, panel-ui/src/components/OpenUi/RenderSurface.tsx, panel-ui/src/components/ChatHistory.tsx, panel-ui/tests/openuiParser.test.ts, panel-ui/tests/OpenUiRenderSurface.test.tsx, panel-ui/tests/ChatHistoryOpenUi.test.tsx, panel-ui/tests/e2e/generative-ui.spec.ts",
       "tests": [
         "render_answer_without_trace_omits_signals_and_confidence",
