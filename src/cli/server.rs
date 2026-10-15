@@ -2210,7 +2210,7 @@ async fn start_http_server_inner(
                 Arc::new(xavier::server::maloca::HcCronBridge::with_shared_store(
                     config, store,
                 ))
-                .start_background_worker(),
+                .start_background_worker_with_cancel(shutdown.clone()),
             )
         }
         _ => None,
