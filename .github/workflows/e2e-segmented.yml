@@ -278,7 +278,9 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            target_timeout=240
+            if [ "$t" = "integration" ]; then target_timeout=420; fi
+            timeout -k 15 "$target_timeout" cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
             if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo

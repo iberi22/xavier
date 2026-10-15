@@ -543,12 +543,20 @@ pub async fn add_document_typed_with_embedding(
         {
             let docs = memory.docs.read().await;
             if let Some(existing) = docs.iter().find(|d| d.path == path) {
+                if is_identical_document(existing, &path, &content, &metadata) {
+                    if let Some(id) = &existing.id {
+                        return Ok(id.clone());
+                    }
+                }
                 existing_id = existing.id.clone();
             }
         }
         if existing_id.is_none() {
             if let Some(store) = memory.store().await {
                 if let Ok(Some(existing_rec)) = store.get(&memory.workspace_id, &path).await {
+                    if is_identical_record(&existing_rec, &path, &content, &metadata) {
+                        return Ok(existing_rec.id);
+                    }
                     existing_id = Some(existing_rec.id);
                 }
             }
