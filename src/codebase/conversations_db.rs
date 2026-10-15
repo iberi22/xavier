@@ -375,6 +375,32 @@ impl ConversationsDb {
             .await
     }
 
+    /// Delete a project's thread and its messages atomically.
+    /// Returns false when the thread does not belong to this project or is absent.
+    pub async fn delete_thread(&self, thread_id: &str) -> Result<bool> {
+        self.ensure_schema().await?;
+        let tid = thread_id.to_string();
+        let pid = self.project_id.clone();
+        ConnectionManager::global()
+            .with_conn(&self.full_project_id, move |conn| {
+                let tx = conn.unchecked_transaction()?;
+                tx.execute(
+                    "DELETE FROM conversation_messages WHERE thread_id = ?1
+                     AND EXISTS (SELECT 1 FROM conversation_threads
+                                 WHERE id = ?1 AND project_id = ?2)",
+                    params![tid, pid],
+                )
+                .context("failed to delete thread messages")?;
+                let deleted = tx.execute(
+                    "DELETE FROM conversation_threads WHERE id = ?1 AND project_id = ?2",
+                    params![tid, pid],
+                )?;
+                tx.commit().context("failed to commit thread deletion")?;
+                Ok(deleted > 0)
+            })
+            .await
+    }
+
     /// List all threads for a project.
     pub async fn list_threads(&self, limit: usize) -> Result<Vec<Thread>> {
         self.ensure_schema().await?;
@@ -1054,5 +1080,83 @@ mod tests {
         let last_preview_val = thread_updated.last_preview.unwrap();
         assert!(last_preview_val.contains("### Extractive Session Summary"));
         assert!(last_preview_val.contains("Hello world"));
+    }
+
+    #[tokio::test]
+    async fn test_delete_thread_existing() {
+        let db = ConversationsDb::open_in_memory("test-delete-existing")
+            .await
+            .unwrap();
+        let thread = db.create_thread(None, None, None).await.unwrap();
+        let retained = db.create_thread(None, None, None).await.unwrap();
+        for thread_id in [&thread.id, &retained.id] {
+            db.store_message(thread_id, "user", "Hello", None, None, None, None, None)
+                .await
+                .unwrap();
+        }
+
+        assert!(db.delete_thread(&thread.id).await.unwrap());
+        assert!(db.get_thread(&thread.id).await.unwrap().is_none());
+        assert!(db.get_thread_messages(&thread.id).await.unwrap().is_empty());
+        assert!(db.get_thread(&retained.id).await.unwrap().is_some());
+        assert_eq!(db.get_thread_messages(&retained.id).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_delete_thread_unknown() {
+        let db = ConversationsDb::open_in_memory("test-delete-unknown")
+            .await
+            .unwrap();
+        assert!(!db.delete_thread("unknown-thread").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_delete_thread_respects_project_scope() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let owner = ConversationsDb::open_at("delete-owner", &path)
+            .await
+            .unwrap();
+        let other = ConversationsDb::open_at("delete-other", &path)
+            .await
+            .unwrap();
+        let thread = owner.create_thread(None, None, None).await.unwrap();
+        owner
+            .store_message(&thread.id, "user", "Private", None, None, None, None, None)
+            .await
+            .unwrap();
+
+        assert!(!other.delete_thread(&thread.id).await.unwrap());
+        assert!(owner.get_thread(&thread.id).await.unwrap().is_some());
+        assert_eq!(
+            owner.get_thread_messages(&thread.id).await.unwrap().len(),
+            1
+        );
+        assert!(owner.delete_thread(&thread.id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_delete_thread_rolls_back_messages_on_failure() {
+        let db = ConversationsDb::open_in_memory("test-delete-rollback")
+            .await
+            .unwrap();
+        let thread = db.create_thread(None, None, None).await.unwrap();
+        db.store_message(&thread.id, "user", "Keep me", None, None, None, None, None)
+            .await
+            .unwrap();
+        ConnectionManager::global()
+            .with_conn(&db.full_project_id, |conn| {
+                conn.execute_batch(
+                    "CREATE TRIGGER reject_thread_delete BEFORE DELETE ON conversation_threads
+                     BEGIN SELECT RAISE(ABORT, 'deletion rejected'); END;",
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        assert!(db.delete_thread(&thread.id).await.is_err());
+        assert!(db.get_thread(&thread.id).await.unwrap().is_some());
+        assert_eq!(db.get_thread_messages(&thread.id).await.unwrap().len(), 1);
     }
 }

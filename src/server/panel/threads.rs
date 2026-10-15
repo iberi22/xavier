@@ -86,15 +86,17 @@ pub async fn get_thread(
 
 /// Delete thread.
 pub async fn delete_thread(
-    Extension(_workspace): Extension<WorkspaceContext>,
-    AxumPath(_thread_id): AxumPath<String>,
+    Extension(workspace): Extension<WorkspaceContext>,
+    AxumPath(thread_id): AxumPath<String>,
 ) -> impl IntoResponse {
-    // Note: This logic for deletion should be implemented in ConversationsDb if needed.
-    // For now, we only have placeholders.
-    crate::error::ApiError::new(
-        StatusCode::NOT_IMPLEMENTED,
-        "NOT_IMPLEMENTED",
-        "thread deletion not implemented",
-    )
-    .into_response()
+    match workspace
+        .workspace
+        .conversations_db
+        .delete_thread(&thread_id)
+        .await
+    {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => crate::error::ApiError::not_found("thread not found").into_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
+    }
 }
