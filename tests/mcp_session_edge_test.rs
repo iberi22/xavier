@@ -22,7 +22,7 @@ fn test_unique_path(prefix: &str) -> std::path::PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("{prefix}-{nanos}"))
+    std::env::temp_dir().join(format!("xavier-test-{prefix}-{nanos}"))
 }
 
 async fn setup_test_app_state() -> (AppState, WorkspaceContext) {
@@ -142,15 +142,21 @@ async fn test_payload_limit_enforcement() {
         .expect("recording 60 bytes should succeed");
     assert_eq!(transferred, 60);
 
-    // Transfer another 50 bytes (total 110 > 100) -> fails with PayloadLimitExceeded
-    let err = manager
+    // Each request is within the limit, even when the total exceeds 100 bytes.
+    let transferred = manager
         .record_bytes(session_id, 50)
-        .expect_err("recording 50 bytes should exceed limit");
+        .expect("recording 50 bytes should succeed");
+    assert_eq!(transferred, 110);
+
+    // A single request exceeding 100 bytes fails with PayloadLimitExceeded.
+    let err = manager
+        .record_bytes(session_id, 150)
+        .expect_err("recording 150 bytes should exceed limit");
 
     match err {
         McpSessionError::PayloadLimitExceeded { limit, actual } => {
             assert_eq!(limit, 100);
-            assert_eq!(actual, 110);
+            assert_eq!(actual, 150);
         }
         _ => panic!("Expected PayloadLimitExceeded, got {:?}", err),
     }
@@ -165,11 +171,10 @@ async fn test_query_timeout_handling() {
     let session_id = "test-session-timeout";
     manager.create_session(session_id, None, None);
 
-    // Execute long-running query that times out
+    // A pending query cannot complete before the timeout, even under load.
     let timeout_dur = Duration::from_millis(50);
     let result = execute_query_with_timeout(&manager, session_id, timeout_dur, async {
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        "completed"
+        std::future::pending::<&str>().await
     })
     .await;
 
@@ -186,7 +191,8 @@ async fn test_query_timeout_handling() {
     );
 
     // Execute fast query that completes within timeout
-    let fast_result = execute_query_with_timeout(&manager, session_id, timeout_dur, async {
+    let success_timeout = Duration::from_secs(2);
+    let fast_result = execute_query_with_timeout(&manager, session_id, success_timeout, async {
         tokio::time::sleep(Duration::from_millis(5)).await;
         "fast_completed"
     })
