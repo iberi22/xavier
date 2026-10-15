@@ -642,11 +642,11 @@ jobs:
           set -u
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
+            'airgap_cli_hardening'
             'ledger_skill_entries'
+            'skill_route_clearance'
             'telemetry_anonymizer_edge_test'
             'telemetry_anonymizer_test'
-            'airgap_cli_hardening'
-            'skill_route_clearance'
           )
           failed=()
           for t in "${targets[@]}"; do
