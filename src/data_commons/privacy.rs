@@ -508,10 +508,11 @@ mod tests {
     #[test]
     fn test_pii_scrubbing() {
         let pipeline = PrivacyPipeline::new();
+        let test_key = format!("sk-{}", "1234567890123456789012345");
         let input = serde_json::json!({
             "email": "user@example.com",
             "path": "/home/user/secret.txt",
-            "key": "REDACTED",
+            "key": test_key,
             "clean": "hello world"
         });
 

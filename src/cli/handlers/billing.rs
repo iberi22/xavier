@@ -468,7 +468,7 @@ mod tests {
             ai_tokens_per_day: None,
             percent: None,
         };
-        let s = render_status(&u, "REDACTED");
+        let s = render_status(&u, "https://xavier-cloud.swal.network");
         assert!(s.contains("Tenant:        groku-test"));
         assert!(s.contains("not reported by this xavier-cloud"));
         assert!(s.contains("AI tokens/day: not reported"));

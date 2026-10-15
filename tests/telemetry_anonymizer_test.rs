@@ -6,14 +6,22 @@ use xavier::agents::telemetry::anonymizer::{
 fn test_api_keys_and_tokens_redaction() {
     let anonymizer = TelemetryAnonymizer::default();
 
-    let input = "Credentials: REDACTED and REDACTED and glpat-abcdef1234567890abcdef and REDACTED and REDACTED";
-    let anonymized = anonymizer.anonymize(input);
+    let api_key = format!("sk-{}", "1234567890abcdef12345678");
+    let github_token = format!("ghp_{}", "1234567890abcdef1234567890abcdef1234");
+    let gitlab_token = format!("glpat-{}", "abcdef1234567890abcdef");
+    let slack_token = format!("xoxb-{}", "1234567890123");
+    let aws_key = format!("AKIA{}", "IOSFODNN7EXAMPLE");
+    let input = format!(
+        "Credentials: {} and {} and {} and {} and {}",
+        api_key, github_token, gitlab_token, slack_token, aws_key
+    );
+    let anonymized = anonymizer.anonymize(&input);
 
-    assert!(!anonymized.contains("REDACTED"));
-    assert!(!anonymized.contains("REDACTED"));
-    assert!(!anonymized.contains("glpat-abcdef1234567890abcdef"));
-    assert!(!anonymized.contains("REDACTED"));
-    assert!(!anonymized.contains("REDACTED"));
+    assert!(!anonymized.contains(&api_key));
+    assert!(!anonymized.contains(&github_token));
+    assert!(!anonymized.contains(&gitlab_token));
+    assert!(!anonymized.contains(&slack_token));
+    assert!(!anonymized.contains(&aws_key));
 
     assert!(anonymized.contains("[API_KEY:"));
     assert!(anonymized.contains("[GITHUB_PAT:"));
@@ -59,8 +67,9 @@ fn test_tag_redaction_strategy() {
     };
     let anonymizer = TelemetryAnonymizer::new(config);
 
-    let input = "Key: REDACTED Email: test@swal.dev";
-    let anonymized = anonymizer.anonymize(input);
+    let api_key = format!("sk-{}", "1234567890abcdef12345678");
+    let input = format!("Key: {} Email: redacted@example.invalid", api_key);
+    let anonymized = anonymizer.anonymize(&input);
 
     assert_eq!(
         anonymized,
