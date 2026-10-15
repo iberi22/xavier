@@ -1,6 +1,7 @@
 name: Fast Gate (Shadow)
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main, 'sprint/**']
 

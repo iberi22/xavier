@@ -1,0 +1,106 @@
+name: Ledger Promoter
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report only (owner must separately enable the repository variable)
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: ledger-promoter
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    if: vars.LEDGER_PROMOTER_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.snapshot.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record evaluated snapshot
+        id: snapshot
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Gather same-SHA main evidence and reconstruct history
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ledger-promote-evidence.py
+      - name: Evaluate beta features
+        shell: bash
+        run: |
+          python3 scripts/ledger-promote.py --features .gitcore/features.json \
+            --evidence /tmp/ledger-evidence.json --history /tmp/ledger-history.json \
+            --dry-run > /tmp/ledger-report.json 2> /tmp/ledger-report.md
+          cat /tmp/ledger-report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve evidence and report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ledger-promoter-evidence
+          path: |
+            /tmp/ledger-*.json
+            /tmp/ledger-report.md
+
+  propose:
+    needs: evaluate
+    if: inputs.dry_run == false
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.evaluate.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ledger-promoter-evidence
+          path: /tmp
+      - name: Apply evaluated promotions
+        run: |
+          python3 scripts/ledger-promote.py --features .gitcore/features.json \
+            --evidence /tmp/ledger-evidence.json --history /tmp/ledger-history.json \
+            --apply > /tmp/ledger-report.json 2> /tmp/ledger-report.md
+      # The owner must enable "Allow GitHub Actions to create and approve pull requests",
+      # or a GitHub App token must be used for push, PR creation, and dispatch.
+      - name: Open promotion PR and dispatch required checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --quiet -- .gitcore/features.json && exit 0
+          sha=$(git rev-parse HEAD)
+          # Refuse a stale snapshot; the next dispatch can use the new main.
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$sha"
+          branch="ledger/promote-$sha"
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" >/dev/null 2>&1; then
+            git switch -c "$branch"
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add .gitcore/features.json
+            git commit -m "chore: promote verified beta ledger features"
+            gh auth setup-git
+            git push origin "$branch"
+          fi
+          if [ "$(gh pr list --head "$branch" --base main --state all --json number --jq length)" != 0 ]; then exit 0; fi
+          gh pr create --base main --head "$branch" --title "Promote verified beta ledger features" --body-file /tmp/ledger-report.md
+          # Both workflows support workflow_dispatch; explicit dispatch runs checks
+          # even when the branch and PR were created with GITHUB_TOKEN.
+          gh workflow run ci.yml --ref "$branch"
+          gh workflow run fast-gate.yml --ref "$branch"

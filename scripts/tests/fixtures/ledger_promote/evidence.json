@@ -1,0 +1,33 @@
+{
+  "sha": "c",
+  "ledger_sha": "c",
+  "e2e_sha": "c",
+  "run_url": "https://github.com/example/repo/actions/runs/123",
+  "verified_at": "2026-10-15T12:00:00Z",
+  "ledger_run_conclusion": "success",
+  "e2e_run_conclusion": "success",
+  "main_shas": [
+    "c",
+    "b",
+    "a"
+  ],
+  "per_feature_test_results": {
+    "beta": {
+      "declared": [
+        "test_roundtrip"
+      ],
+      "passed": [
+        "test_roundtrip"
+      ],
+      "failed": [],
+      "integration_targets_by_test": {
+        "test_roundtrip": [
+          "integration"
+        ]
+      }
+    }
+  },
+  "integration_targets_passed": [
+    "integration"
+  ]
+}
