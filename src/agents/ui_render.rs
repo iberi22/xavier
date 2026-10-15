@@ -24,6 +24,19 @@ impl UiRenderAgent {
         Self
     }
 
+    /// Render an answer when no runtime trace is available.
+    pub fn render_answer(&self, answer: &str) -> UiRenderResult {
+        UiRenderResult {
+            plain_text: answer.to_string(),
+            openui_lang: format!(
+                "<SectionBlock title=\"Xavier Internal Panel\" description=\"Reasoning output rendered through the dedicated UI agent\"><Card title=\"Xavier Response\" description=\"Rendered by the internal UI agent\"><TextContent content=\"{}\" /></Card></SectionBlock>",
+                escape_attr(answer)
+            ),
+            components: vec!["Card".to_string(), "TextContent".to_string()],
+            rules_applied: vec!["always_show_summary".to_string()],
+        }
+    }
+
     /// Render.
     pub fn render(&self, trace: &AgentRunTrace) -> UiRenderResult {
         let mut components = vec!["Card".to_string(), "TextCallout".to_string()];
@@ -185,6 +198,9 @@ fn escape_attr(value: &str) -> String {
     value
         .replace('&', "&amp;")
         .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+        .replace('\n', "&#10;")
+        .replace('\r', "&#13;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
 }
@@ -200,6 +216,30 @@ mod tests {
         system2::ReasoningResult,
         system3::ActionResult,
     };
+
+    #[test]
+    fn render_answer_without_trace_omits_signals_and_confidence() {
+        let answer = "Answer <text> & \"context\"";
+        let result = UiRenderAgent::new().render_answer(answer);
+        assert_eq!(result.plain_text, answer);
+        assert!(result
+            .openui_lang
+            .contains("Answer &lt;text&gt; &amp; &quot;context&quot;"));
+        assert!(!result.openui_lang.contains("System Signals"));
+        assert!(!result.openui_lang.contains("TextCallout"));
+        assert!(!result.openui_lang.contains("estimated answer confidence"));
+        assert!(!result.openui_lang.contains("retrieved memory candidates"));
+        assert_eq!(result.components, vec!["Card", "TextContent"]);
+        assert_eq!(result.rules_applied, vec!["always_show_summary"]);
+    }
+
+    #[test]
+    fn escape_attr_preserves_quotes_and_line_breaks() {
+        assert_eq!(
+            escape_attr("&\"'< >\n\r"),
+            "&amp;&quot;&#39;&lt; &gt;&#10;&#13;"
+        );
+    }
 
     #[test]
     fn render_includes_rich_components() {

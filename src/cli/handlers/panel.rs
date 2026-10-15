@@ -9,6 +9,7 @@ use axum::{
 
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
+use xavier::agents::{runtime::SystemTimings, ui_render::UiRenderAgent};
 use xavier::server::panel::{CreateThreadRequest, PanelChatRequest, PanelChatResponse};
 
 /// Panel list threads.
@@ -98,13 +99,20 @@ pub async fn panel_get_thread(
 
 /// Panel delete thread.
 pub async fn panel_delete_thread(
-    State(_state): State<CliState>,
-    AxumPath(_thread_id): AxumPath<String>,
+    State(state): State<CliState>,
+    AxumPath(thread_id): AxumPath<String>,
 ) -> Response {
-    json_response(
-        StatusCode::NOT_IMPLEMENTED,
-        serde_json::json!({ "error": "thread deletion not implemented" }),
-    )
+    match state.panel_store.delete_thread(&thread_id).await {
+        Ok(true) => axum::response::IntoResponse::into_response(StatusCode::NO_CONTENT),
+        Ok(false) => json_response(
+            StatusCode::NOT_FOUND,
+            serde_json::json!({ "error": "thread not found" }),
+        ),
+        Err(error) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": error.to_string() }),
+        ),
+    }
 }
 
 /// Panel process chat.
@@ -156,6 +164,8 @@ pub async fn panel_process_chat_inner(
             None,
         )
         .await?;
+
+    let started = std::time::Instant::now();
 
     // Real LLM call via ProxyUseCase (issue #590). On failure, fall back to memory search.
     let cmd = xavier::domain::proxy::ProxyChatCommand {
@@ -209,22 +219,19 @@ pub async fn panel_process_chat_inner(
         }
     };
 
-    let openui_lang = if used_fallback {
-        format!(
-            "<SectionBlock title=\"Xavier\" description=\"Memory fallback\"><InfoCard title=\"Status\" value=\"Fallback\" /><InfoCard title=\"Query\" value=\"{}\" /></SectionBlock>",
-            payload.message.replace('"', "'")
-        )
-    } else {
-        format!(
-            "<SectionBlock title=\"Xavier\" description=\"LLM response\"><InfoCard title=\"Status\" value=\"Ready\" /><InfoCard title=\"Query\" value=\"{}\" /></SectionBlock>",
-            payload.message.replace('"', "'")
-        )
+    // The proxy supplies an answer without runtime reasoning/retrieval signals.
+    let ui_render = UiRenderAgent::new().render_answer(&assistant_content);
+    let timings = SystemTimings {
+        system1_ms: 0,
+        system2_ms: 0,
+        system3_ms: 0,
+        total_ms: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
     };
     let metadata = serde_json::json!({
-        "rules": if used_fallback { ["memory-fallback"] } else { ["llm"] },
-        "components": ["SectionBlock", "InfoCard"],
+        "rules": ui_render.rules_applied,
+        "components": ui_render.components,
         "source": if used_fallback { "memory-fallback" } else { "llm" },
-        "timings": { "total_ms": 0 }
+        "timings": timings,
     });
 
     state
@@ -232,9 +239,9 @@ pub async fn panel_process_chat_inner(
         .store_message(
             &thread.id,
             "assistant",
-            &assistant_content,
+            &ui_render.plain_text,
             None,
-            Some(&openui_lang),
+            Some(&ui_render.openui_lang),
             None,
             Some(&metadata.to_string()),
             None,
