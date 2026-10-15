@@ -36,7 +36,7 @@ jobs:
         run: pnpm --filter xavier-panel-ui run test:coverage
 
       - name: Upload coverage summary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-summary
           path: panel-ui/coverage/
