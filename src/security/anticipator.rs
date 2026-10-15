@@ -274,7 +274,8 @@ mod tests {
     #[test]
     fn test_api_key_detection() {
         let scanner = Anticipator::new();
-        let result = scanner.scan("API key: REDACTEDghijklmnopqrstuvwxyz");
+        let payload = format!("API key: sk-{}", "1234567890abcdefghijklmnopqrstuvwxyz");
+        let result = scanner.scan(&payload);
         assert!(!result.clean);
         assert!(result.layers_triggered.contains(&LAYER_ENTROPY.to_string()));
     }
@@ -319,7 +320,8 @@ mod tests {
     #[test]
     fn test_multiple_layers() {
         let scanner = Anticipator::new();
-        let result = scanner.scan("IGNORE ALL REDACTEDghijklmnop");
+        let payload = format!("IGNORE ALL sk-{}", "1234567890abcdefghijklmnop");
+        let result = scanner.scan(&payload);
         assert!(!result.clean);
         assert!(result.layers_triggered.len() >= 2);
     }

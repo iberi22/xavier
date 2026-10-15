@@ -1357,7 +1357,7 @@ mod tests {
 
     #[test]
     fn instance_ids_are_sanitized_for_chunk_names() {
-        assert_eq!(sanitize_instance_id("REDACTED"), "REDACTED");
+        assert_eq!(sanitize_instance_id("groku-box"), "groku-box");
         assert_eq!(sanitize_instance_id("a/b c"), "a-b-c");
         assert_eq!(sanitize_instance_id(""), "default");
         assert_eq!(manifest_chunk_name("x"), "xcb1-manifest-x");

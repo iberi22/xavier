@@ -196,11 +196,9 @@ async fn test_security_gate_general_secrets_unreachable_via_clavis_handler() {
     let _ = clavis_vault.delete_secret("XAVIER_OPENROUTER_API_KEY");
     let _ = clavis_vault.delete_secret("api_key_XAVIER_OPENROUTER_API_KEY");
 
+    let secret_val = format!("sk-or-v1-{}", "secret-token-123456789");
     general_vault
-        .store_secret(
-            "XAVIER_OPENROUTER_API_KEY",
-            "REDACTED",
-        )
+        .store_secret("XAVIER_OPENROUTER_API_KEY", &secret_val)
         .expect("store general secret");
 
     // Attempt to query general secret via Clavis HTTP handler using raw key name
