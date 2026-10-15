@@ -1,15 +1,5 @@
 import { vi } from "vitest";
 
-vi.mock("@openuidev/react-ui", () => ({
-  createTheme: vi.fn(() => ({})),
-  designTokens: {
-    color: {
-      info: "#3B82F6",
-      success: "#19C37D",
-      muted: "#5D584B",
-    },
-  },
-}));
 
 vi.mock("../src/theme", () => ({
   designTokens: {

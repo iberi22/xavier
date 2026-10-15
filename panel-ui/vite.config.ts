@@ -82,10 +82,6 @@ export default defineConfig(({ command }) => {
     plugins: [tailwindcss(), react()],
     resolve: {
       alias: {
-        "@openuidev/react-headless": path.resolve(
-          __dirname,
-          "./node_modules/@openuidev/react-headless/dist/index.js",
-        ),
         zustand: path.resolve(__dirname, "./node_modules/zustand"),
         "zustand/react/shallow": path.resolve(
           __dirname,
