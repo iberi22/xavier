@@ -1203,6 +1203,87 @@ mod write_integrity_tests {
         memory
     }
 
+    /// Queue every initial lookup before allowing any writer to insert.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "BUG: canonical writes select IDs before the cache write lock, allowing concurrent retries to persist multiple IDs"]
+    async fn feat_memory_write_integrity_concurrent_identical_canonical_writes() {
+        const PATH: &str = "features/concurrent-write-integrity";
+        const CONTENT: &str =
+            "Concurrent identical writes must preserve one canonical memory record.";
+        const WRITERS: usize = 10;
+        let store = Arc::new(InMemoryMemoryStore::new());
+        let memory = Arc::new(lazy_memory(&store).await);
+        let guard = memory.docs.write().await;
+        let (ready_tx, mut ready_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut tasks = tokio::task::JoinSet::new();
+        for _ in 0..WRITERS {
+            let memory = Arc::clone(&memory);
+            let ready = ready_tx.clone();
+            tasks.spawn(async move {
+                let write = super::add_document_typed_with_embedding(
+                    &memory,
+                    PATH.to_string(),
+                    CONTENT.to_string(),
+                    json!({"test_marker": "identical-write"}),
+                    None,
+                    Some(vec![0.25; 8]),
+                );
+                tokio::pin!(write);
+                // The held cache lock makes this first poll stop at the initial
+                // lookup. All ten lookups are queued before that lock is released.
+                assert!(futures_util::poll!(write.as_mut()).is_pending());
+                ready.send(()).expect("coordinator is alive");
+                write.await
+            });
+        }
+        drop(ready_tx);
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            for _ in 0..WRITERS {
+                ready_rx
+                    .recv()
+                    .await
+                    .expect("every writer reached its lookup");
+            }
+        })
+        .await
+        .expect("writers must not stall before their initial lookup");
+        drop(guard);
+
+        let ids = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let mut ids = Vec::new();
+            while let Some(result) = tasks.join_next().await {
+                ids.push(
+                    result
+                        .expect("writer must not panic")
+                        .expect("write succeeds"),
+                );
+            }
+            ids
+        })
+        .await
+        .expect("concurrent writes must finish without deadlock");
+        assert_eq!(ids.len(), WRITERS);
+        let records = store.list(WORKSPACE).await.expect("list persisted records");
+        assert_eq!(
+            records.len(),
+            1,
+            "canonical retries must persist exactly one record"
+        );
+        assert!(ids.iter().all(|id| id == &records[0].id));
+        assert_eq!(records[0].path, PATH);
+        assert_eq!(records[0].content, CONTENT);
+        assert_eq!(records[0].metadata["test_marker"], "identical-write");
+        assert_eq!(records[0].metadata["integrity"], "verified");
+        assert_eq!(records[0].embedding, vec![0.25; 8]);
+
+        // Reload from the store so a single cache entry cannot hide duplicate rows.
+        let reloaded = lazy_memory(&store).await;
+        let docs = reloaded.all_documents().await;
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].id.as_deref(), Some(ids[0].as_str()));
+        assert_eq!(docs[0].content, CONTENT);
+    }
+
     fn empty_memory() -> QmdMemory {
         QmdMemory::new(Arc::new(AsyncRwLock::new(Vec::new())))
     }
