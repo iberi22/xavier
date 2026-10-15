@@ -5,6 +5,9 @@ import {
   type ConversationWidth,
 } from "../hooks/useChatPreferences";
 import type { PanelMessage } from "../types";
+import { parseOpenUi } from "../utils/openuiParser";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { RenderSurface } from "./OpenUi/RenderSurface";
 import LoadingSpinner from "./ui/LoadingSpinner";
 
 interface ChatHistoryProps {
@@ -185,12 +188,17 @@ const ChatMessageItem = memo(function ChatMessageItem({
     [msg, mainText]
   );
 
+  const openUiNodes = useMemo(() => {
+    if (msg.role !== "assistant" || !msg.openui_lang) return null;
+    return parseOpenUi(msg.openui_lang);
+  }, [msg.role, msg.openui_lang]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12, filter: "blur(4px)" }}
       animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className={`flex w-full gap-3 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
+      className={`message-card flex w-full gap-3 ${msg.role === "assistant" ? "assistant-card" : "user-card"} ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
     >
       {/* Avatar */}
       {msg.role === "assistant" ? (
@@ -258,12 +266,34 @@ const ChatMessageItem = memo(function ChatMessageItem({
           )}
 
           {msg.role === "assistant" ? (
-            <StreamingMessageRenderer
-              message={msgForStreaming}
-              isStreamingActive={isStreamingActive}
-            />
+            openUiNodes && !isStreamingActive ? (
+              <ErrorBoundary
+                fallback={
+                  <div className="plain-text w-full">
+                    <StreamingMessageRenderer
+                      message={msgForStreaming}
+                      isStreamingActive={isStreamingActive}
+                    />
+                  </div>
+                }
+              >
+                <div className="flex flex-col gap-2 w-full">
+                  <RenderSurface nodes={openUiNodes} />
+                  <div className="plain-text text-xs text-white/50 border-t border-[#39ff14]/10 pt-2 font-mono">
+                    {mainText}
+                  </div>
+                </div>
+              </ErrorBoundary>
+            ) : (
+              <div className="plain-text w-full">
+                <StreamingMessageRenderer
+                  message={msgForStreaming}
+                  isStreamingActive={isStreamingActive}
+                />
+              </div>
+            )
           ) : (
-            <p className="text-sm leading-relaxed font-sans">
+            <p className="plain-text text-sm leading-relaxed font-sans">
               {msg.plain_text}
             </p>
           )}
