@@ -18,6 +18,7 @@ use std::time::Duration;
 use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
 use tracing::{debug, info};
 
@@ -1296,6 +1297,41 @@ pub async fn start_http_server(
     mcp_port: Option<u16>,
     #[cfg_attr(not(feature = "panel-ui"), allow(unused_variables))] no_ui: bool,
 ) -> Result<()> {
+    // Install listeners before any initialization can install its own signal handler.
+    let signal = shutdown_signal();
+    let shutdown = CancellationToken::new();
+    let signal_shutdown = shutdown.clone();
+    let signal_task = tokio::spawn(async move {
+        signal.await;
+        // This deadline also covers startup, cleanup and Tokio runtime teardown.
+        start_shutdown_watchdog(shutdown_grace(
+            std::env::var("XAVIER_SHUTDOWN_GRACE_SECS").ok().as_deref(),
+        ));
+        signal_shutdown.cancel();
+    });
+    let (serving, mut ready) = tokio::sync::oneshot::channel();
+    let server = start_http_server_inner(port, mcp_port, no_ui, shutdown.clone(), serving);
+    tokio::pin!(server);
+    let result = tokio::select! {
+        biased;
+        _ = &mut ready => server.await,
+        _ = shutdown.cancelled() => {
+            info!("HTTP startup cancelled before serving");
+            Ok(())
+        }
+        result = &mut server => result,
+    };
+    signal_task.abort();
+    result
+}
+
+async fn start_http_server_inner(
+    port: u16,
+    mcp_port: Option<u16>,
+    #[cfg_attr(not(feature = "panel-ui"), allow(unused_variables))] no_ui: bool,
+    shutdown: CancellationToken,
+    serving: tokio::sync::oneshot::Sender<()>,
+) -> Result<()> {
     // Initialize Prometheus exporter
     let _ = autometrics::prometheus_exporter::try_init();
 
@@ -1495,9 +1531,12 @@ pub async fn start_http_server(
         .init_schema_async()
         .await?;
 
+    let vacuum_shutdown = shutdown.clone();
     tokio::spawn(async move {
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+            if !cancellable_sleep(&vacuum_shutdown, Duration::from_secs(3600)).await {
+                break;
+            }
             let _ = ConnectionManager::global()
                 .with_conn(&vec_project_id_for_vacuum, |conn| {
                     conn.execute("PRAGMA incremental_vacuum(100)", ())?;
@@ -1577,11 +1616,16 @@ pub async fn start_http_server(
     // pasaba a "degraded" al minuto aunque el peer estuviera vivo y accesible, que es
     // justo lo que no puede pasar en una demo. Se refresca last_seen_at de los peers
     // con endpoint conocido haciendo el handshake firmado normal.
+    let mesh_shutdown = shutdown.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
-            tick.tick().await;
+            tokio::select! {
+                biased;
+                _ = mesh_shutdown.cancelled() => break,
+                _ = tick.tick() => {},
+            }
 
             let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() else {
                 continue;
@@ -1694,10 +1738,19 @@ pub async fn start_http_server(
     );
 
     let secrets_engine_for_bus = secrets_engine.clone();
+    let events_shutdown = shutdown.clone();
     let mut receiver = event_bus.subscribe();
     tokio::spawn(async move {
         info!("Secrets engine listening for task events...");
-        while let Ok(event) = receiver.recv().await {
+        loop {
+            let event = tokio::select! {
+                biased;
+                _ = events_shutdown.cancelled() => break,
+                event = receiver.recv() => match event {
+                    Ok(event) => event,
+                    Err(_) => break,
+                },
+            };
             match event {
                 xavier::coordination::events::XavierEvent::TaskCompleted { task } => {
                     let _ = xavier::notifications::NOTIFICATIONS
@@ -1773,10 +1826,15 @@ pub async fn start_http_server(
     });
 
     let secrets_engine_for_cleanup = secrets_engine.clone();
+    let leases_shutdown = shutdown.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
         loop {
-            interval.tick().await;
+            tokio::select! {
+                biased;
+                _ = leases_shutdown.cancelled() => break,
+                _ = interval.tick() => {},
+            }
             let removed = secrets_engine_for_cleanup.cleanup_expired().await;
             if removed > 0 {
                 info!("Cleaned up {} expired secret leases", removed);
@@ -1947,14 +2005,26 @@ pub async fn start_http_server(
             hermes: hermes_importer,
             codex: codex_importer,
         } = build_session_importers(&ingestion_data_dir, ingestion_embedder);
+        let ingestion_shutdown = shutdown.clone();
         tokio::spawn(async move {
             // Initial grace period to allow server start
-            tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+            if !cancellable_sleep(&ingestion_shutdown, Duration::from_secs(15)).await {
+                return;
+            }
             loop {
+                if !should_run_next_pass(&ingestion_shutdown) {
+                    break;
+                }
                 if !try_begin_cycle(&in_flight) {
                     tracing::warn!("skipping ingestion cycle: previous still running");
-                    tokio::time::sleep(tokio::time::Duration::from_secs(ingestion_interval_secs))
-                        .await;
+                    if !cancellable_sleep(
+                        &ingestion_shutdown,
+                        Duration::from_secs(ingestion_interval_secs),
+                    )
+                    .await
+                    {
+                        break;
+                    }
                     continue;
                 }
 
@@ -1970,6 +2040,9 @@ pub async fn start_http_server(
                 // cursor is working. At debug level the fix is unobservable in
                 // production, which is how the previous full-scan regression ran
                 // for days unnoticed.
+                if !should_run_next_pass(&ingestion_shutdown) {
+                    break;
+                }
                 match ag_importer.sync(ingestion_store.as_ref()).await {
                     Ok(stats) => tracing::info!(
                         source = "antigravity",
@@ -1985,6 +2058,9 @@ pub async fn start_http_server(
                     }
                 }
 
+                if !should_run_next_pass(&ingestion_shutdown) {
+                    break;
+                }
                 match oc_importer.sync(ingestion_store.as_ref()).await {
                     Ok(stats) => tracing::info!(
                         source = "opencode",
@@ -2002,6 +2078,9 @@ pub async fn start_http_server(
                     }
                 }
 
+                if !should_run_next_pass(&ingestion_shutdown) {
+                    break;
+                }
                 match hermes_importer.sync(ingestion_store.as_ref()).await {
                     Ok(stats) => tracing::info!(
                         source = "hermes",
@@ -2016,6 +2095,9 @@ pub async fn start_http_server(
                     }
                 }
 
+                if !should_run_next_pass(&ingestion_shutdown) {
+                    break;
+                }
                 match codex_importer.sync(ingestion_store.as_ref()).await {
                     Ok(stats) => tracing::info!(
                         source = "codex",
@@ -2034,7 +2116,14 @@ pub async fn start_http_server(
                 end_cycle(&in_flight);
 
                 // Ingestion cadence is operator-tunable without a rebuild.
-                tokio::time::sleep(tokio::time::Duration::from_secs(ingestion_interval_secs)).await;
+                if !cancellable_sleep(
+                    &ingestion_shutdown,
+                    Duration::from_secs(ingestion_interval_secs),
+                )
+                .await
+                {
+                    break;
+                }
             }
         });
     }
@@ -2343,6 +2432,7 @@ pub async fn start_http_server(
 
     // Background System Scan (Ollama detection)
     let scan_cache = state.system_scan_cache.clone();
+    let scan_shutdown = shutdown.clone();
     tokio::spawn(async move {
         let interval_secs = std::env::var("XAVIER_SCAN_INTERVAL_SECS")
             .ok()
@@ -2351,7 +2441,11 @@ pub async fn start_http_server(
         let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
 
         loop {
-            interval.tick().await;
+            tokio::select! {
+                biased;
+                _ = scan_shutdown.cancelled() => break,
+                _ = interval.tick() => {},
+            }
             debug!("Running background system scan...");
             let result = crate::cli::handlers::system_scan::scan_system(true).await;
 
@@ -2457,6 +2551,7 @@ pub async fn start_http_server(
         }
     }
 
+    let scanner_shutdown = shutdown.clone();
     tokio::spawn(async move {
         // Env-gated agentic scanner (2026-08-24): XAVIER_AGENT_SCANNER_INTERVAL
         // en segundos; 0 deshabilita el scanner por completo.
@@ -2470,7 +2565,11 @@ pub async fn start_http_server(
         }
         let mut interval = tokio::time::interval(Duration::from_secs(scan_interval));
         loop {
-            interval.tick().await;
+            tokio::select! {
+                biased;
+                _ = scanner_shutdown.cancelled() => break,
+                _ = interval.tick() => {},
+            }
             info!("Running scheduled Agentic Scanner pass...");
             if let Ok(indexed_files) = agent_indexer_cron.index_agents().await {
                 for file in indexed_files {
@@ -2517,26 +2616,24 @@ pub async fn start_http_server(
     } else {
         None
     };
-    let drain = Duration::from_secs(
-        std::env::var("XAVIER_SHUTDOWN_GRACE_SECS")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(10),
-    );
+    let drain = shutdown_grace(std::env::var("XAVIER_SHUTDOWN_GRACE_SECS").ok().as_deref());
     let tls_handle = tls_config
         .as_ref()
         .map(|_| axum_server::Handle::<std::net::SocketAddr>::new());
     let shutdown_handle = tls_handle.clone();
     let (stop_server, server_shutdown) = tokio::sync::oneshot::channel();
     let (server_done, mut server_finished) = tokio::sync::oneshot::channel();
-    // Register eagerly, before the task is scheduled, so SIGTERM is never missed.
-    let signal = shutdown_signal();
+    if shutdown.is_cancelled() {
+        info!("HTTP startup cancelled before serving");
+        return Ok(());
+    }
+    let _ = serving.send(());
     let shutdown_task = tokio::spawn(async move {
         tokio::select! {
-            _ = signal => {},
+            biased;
+            _ = shutdown.cancelled() => {},
             _ = &mut server_finished => return,
         }
-        let deadline = tokio::time::Instant::now() + drain;
         if let Some(handle) = shutdown_handle {
             handle.graceful_shutdown(Some(drain));
         }
@@ -2553,15 +2650,8 @@ pub async fn start_http_server(
             shutdown.shutdown();
             shutdown.wait_for_shutdown(Duration::from_secs(5)).await;
         }
-        // Cleanup must finish before the deadline can force an exit.
-        tokio::select! {
-            biased;
-            _ = &mut server_finished => {},
-            _ = tokio::time::sleep_until(deadline) => {
-                tracing::warn!("HTTP shutdown grace period expired after cleanup; forcing exit");
-                std::process::exit(0);
-            }
-        }
+        // The plain-thread watchdog bounds cleanup even if the server finishes first.
+        let _ = server_finished.await;
     });
 
     use std::net::SocketAddr;
@@ -2587,6 +2677,110 @@ pub async fn start_http_server(
     server_result?;
 
     Ok(())
+}
+
+/// Extra time for cleanup and runtime teardown beyond the HTTP drain period.
+const SHUTDOWN_WATCHDOG_MARGIN_SECS: u64 = 5;
+
+fn shutdown_grace(env_value: Option<&str>) -> Duration {
+    Duration::from_secs(
+        env_value
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(10),
+    )
+}
+
+fn shutdown_watchdog_delay(grace: Duration) -> Duration {
+    grace.saturating_add(Duration::from_secs(SHUTDOWN_WATCHDOG_MARGIN_SECS))
+}
+
+fn start_shutdown_watchdog(grace: Duration) {
+    let delay = shutdown_watchdog_delay(grace);
+    // Deliberately detached: Tokio cancellation and blocked runtime teardown cannot stop it.
+    std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        eprintln!("HTTP shutdown deadline expired after {delay:?}; forcing exit");
+        std::process::exit(0);
+    });
+}
+
+fn should_run_next_pass(shutdown: &CancellationToken) -> bool {
+    !shutdown.is_cancelled()
+}
+
+/// Returns false on shutdown, including when cancellation and the timer are both ready.
+async fn cancellable_sleep(shutdown: &CancellationToken, delay: Duration) -> bool {
+    tokio::select! {
+        biased;
+        _ = shutdown.cancelled() => false,
+        _ = tokio::time::sleep(delay) => should_run_next_pass(shutdown),
+    }
+}
+
+#[cfg(test)]
+mod shutdown_cancellation_tests {
+    use super::*;
+
+    #[test]
+    fn watchdog_deadline_uses_default_or_environment_override() {
+        // Inject the environment value so parallel tests never mutate process configuration.
+        for (value, expected) in [
+            (None, 15),
+            (Some("2"), 7),
+            (Some("0"), 5),
+            (Some("invalid"), 15),
+        ] {
+            assert_eq!(
+                shutdown_watchdog_delay(shutdown_grace(value)),
+                Duration::from_secs(expected)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn cancellation_prevents_the_next_pass_and_cycle() {
+        let shutdown = CancellationToken::new();
+        assert!(should_run_next_pass(&shutdown));
+        shutdown.cancel();
+        assert!(!should_run_next_pass(&shutdown));
+        assert!(!cancellable_sleep(&shutdown, Duration::ZERO).await);
+    }
+
+    #[tokio::test]
+    async fn cancellation_interrupts_sleep() {
+        let shutdown = CancellationToken::new();
+        let cancel = shutdown.clone();
+        let cancel_task = tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            cancel.cancel();
+        });
+        assert!(!tokio::time::timeout(
+            Duration::from_millis(250),
+            cancellable_sleep(&shutdown, Duration::from_secs(1)),
+        )
+        .await
+        .expect("cancellation should interrupt the timer"));
+        cancel_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn elapsed_sleep_allows_another_pass() {
+        assert!(cancellable_sleep(&CancellationToken::new(), Duration::ZERO).await);
+    }
+
+    #[test]
+    fn listener_is_registered_before_startup_and_background_spawns() {
+        let source = include_str!("server.rs");
+        let start = source.find("pub async fn start_http_server(").unwrap();
+        let end = source[start..].find("/// Extra time for cleanup").unwrap() + start;
+        let body = &source[start..end];
+        let listener = body.find("let signal = shutdown_signal();").unwrap();
+        assert!(listener < body.find("tokio::spawn(").unwrap());
+        assert!(listener < body.find("let server = start_http_server_inner(").unwrap());
+        assert!(listener < body.find("build_session_importers(").unwrap());
+        assert_eq!(body.matches("shutdown_signal()").count(), 1);
+        assert!(body.contains("_ = shutdown.cancelled() =>"));
+    }
 }
 
 /// Registers shutdown listeners eagerly and waits for either termination signal.
@@ -2773,7 +2967,7 @@ mod ingestion_wiring_tests {
 
     /// Byte offset of the ingestion cycle `loop {`.
     fn cycle_loop_offset(src: &str) -> usize {
-        src.find("loop {\n                if !try_begin_cycle(&in_flight)")
+        src.find("loop {\n                if !should_run_next_pass(&ingestion_shutdown)")
             .expect("ingestion cycle loop not found in server.rs")
     }
 

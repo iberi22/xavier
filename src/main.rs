@@ -50,12 +50,15 @@ fn main() -> Result<()> {
         .name("xavier-main".to_string())
         .stack_size(8 * 1024 * 1024)
         .spawn(|| {
-            tokio::runtime::Builder::new_multi_thread()
+            let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .thread_stack_size(8 * 1024 * 1024)
                 .build()
-                .expect("failed to build Tokio runtime")
-                .block_on(async_main())
+                .expect("failed to build Tokio runtime");
+            let result = runtime.block_on(async_main());
+            // Blocking importers and pool workers must not hold process shutdown open.
+            runtime.shutdown_timeout(std::time::Duration::from_secs(3));
+            result
         })?
         .join()
         .unwrap_or_else(|e| std::panic::resume_unwind(e))
