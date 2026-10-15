@@ -77,3 +77,13 @@ On 2026-10-15 the owner authorized the outward branch-rule activation for T08 (#
 Out of scope for this authorization, still pending owner decision: a required review rule, requiring `CI Gate`, the strict up-to-date policy, and server-side rejection of direct pushes by agents. Agents currently push under the owner's admin identity, which the bypass covers, so "agents never push directly to `main`" is enforced by policy (AGENTS.md) and PR workflow, not by the ruleset. The template `.github/rulesets/main.json` now uses the job name `Shadow Fast Gate` too; it previously named the workflow.
 
 Rollback: the operator kept the pre-activation `GET` output of both rulesets. `PUT /repos/{owner}/{repo}/rulesets/{id}` it back, trimmed to the writable fields (`name`, `target`, `enforcement`, `bypass_actors`, `conditions`, `rules`), and set `allow_auto_merge` to false.
+
+### Second activation (owner-authorized 2026-10-15)
+
+The owner then authorized the remaining rules. Ruleset `r1` on `main` now has:
+
+- `pull_request`: changes reach `main` through a PR. Required approvals are 0, and code-owner review, last-push approval, thread resolution and extra approval for unattributed changes are all off. A review rule with 1 or more approvals would deadlock: agents open and merge PRs under the owner's admin identity, and GitHub does not let an author approve their own PR. Ask-class review stays with the independent agent panel, recorded on the PR, as the Decision section says.
+- `required_status_checks`: `Shadow Fast Gate` and `CI Gate` (the job name in `ci.yml`; it runs on every PR to `main`, with no path filter). `strict` is on, so a PR must be up to date with `main` before it merges.
+- Bypass: the Admin role, always (emergency owner path), unchanged.
+
+A rollback snapshot of both rulesets was taken before this change. Restore it as described in the rollback note above.
