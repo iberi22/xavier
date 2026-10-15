@@ -240,7 +240,7 @@
       "implemented_in": "src/crypto/, src/security/, src/memory/sqlite_vec_store/at_rest.rs, src/espacio/",
       "tests": [
         "test_encrypt_decrypt",
-        "test_key_derivation",
+        "test_key_derivation_consistency",
         "tests/espacio_memory_encryption.rs::symbols_path_never_writes_sealed_words"
       ],
       "req_ids": [

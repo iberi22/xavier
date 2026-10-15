@@ -297,7 +297,7 @@ jobs:
           if-no-files-found: ignore
 
   e2e-05:
-    name: W05 mesh (10)
+    name: W05 mesh (11)
     if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
@@ -310,7 +310,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Run all 10 targets of wave 05
+      - name: Run all 11 targets of wave 05
         id: run-wave
         # No `-e` and no `break`: a red target must not hide the rest of its
         # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
@@ -322,6 +322,7 @@ jobs:
           set -u
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
+            'mesh_auth_binding_test'
             'mesh_full_simulation_test'
             'mesh_integration'
             'mesh_iroh_test'
@@ -353,7 +354,7 @@ jobs:
           if-no-files-found: ignore
 
   e2e-06:
-    name: W06 search_embedding (7)
+    name: W06 search_embedding (8)
     if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
@@ -366,7 +367,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Run all 7 targets of wave 06
+      - name: Run all 8 targets of wave 06
         id: run-wave
         # No `-e` and no `break`: a red target must not hide the rest of its
         # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
@@ -381,6 +382,7 @@ jobs:
             'embedding_fallback_resilience'
             'embedding_fallback_test'
             'embedding_local_integration'
+            'fsearch_port_metrics'
             'semantic_compression_test'
             'semantic_search_tests'
             'skill_semantic_rank_eval'
@@ -615,7 +617,7 @@ jobs:
           if-no-files-found: ignore
 
   e2e-11:
-    name: W11 telemetry_skill (3)
+    name: W11 telemetry_skill (5)
     if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
@@ -628,7 +630,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Run all 3 targets of wave 11
+      - name: Run all 5 targets of wave 11
         id: run-wave
         # No `-e` and no `break`: a red target must not hide the rest of its
         # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
@@ -640,7 +642,9 @@ jobs:
           set -u
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
+            'airgap_cli_hardening'
             'ledger_skill_entries'
+            'skill_route_clearance'
             'telemetry_anonymizer_edge_test'
             'telemetry_anonymizer_test'
           )
