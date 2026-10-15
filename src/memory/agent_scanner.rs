@@ -40,21 +40,6 @@ fn source_mtime_rfc3339(path: &Path) -> std::io::Result<String> {
         .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn missing_source_mtime_is_an_error() {
-        let temp = tempfile::tempdir().expect("temporary source directory");
-        let result = super::source_mtime_rfc3339(&temp.path().join("missing.json"));
-        assert_eq!(
-            result
-                .expect_err("missing source must not get a scan timestamp")
-                .kind(),
-            std::io::ErrorKind::NotFound
-        );
-    }
-}
-
 impl Default for AgentScanner {
     fn default() -> Self {
         Self::new()
@@ -249,5 +234,20 @@ impl AgentScanner {
         } else {
             Ok(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn missing_source_mtime_is_an_error() {
+        let temp = tempfile::tempdir().expect("temporary source directory");
+        let result = super::source_mtime_rfc3339(&temp.path().join("missing.json"));
+        assert_eq!(
+            result
+                .expect_err("missing source must not get a scan timestamp")
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
     }
 }
