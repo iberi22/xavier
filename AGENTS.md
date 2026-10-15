@@ -65,7 +65,7 @@ machine never builds. PRs must be mergeable as-is:
 - `.gitcore/features.json` is the source of truth (status, tests, files).
 - Run `scripts/verify-pipeline.sh` to see the real state — it EXECUTES the
   declared tests. The pipeline is the judge; status is never hand-promoted.
-- **Post-merge lane** — runs post-merge on `main`: full feature-ledger verification (`scripts/verify-pipeline.sh`), and it is the only thing allowed to promote a `features.json` status.
+- **Post-merge lane** — the Ledger Promoter runs only on manual dispatch, is disabled until the owner sets `LEDGER_PROMOTER_ENABLED=true`, and defaults to dry run. It uses full verifier evidence from `main` to propose beta → stable promotions; promotion lands only when the bot PR merges through normal checks.
 
 ## 5. Modifying features.json
 

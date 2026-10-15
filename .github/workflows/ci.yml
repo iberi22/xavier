@@ -365,6 +365,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Test ledger promoter
+        run: python3 -m unittest discover -s scripts/tests -p 'test_ledger_promote.py'
+
       - name: Run Secret Scan
         run: bash scripts/check-secrets.sh
 
