@@ -14,6 +14,7 @@ interface ChatHistoryProps {
   messages: PanelMessage[];
   streamingMessageId: string | null;
   isLoading?: boolean;
+  onStreamingComplete?: (messageId: string) => void;
 }
 
 const WIDTH_CLASSES: Record<ConversationWidth, string> = {
@@ -100,9 +101,11 @@ function formatConfidence(value?: number) {
 function StreamingMessageRenderer({
   message,
   isStreamingActive,
+  onStreamingComplete,
 }: {
   message: PanelMessage;
   isStreamingActive: boolean;
+  onStreamingComplete?: (messageId: string) => void;
 }) {
   const [streamedText, setStreamedText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -115,6 +118,12 @@ function StreamingMessageRenderer({
     }
 
     const fullText = message.plain_text || "";
+    if (fullText.length === 0) {
+      setIsStreaming(false);
+      onStreamingComplete?.(message.id);
+      return;
+    }
+
     let currentIndex = 0;
     setIsStreaming(true);
     setStreamedText("");
@@ -126,11 +135,12 @@ function StreamingMessageRenderer({
       if (currentIndex >= fullText.length) {
         setIsStreaming(false);
         clearInterval(intervalId);
+        onStreamingComplete?.(message.id);
       }
     }, 20);
 
     return () => clearInterval(intervalId);
-  }, [message, isStreamingActive]);
+  }, [message, isStreamingActive, onStreamingComplete]);
 
   return (
     <div className="flex flex-col gap-4 w-full">
@@ -161,10 +171,12 @@ const ChatMessageItem = memo(function ChatMessageItem({
   msg,
   isStreamingActive,
   verboseChat,
+  onStreamingComplete,
 }: {
   msg: PanelMessage;
   isStreamingActive: boolean;
   verboseChat: boolean;
+  onStreamingComplete?: (messageId: string) => void;
 }) {
   const parsedMetadata = useMemo(() => {
     if (!msg.metadata) return null;
@@ -199,6 +211,7 @@ const ChatMessageItem = memo(function ChatMessageItem({
       animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
       className={`message-card flex w-full gap-3 ${msg.role === "assistant" ? "assistant-card" : "user-card"} ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
+      data-testid={msg.role === "assistant" ? "assistant-card" : "user-card"}
     >
       {/* Avatar */}
       {msg.role === "assistant" ? (
@@ -269,31 +282,36 @@ const ChatMessageItem = memo(function ChatMessageItem({
             openUiNodes && !isStreamingActive ? (
               <ErrorBoundary
                 fallback={
-                  <div className="plain-text w-full">
+                  <div className="plain-text w-full" data-testid="plain-text-fallback">
                     <StreamingMessageRenderer
                       message={msgForStreaming}
                       isStreamingActive={isStreamingActive}
+                      onStreamingComplete={onStreamingComplete}
                     />
                   </div>
                 }
               >
                 <div className="flex flex-col gap-2 w-full">
                   <RenderSurface nodes={openUiNodes} />
-                  <div className="plain-text text-xs text-white/50 border-t border-[#39ff14]/10 pt-2 font-mono">
+                  <div
+                    className="plain-text text-xs text-white/50 border-t border-[#39ff14]/10 pt-2 font-mono"
+                    data-testid="assistant-plain-text"
+                  >
                     {mainText}
                   </div>
                 </div>
               </ErrorBoundary>
             ) : (
-              <div className="plain-text w-full">
+              <div className="plain-text w-full" data-testid="plain-text-fallback">
                 <StreamingMessageRenderer
                   message={msgForStreaming}
                   isStreamingActive={isStreamingActive}
+                  onStreamingComplete={onStreamingComplete}
                 />
               </div>
             )
           ) : (
-            <p className="plain-text text-sm leading-relaxed font-sans">
+            <p className="plain-text text-sm leading-relaxed font-sans" data-testid="user-plain-text">
               {msg.plain_text}
             </p>
           )}
@@ -321,6 +339,7 @@ export default memo(function ChatHistory({
   messages,
   streamingMessageId,
   isLoading = false,
+  onStreamingComplete,
 }: ChatHistoryProps) {
   const { conversationWidth, verboseChat } = useChatPreferences();
   const widthClass = WIDTH_CLASSES[conversationWidth] || WIDTH_CLASSES.default;
@@ -357,6 +376,7 @@ export default memo(function ChatHistory({
               msg={msg}
               isStreamingActive={msg.id === streamingMessageId}
               verboseChat={verboseChat}
+              onStreamingComplete={onStreamingComplete}
             />
           ))}
           {isLoading && !streamingMessageId && (

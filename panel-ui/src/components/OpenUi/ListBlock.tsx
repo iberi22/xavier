@@ -8,7 +8,10 @@ export function ListBlock({ items }: ListBlockProps) {
 	if (!items || items.length === 0) return null;
 
 	return (
-		<div className="openui-list-block flex flex-col gap-1.5 w-full">
+		<div
+			className="openui-list-block flex flex-col gap-1.5 w-full"
+			data-testid="openui-list-block"
+		>
 			{items.map((item) => (
 				<div
 					key={item.id}

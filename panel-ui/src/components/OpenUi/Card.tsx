@@ -8,7 +8,10 @@ interface CardProps {
 
 export function Card({ title, description, children }: CardProps) {
 	return (
-		<div className="openui-card p-3 rounded-lg bg-white/[0.025] border border-white/10 hover:border-[#39ff14]/30 transition-colors">
+		<div
+			className="openui-card p-3 rounded-lg bg-white/[0.025] border border-white/10 hover:border-[#39ff14]/30 transition-colors"
+			data-testid="openui-card"
+		>
 			{(title || description) && (
 				<div className="mb-2.5">
 					{title && (

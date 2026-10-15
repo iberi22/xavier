@@ -12,7 +12,10 @@ export function SectionBlock({
 	children,
 }: SectionBlockProps) {
 	return (
-		<div className="openui-section-block flex flex-col gap-3 p-4 rounded-xl bg-black/40 border border-[#39ff14]/20 shadow-md">
+		<div
+			className="openui-section-block flex flex-col gap-3 p-4 rounded-xl bg-black/40 border border-[#39ff14]/20 shadow-md"
+			data-testid="openui-section-block"
+		>
 			{(title || description) && (
 				<div className="border-b border-[#39ff14]/10 pb-2.5 mb-1">
 					{title && (
