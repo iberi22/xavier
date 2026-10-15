@@ -61,20 +61,24 @@ fn test_e2e_hardware_scan_and_allocation_curves() {
 
 #[test]
 fn test_e2e_legal_chunking_and_privacy_redaction() {
-    let raw_contract = r#"
+    let test_api_key = format!("sk-{}", "1234567890123456789012345");
+    let raw_contract = format!(
+        r#"
 CAPÍTULO I. DE LAS OBLIGACIONES
 ARTÍCULO 1. PARTES Y CONTACTO
 El contratante con correo legal@swal.org se compromete a proveer acceso a los servidores en /etc/config/secret.key.
 
 CLÁUSULA SEGUNDA. CREDENCIALES DE API
-Cualquier integración con el LLM utilizará la clave de API REDACTED para llamadas autenticadas.
+Cualquier integración con el LLM utilizará la clave de API {} para llamadas autenticadas.
 
 PARÁGRAFO 1. NOTIFICACIONES
 Todas las comunicaciones formales deben ser dirigidas a admin@company.com antes de vencer el plazo.
-"#;
+"#,
+        test_api_key
+    );
 
     let chunker = LegalHierarchicalChunker::new(500, 50);
-    let chunks = chunker.chunk_document("doc_e2e_contract_01", raw_contract);
+    let chunks = chunker.chunk_document("doc_e2e_contract_01", &raw_contract);
 
     assert!(
         chunks.len() >= 2,
@@ -110,7 +114,7 @@ Todas las comunicaciones formales deben ser dirigidas a admin@company.com antes 
             "PII email leaked in chunk text"
         );
         assert!(
-            !chunk.text.contains("REDACTED"),
+            !chunk.text.contains(&test_api_key),
             "API key leaked in chunk text"
         );
         assert!(
@@ -145,8 +149,9 @@ fn test_e2e_multimodal_vector_store_indexing_and_retrieval() {
 
     // 1. Process synthetic legal chunk
     let pipeline = PrivacyPipeline::new();
-    let original_text = "Legal consultation for client contact@swal.ai regarding license keys REDACTED in /opt/app/license.txt";
-    let scrubbed_text = pipeline.scrub_string(original_text);
+    let license_key = format!("sk-{}", "999988887777666655554444");
+    let original_text = format!("Legal consultation for client contact@swal.ai regarding license keys {} in /opt/app/license.txt", license_key);
+    let scrubbed_text = pipeline.scrub_string(&original_text);
 
     let legal_vector: Vec<f32> = vec![0.1f32; 1536];
     let legal_payload = json!({
@@ -233,10 +238,14 @@ fn test_e2e_multimodal_vector_store_indexing_and_retrieval() {
 fn test_e2e_expert_training_export_preparation() {
     let pipeline = PrivacyPipeline::new();
 
+    let sample_key = format!("sk-{}", "112233445566778899001122");
     let raw_records = vec![
         (
             "sample_1".to_string(),
-            "Export for dev@swal.org with key REDACTED in /tmp/data".to_string(),
+            format!(
+                "Export for dev@swal.org with key {} in /tmp/data",
+                sample_key
+            ),
             vec!["rag".to_string(), "legal".to_string()],
             "contract_classification".to_string(),
             0.90,

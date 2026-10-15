@@ -133,7 +133,7 @@ async fn test_put_then_get_round_trip() {
     let _tmp = VaultGuard::new();
     let secret_key = "api_key_openai";
     let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
-    let secret_value = "REDACTED";
+    let secret_value = format!("sk-proj-{}", "e2e-test-secret-value-98765");
 
     // 1. PUT /v1/clavis/keys/api_key_openai -> HTTP 201 CREATED
     let put_req = build_clavis_request(
@@ -159,7 +159,7 @@ async fn test_put_then_get_round_trip() {
     assert_eq!(put_json["status"], "ok");
     assert_eq!(put_json["created"], true);
     // Raw value must NOT be echoed in the put response
-    assert!(!String::from_utf8_lossy(&put_body).contains(secret_value));
+    assert!(!String::from_utf8_lossy(&put_body).contains(&secret_value));
 
     // 2. GET /v1/clavis/keys/api_key_openai -> HTTP 200 OK
     let get_req = build_clavis_request(
@@ -295,7 +295,7 @@ async fn test_log_safety_and_vault_isolation() {
     let tmp = &tmp_guard.tmp_dir;
     let secret_key = "api_key_log_safety";
     let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
-    let raw_secret = "REDACTED";
+    let raw_secret = format!("sk-live-{}", "super-secret-token-abcdef123456");
 
     // Store via HTTP endpoint
     let put_req = build_clavis_request(
@@ -315,11 +315,11 @@ async fn test_log_safety_and_vault_isolation() {
     // 1. Masking verification: masked message hides raw secret
     let masked_log = xavier::clavis::mask_log_message(&format!("Connecting with {}", raw_secret));
     assert!(
-        !masked_log.contains(raw_secret),
+        !masked_log.contains(&raw_secret),
         "Secret leaked verbatim into masked log message"
     );
     assert!(
-        masked_log.contains(&mask_key(raw_secret)),
+        masked_log.contains(&mask_key(&raw_secret)),
         "Masked log message must contain masked preview"
     );
 
@@ -335,7 +335,7 @@ async fn test_log_safety_and_vault_isolation() {
             let file_bytes = std::fs::read(&enc_file).expect("Read encrypted file");
             let file_string = String::from_utf8_lossy(&file_bytes);
             assert!(
-                !file_string.contains(raw_secret),
+                !file_string.contains(&raw_secret),
                 "Secret found in plain text inside the isolated vault file on disk!"
             );
         }

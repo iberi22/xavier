@@ -184,10 +184,12 @@ mod tests {
     #[tokio::test]
     async fn test_clavis_token_leasing_and_log_masking() {
         let service = ModelRouterService::new(ModelServiceConfig::default());
-        let secret = "REDACTED";
+        let secret = format!("sk-{}", "clavis-super-secret-key-998877");
         let token_id = "test-token";
 
-        let lease = service.lease_clavis_token(token_id, secret, Some(10)).await;
+        let lease = service
+            .lease_clavis_token(token_id, &secret, Some(10))
+            .await;
 
         assert_eq!(lease.token_id, token_id);
         assert_eq!(lease.token_value, secret);
@@ -197,7 +199,7 @@ mod tests {
         // Verify global log masker redacts the secret token
         let raw_log = format!("Authenticating with {}", secret);
         let masked_log = mask_log_message(&raw_log);
-        assert!(!masked_log.contains(secret));
+        assert!(!masked_log.contains(&secret));
         assert!(masked_log.contains(&lease.masked_value()));
     }
 

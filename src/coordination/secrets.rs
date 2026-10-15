@@ -583,10 +583,10 @@ mod tests {
     #[tokio::test]
     async fn test_leak_detector() {
         let detector = LeakDetector::new();
-        let secret = "REDACTED";
+        let secret = format!("sk-ant-api03-{}", "abcdef1234567890");
         let agent_id = "agent-42";
 
-        detector.register_key(secret, agent_id).await;
+        detector.register_key(&secret, agent_id).await;
 
         // Test exact match
         let content = format!("Sending request with key: {}", secret);
