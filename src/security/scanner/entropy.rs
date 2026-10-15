@@ -204,9 +204,8 @@ mod tests {
     #[test]
     fn test_secret_detection() {
         SecretDetector::warm_up();
-        let secrets = SecretDetector::extract_secrets(
-            "github token: REDACTED",
-        );
+        let payload = format!("github token: ghp_{}", "x".repeat(36));
+        let secrets = SecretDetector::extract_secrets(&payload);
         assert!(!secrets.is_empty());
     }
 }
