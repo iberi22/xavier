@@ -2988,22 +2988,32 @@ mod tests {
     use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 
     async fn xav01_test_state(workspace_dir: std::path::PathBuf) -> CliState {
+        let tmp = tempfile::Builder::new()
+            .prefix("xavier-test-code-state-")
+            .tempdir()
+            .unwrap();
+        let state = xav01_test_state_in(workspace_dir, tmp.path()).await;
+        // Existing callers do not retain a fixture guard.
+        std::mem::forget(tmp);
+        state
+    }
+
+    async fn xav01_test_state_in(
+        workspace_dir: std::path::PathBuf,
+        fixture_root: &std::path::Path,
+    ) -> CliState {
         let auth_store = Arc::new(AuthStore::open(":memory:").unwrap());
         let docs = Arc::new(AsyncRwLock::new(Vec::new()));
         let qmd_memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-ws"));
         let memory_port = Arc::new(QmdMemoryAdapter::new(Arc::clone(&qmd_memory)));
-        let tmp = tempfile::tempdir().unwrap();
         let store = Arc::new(
             VecSqliteMemoryStore::new(VecSqliteStoreConfig {
-                path: tmp.path().join("vec_store.db"),
+                path: fixture_root.join("vec_store.db"),
                 embedding_dimensions: 3,
             })
             .await
             .unwrap(),
         );
-        // Keep the tempdir alive via the store path parent? No — VecSqlite
-        // opens the DB eagerly; leaking the dir guard is unnecessary.
-        std::mem::forget(tmp);
         let cg_db = Arc::new(CodeGraphDB::in_memory().unwrap());
         let cg_state = Arc::new(tokio::sync::RwLock::new(
             crate::cli::state::CodeGraphState {
@@ -3056,9 +3066,7 @@ mod tests {
             )),
             multi_db: xavier::storage::multi_db::MultiDbManager::new(),
             system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
-            maloca: xavier::maloca::MalocaStore::open(
-                &std::env::temp_dir().join("xavier-maloca-test-xav01"),
-            ),
+            maloca: xavier::maloca::MalocaStore::open(&fixture_root.join("maloca")),
         }
     }
 
@@ -3573,6 +3581,67 @@ mod tests {
         let outside = w2908_target(tmp.path(), "outside");
         let state = xav01_test_state(workspace).await;
         (tmp, inside, outside, state)
+    }
+
+    #[tokio::test]
+    async fn feat_codegraph_dump_path_rejects_escape_without_filesystem_changes() {
+        let tmp = tempfile::Builder::new()
+            .prefix("xavier-test-code-dump-")
+            .tempdir()
+            .unwrap();
+        let workspace = w2908_target(tmp.path(), "workspace");
+        // A sibling sharing the root's name catches string-prefix containment.
+        let outside = w2908_target(tmp.path(), "workspace-outside");
+        let dump = outside.join(".xavier/codegraph.json");
+        let sentinel = outside.join("sentinel.txt");
+        std::fs::write(&sentinel, b"unchanged").unwrap();
+        let state = xav01_test_state_in(workspace.clone(), tmp.path()).await;
+        let traversal = workspace.join("../workspace-outside");
+        let missing = tmp.path().join("workspace-missing/nested");
+        for (target, reason) in [
+            (traversal, "must not contain '..'"),
+            (outside.clone(), "outside workspace root"),
+            (missing.clone(), "outside workspace root"),
+        ] {
+            let requested = target.to_string_lossy().into_owned();
+            let (status, body) = xav01_status_body(code_dump_handler(
+                State(state.clone()),
+                axum::Json(serde_json::json!({"path": requested})),
+            ))
+            .await;
+            assert_eq!(status, 400, "escape must be rejected: {body}");
+            assert_eq!(body["status"], "error");
+            assert_eq!(body["requested_path"], requested);
+            assert!(body["message"].as_str().unwrap().contains(reason), "{body}");
+            assert!(!dump.exists(), "rejected request created an outside dump");
+            assert!(
+                !outside.join(".xavier").exists(),
+                "no outside directories may be created"
+            );
+            assert!(!tmp.path().join("workspace-missing").exists());
+            assert!(!workspace.join(".xavier/codegraph.json").exists());
+            assert_eq!(std::fs::read(&sentinel).unwrap(), b"unchanged");
+            let entries: Vec<_> = std::fs::read_dir(&outside)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect();
+            assert_eq!(
+                entries.len(),
+                2,
+                "only .git and the sentinel may exist: {entries:?}"
+            );
+        }
+
+        // Also protect an existing dump from overwrite by a refused request.
+        std::fs::create_dir(outside.join(".xavier")).unwrap();
+        std::fs::write(&dump, b"existing dump bytes").unwrap();
+        let (status, _) = xav01_status_body(code_dump_handler(
+            State(state),
+            axum::Json(serde_json::json!({"path": outside.to_string_lossy()})),
+        ))
+        .await;
+        assert_eq!(status, 400);
+        assert_eq!(std::fs::read(dump).unwrap(), b"existing dump bytes");
     }
 
     /// #2580: `/code/index` reads the caller's path and then writes a dump, so
