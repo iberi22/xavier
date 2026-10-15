@@ -240,6 +240,10 @@ mod tests {
         let bridge = Arc::new(HcCronBridge::with_shared_store(config, Arc::new(store)));
         let token = CancellationToken::new();
         let handle = bridge.start_background_worker_with_cancel(token.clone());
+        // Let the immediate first cycle run so the worker is idle on the next tick,
+        // the production case when shutdown arrives.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!handle.is_finished());
         token.cancel();
         tokio::time::timeout(Duration::from_secs(5), handle)
             .await
