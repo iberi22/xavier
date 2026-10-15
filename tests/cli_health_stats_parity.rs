@@ -32,7 +32,7 @@ fn degraded_health_prints_server_reason_and_version() {
     degraded_health();
 }
 
-/// Documented contract (docs/OPERATIONS.md, REQUIREMENTS.md): `xavier health`
+/// Documented contract (docs/OPERATIONS.md, docs/SRS/REQUIREMENTS.md): `xavier health`
 /// exits non-zero only when the node is `unhealthy`; `degraded` exits 0 while
 /// still surfacing the server's reasons.
 #[test]
@@ -41,5 +41,27 @@ fn degraded_health_exits_zero_per_documented_contract() {
     assert!(
         run.status.success(),
         "degraded health must exit 0 (only unhealthy fails): {run:?}"
+    );
+}
+
+#[test]
+fn unhealthy_health_exits_nonzero() {
+    let server = MockServer::new(Some(
+        serde_json::json!({
+            "status": "unhealthy", "version": "mock-server-version",
+            "degraded_reasons": ["subsystem:storage unavailable"]
+        })
+        .to_string(),
+    ));
+    let sandbox = Sandbox::new();
+    let run = sandbox.run(
+        sandbox.command(&server.url).arg("health"),
+        Duration::from_secs(10),
+    );
+    server.assert_contacted();
+    assert!(run.stdout.contains("unhealthy"), "{run:?}");
+    assert!(
+        !run.status.success(),
+        "unhealthy health must exit non-zero: {run:?}"
     );
 }
