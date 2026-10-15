@@ -87,6 +87,9 @@ mod memory_manager_tests {
 
     #[tokio::test]
     async fn test_evict_low_quality_removes_low_priority_docs() {
+        use xavier::memory::access;
+        use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+
         let docs = Arc::new(RwLock::new(vec![MemoryDocument {
             id: Some("doc_low".to_string()),
             path: "memory/doc_low".to_string(),
@@ -101,14 +104,65 @@ mod memory_manager_tests {
             quality_threshold: 0.99,
             ..MemoryManagerConfig::default()
         };
-        let manager = MemoryManager::with_config(Arc::new(QmdMemory::new(docs)), None, config);
+        let manager =
+            MemoryManager::with_config(Arc::new(QmdMemory::new(Arc::clone(&docs))), None, config);
+        let result = manager.evict_low_quality().await.expect("test assertion");
+
+        // Low priority alone is not evidence of disuse.
+        assert_eq!(result.documents_affected, 0);
+        assert!(result.actions.is_empty());
+        assert_eq!(result.bytes_freed, 0);
+        assert_eq!(docs.read().await.len(), 1);
+        assert_eq!(docs.read().await[0].id.as_deref(), Some("doc_low"));
+
+        // Match the store-backed fixture in manager::eviction: seed the clock
+        // before construction, which preserves it with INSERT OR IGNORE.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("eviction_disuse.sqlite3");
+        let started =
+            chrono::Utc::now() - chrono::Duration::days(access::MIN_OBSERVATION_DAYS + 10);
+        let conn = rusqlite::Connection::open(&path).expect("open new db");
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS maintenance_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );",
+        )
+        .expect("create maintenance_meta");
+        conn.execute(
+            "INSERT OR IGNORE INTO maintenance_meta (key, value, updated_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![
+                access::OBSERVATION_STARTED_AT_KEY,
+                started.to_rfc3339(),
+                started.to_rfc3339()
+            ],
+        )
+        .expect("seed clock");
+        conn.close().expect("close");
+        let store = Arc::new(
+            VecSqliteMemoryStore::new(VecSqliteStoreConfig {
+                path,
+                embedding_dimensions: 8,
+            })
+            .await
+            .expect("store construction"),
+        );
+        manager.memory().set_store(store).await;
+        // An embedding makes the never-accessed document observable.
+        docs.write().await[0].embedding = vec![0.1, 0.2];
+        let expected_bytes = docs.read().await[0].estimated_bytes();
         let result = manager.evict_low_quality().await.expect("test assertion");
 
         assert_eq!(result.documents_affected, 1);
+        assert_eq!(result.actions.len(), 1);
+        assert_eq!(result.bytes_freed, expected_bytes);
         assert!(matches!(
-            result.actions[0],
-            MemoryManagementAction::Evicted { .. }
+            &result.actions[0],
+            MemoryManagementAction::Evicted { doc_id, priority, .. }
+                if doc_id == "doc_low" && priority == "low"
         ));
+        assert!(docs.read().await.is_empty());
     }
 }
 
