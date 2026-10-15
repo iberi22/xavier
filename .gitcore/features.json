@@ -3426,6 +3426,43 @@
       ],
       "passes": false,
       "notes": "Validated: project.yaml for xavier passes the upstream tools/validate.py (check_project) from oss-scanner 2cef161; KSM defensive_auditor on src/ reports 0 findings after the Rust unsafe-only rule fix (previously 11 false positives). Scanner-like build (clean clone, root .dockerignore removed as tools/check_build.py does): docker build OK (~16 min, image 32.5 GB, debug target dir). Inside --network none with a login shell: cargo build --offline OK, cargo test --offline --no-run OK, cargo test --offline --lib -- --test-threads=1: 3662 passed, 0 failed, 1 ignored (351 s). In parallel (--test-threads=4) 1-4 different tests fail per run and each passes alone: flaky under parallelism (seen: tools_secrets temp-file cleanup, connection_manager fd/eviction counts, conversations_db CRUD, qmd bus quota). Stabilizing them is follow-up work. Status moves to stable after the enrolment PR to anthropics/oss-scanner (needs an owner-provided public security contact)."
+    },
+    "feat-generative-ui": {
+      "id": "feat-generative-ui",
+      "name": "Generative UI (OpenUI)",
+      "category": "ui",
+      "status": "beta",
+      "progress_pct": 100,
+      "description": "Generative UI rendering pipeline translating structured assistant answers and trace outputs into OpenUI pseudo-XML markup with client-side parser, React render surface in ChatHistory, conversation database persistence, and thread lifecycle management.",
+      "steps": [
+        "Implement UiRenderAgent backend to transform agent responses and execution traces into OpenUI markup with attribute escaping",
+        "Persist openui_lang markup and UI metadata in conversations_db with thread deletion support",
+        "Wire panel chat handler to render and store OpenUI markup on standard responses and fallbacks",
+        "Implement safe client-side openuiParser to convert markup into typed OpenUiNode AST with sanitize/fallback",
+        "Create OpenUI React component surface (Card, SectionBlock, TextContent, Accordion, ListBlock, SpecialCards, TextCallout)",
+        "Integrate OpenUI render surface into ChatHistory assistant message view",
+        "Add integration tests in panel_openui_backend for production chat rendering, fallback rendering, and thread deletion",
+        "Add Vitest unit tests for openuiParser, OpenUiRenderSurface, and ChatHistoryOpenUi",
+        "Add Playwright E2E test suite in generative-ui.spec.ts running in CI"
+      ],
+      "passes": true,
+      "verified_by": "unit-tests+integration+e2e",
+      "last_tested": "2026-10-15",
+      "notes": "Generative UI (OpenUI) provides dynamic visual components for agent outputs and reasoning traces. Verified with Rust unit tests in ui_render and conversations_db, backend integration tests in panel_openui_backend (persisting OpenUI markup and thread deletion), Vitest component tests in panel-ui, and Playwright E2E generative-ui.spec.ts in CI (#3164, #3166, #3167). Beta status pending prolonged production validation.",
+      "implemented_in": "src/agents/ui_render.rs, src/codebase/conversations_db.rs, src/cli/handlers/panel.rs, tests/panel_openui_backend.rs, panel-ui/src/utils/openuiParser.ts, panel-ui/src/components/OpenUi/RenderSurface.tsx, panel-ui/src/components/ChatHistory.tsx, panel-ui/tests/openuiParser.test.ts, panel-ui/tests/OpenUiRenderSurface.test.tsx, panel-ui/tests/ChatHistoryOpenUi.test.tsx, panel-ui/tests/e2e/generative-ui.spec.ts",
+      "tests": [
+        "render_answer_without_trace_omits_signals_and_confidence",
+        "escape_attr_preserves_quotes_and_line_breaks",
+        "render_includes_rich_components",
+        "test_delete_thread_existing",
+        "test_delete_thread_unknown",
+        "test_delete_thread_respects_project_scope",
+        "test_delete_thread_rolls_back_messages_on_failure",
+        "production_chat_persists_ui_render_agent_output",
+        "production_chat_fallback_also_renders_actual_answer"
+      ],
+      "req_ids": [],
+      "user_stories": []
     }
   },
   "verification_commands": {

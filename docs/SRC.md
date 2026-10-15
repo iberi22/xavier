@@ -227,7 +227,6 @@ xavier/
 │   │   ├── MEMORY_IMPROVEMENT_PLAN.md
 │   │   ├── MEMORY_MANAGER.md
 │   │   ├── MESH_SYNC_PLAN.md
-│   │   ├── MOBILE_GENERATIVE_UI.md
 │   │   ├── MULTI_AGENT_PIPELINE.md
 │   │   ├── MULTI_LAYER_MEMORY_SPEC.md
 │   │   ├── OLA4_ANALYSIS.md
@@ -294,6 +293,7 @@ xavier/
 │   │   ├── implementation-score.json
 │   │   ├── messaging-integrations.md
 │   │   └── specs/
+│   │       └── FEATURE-generative-ui.md
 │   ├── guides/
 │   │   ├── CLI_REFERENCE.md
 │   │   ├── CODEGRAPH_GIT_SYNC.md
