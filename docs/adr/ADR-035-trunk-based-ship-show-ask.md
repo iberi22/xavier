@@ -74,16 +74,16 @@ On 2026-10-15 the owner authorized the outward branch-rule activation for T08 (#
 - Bypass: the repository Admin role, always, on `r1`. This is the emergency owner path. A second active ruleset, `ruleone`, also blocks deletion and force-push on `main` and has no bypass, so those two stay blocked even for Admin.
 - Repository setting: auto-merge allowed (`allow_auto_merge: true`). Eligibility for agent auto-merge still follows the Decision section above: Ask, rollback, and publication-triggering PRs wait for panel review.
 
-Out of scope for this authorization, still pending owner decision: a required review rule, requiring `CI Gate`, the strict up-to-date policy, and server-side rejection of direct pushes by agents. Agents currently push under the owner's admin identity, which the bypass covers, so "agents never push directly to `main`" is enforced by policy (AGENTS.md) and PR workflow, not by the ruleset. The template `.github/rulesets/main.json` now uses the job name `Shadow Fast Gate` too; it previously named the workflow.
+Out of scope for this first authorization: a required review rule, requiring `CI Gate`, and the strict up-to-date policy (all three activated later; see "Second activation" below), plus server-side rejection of direct pushes by agents. Agents currently push under the owner's admin identity, which the bypass covers, so "agents never push directly to `main`" is enforced by policy (AGENTS.md) and PR workflow, not by the ruleset. The template `.github/rulesets/main.json` now uses the job name `Shadow Fast Gate` too; it previously named the workflow.
 
 Rollback: the operator kept the pre-activation `GET` output of both rulesets. `PUT /repos/{owner}/{repo}/rulesets/{id}` it back, trimmed to the writable fields (`name`, `target`, `enforcement`, `bypass_actors`, `conditions`, `rules`), and set `allow_auto_merge` to false.
 
 ### Second activation (owner-authorized 2026-10-15)
 
-The owner then authorized the remaining rules. Ruleset `r1` on `main` now has:
+The owner then authorized the remaining rules. Ruleset `r1` on `main` keeps `deletion` and `non_fast_forward` and now also has:
 
-- `pull_request`: changes reach `main` through a PR. Required approvals are 0, and code-owner review, last-push approval, thread resolution and extra approval for unattributed changes are all off. A review rule with 1 or more approvals would deadlock: agents open and merge PRs under the owner's admin identity, and GitHub does not let an author approve their own PR. Ask-class review stays with the independent agent panel, recorded on the PR, as the Decision section says.
+- `pull_request`: changes reach `main` through a PR. Required approvals are 0, and code-owner review, last-push approval, thread resolution and extra approval for unattributed changes are all off. A rule requiring 1 or more approvals could not be satisfied without bypassing it on every merge: agents open and merge PRs under the owner's admin identity, and GitHub does not let an author approve their own PR. Ask-class review stays with the independent agent panel, recorded on the PR, as the Decision section says.
 - `required_status_checks`: `Shadow Fast Gate` and `CI Gate` (the job name in `ci.yml`; it runs on every PR to `main`, with no path filter). `strict` is on, so a PR must be up to date with `main` before it merges.
-- Bypass: the Admin role, always (emergency owner path), unchanged.
+- Bypass: the Admin role, always (emergency owner path), unchanged. Agents merge with plain `gh pr merge`, never `--admin`, so the rules apply to them; under strict mode a branch that is behind `main` is updated (`gh pr update-branch`) and its CI re-runs before merging.
 
 A rollback snapshot of both rulesets was taken before this change. Restore it as described in the rollback note above.
