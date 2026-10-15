@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::interval;
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::humanchallenge::scanner::SessionScanner;
@@ -165,6 +166,15 @@ impl HcCronBridge {
 
     /// Spawns the background worker task using Tokio interval loop, running filesystem & SQLite tasks non-blocking
     pub fn start_background_worker(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
+        self.start_background_worker_with_cancel(CancellationToken::new())
+    }
+
+    /// Same as [`Self::start_background_worker`], but stops at the next cycle boundary once
+    /// `shutdown` is cancelled and never starts a new harvest cycle after that.
+    pub fn start_background_worker_with_cancel(
+        self: Arc<Self>,
+        shutdown: CancellationToken,
+    ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             if !self.config.enabled {
                 info!("HcCronBridge background worker disabled in config");
@@ -175,7 +185,17 @@ impl HcCronBridge {
             let mut timer = interval(self.config.scan_interval);
 
             loop {
-                timer.tick().await;
+                tokio::select! {
+                    biased;
+                    _ = shutdown.cancelled() => {
+                        info!("HcCronBridge background harvester stopping (shutdown)");
+                        return;
+                    }
+                    _ = timer.tick() => {}
+                }
+                if shutdown.is_cancelled() {
+                    return;
+                }
 
                 let bridge = self.clone();
                 let result = tokio::task::spawn_blocking(move || bridge.run_harvest_cycle()).await;
@@ -206,6 +226,30 @@ mod tests {
     use crate::session::types::SessionEventType;
     use chrono::Utc;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn background_worker_stops_when_cancelled() {
+        let store = HumanChallengeStore::in_memory().unwrap();
+        let dir = TempDir::new().unwrap();
+        let config = HcCronBridgeConfig {
+            enabled: true,
+            sessions_dir: dir.path().to_path_buf(),
+            scan_interval: Duration::from_secs(3600),
+            ..Default::default()
+        };
+        let bridge = Arc::new(HcCronBridge::with_shared_store(config, Arc::new(store)));
+        let token = CancellationToken::new();
+        let handle = bridge.start_background_worker_with_cancel(token.clone());
+        // Let the immediate first cycle run so the worker is idle on the next tick,
+        // the production case when shutdown arrives.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!handle.is_finished());
+        token.cancel();
+        tokio::time::timeout(Duration::from_secs(5), handle)
+            .await
+            .expect("harvester must stop after cancel")
+            .unwrap();
+    }
 
     #[test]
     fn test_hc_cron_bridge_process_events_and_dedup() {
