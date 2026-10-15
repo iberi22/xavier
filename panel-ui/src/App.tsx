@@ -400,6 +400,10 @@ function AppContent() {
 		[api, hasConfig, selectedThreadId],
 	);
 
+	const handleStreamingComplete = useCallback((id: string) => {
+		setStreamingMessageId((curr) => (curr === id ? null : curr));
+	}, []);
+
 	const handleOpenConfig = useCallback(() => {
 		setIsConfigOpen(true);
 	}, []);
@@ -678,6 +682,7 @@ function AppContent() {
 				messages={messages}
 				streamingMessageId={streamingMessageId}
 				isLoading={_isLoading}
+				onStreamingComplete={handleStreamingComplete}
 			/>
 
 			<AnimatePresence>
