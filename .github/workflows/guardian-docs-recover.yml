@@ -34,7 +34,7 @@ jobs:
           fi
 
       - name: Checkout inventory source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate sha against inventory
         # Fail-closed by design: docs recovery never runs without a provisioned
@@ -64,7 +64,7 @@ jobs:
           fi
 
       - name: Checkout pinned input
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
 
