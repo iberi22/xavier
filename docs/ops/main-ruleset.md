@@ -6,7 +6,7 @@ This document describes the `main-protection` GitHub ruleset applied to the `~DE
 - **Deletion**: Prevents deletion of the branch.
 - **Non-fast-forward**: Prevents force pushing.
 - **Pull Request**: Requires a PR (0 approvals required, dismiss stale reviews off).
-- **Required Status Checks**: Requires `CI Gate` and `Fast Gate (Shadow)`.
+- **Required Status Checks**: Requires `CI Gate` and `Shadow Fast Gate` (the job name GitHub reports; the workflow is named `Fast Gate (Shadow)`).
 
 ## Dry-Run and Apply
 To test what changes will be applied without mutating the API:
