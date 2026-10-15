@@ -182,6 +182,7 @@ module: `memory` (51 files / 25.2k lines), `server` (12k), `cli` (6.1k),
 
 - An independent agent panel decides reversible designs, ADR acceptance, Ask-class PR approval, and task plans after deterministic gates pass. Two independent models, neither the author, must approve; store their verdicts and an auditable report tied to the reviewed revision.
 - The owner alone gives final product acceptance through the Product Acceptance Package. Agents prepare credentials, paid capacity, branch rules, public releases, and production data migrations for that acceptance; they do not activate them silently.
+- Branch rules on `main` (owner-authorized 2026-10-15, ADR-035 activation record): PRs need the required check `Shadow Fast Gate`; deletion and force-push are blocked; auto-merge is allowed for eligible Ship/Show PRs only. The Admin bypass is the emergency owner path, not a routine agent route: agents open PRs and never push directly to `main`, even though their credentials could bypass the rule.
 
 <!-- SWAL-ROUTING-START -->
 ## SWAL Routing Minimalista (SDD Hibrido F1)

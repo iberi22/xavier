@@ -64,3 +64,16 @@ Before Phase 1 rollout, record deterministic gate results and two independent mo
 ## Acceptance record
 
 Accepted 2026-09-27 by the agent review panel (deepseek-v4.1-flash round 6 ACCEPT at cd4809dd; agy gemini-3.8-flash-medium round 5 ACCEPT). Acceptance sets the policy direction only; Phase 3 branch-rule activation and any production automation remain owner-authorized outward steps. Record: `docs/design/trunk-based/panel/ADR-035-panel.md`.
+
+## Activation record (Phase 3, owner-authorized)
+
+On 2026-10-15 the owner authorized the outward branch-rule activation for T08 (#2648) and P13 (#2664), and nothing more. Applied state on `main` (ruleset `r1`, `active`):
+
+- Kept: no branch deletion, no force-push (`deletion`, `non_fast_forward`).
+- Added: required status check `Shadow Fast Gate` (GitHub Actions app). That is the job name the fast gate reports; the workflow is named `Fast Gate (Shadow)`, but a required check must match the job name or every PR blocks. `strict` (up-to-date branch) is off.
+- Bypass: the repository Admin role, always, on `r1`. This is the emergency owner path. A second active ruleset, `ruleone`, also blocks deletion and force-push on `main` and has no bypass, so those two stay blocked even for Admin.
+- Repository setting: auto-merge allowed (`allow_auto_merge: true`). Eligibility for agent auto-merge still follows the Decision section above: Ask, rollback, and publication-triggering PRs wait for panel review.
+
+Out of scope for this authorization, still pending owner decision: a required review rule, requiring `CI Gate`, the strict up-to-date policy, and server-side rejection of direct pushes by agents. Agents currently push under the owner's admin identity, which the bypass covers, so "agents never push directly to `main`" is enforced by policy (AGENTS.md) and PR workflow, not by the ruleset. The template `.github/rulesets/main.json` still names the workflow (`Fast Gate (Shadow)`) as the check context, so it must be corrected before anyone applies it.
+
+Rollback: the operator kept the pre-activation `GET` output of both rulesets. `PUT /repos/{owner}/{repo}/rulesets/{id}` it back, trimmed to the writable fields (`name`, `target`, `enforcement`, `bypass_actors`, `conditions`, `rules`), and set `allow_auto_merge` to false.
