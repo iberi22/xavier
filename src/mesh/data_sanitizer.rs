@@ -428,8 +428,9 @@ mod tests {
     fn test_invalid_regex_skipped() {
         let mut sanitizer = DataSanitizer::new();
         sanitizer.add_rule("[invalid", SanitizationAction::Drop);
+        // Anchored: field patterns are unanchored, so bare "valid" would also match "[invalid".
         sanitizer.add_rule(
-            "valid",
+            "^valid$",
             SanitizationAction::Redact {
                 replacement: "x".to_string(),
             },
