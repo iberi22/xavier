@@ -159,9 +159,25 @@ pub fn memory_store_path_for_root(repo_root: &Path) -> PathBuf {
 /// separate even though they share a git `root`. Identities without a package
 /// root (including older CLI requests) fall back to the repository root.
 pub fn memory_store_path_for_identity(identity: &RepoIdentity) -> PathBuf {
-    memory_store_path_for_root(Path::new(
-        identity.package_root.as_deref().unwrap_or(&identity.root),
-    ))
+    let root = Path::new(&identity.root);
+    let root = root
+        .canonicalize()
+        .unwrap_or_else(|_| normalize_repo_root(root));
+    if let Some(package_root) = &identity.package_root {
+        let package_root = Path::new(package_root);
+        let package_root = package_root
+            .canonicalize()
+            .unwrap_or_else(|_| normalize_repo_root(package_root));
+        if package_root.starts_with(&root) {
+            return memory_store_path_for_root(&package_root);
+        }
+        tracing::warn!(
+            ?package_root,
+            ?root,
+            "ignoring package_root outside repository root"
+        );
+    }
+    memory_store_path_for_root(&root)
 }
 
 /// The store the daemon must open when it wants the per-repo store of
@@ -220,6 +236,12 @@ mod tests {
     fn identity_without_package_root_falls_back_to_root() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = fake_repo(&tmp.path().join("legacy"));
+        std::fs::create_dir_all(tmp.path().join(".xavier")).expect("mkdir parent config");
+        std::fs::write(
+            tmp.path().join(".xavier/config.toml"),
+            "project_id = \"parent\"\n",
+        )
+        .expect("write parent config");
         let identity: RepoIdentity = serde_json::from_value(serde_json::json!({
             "project_id": "legacy",
             "root": root.to_string_lossy(),
@@ -235,6 +257,25 @@ mod tests {
             crate::codebase::repo_identity::derive_repo_identity(&root).package_root,
             None
         );
+    }
+
+    #[test]
+    fn package_root_outside_repo_falls_back_to_root() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = fake_repo(&tmp.path().join("repo"));
+        let outside = fake_repo(&tmp.path().join("repo-other"));
+        for package_root in [outside, root.join("../repo-other"), root.join("../missing")] {
+            let identity = RepoIdentity {
+                project_id: "repo".into(),
+                root: root.join(".").to_string_lossy().into_owned(),
+                package_root: Some(package_root.to_string_lossy().into_owned()),
+                indexed_commit: "unknown".into(),
+            };
+            assert_eq!(
+                memory_store_path_for_identity(&identity),
+                root.join(".xavier/memory.sqlite3")
+            );
+        }
     }
 
     /// Mirrors `codegraph_paths.rs`: serialise against the tests that mutate
