@@ -173,6 +173,35 @@ impl ClosedNetworkManager {
     }
 }
 
+pub async fn receive_channel_batch(
+    net: &ClosedNetworkManager,
+    channels: &crate::espacio::channel::ChannelManager,
+    network_id: &str,
+    receiver_node: &str,
+    envelope: &EncryptedEnvelope,
+    key: &[u8; 32],
+) -> Result<usize, String> {
+    if !net.is_member(network_id, receiver_node).await {
+        return Err("not a member".into());
+    }
+    let network = net.get(network_id).await.ok_or("network not found")?;
+
+    let plaintext = net.decrypt(envelope, network_id, key)?;
+
+    let messages: Vec<crate::espacio::channel::ChannelMessage> =
+        serde_json::from_slice(&plaintext).map_err(|e| e.to_string())?;
+
+    for msg in &messages {
+        if msg.space_id != network.space_id {
+            return Err("foreign space message rejected".into());
+        }
+    }
+
+    let count = messages.len();
+    channels.merge(network.space_id.clone(), messages).await;
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,5 +316,89 @@ mod tests {
             ..env
         };
         assert!(mgr.decrypt(&short, "net_123", &KEY).is_err());
+    }
+
+    #[tokio::test]
+    async fn non_member_is_refused() {
+        let mgr = ClosedNetworkManager::new();
+        let net = mgr.create("esp_a".into(), vec!["n1".into()]).await;
+        let channels = crate::espacio::channel::ChannelManager::new();
+        let env = enc(&mgr, b"[]");
+        let res =
+            super::receive_channel_batch(&mgr, &channels, &net.network_id, "n2", &env, &KEY).await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn foreign_space_messages_are_rejected() {
+        let mgr = ClosedNetworkManager::new();
+        let net = mgr.create("esp_a".into(), vec!["n1".into()]).await;
+        let channels = crate::espacio::channel::ChannelManager::new();
+        let msg = crate::espacio::channel::ChannelMessage {
+            seq: 1,
+            space_id: "esp_b".into(),
+            author: "n1".into(),
+            content: "hello".into(),
+            created_at: chrono::Utc::now(),
+        };
+        let pt = serde_json::to_vec(&vec![msg]).unwrap();
+        let env = mgr.encrypt(&net.network_id, "n1", &pt, &KEY).unwrap();
+        let res =
+            super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &KEY).await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn receive_merges_into_channel_log() {
+        let mgr = ClosedNetworkManager::new();
+        let net = mgr.create("esp_a".into(), vec!["n1".into()]).await;
+        let channels = crate::espacio::channel::ChannelManager::new();
+        let msg = crate::espacio::channel::ChannelMessage {
+            seq: 1,
+            space_id: "esp_a".into(),
+            author: "n1".into(),
+            content: "hello".into(),
+            created_at: chrono::Utc::now(),
+        };
+        let pt = serde_json::to_vec(&vec![msg]).unwrap();
+        let env = mgr.encrypt(&net.network_id, "n1", &pt, &KEY).unwrap();
+        let res =
+            super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &KEY).await;
+        assert_eq!(res.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn second_receive_is_idempotent_by_seq() {
+        let mgr = ClosedNetworkManager::new();
+        let net = mgr.create("esp_a".into(), vec!["n1".into()]).await;
+        let channels = crate::espacio::channel::ChannelManager::new();
+        let msg = crate::espacio::channel::ChannelMessage {
+            seq: 1,
+            space_id: "esp_a".into(),
+            author: "n1".into(),
+            content: "hello".into(),
+            created_at: chrono::Utc::now(),
+        };
+        let pt = serde_json::to_vec(&vec![msg]).unwrap();
+        let env = mgr.encrypt(&net.network_id, "n1", &pt, &KEY).unwrap();
+        let res1 =
+            super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &KEY).await;
+        assert_eq!(res1.unwrap(), 1);
+        let res2 =
+            super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &KEY).await;
+        assert_eq!(res2.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn wrong_key_is_rejected_on_receive() {
+        let mgr = ClosedNetworkManager::new();
+        let net = mgr.create("esp_a".into(), vec!["n1".into()]).await;
+        let channels = crate::espacio::channel::ChannelManager::new();
+        let env = enc(&mgr, b"[]");
+        let wrong_key = [8u8; 32];
+        let res =
+            super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &wrong_key)
+                .await;
+        assert!(res.is_err());
     }
 }
