@@ -443,6 +443,41 @@ pub async fn update(memory: &QmdMemory, mut doc: MemoryDocument) -> Result<()> {
     Ok(())
 }
 
+/// Index-only upsert: replaces (by id or path) or inserts `doc` in the in-memory
+/// search index and clears the search cache. It never writes to the store: the
+/// caller (peer sync) already persisted the record, and a store write here would
+/// bump its revision and `updated_at`, changing its chunk hash and making the
+/// next sync echo it back.
+pub async fn index_upsert(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
+    memory.ensure_loaded().await?;
+    let mut docs = memory.docs.write().await;
+    if let Some(existing) = docs
+        .iter_mut()
+        .find(|d| (d.id.is_some() && d.id == doc.id) || d.path == doc.path)
+    {
+        *existing = doc;
+    } else {
+        docs.push(doc);
+    }
+    drop(docs);
+    memory.invalidate_cache().await;
+    Ok(())
+}
+
+/// Index-only removal: drops `path_or_id` from the in-memory search index and
+/// clears the search cache, without touching the store (see [`index_upsert`]).
+pub async fn index_remove(memory: &QmdMemory, path_or_id: &str) -> Result<Option<MemoryDocument>> {
+    memory.ensure_loaded().await?;
+    let mut docs = memory.docs.write().await;
+    let removed = docs
+        .iter()
+        .position(|doc| doc.path == path_or_id || doc.id.as_deref() == Some(path_or_id))
+        .map(|index| docs.remove(index));
+    drop(docs);
+    memory.invalidate_cache().await;
+    Ok(removed)
+}
+
 /// Delete.
 ///
 /// BUG FIX: on a lazily-loaded `QmdMemory` (the production default —

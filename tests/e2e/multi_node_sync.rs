@@ -52,6 +52,11 @@ impl NodeProcess {
             .env("XAVIER_TOKEN", &self.token)
             .env("XAVIER_MCP_PORT", "0")
             .env("XAVIER_HOME", self.home_dir.path())
+            // Each node gets its own HOME so nodes never share conversation DBs.
+            .env("HOME", self.home_dir.path())
+            // Test peers are trusted: allow pulling records at the default
+            // `Internal` clearance (the production default ceiling is lower).
+            .env("XAVIER_SYNC_CLEARANCE_CEILING", "internal")
             .env("XAVIER_STATE_DIR", self.home_dir.path())
             .env("XAVIER_DATA_DIR", self.home_dir.path().join("data"))
             .env(
@@ -239,6 +244,11 @@ async fn test_multi_node_e2e_sync() {
     // Trigger sync push on A towards B
     let push_res = trigger_sync_push(&node_a, &node_b.url()).await;
     assert_eq!(push_res["status"], "ok");
+    assert!(
+        push_res["session"]["chunks_sent"].as_u64().unwrap_or(0) >= 1,
+        "sync push should send at least one chunk, got {}",
+        push_res["session"]
+    );
 
     // Give a brief moment for database / cache updates if any
     tokio::time::sleep(Duration::from_millis(500)).await;

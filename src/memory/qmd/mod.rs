@@ -527,6 +527,16 @@ impl QmdMemory {
             .await
     }
 
+    /// Index-only upsert (no store write); see [`writer::index_upsert`].
+    pub async fn index_upsert(&self, doc: MemoryDocument) -> Result<()> {
+        writer::index_upsert(self, doc).await
+    }
+
+    /// Index-only removal (no store write); see [`writer::index_remove`].
+    pub async fn index_remove(&self, path_or_id: &str) -> Result<Option<MemoryDocument>> {
+        writer::index_remove(self, path_or_id).await
+    }
+
     /// Delete.
     pub async fn delete(&self, path_or_id: &str) -> Result<Option<MemoryDocument>> {
         writer::delete(self, path_or_id).await

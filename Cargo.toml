@@ -206,6 +206,10 @@ name = "multi_node_sync"
 path = "tests/e2e/multi_node_sync.rs"
 
 [[test]]
+name = "memory_push_index"
+path = "tests/e2e/memory_push_index.rs"
+
+[[test]]
 name = "clearance_access_audit"
 path = "tests/e2e/clearance_access_audit.rs"
 
