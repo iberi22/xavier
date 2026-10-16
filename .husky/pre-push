@@ -63,6 +63,7 @@ done
 # One range per ref: remote_sha..local_sha. An all-zero remote sha means the ref
 # does not exist remotely yet (a brand-new branch), where the honest range is the
 # single local sha. A local sha equal to the remote sha is a no-op push.
+PUSH_REMOTE="${1:-origin}"
 SCAN_RANGES=()
 MSG_RANGES=()
 PUSH_LINES=0
@@ -72,23 +73,12 @@ while read -r _lr _ls _rr _rs; do
     if [ -z "${_rs:-}" ] || [ "$_rs" = "0000000000000000000000000000000000000000" ]; then
         # Brand-new remote branch. A bare "$_ls" as range means "every ancestor",
         # i.e. the whole history (hundreds of old fixture hits, so the push always
-        # fails). Only the commits the default branch doesn't already have are new:
-        # bound the range at the merge-base with origin/main (or origin/master).
-        _NEW_BASE=""
-        for _base in origin/main origin/master; do
-            if git rev-parse --verify -q "$_base" >/dev/null 2>&1; then
-                _NEW_BASE="$(git merge-base "$_base" "$_ls" 2>/dev/null || true)"
-                [ -n "$_NEW_BASE" ] && break
-            fi
-        done
-        if [ -n "$_NEW_BASE" ]; then
-            SCAN_RANGES+=("$_NEW_BASE..$_ls" "  (rama nueva) $_lr → $_rr, desde merge-base con $_base")
-            MSG_RANGES+=("$_NEW_BASE..$_ls")
-        else
-            # No default branch to compare against: fall back to the full history.
-            # (commit messages then use the bounded last-resort window below).
-            SCAN_RANGES+=("$_ls" "  (rama nueva, sin merge-base: historial completo)")
-        fi
+        # fails). The commits that are really new to the destination are the ones
+        # no ref of THAT remote already has: "$_ls --not --remotes=<remote>".
+        # $1 is the destination remote name; pushing to a bare URL (or a remote with
+        # no fetched refs) matches nothing, so the scan stays the full history.
+        SCAN_RANGES+=("$_ls --not --remotes=${PUSH_REMOTE}" "  (rama nueva) $_lr → $_rr, commits que ${PUSH_REMOTE} aún no tiene")
+        MSG_RANGES+=("$_ls --not --remotes=${PUSH_REMOTE}")
         continue
     fi
     # rev-parse both sides so a stale/invalid entry cannot poison the range
@@ -146,7 +136,8 @@ if [ -n "$GLEAKS" ] && [ -x "$GLEAKS" ]; then
     while [ "${#SCAN_RANGES[@]}" -gt 0 ]; do
         RANGE="${SCAN_RANGES[0]}"; LABEL="${SCAN_RANGES[1]:-}"; SCAN_RANGES=( "${SCAN_RANGES[@]:2}" )
         [ -n "$RANGE" ] || continue
-        N="$(git rev-list --count "$RANGE" 2>/dev/null || echo 0)"
+        # shellcheck disable=SC2086 # RANGE may be "<sha> --not --remotes=<r>"
+        N="$(git rev-list --count $RANGE 2>/dev/null || echo 0)"
         [ "${N:-0}" -gt 0 ] 2>/dev/null || continue
         TOTAL_NEW=$(( TOTAL_NEW + N ))
         note "🔎 $LABEL · $N commit(s) en $RANGE"
@@ -200,7 +191,7 @@ while [ "${#MSG_RANGES[@]}" -gt 0 ]; do
                 note "   Reescríbelo genérico: qué cambia el código, no qué se rompió antes."
                 ;;
         esac
-    done < <(git log --format='%s' "$MSG_RANGE" 2>/dev/null || true)
+    done < <(git log --format='%s' $MSG_RANGE 2>/dev/null || true)  # shellcheck disable=SC2086
 done
 
 # ── 3. Nothing generated or private may be tracked ────────────────────────────
