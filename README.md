@@ -1,5 +1,7 @@
 # Xavier — Fast Vector Memory & Communal Context Runtime for AI Agents
 
+> Some features are experimental or beta — see [Experimental and beta features](#-experimental-and-beta-features).
+
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 [![Version](https://img.shields.io/badge/version-0.2.17-brightgreen.svg)](https://github.com/iberi22/xavier)
 [![CI Build Status](https://github.com/iberi22/xavier/actions/workflows/ci.yml/badge.svg)](https://github.com/iberi22/xavier/actions/workflows/ci.yml)
@@ -173,6 +175,45 @@ Short summary:
 - `XAVIER_TOKEN=foo # comment` inline — the `# comment` becomes part of the literal token; put comments on their own lines.
 - `XAVIER_PANEL_UI_DIR` priority list only in `assets.rs` — now documented in `docs/reference/ENV_VARS.md`.
 - `/v1/auth/login`, `/v1/auth/register`, `/v1/auth/refresh`, `/v1/auth/logout` and `/v1/auth/totp/*` were dead endpoints (backed by a user store nothing ever wrote to) and are now deprecated (`308`/`410` pointing to `/auth/*`) — see [GH #2545](https://github.com/iberi22/xavier/issues/2545) and [`docs/api/README.md`](docs/api/README.md#2-authentication-protocol) for the real, working auth API and a tested install walkthrough in [`docs/manual/GETTING_STARTED.md`](docs/manual/GETTING_STARTED.md#4-instalación-desde-cero-docker--primer-usuario-admin).
+
+---
+
+## 🧪 Experimental and beta features
+
+These features are experimental or beta: APIs and on-disk formats may change between releases. Do not rely on them for production workloads or irreplaceable data, and keep your own backups.
+
+| Feature | Status | What that means today |
+|---|---|---|
+| Encryption at Rest | beta | Memory records are sealed at rest; some auxiliary stores are still being migrated, and it has not been exercised against long-lived production data (ledger: `feat-encryption-at-rest`). |
+| Xavier Mesh P2P Network & Data Commons | beta | P2P memory sync between nodes (ledger: `feat-mesh-network`). |
+| SWAL service network (internal telemetry) | beta | Opt-in service telemetry sharing between nodes (ledger: `feat-mesh-service-network`). |
+| Private mesh per key wallet | beta | Private mesh scoped to nodes of one key wallet (ledger: `feat-mesh-private-wallet`). |
+| Vault hardening (anti-exfiltration, MCP secret tools, leases dashboard) | beta | Secret lending, anti-exfiltration limits and MCP secret tools work; the leases dashboard is not wired to a route yet (ledger: `feat-vault-hardening`). |
+| CLI health/stats parity (`xavier health` / `stats`) | beta | CLI output tracks `GET /health` and MCP stats; exits non-zero when unhealthy (ledger: `feat-cli-health-stats-parity`). |
+| Code-graph dump path handling | beta | Dump honours its path argument and working directory (ledger: `feat-codegraph-dump-path`). |
+| Bounded `xavier doctor` | beta | Probes run under timeouts and the report always prints (ledger: `feat-doctor-bounded`). |
+| E2E observability contract | beta | MCP health agrees with `GET /health` in a hermetic gate (ledger: `feat-e2e-observability-contract`). |
+| Guardian truth (`env_status` / `log_scan`) | beta | Reports measured host/log state (ledger: `feat-guardian-truth`). |
+| Health truth | beta | Unmeasured coverage reports `unknown`, not healthy (ledger: `feat-health-truth`). |
+| Bounded `xavier improve` | beta | Per-stage deadlines with partial-progress persistence (ledger: `feat-improve-bounded`). |
+| MCP health honesty (`sys_health` / `health_check`) | beta | Reports measured values only; unmeasured stays unset (ledger: `feat-mcp-health-honesty`). |
+| Memory write integrity | beta | Writes reject corrupt content; retries are idempotent per path (ledger: `feat-memory-write-integrity`). |
+| Skill dispatch confidence floor | beta | Minimum dispatch confidence with ingest validation (ledger: `feat-skill-dispatch-confidence`). |
+| Per-repo memory instance (XAV-REPO) | beta | Per-repository memory instance with its own config and privacy level (ledger: `feat-repo-memory-instance`). |
+| Code-graph fingerprint (`ksm-sfp/1`) | in progress | Per-function structural fingerprints for a vulnerability atlas (ledger: `feat-code-graph-fingerprint`). |
+| OSS Scanner enrolment files | in progress | Build/scan configuration only, no runtime behavior (ledger: `chore-oss-scanner-enrollment`). |
+| Autonomous Delivery Pipeline | planned | Evidence-gated ship/show/ask delivery (ledger: `feat-autonomous-delivery`). |
+| Generative UI (OpenUI) | planned | Structured answers rendered as OpenUI markup (ledger: `feat-generative-ui`). |
+| Skill store / registry / projector / ephemeral / drift-audit / usage-telemetry | planned | Skill subsystem redesign, grouped (ledger: `feat-skill-*`: store-config, registry-unify, projector, ephemeral, drift-audit, usage-telemetry). |
+| `gpud` router (`/v1/gpud/*`) | design only | Defined in `src/server/gpud_sidecar.rs` but never mounted; paths are unreachable. |
+| `telecom_*` MCP tools | preview | Tool names are registered, but dispatch has no backend wired and returns `telecom backend unavailable` (`src/server/mcp/telecom_tools.rs`, `src/server/mcp/server.rs`). |
+| Maloca model router (`/v1/maloca/models/*`) | placeholder | Handlers return `501 Not Implemented` (`src/server/maloca/model_routes.rs`). |
+| Maloca alignment routes (`/v1/maloca/alignment*`) | preview | Returns a static checklist and score (`src/server/maloca/alignment_route.rs`). |
+| Mesh tokenomics / wallet | placeholder | Module header describes a placeholder XP system (`src/mesh/tokenomics/mod.rs`). |
+| Mesh governance / DAO | preview | Off-chain proposal store with fixed example entries; on-chain client is behind the optional `dao-evm` build feature (`src/mesh/governance/`, `Cargo.toml`). |
+| Mesh transports (iroh / libp2p) | preview | `mesh` (iroh) is an optional build feature; `libp2p` is an empty feature and the code notes the transport as a deprecated stub (`Cargo.toml`, `src/mesh/maturity.rs`). |
+| Mesh maturity in `/health` | preview | Reports 0/100 projections of checked flags and starts unmeasured (`src/mesh/maturity.rs`, `src/mesh/dashboard.rs`). |
+| Master key export/import over HTTP | not implemented | The endpoint returns `501`; key backup and restore go through the `xavier recovery` CLI (`src/cli/handlers/recovery.rs`). |
 
 ---
 
