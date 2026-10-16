@@ -1,12 +1,12 @@
 name: E2E Segmented
 
-# Runs the 127 integration-test targets that no other workflow executes, in
+# Runs the 137 integration-test targets that no other workflow executes, in
 # 13 independent jobs.
 #
 # Why (Belal, 2026-06-06): as a single job the first failing target hides every
 # target after it, and nobody learns whether the rest is green. One job per
 # segment, and inside each job the loop does not break on failure, so one run
-# reports the state of all 127 targets instead of just the first break.
+# reports the state of all 137 targets instead of just the first break.
 #
 # No job goes red on a failing target, on purpose: visibility first. A separate
 # gate job decides what blocks a release, so one broken segment never hides the
@@ -721,7 +721,7 @@ jobs:
           if-no-files-found: ignore
 
   e2e-13:
-    name: W13 storage (2)
+    name: W13 storage/tooling (4)
     if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
@@ -734,7 +734,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Run all 2 targets of wave 13
+      - name: Run all 4 targets of wave 13
         id: run-wave
         # No `-e` and no `break`: a red target must not hide the rest of its
         # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
@@ -746,6 +746,8 @@ jobs:
           set -u
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
+            'delivery_scripts'
+            'oss_scanner_config'
             'storage_isolation'
             'unified_storage_validation'
           )
@@ -756,7 +758,7 @@ jobs:
             if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
-          echo "==== wave 13 (storage): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "==== wave 13 (storage/tooling): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
           echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
