@@ -521,7 +521,8 @@ mod tests {
         for root in [&plain, &global] {
             match reg.open(root).await {
                 Err(RepoStoreError::NotOptedIn { .. }) => {}
-                other => panic!("expected NotOptedIn for {}, got {other:?}", root.display()),
+                Err(other) => panic!("expected NotOptedIn for {}, got {other:?}", root.display()),
+                Ok(_) => panic!("expected NotOptedIn for {}, got Ok", root.display()),
             }
         }
         assert!(!plain.join(".xavier").exists(), "no package dir created");
@@ -545,10 +546,11 @@ mod tests {
         for root in [&sibling, &outside] {
             match reg.open(root).await {
                 Err(RepoStoreError::OutsideAllowlist { .. }) => {}
-                other => panic!(
+                Err(other) => panic!(
                     "expected OutsideAllowlist for {}, got {other:?}",
                     root.display()
                 ),
+                Ok(_) => panic!("expected OutsideAllowlist for {}, got Ok", root.display()),
             }
             assert!(!root.join(".xavier/memory.sqlite3").exists());
         }
@@ -593,7 +595,8 @@ mod tests {
 
         match reg.open(&bad).await {
             Err(RepoStoreError::StoreCorrupt { .. }) => {}
-            other => panic!("expected StoreCorrupt, got {other:?}"),
+            Err(other) => panic!("expected StoreCorrupt, got {other:?}"),
+            Ok(_) => panic!("expected StoreCorrupt, got Ok"),
         }
         assert!(
             reg.open(&good).await.is_ok(),

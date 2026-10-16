@@ -488,6 +488,7 @@ pub fn init_config(root: &Path, force: bool) -> Result<PathBuf, RepoConfigError>
             sync_to_repo: Some(cfg.sync_codegraph),
         }),
         memory: None,
+        memory_store: None,
     };
     let body = render(&file);
     std::fs::write(&path, body).map_err(|source| RepoConfigError::Write {
