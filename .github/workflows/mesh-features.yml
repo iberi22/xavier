@@ -1,0 +1,75 @@
+name: Mesh Features
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mesh-targets:
+    name: Mesh Targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.0
+
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
+      - name: Configure Swap Space
+        run: |
+          if ! swapon --show | grep -q "/swapfile"; then
+            sudo swapoff /swapfile 2>/dev/null || :
+            sudo rm -f /swapfile
+            sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+          fi
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: mesh-targets
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Run mesh targets
+        shell: bash
+        run: |
+          set -u
+          source scripts/e2e-wave-target.sh
+          # Runs with --features mesh
+
+          targets=(
+            'mesh_iroh_test'
+            'mesh_node_lifecycle_test'
+            'mesh_peer_registry_test'
+          )
+
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            if ! run_wave_target "$t" 1200 mesh; then
+              echo "FAIL: $t"
+              failed+=("$t")
+            else
+              echo "PASS: $t"
+            fi
+          done
+
+          if [ ${#failed[@]} -ne 0 ]; then
+            echo "==== mesh-targets: ${#failed[@]}/${#targets[@]} failed ===="
+            echo "failed: ${failed[*]}"
+            exit 1
+          fi
