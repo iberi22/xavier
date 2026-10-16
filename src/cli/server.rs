@@ -1825,6 +1825,25 @@ async fn start_http_server_inner(
         }
     });
 
+    let pools_shutdown = shutdown.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            tokio::select! {
+                biased;
+                _ = pools_shutdown.cancelled() => break,
+                _ = interval.tick() => {},
+            }
+            if let Err(error) = tokio::task::spawn_blocking(|| {
+                ConnectionManager::global().evict_idle_at(std::time::Instant::now());
+            })
+            .await
+            {
+                tracing::warn!(%error, "Idle pool sweep failed");
+            }
+        }
+    });
+
     let secrets_engine_for_cleanup = secrets_engine.clone();
     let leases_shutdown = shutdown.clone();
     tokio::spawn(async move {
