@@ -301,17 +301,21 @@ mod tests {
 
     #[test]
     fn field_statuses_translates_options_to_measured_notmeasured() {
-        let mut c = MeshMaturityChecks::default();
-
-        c.tokenomics_engine_present = None;
-        c.onchain_gov_present = Some(true);
-        let statuses1 = field_statuses(&c);
+        let c1 = MeshMaturityChecks {
+            tokenomics_engine_present: None,
+            onchain_gov_present: Some(true),
+            ..Default::default()
+        };
+        let statuses1 = field_statuses(&c1);
         assert_eq!(statuses1.tokenomics, MaturityFieldStatus::NotMeasured);
         assert_eq!(statuses1.onchain_gov, MaturityFieldStatus::Measured);
 
-        c.tokenomics_engine_present = Some(false);
-        c.onchain_gov_present = None;
-        let statuses2 = field_statuses(&c);
+        let c2 = MeshMaturityChecks {
+            tokenomics_engine_present: Some(false),
+            onchain_gov_present: None,
+            ..Default::default()
+        };
+        let statuses2 = field_statuses(&c2);
         assert_eq!(statuses2.tokenomics, MaturityFieldStatus::Measured);
         assert_eq!(statuses2.onchain_gov, MaturityFieldStatus::NotMeasured);
     }
