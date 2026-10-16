@@ -67,3 +67,5 @@ fn oss_scanner_threat_model_exists() {
         "Scanner threat model must exist at .oss-scanner/threat_model.md"
     );
 }
+
+xavier::isolate_test_process!();
