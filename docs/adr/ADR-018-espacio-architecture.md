@@ -1,6 +1,7 @@
 # ADR-018: Espacio Architecture — Namespaces vs Mesh Isolation Model
 
-> **Status:** PROPOSED (2026-09-02) · **Deciders:** BELA · **Wave:** WAVE-8.05
+> **Status:** ACCEPTED (2026-10-16; proposed 2026-09-02) · **Deciders:** BELA · **Wave:** WAVE-8.05
+> Runtime is partly wired: the pending items are listed in the guide, `docs/ARCHITECTURE/espacio-guide.md`, and in ledger entry `feat-espacio-runtime` (planned).
 
 ## Context
 
@@ -56,7 +57,7 @@ We adopt the following model:
 - Bridging cross-app espacios requires explicit invite flows, slowing collaboration across teams.
 
 **Mitigations:**
-- Documentation in `docs/architecture/espacio-guide.md` (companion to this ADR).
+- Documentation in `docs/ARCHITECTURE/espacio-guide.md` (companion to this ADR).
 - Feature `feat-espacio-runtime-routes` (#1807) exposes the model via HTTP API.
 - Tests in `feat-espacio-permissions-tests` (#1814) and `feat-espacio-channel-lifecycle` (#1815).
 

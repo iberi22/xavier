@@ -65,17 +65,20 @@ Pro features enable only with an **active SWAL node**. No Stripe for Pro.
 
 - **Category:** Functional
 - **Priority:** High
-- **SRS Status:** `implemented`
+- **SRS Status:** `in_progress`
 - **Files:** `src/session/`, `src/mesh/namespace.rs`, `src/storage/`
 - **Features:** `feat-session-management`
 
 ### Description
 Two instances of the same app do not mix business data by default. Namespace `swal/{app_id}/{instance_id}`.
 
+Scope until the memory store routing lands (XAV-REPO step T10, #3205): this requirement claims **codegraph isolation only**. Each repo's code graph lives in its own `code_graph.db` under `<repo>/.xavier/`. Memory records are not yet isolated per repo: the daemon still opens one global store multiplexed by `workspace_id`, so no memory claim is made here.
+
 ### Acceptance criteria
 - [x] `instance_id` persisted per workspace/session
 - [x] Cross-instance sync only with opt-in link
-- [x] Xavier memory namespaced per instance
+- [x] Codegraph isolated per repo (`code_graph.db` per repo, evict and reopen keeps repos apart)
+- [ ] Xavier memory namespaced per instance (pending T10: writes routed per repo)
 - [x] Session export/import with SessionBundle
 
 ---

@@ -1,8 +1,11 @@
-//! Space management — isolated WorkspaceState per Space (T-01)
+//! Space management — one isolated store per Space (T-01)
 //!
-//! A Space is an isolated WorkspaceState with namespace `xavier://{space_id}/{appId}/{instanceId}`.
-//! Maps to Telegram-like group: 1..n Xavier nodes, admin-controlled permissions.
-//! Storage: `data/spaces/{space_id}/` via multi_db. Isolation guaranteed by WorkspaceRegistry.
+//! A Space is a user-meaningful workspace with namespace `xavier://{space_id}/{appId}/{instanceId}`
+//! (built by [`SpaceManager::namespace_for`]). Maps to Telegram-like group: 1..n Xavier nodes,
+//! admin-controlled permissions.
+//! Storage: `{root}/spaces/{space_id}/` (layout in [`store`]). Isolation is per file: each space
+//! owns its own `espacio.sqlite`, its own keystore and data key, and its own tokens. No table is
+//! shared between spaces, and spaces do not go through `multi_db` or `WorkspaceRegistry`.
 
 pub mod channel;
 pub mod context;
