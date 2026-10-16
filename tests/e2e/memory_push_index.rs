@@ -181,3 +181,47 @@ async fn pulled_records_are_indexed_through_peer_sync() {
 }
 
 xavier::isolate_test_process!();
+
+/// Indexing a received record must not write it back to the store: a store
+/// write bumps revision/updated_at, changes the chunk hash and makes the next
+/// sync echo the record back to the sender.
+#[tokio::test]
+async fn indexing_received_record_does_not_rewrite_store() {
+    let store: Arc<dyn MemoryStore> = Arc::new(InMemoryMemoryStore::new());
+    let qmd = new_index(&store).await;
+    let local = record("default", "episodic/tech/stable", "Stable revision record");
+    for action in [DiffAction::Add, DiffAction::Update] {
+        let diffs = [data_diff(action, &local)];
+        let mut conflicts = 0u64;
+        apply_changes_received(&*store, &diffs, &mut conflicts)
+            .await
+            .expect("apply changes");
+        let applied = store
+            .get("default", &local.path)
+            .await
+            .expect("get")
+            .expect("record applied");
+        index_applied_changes(&*store, &qmd, "default", &diffs).await;
+        let after = store
+            .get("default", &local.path)
+            .await
+            .expect("get")
+            .expect("record still present");
+        assert_eq!(
+            after.revision, applied.revision,
+            "indexing bumped the revision"
+        );
+        assert_eq!(
+            after.updated_at, applied.updated_at,
+            "indexing moved updated_at"
+        );
+    }
+    let hits = search_docs(&qmd, "Stable revision").await;
+    assert_eq!(
+        hits.iter()
+            .filter(|(p, _)| p == "episodic/tech/stable")
+            .count(),
+        1,
+        "record should be indexed exactly once, got {hits:?}"
+    );
+}

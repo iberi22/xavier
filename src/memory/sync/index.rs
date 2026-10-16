@@ -26,8 +26,8 @@ pub async fn embed_if_missing(doc: &mut MemoryDocument) {
 /// Only records of `workspace_id` are indexed; a record of another workspace
 /// stays in the store and never reaches this index. An Add/Update re-reads the
 /// row the store now holds, because last-writer-wins may have kept the local
-/// copy, and the index entry takes that row's id and content. The write
-/// replaces an existing entry for the same path, so an update does not leave
+/// copy, and the index entry takes that row's id and content. The index
+/// write never touches the store (no revision bump, no echo) and replaces an existing entry for the same path, so an update does not leave
 /// the old version beside the new one. A Delete removes the path from the
 /// index. Failures are logged; the caller's apply has already succeeded.
 pub async fn index_applied_changes(
@@ -58,7 +58,7 @@ pub async fn index_applied_changes(
                 };
                 let mut doc = stored.to_document();
                 embed_if_missing(&mut doc).await;
-                if let Err(error) = qmd.update(doc).await {
+                if let Err(error) = qmd.index_upsert(doc).await {
                     tracing::warn!(error = %error, memory_id = %stored.id, "sync: qmd index failed");
                 }
             }
@@ -69,13 +69,10 @@ pub async fn index_applied_changes(
                 let Some(path) = &diff.record_path else {
                     continue;
                 };
-                if let Err(error) = qmd.delete(path).await {
+                // Index-only: the store delete was already applied by the merge.
+                if let Err(error) = qmd.index_remove(path).await {
                     tracing::warn!(error = %error, path = %path, "sync: qmd delete failed");
                 }
-                // `delete` invalidates the search cache only when it removes a
-                // document. A lazily loaded index may not hold the path yet while a
-                // cached search still returns it, so invalidate unconditionally.
-                qmd.invalidate_cache().await;
             }
         }
     }
