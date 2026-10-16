@@ -8,6 +8,7 @@ use xavier::self_manage::{
 xavier::isolate_test_process!();
 
 #[test]
+#[serial_test::serial]
 fn guardian_rotated_logs_reset_stale_cursor_and_group_current_entries() {
     let sandbox = tempfile::tempdir().expect("guardian sandbox");
     let logs = sandbox.path().join("logs");
@@ -104,6 +105,7 @@ fn guardian_rotated_logs_reset_stale_cursor_and_group_current_entries() {
 
 #[cfg(unix)]
 #[test]
+#[serial_test::serial]
 fn guardian_missing_unit_and_unavailable_bus_are_reported_honestly() {
     use std::os::unix::fs::PermissionsExt;
     use xavier::self_manage::check_service_status;

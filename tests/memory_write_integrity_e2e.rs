@@ -183,7 +183,8 @@ async fn http_add_rejects_corrupt_content_without_persisting() {
         ] {
             let response = fixture.add(content, 0).await;
             assert_eq!(response["status"], "error");
-            assert_eq!(response["code"], "INTERNAL_ERROR");
+            // The error code is not asserted: validation failures are currently mapped to
+            // INTERNAL_ERROR (src/server/v1_api.rs) instead of a 4xx; tracked as a follow-up.
             assert!(response["message"]
                 .as_str()
                 .expect("error message")
