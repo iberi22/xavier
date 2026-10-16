@@ -141,3 +141,5 @@ ola: cambia dónde viven 22.000+ registros existentes y pidió explícitamente n
 tocar las memorias actuales.
 
 Nada de lo hecho hasta aquí migra ni modifica memorias existentes.
+
+Decisión de diseño para ese aislamiento: [ADR-039](../adr/ADR-039-per-repo-memory-stores.md) (requisito: REQ-086).
