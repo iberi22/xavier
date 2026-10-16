@@ -2,6 +2,40 @@ pub use crate::domain::cycle_breaks::w30_04::MeshMaturityReport;
 
 use crate::mesh::acl::MeshAcl;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaturityFieldStatus {
+    Measured,
+    NotMeasured,
+    Stub,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MaturityFieldStatuses {
+    pub http_transport: MaturityFieldStatus,
+    pub libp2p: MaturityFieldStatus,
+    pub acl: MaturityFieldStatus,
+    pub tokenomics: MaturityFieldStatus,
+    pub onchain_gov: MaturityFieldStatus,
+}
+
+pub fn field_statuses(c: &MeshMaturityChecks) -> MaturityFieldStatuses {
+    MaturityFieldStatuses {
+        http_transport: MaturityFieldStatus::Measured,
+        libp2p: MaturityFieldStatus::Stub,
+        acl: MaturityFieldStatus::Measured,
+        tokenomics: if c.tokenomics_engine_present.is_some() {
+            MaturityFieldStatus::Measured
+        } else {
+            MaturityFieldStatus::NotMeasured
+        },
+        onchain_gov: if c.onchain_gov_present.is_some() {
+            MaturityFieldStatus::Measured
+        } else {
+            MaturityFieldStatus::NotMeasured
+        },
+    }
+}
+
 /// Inputs a maturity report may be derived from. Every percentage emitted by
 /// [`MeshMaturityReport::from_checks`] is a 0/100 projection of one of these
 /// flags — nothing is invented.
@@ -249,5 +283,63 @@ mod tests {
         });
         let back: MeshMaturityReport = serde_json::from_value(raw).unwrap();
         assert!(!back.measured);
+    }
+
+    #[test]
+    fn field_statuses_returns_stub_for_libp2p_and_measured_for_http_acl() {
+        let c = MeshMaturityChecks {
+            http_routes_enabled: false,
+            acl_loaded: false,
+            tokenomics_engine_present: None,
+            onchain_gov_present: None,
+        };
+        let statuses = field_statuses(&c);
+        assert_eq!(statuses.libp2p, MaturityFieldStatus::Stub);
+        assert_eq!(statuses.http_transport, MaturityFieldStatus::Measured);
+        assert_eq!(statuses.acl, MaturityFieldStatus::Measured);
+    }
+
+    #[test]
+    fn field_statuses_translates_options_to_measured_notmeasured() {
+        let mut c = MeshMaturityChecks::default();
+
+        c.tokenomics_engine_present = None;
+        c.onchain_gov_present = Some(true);
+        let statuses1 = field_statuses(&c);
+        assert_eq!(statuses1.tokenomics, MaturityFieldStatus::NotMeasured);
+        assert_eq!(statuses1.onchain_gov, MaturityFieldStatus::Measured);
+
+        c.tokenomics_engine_present = Some(false);
+        c.onchain_gov_present = None;
+        let statuses2 = field_statuses(&c);
+        assert_eq!(statuses2.tokenomics, MaturityFieldStatus::Measured);
+        assert_eq!(statuses2.onchain_gov, MaturityFieldStatus::NotMeasured);
+    }
+
+    #[test]
+    fn measured_invariant_with_field_statuses() {
+        for bits in 0..4u32 {
+            let tokenomics_opt = if bits & 1 != 0 { Some(true) } else { None };
+            let onchain_gov_opt = if bits & 2 != 0 { Some(false) } else { None };
+
+            let c = MeshMaturityChecks {
+                http_routes_enabled: true,
+                acl_loaded: true,
+                tokenomics_engine_present: tokenomics_opt,
+                onchain_gov_present: onchain_gov_opt,
+            };
+
+            let r = MeshMaturityReport::from_checks(&c);
+            let s = field_statuses(&c);
+
+            let neither_not_measured = s.tokenomics != MaturityFieldStatus::NotMeasured
+                && s.onchain_gov != MaturityFieldStatus::NotMeasured;
+
+            assert_eq!(
+                r.measured, neither_not_measured,
+                "Invariant failed for bits {}: measured={}, neither_not_measured={}",
+                bits, r.measured, neither_not_measured
+            );
+        }
     }
 }
