@@ -2,7 +2,7 @@
 //!
 //! Tries SecretStore backends in order until one succeeds (get returns Ok).
 //! Set/delete try all and succeed if any succeeds. The default chain
-//! (`vault,openbao`) contains only durable backends: it never starts with
+//! (`vault`) contains only durable backends: it never starts with
 //! the deprecated, process-memory `LocalSecretStore`, which does not
 //! survive process exit and is for tests only.
 
@@ -12,7 +12,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-/// Fallback chain for secrets: LocalVault→OpenBao→Memory
+/// Fallback chain for secrets: explicitly supplied stores in order
 pub struct FallbackSecretStore {
     stores: Vec<Arc<dyn SecretStore>>,
 }
@@ -22,22 +22,31 @@ impl FallbackSecretStore {
         Self { stores }
     }
 
-    /// Build from env XAVIER_SECRET_FALLBACK (default: vault,openbao)
+    /// Build from env XAVIER_SECRET_FALLBACK (default: vault)
     pub fn from_env_with_stores(stores: Vec<Arc<dyn SecretStore>>) -> Self {
         Self::new(stores)
     }
 
+    /// Unknown backend names are ignored with a warning.
     pub fn from_chain_str(chain: &str) -> Vec<String> {
         chain
             .split(',')
             .map(|s| s.trim().to_lowercase())
-            .filter(|s| !s.is_empty())
+            .filter(|s| {
+                if s.is_empty() {
+                    false
+                } else if matches!(s.as_str(), "vault" | "local" | "memory") {
+                    true
+                } else {
+                    tracing::warn!("Ignoring unknown secret fallback backend");
+                    false
+                }
+            })
             .collect()
     }
 
     pub fn chain_from_env() -> Vec<String> {
-        let chain =
-            std::env::var("XAVIER_SECRET_FALLBACK").unwrap_or_else(|_| "vault,openbao".to_string());
+        let chain = std::env::var("XAVIER_SECRET_FALLBACK").unwrap_or_else(|_| "vault".to_string());
         Self::from_chain_str(&chain)
     }
 }
@@ -124,8 +133,16 @@ mod tests {
     #[test]
     fn test_chain_parse() {
         assert_eq!(
-            FallbackSecretStore::from_chain_str("vault,openbao,memory"),
-            vec!["vault", "openbao", "memory"]
+            FallbackSecretStore::from_chain_str(" VAULT, memory, "),
+            vec!["vault", "memory"]
+        );
+    }
+
+    #[test]
+    fn test_chain_ignores_unknown_backends() {
+        assert_eq!(
+            FallbackSecretStore::from_chain_str("unknown-backend,vault,retired-backend"),
+            vec!["vault"]
         );
     }
 
@@ -136,7 +153,7 @@ mod tests {
 
         let chain = FallbackSecretStore::chain_from_env();
 
-        assert_eq!(chain, vec!["vault", "openbao"]);
+        assert_eq!(chain, vec!["vault"]);
         assert!(!chain.iter().any(|s| s == "local"));
     }
 }

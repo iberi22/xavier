@@ -84,7 +84,6 @@ pub mod keygen;
 pub mod lending;
 pub mod local;
 pub mod local_vault;
-pub mod openbao;
 pub mod store;
 #[cfg(test)]
 mod tests;

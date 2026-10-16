@@ -60,7 +60,7 @@ Xavier actúa como **proxy de confianza** para API keys de terceros (LLM provide
 | ModelProviderClient → lease | 30% | Lee de env/vault directamente, NO usa KeyLendingEngine |
 | Auto-revoke on task complete | 10% | No hay hook `on_task_complete` que revoque leases |
 | Rate limit tracking → lease | 40% | RateLimitManager existe pero no integrado con leases |
-| OpenBao/SecretStore | 20% | Existe stub de OpenBao pero no implementado |
+| OpenBao/SecretStore | Removed | Backend removed (2026-10-15) |
 
 ### ❌ FALTANTE (20 pts)
 
@@ -80,7 +80,7 @@ Ver issues correspondientes:
 - #F3: Leak Detector — anti-exfiltración
 - #F4: Dashboard UI — Leases activos + histórico
 - #F5: MCP Secret Resolution — leases para MCP tools
-- #F6: OpenBao backend implementación real
+- #F6: OpenBao backend removed (2026-10-15)
 - #F7: z.ai / opencode provider (GLM + OpenCode CLI)
 
 ## Providers Soportados (Target)
