@@ -42,13 +42,16 @@ class PromoterTests(unittest.TestCase):
         self.assertIn('# Ledger promotion', result.stderr)
         if not apply:
             self.assertEqual(before, {p: p.read_bytes() for p in before})
-        return json.loads(result.stdout)['features']['beta']
+        feature = json.loads(result.stdout)['features']['beta']
+        for reason in feature['reasons']:
+            self.assertIn(reason, result.stderr)
+        return feature
 
     def blocked(self, reason):
         result = self.run_promoter(apply=True)
         self.assertFalse(result['eligible'])
         self.assertIn(reason, '; '.join(result['reasons']))
-        self.assertEqual(self.features, json.loads(self.path.read_text()))
+        self.assertEqual(json.dumps(self.features), self.path.read_text())
 
     def test_promotes_only_eligible_beta_and_is_idempotent(self):
         self.assertTrue(self.run_promoter(apply=True)['eligible'])
@@ -68,6 +71,158 @@ class PromoterTests(unittest.TestCase):
 
     def test_default_dry_run_writes_nothing(self):
         self.assertTrue(self.run_promoter()['eligible'])
+
+    def test_progress_90_blocks(self):
+        self.features['features']['beta']['progress_pct'] = 90
+        self.blocked('progress_pct 90 < 100')
+
+    def test_progress_missing_blocks(self):
+        del self.features['features']['beta']['progress_pct']
+        self.blocked('progress_pct None not numeric')
+
+    def test_invalid_progress_blocks(self):
+        for progress, reason in (
+                ('100', "progress_pct '100' not numeric"),
+                (None, 'progress_pct None not numeric'),
+                (True, 'progress_pct True not numeric'),
+                (float('nan'), 'progress_pct nan not finite'),
+                (float('inf'), 'progress_pct inf not finite')):
+            with self.subTest(progress=progress):
+                self.features['features']['beta']['progress_pct'] = progress
+                self.blocked(reason)
+
+    def test_malformed_steps_block(self):
+        for steps in ('PENDING', {'transport': 'pending'}, None, False, 100, ''):
+            with self.subTest(steps=steps):
+                self.features['features']['beta']['steps'] = steps
+                self.blocked('steps malformed')
+
+    def test_pending_step_blocks(self):
+        self.features['features']['beta']['steps'] = ['PENDING: build transport']
+        self.blocked('step pending: PENDING: build transport')
+
+    def test_dict_todo_step_blocks(self):
+        self.features['features']['beta']['steps'] = [dict(name='transport', status='todo')]
+        self.blocked('step pending: ')
+
+    def test_step_markers_and_dict_states_block(self):
+        steps = ['PENDIENTE', 'TODO', 'TBD', 'WIP', 'not built', 'unbuilt',
+                 'not implemented', 'no implementado', '[ ] transport',
+                 '(planned)', 'deferred', dict(state='pending'),
+                 dict(status='unknown'), dict(status='done', state='todo'),
+                 dict(name='transport'), dict(status=None), 'stub', 'not yet',
+                 '(no route wired yet)', 'unimplemented!()', 'stubbed', 'placeholder']
+        for step in steps:
+            with self.subTest(step=step):
+                self.features['features']['beta']['steps'] = [step]
+                self.blocked('step pending: ')
+
+    def test_adjacent_and_empty_checkbox_step_markers_block(self):
+        for step in ('[ ]Build', 'Step(planned)', '[]', '[  ]', '[\t]',
+                     'Build[]transport', 'Step(planned)Build'):
+            with self.subTest(step=step):
+                self.features['features']['beta']['steps'] = [step]
+                self.blocked('step pending: ')
+
+    def test_plural_markers_block(self):
+        for field, markers in (
+                ('steps', ('stubs', 'TODOs', 'pendientes')),
+                ('notes', ('stubs', 'TODOs', 'pendientes', 'downgrades'))):
+            for marker in markers:
+                with self.subTest(field=field, marker=marker):
+                    self.features['features']['beta'].update(steps=[], notes='keep me')
+                    self.features['features']['beta'][field] = (
+                        [marker] if field == 'steps' else marker)
+                    self.blocked('step pending:' if field == 'steps' else 'open honesty note:')
+
+    def test_step_reason_is_truncated(self):
+        step = 'PENDING ' + 'x' * 100
+        self.features['features']['beta']['steps'] = [step]
+        result = self.run_promoter()
+        self.assertEqual(['step pending: ' + step[:60]], result['reasons'])
+
+    def test_downgraded_notes_block(self):
+        self.features['features']['beta']['notes'] = 'Downgraded from stable'
+        self.blocked('open honesty note: Downgraded')
+
+    def test_honest_percentage_notes_block(self):
+        self.features['features']['beta']['notes'] = '(honest 50%)'
+        self.blocked('open honesty note: honest 50%')
+
+    def test_open_gap_note_markers_block(self):
+        for marker in ('revertido', 'REVERTED', 'still plaintext', 'plaintext', 'stub',
+                       'never been exercised', 'not yet', 'pending', 'pendiente',
+                       'TODO', '0 peers', 'zero code', 'dead code',
+                       'unimplemented!()', 'stubbed', 'placeholder', 'placeholders',
+                       'not implemented', 'no implementado', 'not built', 'unbuilt',
+                       'WIP', 'TBD', 'deferred'):
+            with self.subTest(marker=marker):
+                self.features['features']['beta']['notes'] = marker
+                self.blocked('open honesty note: ')
+
+    def test_honesty_notes_are_combined_and_deduplicated(self):
+        self.features['features']['beta']['notes'] = 'stub STUB pending Pending stub'
+        result = self.run_promoter()
+        self.assertFalse(result['eligible'])
+        self.assertEqual(['open honesty note: stub, pending'], result['reasons'])
+
+    def test_open_gaps_block(self):
+        self.features['features']['beta']['open_gaps'] = ['transport missing']
+        self.blocked('open_gaps: 1')
+
+    def test_malformed_open_gaps_block(self):
+        for gaps in ('transport missing', {'transport': 'missing'}, None, False, 0, '', {}):
+            with self.subTest(gaps=gaps):
+                self.features['features']['beta']['open_gaps'] = gaps
+                self.blocked('open_gaps malformed')
+
+    def test_honesty_review_never_bypasses_blockers(self):
+        feature = self.features['features']['beta']
+        feature.update(progress_pct=90, steps=['TODO'], notes='stub', open_gaps=['gap'],
+                       honesty_reviewed={'sha': 'c', 'by': 'reviewer'})
+        result = self.run_promoter()
+        self.assertFalse(result['eligible'])
+        for reason in ('progress_pct 90 < 100', 'step pending: TODO',
+                       'open honesty note: stub', 'open_gaps: 1'):
+            self.assertIn(reason, result['reasons'])
+
+    def test_complete_feature_stays_eligible(self):
+        self.features['features']['beta'].update(
+            progress_pct=100, steps=['Transport implemented', dict(status='DONE'),
+                                     dict(state='complete'), dict(status='implemented'),
+                                     dict(status='completed'), dict(state='COMPLETED')],
+            notes='Implementation verified with full integration evidence.', open_gaps=[])
+        self.assertTrue(self.run_promoter()['eligible'])
+
+    def test_marker_substrings_do_not_block(self):
+        self.features['features']['beta'].update(
+            steps=['Appending values with todoist and wiperson'],
+            notes='stubborn plaintextual pendingness methodology')
+        self.assertTrue(self.run_promoter()['eligible'])
+
+    def test_real_wave_29_notes_do_not_block(self):
+        ledger = json.loads((SCRIPTS.parent / '.gitcore' / 'features.json').read_text())
+        notes = ledger['features']['feat-e2e-observability-contract']['notes']
+        self.assertIn('No status hand-promotion: green', notes)
+        self.features['features']['beta']['notes'] = notes
+        self.assertTrue(self.run_promoter()['eligible'])
+
+    def test_real_incomplete_features_block_even_with_green_evidence(self):
+        ledger = json.loads((SCRIPTS.parent / '.gitcore' / 'features.json').read_text())
+        for fid in ('feat-encryption-at-rest', 'feat-mesh-network', 'feat-vault-hardening'):
+            with self.subTest(feature=fid):
+                feature = ledger['features'][fid]
+                self.assertEqual('beta', feature['status'])
+                self.features['features']['beta'] = feature
+                declared = feature['tests']
+                self.evidence['per_feature_test_results']['beta'] = dict(
+                    declared=declared, passed=declared, failed=[],
+                    integration_targets_by_test={test: ['integration'] for test in declared})
+                result = self.run_promoter()
+                self.assertFalse(result['eligible'])
+                self.assertIn(f"progress_pct {feature['progress_pct']} < 100", result['reasons'])
+                self.assertTrue(any(reason.startswith('open honesty note:')
+                                    for reason in result['reasons']))
 
     def test_failed_or_missing_test(self):
         for change in ({'passed': []}, {'failed': ['test_roundtrip']}, {'declared': []}):
