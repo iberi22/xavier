@@ -1136,6 +1136,8 @@
         "test_derive_wallet_id",
         "test_is_same_wallet",
         "test_isolation_cross_wallet",
+        "test_wallet_node_listing_requires_wallet_id",
+        "test_wallet_node_listing_is_wallet_scoped",
         "test_load_nonexistent_file",
         "test_wallet_ephemeral_challenge_signature_verification"
       ],
