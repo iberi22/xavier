@@ -267,7 +267,6 @@ Xavier implements a multi-tier privacy architecture in [`src/data_commons/privac
 |---|---|---|---|---|
 | **P4 (Local Only)** | `PrivacyLevel::LocalOnly` | Dataset strictly retained on-device; zero outbound packets | None (Raw local fidelity preserved) | Not required |
 | **P3 (Colab Anonymized)** | `PrivacyLevel::ColabAnonymized` | Ephemeral Google Colab / External GPU compute | Full scrub, entity pseudonymization, Laplace DP, $k$-anonymity | **Strictly Required** |
-| **P2 (Enterprise ZDR)** | `PrivacyLevel::EnterpriseZdr` | Dedicated bare-metal cloud with Zero Data Retention | PII scrubbing, cryptographic deletion attestations | Required |
 
 ```mermaid
 flowchart TD

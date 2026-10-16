@@ -3,6 +3,13 @@
 
 Reconstruct history from consecutive first-parent commits and their artifacts,
 so reruns cannot add votes and absent/expired artifacts break the green streak.
+
+The verify pipeline runs `planned` features in a non-gating candidate lane and
+marks those log lines `[candidate]`; parse_log strips the marker for test-name
+matching and records candidate outcomes ONLY in candidate_passed /
+candidate_failed (plus candidate attribution). Gating passed/failed/targets
+never contain candidate results, so candidate failures cannot pollute gating
+evidence for beta -> stable.
 """
 import importlib.util
 import io
@@ -23,31 +30,61 @@ def gh(endpoint, binary=False):
     return data if binary else json.loads(data)
 
 
+CANDIDATE_MARKER = re.compile(r'\s*\[(?:candidate|planned[-\s]?beta)\]\s*$|\s*\(candidate\)\s*$',
+                              re.IGNORECASE)
+
+
 def parse_log(log, document):
+    # Gating sets contain ONLY non-candidate lines. Candidate lines go ONLY
+    # to candidate_* sets, never merged into gating passed/failed/targets.
     passed, failed, targets = set(), set(), set()
+    candidate_passed, candidate_failed = set(), set()
     targets_by_test = {}
+    candidate_targets_by_test = {}
+    candidate = set()
     if '(mode: full,' in log and '✅ all declared tests passed' in log:
         for match in re.finditer(r'(?m)^\s*▶ ([^\n]+)\n(.*?)(?=^\s*▶ |\Z)', log, re.S):
-            test, block = match.groups()
+            raw, block = match.groups()
+            flagged = bool(CANDIDATE_MARKER.search(raw))
+            test = CANDIDATE_MARKER.sub('', raw).strip()
             successes = re.findall(r'✅ ([^\n]+) \(passed=([1-9][0-9]*)\)', block)
             if successes and '❌ FAILED:' not in block:
-                passed.add(test.strip())
                 test_targets = set()
                 for label, _ in successes:
                     target = re.search(r'--test ([\w-]+)(?=\s|$)', label)
                     if target:
                         test_targets.add(target[1])
-                targets_by_test[test.strip()] = sorted(test_targets)
-                targets.update(test_targets)
+                if flagged:
+                    candidate_passed.add(test)
+                    candidate_targets_by_test[test] = sorted(test_targets)
+                    candidate.add(test)
+                else:
+                    passed.add(test)
+                    targets_by_test[test] = sorted(test_targets)
+                    targets.update(test_targets)
             else:
-                failed.add(test.strip())
-    results = {fid: dict(declared=f.get('tests', []),
-                         passed=sorted(set(f.get('tests', [])) & (passed - failed)),
-                         integration_targets_by_test={test: targets_by_test.get(test, [])
-                                                      for test in f.get('tests', [])
-                                                      if test in passed - failed},
-                         failed=sorted(set(f.get('tests', [])) & failed))
-               for fid, f in document['features'].items()}
+                if flagged:
+                    candidate_failed.add(test)
+                    candidate.add(test)
+                else:
+                    failed.add(test)
+    results = {}
+    for fid, f in document['features'].items():
+        declared = f.get('tests', [])
+        declared = declared if isinstance(declared, list) else []
+        results[fid] = dict(declared=f.get('tests', []),
+                            passed=sorted(set(declared) & (passed - failed)),
+                            integration_targets_by_test={test: targets_by_test.get(test, [])
+                                                         for test in declared
+                                                         if test in passed - failed},
+                            failed=sorted(set(declared) & failed),
+                            candidate_passed=sorted(set(declared) & candidate_passed),
+                            candidate_failed=sorted(set(declared) & candidate_failed),
+                            candidate_integration_targets_by_test={
+                                test: candidate_targets_by_test.get(test, [])
+                                for test in declared
+                                if test in candidate_passed},
+                            candidate_tests=sorted(set(declared) & candidate))
     return results, sorted(targets)
 
 
