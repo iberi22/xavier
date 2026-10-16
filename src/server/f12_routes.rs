@@ -370,17 +370,17 @@ pub async fn register_wallet_node(
     }
 }
 
+/// Lists nodes for the required, non-blank `wallet_id` query parameter.
 pub async fn list_wallet_nodes(
     State(state): State<F12State>,
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
+    let Some(wallet) = params.get("wallet_id").filter(|id| !id.trim().is_empty()) else {
+        return (StatusCode::BAD_REQUEST, "wallet_id is required").into_response();
+    };
     let reg = state.private_mesh_mut();
     let mesh = reg.private_mesh.as_ref().expect("mesh");
-    if let Some(wallet) = params.get("wallet_id") {
-        Json(mesh.get_nodes_by_wallet(wallet)).into_response()
-    } else {
-        Json(mesh.all_nodes().to_vec()).into_response()
-    }
+    Json(mesh.get_nodes_by_wallet(wallet)).into_response()
 }
 
 pub async fn private_mesh_sync(
@@ -1274,6 +1274,74 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    fn wallet_node_listing_app() -> Router {
+        let state = test_state();
+        {
+            let mut reg = state.private_mesh_mut();
+            let mesh = reg.private_mesh.as_mut().expect("mesh");
+            for (node_id, wallet_id) in [("a1", "wallet-a"), ("a2", "wallet-a"), ("b1", "wallet-b")]
+            {
+                mesh.register_wallet_node(
+                    WalletNode {
+                        node_id: NodeId(node_id.to_string()),
+                        wallet_id: wallet_id.to_string(),
+                        name: node_id.to_string(),
+                        iroh_addr: format!("addr-{node_id}"),
+                        last_seen: chrono::Utc::now(),
+                    },
+                    wallet_id,
+                )
+                .unwrap();
+            }
+        }
+        router(state)
+    }
+
+    #[tokio::test]
+    async fn test_wallet_node_listing_requires_wallet_id() {
+        let app = wallet_node_listing_app();
+        for uri in [
+            "/v1/f12/private-mesh/nodes",
+            "/v1/f12/private-mesh/nodes?wallet_id=",
+            "/v1/f12/private-mesh/nodes?wallet_id=%20",
+        ] {
+            let resp = app
+                .clone()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_wallet_node_listing_is_wallet_scoped() {
+        let app = wallet_node_listing_app();
+        for (wallet, expected_ids) in [
+            ("wallet-a", vec!["a1", "a2"]),
+            ("wallet-b", vec!["b1"]),
+            ("unknown-wallet", vec![]),
+        ] {
+            let resp = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/v1/f12/private-mesh/nodes?wallet_id={wallet}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let body = resp.into_body().collect().await.unwrap().to_bytes();
+            let nodes: Vec<WalletNode> = serde_json::from_slice(&body).unwrap();
+            assert!(nodes.iter().all(|node| node.wallet_id == wallet));
+            let mut node_ids: Vec<_> = nodes.iter().map(|node| node.node_id.as_str()).collect();
+            node_ids.sort_unstable();
+            assert_eq!(node_ids, expected_ids, "{wallet}");
+        }
     }
 
     #[tokio::test]
