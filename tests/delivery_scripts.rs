@@ -75,3 +75,5 @@ fn delivery_dag_check_suite() {
 fn delivery_scope_check_suite() {
     run_delivery_suite("python3", "scripts/tests/test_delivery_scope_check.py");
 }
+
+xavier::isolate_test_process!();
