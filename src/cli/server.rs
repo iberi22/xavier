@@ -397,6 +397,7 @@ fn build_session_importers(
 }
 
 /// Values `start_http_server` builds with side effects and passes to `build_app`.
+#[derive(Clone)]
 pub struct AppDeps {
     pub workspace_ctx: xavier::workspace::WorkspaceContext,
     pub space_manager: Option<std::sync::Arc<xavier::espacio::SpaceManager>>,
