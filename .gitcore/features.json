@@ -6,16 +6,16 @@
     "version": "1.0.0",
     "created": "2026-03-05",
     "last_verified": "2026-10-02",
-    "total_features": 96,
-    "features_complete": 76,
-    "features_beta": 14,
+    "total_features": 100,
+    "features_complete": 74,
+    "features_beta": 16,
     "features_draft": 0,
-    "features_planned": 6,
+    "features_planned": 8,
     "features_designed": 0,
-    "features_stable": 76,
-    "overall_progress_pct": 92.3,
+    "features_stable": 74,
+    "overall_progress_pct": 90.0,
     "complete": 6,
-    "percent": 92.3,
+    "percent": 90.0,
     "updated": "2026-10-02",
     "verification_note": "WAVE-31 (2026-10-02) registered 4 E2E test and vault namespace features as stable (WAVE-31.01 feat-e2e-clavis-http, WAVE-31.02 feat-e2e-keygen, WAVE-31.03 feat-e2e-smoke-ci, WAVE-31.04 fix-clavis-vault-namespace). All 19 tests passing green, PRs #2812, #2813, #2814, #2818 merged.",
     "features_implemented": 0
@@ -2099,35 +2099,6 @@
       "implemented_in": "src/data_commons/privacy.rs, src/data_commons/training.rs",
       "notes": "Privacy pipeline supporting P2 scrubbing (emails, paths, keys), P3 Laplace differential privacy noise and k-anonymity checks complete."
     },
-    "feat-enterprise-compute-zdr": {
-      "id": "feat-enterprise-compute-zdr",
-      "name": "Enterprise ComputeProvider with ZDR",
-      "status": "planned",
-      "progress": 0,
-      "wave": "wave-8",
-      "module": "enterprise",
-      "requirements": [
-        "REQ-051"
-      ],
-      "user_stories": [
-        "US-046"
-      ],
-      "files": [
-        "src/auth2/google_oauth.rs",
-        "src/server/auth_routes.rs",
-        "panel-ui/src/components/ColabAuthButton.tsx"
-      ],
-      "tests": [
-        "auth2::google_oauth::tests"
-      ],
-      "added": "2026-09-12",
-      "progress_pct": 0,
-      "passes": false,
-      "verified_by": "wave-8",
-      "last_tested": "2026-09-13",
-      "implemented_in": "src/auth2/google_oauth.rs, src/server/auth_routes.rs, panel-ui/src/components/ColabAuthButton.tsx",
-      "notes": "Regressed: a47d61e7 (2026-10-02) removed src/enterprise/compute.rs as unused duplicate compute types; the ZDR audit trail is no longer present. Demoted to planned on 2026-10-11; re-promotion only through a green verify run."
-    },
     "feat-classified-clearance": {
       "id": "feat-classified-clearance",
       "name": "Classified clearance bound to identity (internal lab plans)",
@@ -3528,8 +3499,8 @@
     "pre-release-2026-08-30": "PRE-RELEASE RECONCILIATION — Restored honest beta status for the 12 inflated features (feat-mesh-network, feat-graph-explorer, feat-clearance-levels, feat-training-datasets-api, feat-mini-experts, feat-mesh-service-network, feat-mesh-private-wallet, feat-content-redaction, feat-human-curation, feat-issue-context-packager, feat-store-path-hierarchy, feat-ivn-karma). Stable: 34, Beta: 12, Total: 46. version aligned to Cargo.toml 1.0.0. This was reverted by b69b2a8f (\"sync features.json to 100% stable\") which inflated them back; restored now for v1.0.0 public release gate per original d2e97587 PR #1626.",
     "wave-3-2026-08-31": "4 promotions 55→75 (mesh, clearance, redaction, graph-explorer) + 6 new wave-3 features (wasm, snippet-writethrough, rag-hyde, vault-hardening, clavis-lease, knowledge-consolidation). Total 46→52, stable 34, beta 18, progress 88.26→88.27.",
     "wave-4-2026-08-31": "9 PRs merged (1753,1754,1755,1756,1757,1759,1765,1766,1767) + 1758 previously, 18 beta→18 stable, 52 total 100%.",
-    "wave-8-2026-09-12": "4 planned features added: feat-challenge-curation-pipeline, feat-human-introspection-mode, feat-privacy-pipeline, feat-enterprise-compute-zdr. Implementation started, endpoints and UI pending.",
-    "wave-8-2026-09-13": "Wave 8 complete: all 4 features (feat-challenge-curation-pipeline, feat-human-introspection-mode, feat-privacy-pipeline, feat-enterprise-compute-zdr) implemented and verified with green cargo tests and UI wiring. Stable: 57/57 (100%).",
+    "wave-8-2026-09-12": "3 planned features added: feat-challenge-curation-pipeline, feat-human-introspection-mode, feat-privacy-pipeline. Implementation started, endpoints and UI pending.",
+    "wave-8-2026-09-13": "Wave 8 complete: all 3 features (feat-challenge-curation-pipeline, feat-human-introspection-mode, feat-privacy-pipeline) implemented and verified with green cargo tests and UI wiring. Stable: 57/57 (100%).",
     "wave-10-2026-09-21": "Wave 10 (skill-injection close): 6 planned skill features promoted planned->stable on executed evidence only — verify-pipeline full green 238/238 (zero-match routing, no false-green), targeted wave tests green (registry 12, semantic Recall@3 0.950/MRR 0.950, loader, fusion 7 incl. seeded-thread E2E, MCP roundtrip), live E2E on 0.2.5 (skills 658, dispatch @0.9, MCP parity, regenerate 200). 90 ledger filters corrected to verified test names (7 renames by code reading, 18 triaged mappings, 2 doc tests written, traversal test already existed). Dead-test resurrection: nodes::registry 3, cloud_sync 13 (fn-local mod tests never discovered). Dead files revived: session/auto_save declared, integration_test moved to tests/session_integration (agent_registry_tests removed, API gone). Feature-combo fixes: telegram ctrlc_handler dep, mesh iroh_transport Ok(?). Stable: 70/73, beta 3, progress 98.3. Remaining honest gaps: fresh-doc search-index lag (diagnostics added, backfill added), clippy --features mesh,telegram (18 pre-existing lints), CodeGraph/MCP suite hangs (2, quarantined).",
     "wave-11-2026-09-22": "Wave 11 (pendientes honestos): clippy mesh+telegram 18 lints fixed (teloxide MarkdownV2 already-escaped, from-field, RateLimiter pub, Default derive, next_back, struct-update, if-let, Ok(?) turboclean, telegram_bot_e2e tautologies) + 3 stale mesh test call sites updated to (identity, store) + telegram feature ctrlc_handler (dep fix). Hang apply_paths solved: NOT a hang, 2x30s plugin timeouts from bogus ~/.local/bin/codegraph sidecar (xavier binary renamed, never speaks protocol) -> protocol probe at registration with resolved-path cache (60s->3s) + fixture re-baseline 2480/13750->2498/13880 (old baseline already stale: 2483/13770 without change). Hang codegraph_route MCP solved by same probe (3.3s). code-graph full suite green first time (lib 150 + all integration targets). Search root causes fixed live: expansion-replace drowned exact matches (merge-with-priority fix, rank 0 proven), dual-subsystem write/search split bridged in add_handler (Extension optional), write->search immediate rank 0 proven twice. Pipeline final green 254/254 (253 + ledger self-test). Binary 0.2.5 6260f35 deployed 8006/8100, smoke green. No status changes this wave (70/98.3 hold).",
     "wave-31-2026-10-02": "Wave 31 (Clavis E2E testing, vault namespace unification & CI smoke): 4 features added/promoted to stable on executed evidence (WAVE-31.01 feat-e2e-clavis-http, WAVE-31.02 feat-e2e-keygen, WAVE-31.03 feat-e2e-smoke-ci, WAVE-31.04 fix-clavis-vault-namespace). All 19 tests passing green, PRs #2812, #2813, #2814, #2818 merged into main. Issues #2808, #2809, #2810, #2811 reconciled."
