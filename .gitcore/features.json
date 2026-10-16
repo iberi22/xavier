@@ -2990,7 +2990,8 @@
         "dump_respects_cwd_when_no_argument",
         "dump_present_matches_actual_file",
         "hubs_exclude_generic_constructors",
-        "test_hubs_exclude_trivial_symbols_and_dedupe_by_name"
+        "test_hubs_exclude_trivial_symbols_and_dedupe_by_name",
+        "tests/codegraph_dump_path_e2e.rs::dump_uses_explicit_path_then_cli_cwd_then_daemon_default"
       ],
       "req_ids": [
         "REQ-073"
@@ -3066,7 +3067,9 @@
         "log_scan_keeps_cursor_after_single_rotation",
         "log_scan_reports_time_range_of_returned_entries",
         "log_scan_groups_repeated_identical_lines",
-        "check_service_status_distinguishes_missing_unit_from_inactive"
+        "check_service_status_distinguishes_missing_unit_from_inactive",
+        "tests/guardian_truth_test.rs::guardian_rotated_logs_reset_stale_cursor_and_group_current_entries",
+        "tests/guardian_truth_test.rs::guardian_missing_unit_and_unavailable_bus_are_reported_honestly"
       ],
       "req_ids": [
         "REQ-068"
@@ -3172,7 +3175,10 @@
         "same_path_different_content_still_appends",
         "same_content_different_metadata_still_appends",
         "returned_id_resolves_on_lookup",
-        "legacy_records_without_integrity_marker_still_load"
+        "legacy_records_without_integrity_marker_still_load",
+        "tests/memory_write_integrity_e2e.rs::http_add_rejects_corrupt_content_without_persisting",
+        "tests/memory_write_integrity_e2e.rs::http_add_retry_preserves_id_and_metadata_change_appends",
+        "tests/memory_write_integrity_e2e.rs::http_canonical_metadata_change_increments_persisted_revision"
       ],
       "req_ids": [
         "REQ-074"
@@ -3198,7 +3204,8 @@
         "dispatch_never_reports_full_confidence_for_weak_match",
         "registry_rejects_non_skill_entries",
         "registry_rejects_empty_description",
-        "test_confidence_calibration_range"
+        "test_confidence_calibration_range",
+        "tests/skill_route_clearance.rs::skill_dispatch_rejects_weak_matches_and_counts_invalid_entries"
       ],
       "req_ids": [
         "REQ-069"
