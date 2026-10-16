@@ -5,7 +5,9 @@
 //! daemon. This file is its own test binary, so the env vars it sets cannot
 //! leak into the rest of the suite.
 
-use std::sync::{Mutex, MutexGuard};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard};
+use tempfile::TempDir;
 
 use axum::{
     body::Body,
@@ -15,10 +17,95 @@ use axum::{
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tower::util::ServiceExt;
-use xavier::adapters::inbound::http::routes::create_router;
+use xavier::agents::provider::router::{ProviderKind, ProviderRouter};
+use xavier::agents::rate_limit::RateLimitManager;
+use xavier::app::proxy_use_case::ProxyUseCase;
+use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
+use xavier::cli::server::{build_app, AppDeps};
+use xavier::cli::state::{CliState, CodeGraphState};
+use xavier::codebase::conversations_db::ConversationsDb;
+use xavier::coordination::KeyLendingEngine;
+use xavier::coordination::SimpleAgentRegistry;
+use xavier::embedding::NoopEmbedder;
+use xavier::memory::agent_indexer::AgentIndexer;
+use xavier::memory::file_indexer::{FileIndexer, FileIndexerConfig};
+use xavier::memory::qmd_memory::QmdMemory;
+use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+use xavier::ports::inbound::AgentLifecyclePort;
+use xavier::secrets::audit::QmdAuditLogger;
+use xavier::tasks::store::{InMemoryTaskStore, TaskService};
+use xavier::workspace::{WorkspaceContext, WorkspaceState};
 
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
 xavier::isolate_test_process!();
+
+/// Minimal `CliState` fixture, matching `tests/clavis_auth_pipeline_e2e.rs`.
+async fn create_test_cli_state(temp_dir: &TempDir) -> CliState {
+    let docs = Arc::new(tokio::sync::RwLock::new(Vec::new()));
+    let qmd_memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-ws"));
+    let memory_port = Arc::new(QmdMemoryAdapter::new(Arc::clone(&qmd_memory)));
+
+    let db_path = temp_dir.path().join("test_store.db");
+    let store_config = VecSqliteStoreConfig {
+        path: db_path,
+        embedding_dimensions: 1536,
+    };
+    let store = Arc::new(VecSqliteMemoryStore::new(store_config).await.unwrap());
+
+    let cg_db = Arc::new(code_graph::db::CodeGraphDB::in_memory().unwrap());
+    let cg_state = Arc::new(tokio::sync::RwLock::new(CodeGraphState {
+        db: cg_db.clone(),
+        indexer: Arc::new(code_graph::indexer::Indexer::new(cg_db.clone())),
+        query: Arc::new(code_graph::query::QueryEngine::new(cg_db)),
+    }));
+
+    CliState {
+        memory: memory_port,
+        qmd_memory,
+        store,
+        workspace_id: "test-ws".to_string(),
+        workspace_dir: temp_dir.path().to_path_buf(),
+        state_dir: temp_dir.path().to_path_buf(),
+        auth_db: None,
+        code_graph: cg_state,
+        security: Arc::new(xavier::app::security_service::SecurityService::new()),
+        security_scan: Arc::new(xavier::app::security_service::SecurityService::new()),
+        _time_store: None,
+        agent_registry: SimpleAgentRegistry::new(None) as Arc<dyn AgentLifecyclePort>,
+        panel_store: Arc::new(
+            ConversationsDb::open_in_memory("test-project")
+                .await
+                .unwrap(),
+        ),
+        secrets_engine: Arc::new(KeyLendingEngine::new(Box::new(QmdAuditLogger::new()), None)),
+        event_bus: xavier::coordination::XavierEventBus::new(10),
+        tasks: Arc::new(TaskService::new(Arc::new(InMemoryTaskStore::new()))),
+        rate_manager: Arc::new(RateLimitManager::new()),
+        prompt_cache: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+        http_client: reqwest::Client::new(),
+        proxy_use_case: Arc::new(ProxyUseCase::new(
+            Arc::new(RateLimitManager::new()),
+            Arc::new(parking_lot::Mutex::new(HashMap::new())),
+        )),
+        usage_counters: Arc::new(xavier::observability::UsageCounters::new()),
+        session_manager: Arc::new(xavier::security::sessions::SessionManager::new(60)),
+        provider_router: Arc::new(tokio::sync::RwLock::new(ProviderRouter::new(
+            ProviderKind::Local,
+        ))),
+        embedder: Arc::new(NoopEmbedder),
+        agent_indexer: Arc::new(AgentIndexer::new(FileIndexer::new(
+            FileIndexerConfig::default(),
+            None,
+        ))),
+        auth_store: None,
+        openclaw_indexer: Arc::new(xavier::memory::openclaw_indexer::OpenClawAgentIndexer::new(
+            Arc::new(NoopEmbedder),
+        )),
+        multi_db: xavier::storage::multi_db::MultiDbManager::new(),
+        system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
+        maloca: xavier::maloca::MalocaStore::open(&temp_dir.path().join("xavier-maloca")),
+    }
+}
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -58,8 +145,14 @@ async fn send(
     method: Method,
     uri: &str,
     body: Option<Value>,
+    token: Option<&str>,
 ) -> (StatusCode, Value) {
     let builder = Request::builder().method(method).uri(uri);
+    let builder = if let Some(t) = token {
+        builder.header("X-Xavier-Token", t)
+    } else {
+        builder
+    };
     let request = match body {
         Some(body) => builder
             .header("content-type", "application/json")
@@ -85,14 +178,54 @@ fn listing_body() -> Value {
 
 #[tokio::test]
 async fn listing_and_receipt_survive_a_daemon_restart() {
-    let _env = BetaEnv::new();
+    let env = BetaEnv::new();
 
-    let before = create_router();
+    let expected_root_token = "market-v2-smoke-root-token-9999";
+    std::env::set_var("XAVIER_TOKEN", expected_root_token);
+
+    let state = create_test_cli_state(&env._dir).await;
+
+    let workspace_state = Arc::new(
+        WorkspaceState::new_minimal(
+            state.workspace_id.clone(),
+            state.workspace_dir.clone(),
+            Arc::clone(&state.qmd_memory),
+            Arc::clone(&state.store),
+        )
+        .await,
+    );
+    let workspace_ctx = WorkspaceContext {
+        workspace_id: state.workspace_id.clone(),
+        workspace: workspace_state,
+    };
+
+    let deps = AppDeps {
+        workspace_ctx,
+        space_manager: None,
+        maloca_router: Router::new(),
+        event_bus_for_ws: xavier::coordination::XavierEventBus::new(10),
+        no_ui: true,
+    };
+
+    let before = build_app(state.clone(), deps.clone());
+
+    // Check UNAUTHORIZED
+    let (status, _listing) = send(
+        &before,
+        Method::POST,
+        "/v2/marketplace/listings",
+        Some(listing_body()),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
     let (status, listing) = send(
         &before,
         Method::POST,
         "/v2/marketplace/listings",
         Some(listing_body()),
+        Some(expected_root_token),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -103,17 +236,19 @@ async fn listing_and_receipt_survive_a_daemon_restart() {
         Method::POST,
         "/v2/marketplace/receipts",
         Some(json!({"listing_id": listing_id, "buyer_id": "buyer-1"})),
+        Some(expected_root_token),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
     drop(before);
 
-    let after = create_router();
+    let after = build_app(state.clone(), deps.clone());
     let (status, fetched) = send(
         &after,
         Method::GET,
         &format!("/v2/marketplace/listings/{listing_id}"),
         None,
+        Some(expected_root_token),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -124,8 +259,11 @@ async fn listing_and_receipt_survive_a_daemon_restart() {
         Method::GET,
         "/v2/marketplace/receipts?buyer_id=buyer-1",
         None,
+        Some(expected_root_token),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(receipts, json!([receipt]));
+
+    std::env::remove_var("XAVIER_TOKEN");
 }

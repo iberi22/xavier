@@ -80,8 +80,16 @@ fn db_path_from_env() -> PathBuf {
     if let Some(path) = std::env::var_os(DB_PATH_ENV) {
         return PathBuf::from(path);
     }
-    let dir = std::env::var_os("XAVIER_DATA_DIR").unwrap_or_else(|| ".".into());
-    Path::new(&dir).join(DB_FILE_NAME)
+
+    let dir = if let Some(d) = std::env::var_os("XAVIER_DATA_DIR") {
+        PathBuf::from(d)
+    } else {
+        dirs::home_dir()
+            .map(|h| h.join(".xavier/data"))
+            .unwrap_or_else(|| ".".into())
+    };
+
+    dir.join(DB_FILE_NAME)
 }
 
 /// The `/v2/marketplace/*` routes over a shared store.
@@ -151,7 +159,11 @@ async fn list_receipts_handler(
     Extension(store): StoreExt,
     Query(query): Query<BuyerQuery>,
 ) -> Response {
-    let Some(buyer_id) = query.buyer_id.filter(|id| !id.trim().is_empty()) else {
+    let Some(buyer_id) = query
+        .buyer_id
+        .filter(|id| !id.trim().is_empty())
+        .map(|id| id.trim().to_string())
+    else {
         return error_status(
             StatusCode::BAD_REQUEST,
             "buyer_id query parameter is required",
