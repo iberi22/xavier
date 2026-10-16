@@ -328,4 +328,152 @@ mod tests {
         assert_eq!(result["access_key"], "[REDACTED]");
         assert_eq!(result["username"], "john");
     }
+
+    #[test]
+    fn test_first_match_wins_ordering() {
+        let mut sanitizer = DataSanitizer::new();
+        // Drop phone first
+        sanitizer.add_rule("phone", SanitizationAction::Drop);
+        // Add default rules which includes Mask(4) for phone
+        sanitizer.add_default_rules();
+
+        let payload = json!({ "phone": "1234567890", "email": "test@example.com" });
+        let result = sanitizer.sanitize(&payload).unwrap();
+
+        let obj = result.as_object().unwrap();
+        // The first match (Drop) should win over Mask(4)
+        assert!(!obj.contains_key("phone"));
+        assert_eq!(obj["email"], "tes***");
+    }
+
+    #[test]
+    fn test_mask_on_non_string() {
+        let mut sanitizer = DataSanitizer::new();
+        sanitizer.add_rule("phone", SanitizationAction::Mask { prefix_visible: 4 });
+
+        let payload = json!({ "phone": 1234567890 });
+        let result = sanitizer.sanitize(&payload).unwrap();
+        assert_eq!(result["phone"], "[MASKED:phone]");
+    }
+
+    #[test]
+    fn test_mask_on_object_under_matched_key() {
+        let mut sanitizer = DataSanitizer::new();
+        sanitizer.add_rule("secret_obj", SanitizationAction::Mask { prefix_visible: 3 });
+
+        let payload = json!({ "secret_obj": { "key": "value" } });
+        let result = sanitizer.sanitize(&payload).unwrap();
+        assert_eq!(result["secret_obj"], "[MASKED:secret_obj]");
+    }
+
+    #[test]
+    fn test_short_value_unmasked() {
+        // Pin the behaviour where values shorter than or equal to prefix_visible are not masked.
+        // E.g., short value leaks prefix length best practice
+        let mut sanitizer = DataSanitizer::new();
+        sanitizer.add_rule("shorty", SanitizationAction::Mask { prefix_visible: 5 });
+
+        let payload = json!({ "shorty": "abc" });
+        let result = sanitizer.sanitize(&payload).unwrap();
+        assert_eq!(result["shorty"], "abc");
+    }
+
+    #[test]
+    fn test_hash_of_non_strings() {
+        let mut sanitizer = DataSanitizer::new();
+        sanitizer.add_rule("val", SanitizationAction::Hash);
+
+        let num_payload = json!({ "val": 42 });
+        let obj_payload = json!({ "val": { "a": 1 } });
+
+        let num_result = sanitizer.sanitize(&num_payload).unwrap();
+        let obj_result = sanitizer.sanitize(&obj_payload).unwrap();
+
+        let num_hash = num_result["val"].as_str().unwrap();
+        let obj_hash = obj_result["val"].as_str().unwrap();
+
+        assert_eq!(num_hash.len(), 64);
+        assert!(num_hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+        assert_eq!(obj_hash.len(), 64);
+        assert!(obj_hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+        // Same input should give same output
+        let num_result2 = sanitizer.sanitize(&num_payload).unwrap();
+        assert_eq!(num_hash, num_result2["val"].as_str().unwrap());
+    }
+
+    #[test]
+    fn test_arrays_of_objects() {
+        let mut sanitizer = DataSanitizer::new();
+        sanitizer.add_rule("secret", SanitizationAction::Drop);
+
+        let payload = json!([
+            { "id": 1, "secret": "a" },
+            { "id": 2, "secret": "b" },
+            { "id": 3, "public": "c" }
+        ]);
+
+        let result = sanitizer.sanitize(&payload).unwrap();
+        let arr = result.as_array().unwrap();
+
+        assert_eq!(arr.len(), 3);
+        assert!(!arr[0].as_object().unwrap().contains_key("secret"));
+        assert!(!arr[1].as_object().unwrap().contains_key("secret"));
+        assert_eq!(arr[0]["id"], 1);
+        assert_eq!(arr[2]["public"], "c");
+    }
+
+    #[test]
+    fn test_invalid_regex_skipped() {
+        let mut sanitizer = DataSanitizer::new();
+        sanitizer.add_rule("[invalid", SanitizationAction::Drop);
+        sanitizer.add_rule(
+            "valid",
+            SanitizationAction::Redact {
+                replacement: "x".to_string(),
+            },
+        );
+
+        let payload = json!({ "valid": "123", "[invalid": "456" });
+        let result = sanitizer.sanitize(&payload).unwrap();
+
+        assert_eq!(result["valid"], "x");
+        // Invalid regex rule was skipped, so the field passes through
+        assert_eq!(result["[invalid"], "456");
+    }
+
+    #[test]
+    fn test_unanchored_pattern_overmatch() {
+        // Pin the behaviour where unanchored email pattern matches email_verified
+        let mut sanitizer = DataSanitizer::new();
+        sanitizer.add_default_rules(); // adds 'email' -> Mask(3)
+
+        let payload = json!({ "email_verified": true });
+        let result = sanitizer.sanitize(&payload).unwrap();
+
+        // 'email_verified' matches the unanchored 'email' regex, so it applies Mask(3)
+        // Since it's a boolean (non-string), it becomes [MASKED:email_verified]
+        assert_eq!(result["email_verified"], "[MASKED:email_verified]");
+    }
+
+    #[test]
+    fn test_default_rule_set() {
+        let mut sanitizer = DataSanitizer::new();
+        sanitizer.add_default_rules();
+
+        let rules = sanitizer.rules();
+        assert_eq!(rules.len(), 5);
+        assert_eq!(rules[0].field_pattern, "email");
+    }
+
+    #[test]
+    fn test_top_level_string() {
+        let mut sanitizer = DataSanitizer::new();
+        sanitizer.add_default_rules();
+
+        let payload = json!("just a string");
+        let result = sanitizer.sanitize(&payload).unwrap();
+        assert_eq!(result, "just a string");
+    }
 }
