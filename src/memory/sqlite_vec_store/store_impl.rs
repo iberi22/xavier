@@ -131,7 +131,10 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         self.conn_provider
             .with_conn(&project_id, move |conn| {
-                let tx = conn.unchecked_transaction()?;
+                let tx = rusqlite::Transaction::new_unchecked(
+                    conn,
+                    rusqlite::TransactionBehavior::Immediate,
+                )?;
                 store.put_store(&tx, &record_c)?;
                 store.put_index(&tx, &record_c)?;
                 store.put_link(&tx, &record_c)?;
@@ -140,6 +143,7 @@ impl MemoryStore for VecSqliteMemoryStore {
             })
             .await?;
 
+        // append_timeline_event deliberately runs after the commit, outside the transaction.
         let store_clone = self.clone();
         self.conn_provider
             .with_conn(&self.project_id, move |conn| {
