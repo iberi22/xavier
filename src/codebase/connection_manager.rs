@@ -22,6 +22,16 @@ pub static INSTANCE: std::sync::OnceLock<ConnectionManager> = std::sync::OnceLoc
 /// [`ConnectionManager::snapshot`] instead of being a hardcoded literal at
 /// every call site.
 pub const MAX_POOLS: usize = 16;
+
+fn parse_budget(raw: Option<&str>) -> Option<usize> {
+    raw.and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n >= 1)
+}
+
+pub fn max_pools() -> usize {
+    parse_budget(std::env::var("XAVIER_STORE_BUDGET").ok().as_deref()).unwrap_or(MAX_POOLS)
+}
+
 const WAL_INIT_ATTEMPTS: usize = 10;
 /// `max_size` given to every r2d2 pool. Unchanged from today's value; named so
 /// the snapshot reports the real number instead of a duplicate literal.
@@ -660,7 +670,7 @@ impl ConnectionManager {
                 .build(manager)
                 .context("failed to build r2d2 SQLite pool")?;
 
-            self.evict_if_needed();
+            self.evict_if_needed(max_pools());
 
             self.pools.write().insert(
                 project_id.to_string(),
@@ -890,7 +900,7 @@ impl ConnectionManager {
 
         let counters = SnapshotCounters {
             open_pools: pools.len(),
-            max_pools: MAX_POOLS,
+            max_pools: max_pools(),
             total_connections: pools.iter().map(|p| p.connections).sum(),
             total_idle_connections: pools.iter().map(|p| p.idle_connections).sum(),
             known_paths: known.len(),
@@ -998,12 +1008,12 @@ impl ConnectionManager {
 
     /// Make room for one new pool, choosing only evictable LRU victims.
     /// Pinned infrastructure may exceed the cap when no victim exists.
-    fn evict_if_needed(&self) {
+    fn evict_if_needed(&self, cap: usize) {
         self.evict_idle_at(Instant::now());
         let victims = {
             let mut pools = self.pools.write();
             let mut victims = Vec::new();
-            while pools.len() >= MAX_POOLS {
+            while pools.len() >= cap {
                 let oldest = pools
                     .iter()
                     .filter(|(_, entry)| entry.class.is_evictable())
@@ -1252,15 +1262,15 @@ mod tests {
             // and flaky under parallel tests, so they are observed, not asserted).
             let snapshot = cm.snapshot();
             assert!(
-                snapshot.pools.len() <= MAX_POOLS,
+                snapshot.pools.len() <= max_pools(),
                 "live pools must stay bounded during churn"
             );
             assert!(
-                snapshot.counters.open_pools <= MAX_POOLS,
+                snapshot.counters.open_pools <= max_pools(),
                 "open_pools must stay bounded during churn"
             );
             assert!(
-                snapshot.counters.total_connections <= MAX_POOLS as u32 * REPO_POOL_MAX_SIZE,
+                snapshot.counters.total_connections <= max_pools() as u32 * REPO_POOL_MAX_SIZE,
                 "managed connections must stay bounded during churn"
             );
         }
@@ -1320,7 +1330,7 @@ mod tests {
         }
 
         assert_eq!(snap.counters.open_pools, 2);
-        assert_eq!(snap.counters.max_pools, MAX_POOLS);
+        assert_eq!(snap.counters.max_pools, max_pools());
         assert_eq!(snap.counters.known_paths, 2);
         assert_eq!(snap.counters.opened_total, 2);
         assert_eq!(snap.counters.evicted_total, 0);
@@ -2176,5 +2186,34 @@ mod tests {
         );
 
         cm.shutdown();
+    }
+
+    #[test]
+    fn budget_parses_positive_integers_only() {
+        assert_eq!(super::parse_budget(Some(" 42 ")), Some(42));
+        assert_eq!(super::parse_budget(Some("0")), None);
+        assert_eq!(super::parse_budget(Some("-1")), None);
+        assert_eq!(super::parse_budget(Some("foo")), None);
+        assert_eq!(super::parse_budget(None), None);
+    }
+
+    #[test]
+    fn unset_budget_keeps_defaults_64_and_16() {
+        assert_eq!(super::parse_budget(None), None);
+    }
+
+    #[tokio::test]
+    async fn pool_cap_follows_budget_helper() {
+        let cm = ConnectionManager::new();
+        let dir = tempfile::tempdir().unwrap();
+        cm.connect_with_path("pool1", dir.path().join("pool1.db"))
+            .unwrap();
+        cm.connect_with_path("pool2", dir.path().join("pool2.db"))
+            .unwrap();
+        cm.connect_with_path("pool3", dir.path().join("pool3.db"))
+            .unwrap();
+        // Force eviction with a small cap
+        cm.evict_if_needed(2);
+        assert_eq!(cm.snapshot().pools.len(), 2);
     }
 }

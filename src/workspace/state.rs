@@ -1333,12 +1333,21 @@ struct CachedSpaceWorkspace {
 /// Default bound of the space workspace cache (LRU).
 const SPACE_CACHE_DEFAULT_MAX: usize = 64;
 
+fn parse_budget(raw: Option<&str>) -> Option<usize> {
+    raw.and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n >= 1)
+}
+
 /// Max cached space workspaces (`XAVIER_SPACE_WORKSPACE_CACHE_MAX`, min 1).
 fn space_cache_max() -> usize {
-    std::env::var("XAVIER_SPACE_WORKSPACE_CACHE_MAX")
-        .ok()
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .filter(|n| *n >= 1)
+    parse_budget(std::env::var("XAVIER_STORE_BUDGET").ok().as_deref())
+        .or_else(|| {
+            parse_budget(
+                std::env::var("XAVIER_SPACE_WORKSPACE_CACHE_MAX")
+                    .ok()
+                    .as_deref(),
+            )
+        })
         .unwrap_or(SPACE_CACHE_DEFAULT_MAX)
 }
 
@@ -1854,5 +1863,19 @@ mod space_cache_tests {
         assert_eq!(cfg.storage_limit_bytes, Some(4096));
         assert_eq!(cfg.request_limit, Some(7));
         assert_eq!(cfg.protocol.storage.backend, MemoryBackend::Sqlite);
+    }
+
+    #[test]
+    fn budget_parses_positive_integers_only() {
+        assert_eq!(super::parse_budget(Some(" 42 ")), Some(42));
+        assert_eq!(super::parse_budget(Some("0")), None);
+        assert_eq!(super::parse_budget(Some("-1")), None);
+        assert_eq!(super::parse_budget(Some("foo")), None);
+        assert_eq!(super::parse_budget(None), None);
+    }
+
+    #[test]
+    fn unset_budget_keeps_defaults_64_and_16() {
+        assert_eq!(super::parse_budget(None), None);
     }
 }
