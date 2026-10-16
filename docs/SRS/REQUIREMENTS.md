@@ -1514,6 +1514,36 @@ executed tests. Design: `docs/design/trunk-based/01-DESIGN.md`, `02-AUTONOMOUS-P
 
 ---
 
+## REQ-086: Physical per-repo memory isolation, opt-in
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Files:** `src/memory/repo_store_registry.rs`, `src/memory/sqlite_vec_store/at_rest.rs`, `src/cli/handlers/memory.rs`, `src/memory/federated_search.rs`, `docs/adr/ADR-039-per-repo-memory-stores.md`
+- **Features:** `feat-repo-memory-isolation`
+- **Design:** `docs/design/xav-repo-multidb-design.md` §2 (tasks T7/T8/T10/T11)
+
+### Description
+
+Each product repo with explicit opt-in SHALL own a physical SQLite memory store (`<product>/.xavier/memory.sqlite3`) opened on demand through the extended `ConnectionManager`. The global store stays pinned and is never migrated. See ADR-039.
+
+### Requirements
+
+- REQ-086.1: System SHALL open a repo store only with opt-in (`.xavier/config.toml` `memory_store = "repo"`) AND a root under `XAVIER_REPO_STORE_ROOTS`; without both it SHALL reject and create no file, sharing one pool per canonicalized path with single-flight concurrent opens (T7).
+- REQ-086.2: Repo store rows SHALL encrypt with a per-repo record key `HKDF(master, "xavier-repo-record-key-v1:<project_id>")`; the global store SHALL keep the node key, and repo rows SHALL NOT decrypt with the node key (T8).
+- REQ-086.3: A write naming a valid repo SHALL land only in that repo store with no `QmdMemory` replica and leave the global store file byte-identical; MCP SHALL read/write existing opted-in stores but SHALL never create, unpack, or adopt them (T10).
+- REQ-086.4: Federated search SHALL merge by rank (RRF, constant `k = 60`) over one global raw-similarity vector list (model-mismatch legs skipped and flagged) plus per-store lexical/KG legs, with per-store timeout partial results, `(store, memory_id)` dedup, and requester clearance post-filtering; the `legacy` leg SHALL be read-only (T11).
+- REQ-086.5: Without `repos` in the request the system SHALL use the unchanged `QmdMemory` path; the global store SHALL stay `Pinned` and the default write target for repo-less writes (T7/T11).
+
+### Acceptance criteria
+
+- [ ] `root_without_opt_in_is_rejected_and_creates_nothing` and `root_outside_allowlist_is_rejected` green; concurrent opens of one repo yield one pool
+- [ ] `repo_store_rows_unreadable_with_node_key` green; `global_store_still_uses_node_key` green; no existing row modified
+- [ ] `add_with_repo_leaves_global_store_file_byte_identical` (sha256 unchanged) and `mcp_cannot_create_repo_store` green
+- [ ] `clearance_ceiling_applies_to_federated_results`, `model_mismatch_skips_vector_leg_and_flags_store`, `slow_store_times_out_and_result_is_partial_with_status`, `legacy_leg_is_read_only` green
+
+---
+
 *WAVE-10 (2026-09-21): REQ-060..065 added (skill-injection wave: scan-paths, semantic-rank, loader-fate, fusion-gates, MCP-tools, ledger-docs). Implemented live: registry scans canonical store, cosine rank w/ keyword tiebreak, fusion gate 0.5 + ack-gate, MCP dispatch/list tools. Measured: Recall@3 0.950 / MRR 0.950 (20-query offline eval), live E2E post 0.2.5 restart. Full `verify-pipeline` green deferred: pre-existing zero-match filters outside the wave need ledger-wide cleanup (see rescan report).*
 
 *Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence. REQ-047 added 2026-09-05 for RTK Kernel CLI Proxy. WAVE-8 2026-09-12: REQ-048..052 added (HumanChallenge curation pipeline, introspection mode, privacy pipeline, enterprise ZDR, informed consent). Module: humanchallenge + data_commons + enterprise + panel-ui. WAVE-9 (2026-09-18): REQ-053..059 added (ripwire+graphify extraction O1-O7: honest-confidence, language-registry, blast-testgate, incremental-ids, budget-query, pagerank-router, contracts-arch; US-101..US-114; specs docs/features/specs/FEATURE-feat-cg-*.md; doc docs/EXTRACTION-RIPWIRE-GRAPHIFY.md; ADR-032/033).*
