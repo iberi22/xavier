@@ -236,12 +236,19 @@
       "verified_by": "automated",
       "github_issue": null,
       "last_tested": "2026-10-05",
-      "notes": "Downgraded from stable on 2026-10-05. Records are sealed (XDK2 default-space key, XRK1 node-record key) and space memory is encrypted, but: auxiliary stores (conversations, beliefs, notifications, working-memory snapshot, bus_events) are still plaintext pending the reviewed integration of the WIP branches; and the memory->symbol link index is dead code because every sealed row skips link derivation (see xavier/bugs/2026-10-05-symbol-links-dead-code-sealed-guard). Encryption has never been exercised against production data.",
+      "notes": "Downgraded from stable on 2026-10-05. Records are sealed (XDK2 default-space key, XRK1 node-record key) and space memory is encrypted, but: auxiliary stores (conversations, beliefs, notifications, working-memory snapshot, bus_events) are still plaintext pending the reviewed integration of the WIP branches; and the memory->symbol link index now derives links only for explicitly public rows, failing closed for all other rows. Encryption has never been exercised against production data.",
       "implemented_in": "src/crypto/, src/security/, src/memory/sqlite_vec_store/at_rest.rs, src/espacio/",
       "tests": [
-        "test_encrypt_decrypt",
-        "test_key_derivation_consistency",
-        "tests/espacio_memory_encryption.rs::symbols_path_never_writes_sealed_words"
+        "test_aes_encrypt_decrypt",
+        "test_kek_derive_and_verify",
+        "at_rest_roundtrip",
+        "at_rest_adversary_no_plaintext_in_file",
+        "at_rest_wrong_key_fails_loudly",
+        "at_rest_legacy_row_passthrough",
+        "at_rest_key_resolution_order",
+        "at_rest_migrate_connection_counts",
+        "tests/espacio_memory_encryption.rs::symbols_path_never_writes_sealed_words",
+        "tests/encrypt_private_e2e.rs::roundtrip_500_mixed_rows_and_canary_absent"
       ],
       "req_ids": [
         "REQ-006"
@@ -339,7 +346,8 @@
       "implemented_in": "src/mesh/libp2p_transport.rs, src/mesh/iroh_transport.rs, src/mesh/fallback_transport.rs",
       "tests": [
         "test_mesh_handshake_and_sync",
-        "test_heartbeat_service_with_peer_count"
+        "test_heartbeat_service_with_peer_count",
+        "tests/mesh_integration.rs::test_e2e_join_roundtrip_live"
       ],
       "req_ids": [
         "REQ-012"
@@ -1096,7 +1104,8 @@
         "test_mesh_service_deregistration",
         "test_mesh_service_health_aware_routing",
         "test_mesh_service_registration_and_discovery",
-        "test_mesh_service_routing_with_peer_registry"
+        "test_mesh_service_routing_with_peer_registry",
+        "tests/mesh_integration.rs::test_e2e_publish_non_internal_rejected_live"
       ],
       "req_ids": [
         "REQ-024"
@@ -1131,13 +1140,14 @@
       "github_issue": 1346,
       "last_tested": "2026-08-31",
       "notes": "Public readiness gate: private wallet isolation in beta (F9 v2) (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]",
-      "implemented_in": "src/data_commons/wallet.rs",
+      "implemented_in": "src/mesh/private_mesh.rs",
       "tests": [
         "test_derive_wallet_id",
         "test_is_same_wallet",
         "test_isolation_cross_wallet",
         "test_load_nonexistent_file",
-        "test_wallet_ephemeral_challenge_signature_verification"
+        "test_wallet_ephemeral_challenge_signature_verification",
+        "tests/mesh_integration.rs::test_e2e_cross_wallet_rejected_live"
       ],
       "req_ids": [
         "REQ-025"
@@ -2712,7 +2722,8 @@
         "test_unset_skill_env_preserves_all_three_scan_roots",
         "test_unset_home_fails_open_workspace_only",
         "test_resolve_skill_store_wiring"
-      ]
+      ],
+      "implemented_in": "src/context/skill_registry.rs, src/api/skills.rs, src/cli/handlers/skills.rs"
     },
     "feat-skill-registry-unify": {
       "id": "feat-skill-registry-unify",
@@ -2729,10 +2740,13 @@
       "passes": false,
       "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-registry-unify.md (Unified Skill Registry Constructor and Thresholds). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D7b, D7c). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
       "tests": [
-        "test_build_skill_registry_shared_parity",
-        "test_build_skill_registry_fusion_uses_same_candidates",
+        "test_mcp_skill_list_matches_rest_on_same_fixture",
+        "test_mcp_context_tools_own_no_registry_constructor",
+        "test_build_skill_registry_indexes_every_discovery_root",
+        "test_fusion_e2e_seeded_thread_injects_skill",
         "test_confidence_calibration_range"
-      ]
+      ],
+      "implemented_in": "src/context/skill_registry.rs, src/api/skills.rs, src/server/mcp/tools_context.rs, src/server/http/context.rs"
     },
     "feat-skill-projector": {
       "id": "feat-skill-projector",
@@ -2749,13 +2763,16 @@
       "passes": false,
       "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md (Declarative Skill Manifest and Projector). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D1-D4, D9). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
       "tests": [
-        "test_manifest_parses_toml_v1_and_rejects_unknown_fields",
-        "test_projector_dry_run_writes_nothing",
-        "test_projector_backup_and_atomic_swap",
-        "test_projector_unmanaged_regular_file_never_deleted",
-        "test_projector_write_outside_allowlist_rejected",
-        "test_skill_roots_host_allowlist_cannot_be_widened_by_manifest"
-      ]
+        "test_manifest_rejections",
+        "test_dry_run_apply_reports_without_touching_disk",
+        "test_atomic_write_creates_and_overwrites",
+        "test_symlink_backup_preserves_readlink_without_dereferencing",
+        "test_apply_rejects_unmanaged_regular_file_collision_without_touching_it",
+        "test_rejects_empty_allowlist_and_unauthorized_target",
+        "tests/skill_controller_core_adapters.rs::codex_project_projection_remains_readable_offline",
+        "tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage"
+      ],
+      "implemented_in": "src/context/skill_controller/manifest.rs, src/context/skill_controller/policy.rs, src/context/skill_controller/backup.rs, src/context/skill_controller/projector.rs, src/context/skill_controller/rollback.rs, src/cli/handlers/skills.rs, src/cli/commands/mod.rs"
     },
     "feat-skill-ephemeral": {
       "id": "feat-skill-ephemeral",
@@ -2772,12 +2789,13 @@
       "passes": false,
       "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-ephemeral.md (Deterministic Ephemeral Skill Composer). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D4, D10, D11). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
       "tests": [
-        "test_ephemeral_composes_within_token_budget",
-        "test_ephemeral_provenance_and_scope_filtering",
-        "test_ephemeral_blocks_on_secret_scan_finding",
-        "test_ephemeral_cleanup_removes_only_eph_dirs",
-        "test_ephemeral_live_session_returns_pack_without_files"
-      ]
+        "composition_stays_within_the_token_budget",
+        "out_of_scope_memories_and_decisions_are_excluded",
+        "test_secret_finding_blocks_publication_without_creating_link",
+        "release_removes_unchanged_entries_and_owned_directory",
+        "test_live_composition_hash_matches_composer_without_files"
+      ],
+      "implemented_in": "src/context/skill_controller/composer.rs, src/context/skill_controller/lease.rs, src/context/skill_dispatcher.rs, src/server/mcp/tools_context.rs, src/server/http/context.rs, src/cli/commands/spawn.rs"
     },
     "feat-skill-drift-audit": {
       "id": "feat-skill-drift-audit",
@@ -2794,11 +2812,12 @@
       "passes": false,
       "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-drift-audit.md (Skill Drift Audit and Secret Scanner). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D10, D13). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
       "tests": [
-        "test_audit_fixture_detects_dead_path_missing_field_and_secret",
-        "test_audit_secret_values_never_printed_or_logged",
-        "test_audit_proposes_diff_without_modifying_source",
-        "test_audit_prohibits_automatic_canonical_rewrites"
-      ]
+        "test_fixture_reports_description_reference_conflict_and_secret",
+        "test_proposal_never_leaks_any_secret_family_the_review_listed",
+        "test_proposal_is_a_unified_diff_and_leaves_the_source_byte_identical",
+        "test_audit_hash_drift_blocking_and_endpoint_match"
+      ],
+      "implemented_in": "src/context/skill_controller/audit/, src/api/skills.rs, src/cli/commands/mod.rs"
     },
     "feat-skill-usage-telemetry": {
       "id": "feat-skill-usage-telemetry",
@@ -2815,12 +2834,13 @@
       "passes": false,
       "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-usage-telemetry.md (Local Skill Usage Telemetry). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D12). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
       "tests": [
-        "test_telemetry_records_stages_with_opaque_ids",
-        "test_telemetry_acknowledged_invocation_requires_idempotent_event_id",
-        "test_telemetry_coverage_aware_summary_reports_unobserved_usage",
-        "test_telemetry_prohibits_usage_based_deletion",
-        "test_telemetry_ttl_retention_prune_removes_events_only"
-      ]
+        "every_stage_round_trips_through_the_schema",
+        "record_ack_is_idempotent_for_invoked_and_completed",
+        "emit_selected_delivered_has_unknown_ack_coverage_and_no_task_text",
+        "prune_removes_expired_events_only",
+        "dispatch_telemetry_failure_leaves_result_unchanged"
+      ],
+      "implemented_in": "src/context/skill_controller/telemetry.rs, src/context/skill_dispatcher.rs, src/server/mcp/tools_context.rs"
     },
     "feat-pageindex-tree-core": {
       "id": "feat-pageindex-tree-core",
@@ -2964,7 +2984,10 @@
         "healthy_status_reports_no_degraded_reasons",
         "health_report_falls_back_to_cli_version_when_server_omits_it",
         "stats_payload_matches_mcp_field_contract",
-        "stats_reports_semantic_layer_state"
+        "stats_reports_semantic_layer_state",
+        "tests/cli_health_stats_parity.rs::degraded_health_prints_server_reason_and_version",
+        "tests/cli_health_stats_parity.rs::degraded_health_exits_zero_per_documented_contract",
+        "tests/cli_health_stats_parity.rs::unhealthy_health_exits_nonzero"
       ],
       "req_ids": [
         "REQ-072"
@@ -3014,7 +3037,8 @@
       "tests": [
         "doctor_completes_when_a_probe_hangs",
         "doctor_prints_output_even_with_timed_out_checks",
-        "doctor_exit_code_reflects_overall_status"
+        "doctor_exit_code_reflects_overall_status",
+        "tests/doctor_bounded_test.rs::doctor_reports_before_deadline_when_tcp_peer_never_responds"
       ],
       "req_ids": [
         "REQ-070"
@@ -3118,7 +3142,8 @@
         "improve_exit_code_distinguishes_truncated_from_failed",
         "test_last_accepted_config_skips_truncated_entries",
         "test_partial_progress_roundtrips_through_json",
-        "test_absurd_budget_is_capped_instead_of_overflowing"
+        "test_absurd_budget_is_capped_instead_of_overflowing",
+        "tests/improve_bounded_cli_test.rs::improve_times_out_and_durably_records_partial_progress"
       ],
       "req_ids": [
         "REQ-071"
@@ -3143,7 +3168,8 @@
         "health_check_embedding_ok_true_when_fallback_embedder_works",
         "health_check_memory_store_ok_reflects_store_and_integrity",
         "sys_health_does_not_report_hardcoded_zero_benchmarks",
-        "codegraph_gods_excludes_generic_constructors"
+        "codegraph_gods_excludes_generic_constructors",
+        "tests/mcp_health_honesty_test.rs::mcp_reports_unmeasured_integrity_and_unavailable_embedding_honestly"
       ],
       "req_ids": [
         "REQ-067"
@@ -3390,7 +3416,7 @@
         "Review the computed ship/show/ask classification policy; never hand-promote ledger status"
       ],
       "passes": false,
-      "notes": "Registers the autonomous-delivery feature (P01, docs/CI only, no code PR). Spec: docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md; SRS mapping: REQ-085 (planned) in docs/SRS/REQUIREMENTS.md. Design: docs/design/trunk-based/01-DESIGN.md (flow + ship/show/ask), 02-AUTONOMOUS-PIPELINE.md (stages/gates), 03-DONE-PROTOCOL.md (DONE verifier contract); policy: docs/adr/ADR-035-trunk-based-ship-show-ask.md (accepted 2026-09-27). A docs/SRS/** change is Ask class and needs pre-merge panel approval. scripts/done-check.sh is a defined future contract, not yet present. Status changes only on a green scripts/verify-pipeline.sh run after executed tests; never hand-promoted.",
+      "notes": "Registers the autonomous-delivery feature (P01, docs/CI only, no code PR). Spec: docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md; SRS mapping: REQ-085 (planned) in docs/SRS/REQUIREMENTS.md. Design: docs/design/trunk-based/01-DESIGN.md (flow + ship/show/ask), 02-AUTONOMOUS-PIPELINE.md (stages/gates), 03-DONE-PROTOCOL.md (DONE verifier contract); policy: docs/adr/ADR-035-trunk-based-ship-show-ask.md (accepted 2026-09-27). A docs/SRS/** change is Ask class and needs pre-merge panel approval. scripts/done-check.sh implements task/feature/increment bundle verification; pr-gate runs it in SHADOW mode. The 8-stage driver and evidence-bundle builder remain pending. Status changes only on a green scripts/verify-pipeline.sh run after executed tests; never hand-promoted.",
       "tests": [],
       "req_ids": [
         "REQ-085"
