@@ -550,6 +550,52 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         // the endpoints only in `routes.rs` left them 404 in production while
         // the handler tests (which call `create_router()`) stayed green.
         .merge(clavis_routes())
+        // ── Data Marketplace API ──────────────────────────────────────────
+        .route(
+            "/v1/marketplace/datasets",
+            post(xavier::adapters::inbound::http::handlers::list_dataset_handler),
+        )
+        .route(
+            "/v1/marketplace/datasets",
+            get(xavier::adapters::inbound::http::handlers::list_active_datasets_handler),
+        )
+        .route(
+            "/v1/marketplace/datasets/{id}/query",
+            post(xavier::adapters::inbound::http::handlers::query_dataset_handler),
+        )
+        .route(
+            "/v1/marketplace/datasets/{id}",
+            delete(xavier::adapters::inbound::http::handlers::revoke_dataset_handler),
+        )
+        .route(
+            "/v1/marketplace/pricing",
+            get(xavier::adapters::inbound::http::handlers::get_pricing_preview_handler),
+        )
+        // ── Identity Verification Network (IVN) API ─────────────────────────
+        .route(
+            "/v1/identity/request",
+            post(xavier::adapters::inbound::http::handlers::create_identity_request_handler),
+        )
+        .route(
+            "/v1/identity/request/{id}",
+            get(xavier::adapters::inbound::http::handlers::get_identity_request_handler),
+        )
+        .route(
+            "/v1/identity/{id}/vote",
+            post(xavier::adapters::inbound::http::handlers::vote_identity_request_handler),
+        )
+        .route(
+            "/v1/identity/requests",
+            get(xavier::adapters::inbound::http::handlers::list_identity_requests_handler),
+        )
+        .route(
+            "/v1/identity/verified",
+            get(xavier::adapters::inbound::http::handlers::list_verified_nodes_handler),
+        )
+        .route(
+            "/v1/ivn/karma/{agent}",
+            get(xavier::adapters::inbound::http::handlers::ivn::get_ivn_karma_handler),
+        )
         .route(
             "/v1/workspaces/db",
             post(create_workspace_db_handler)
@@ -600,6 +646,7 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         )
         .route("/code/call-chain", post(code_call_chain_handler))
         .route("/code/blast-radius", post(code_blast_radius_handler))
+        .route("/code/situ", post(code_situ_handler))
         // Code graph canvas projection
         .route("/code/graph/view", get(code_graph_view_handler))
         .route("/code/hubs", get(code_hubs_handler))
@@ -3528,5 +3575,80 @@ mod ingestion_persisted_cursor_tests {
             before,
             "second pass imported new rows"
         );
+    }
+}
+
+#[cfg(test)]
+mod feature_route_parity_tests {
+    #[test]
+    fn identity_marketplace_and_situ_routes_are_mounted_in_live_server() {
+        // Restrict the check to production wiring, excluding these test literals.
+        let source = include_str!("server.rs");
+        let app = source
+            .split_once("pub fn build_app(")
+            .expect("production app builder")
+            .1
+            .split_once("/// Start http server.")
+            .expect("end of production app builder")
+            .0;
+        let protected = app
+            .split_once("let protected_routes = Router::new()")
+            .expect("protected routes")
+            .1
+            .split_once("let large_body_routes = Router::new()")
+            .expect("end of protected routes")
+            .0;
+        assert!(protected.contains("auth_middleware,"));
+        assert!(app.contains(".merge(protected_routes)"));
+
+        let compact = |text: &str| {
+            text.chars()
+                .filter(|ch| !ch.is_whitespace())
+                .collect::<String>()
+                .replace("crate::", "xavier::")
+        };
+        let live = compact(protected);
+        let reference = include_str!("../adapters/inbound/http/routes.rs");
+        let mut checked = 0;
+        for registration in reference.split(".route(").skip(1) {
+            // Only literal-path registrations; skip dynamic calls such as
+            // `router.route(&name)`.
+            if !registration.trim_start().starts_with('"') {
+                continue;
+            }
+            let path = registration.split('"').nth(1).expect("route path");
+            if !["/v1/identity/", "/v1/ivn/karma/", "/v1/marketplace/"]
+                .iter()
+                .any(|prefix| path.starts_with(prefix))
+            {
+                continue;
+            }
+            // Include the complete registration: path, method, handler and any
+            // route-local layers. New reference routes are checked automatically.
+            let mut depth = 1;
+            let end = registration
+                .char_indices()
+                .find_map(|(index, ch)| {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => depth -= 1,
+                        _ => {}
+                    }
+                    (depth == 0).then_some(index)
+                })
+                .expect("balanced route registration");
+            let expected = format!(".route({}", compact(&registration[..=end]));
+            assert!(
+                live.contains(&expected),
+                "live route differs or is missing: {path}"
+            );
+            checked += 1;
+        }
+        assert!(
+            checked >= 11,
+            "identity/marketplace reference routes missing"
+        );
+        // This CLI-state handler is not part of the library create_router().
+        assert!(live.contains(".route(\"/code/situ\",post(code_situ_handler))"));
     }
 }

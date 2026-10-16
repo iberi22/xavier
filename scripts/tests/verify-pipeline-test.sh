@@ -262,4 +262,152 @@ chmod +x "$TEST_DIR/bin6/cargo"
   echo "PASS: Test Case 7"
 )
 
+echo "=========================================================="
+echo "Test Case 8: failing candidate is non-gating (exit 0)"
+cat << 'JSON' > "$MOCK_ROOT/.gitcore/features.json"
+{
+  "features": {
+    "feat-gate": {"id": "feat-gate", "status": "stable", "implemented_in": [], "tests": ["gate_ok"]},
+    "feat-cand": {"id": "feat-cand", "status": "planned", "implemented_in": [], "tests": ["cand_fail"]}
+  }
+}
+JSON
+mkdir -p "$TEST_DIR/bin8"
+cat << 'BIN' > "$TEST_DIR/bin8/cargo"
+#!/usr/bin/env bash
+if [[ "$*" == *"--no-run"* ]]; then exit 0; fi
+if [[ "$*" == *"cand_fail"* ]]; then echo "test result: FAILED. 0 passed"; exit 1; fi
+echo "test result: ok. 1 passed; 0 failed"
+exit 0
+BIN
+chmod +x "$TEST_DIR/bin8/cargo"
+(
+  export PATH="$TEST_DIR/bin8:$PATH"
+  export XAVIER_VERIFY_PER_ATTEMPT_SECS=1
+  OUT="$(bash "$TEST_DIR/verify-pipeline.sh" 2>&1)" || RC=$?
+  if [ "${RC:-0}" -ne 0 ]; then echo "FAIL: failing candidate must not fail pipeline, got ${RC:-0}"; echo "$OUT"; exit 1; fi
+  if ! echo "$OUT" | grep -q 'candidate lane had failures (non-gating'; then echo "FAIL: missing non-gating warning"; echo "$OUT"; exit 1; fi
+  if ! echo "$OUT" | grep -q 'cand_fail \[candidate\]'; then echo "FAIL: missing candidate marker line"; echo "$OUT"; exit 1; fi
+  echo "PASS: Test Case 8"
+)
+
+echo "=========================================================="
+echo "Test Case 9: failing gating + passing candidate still fails (exit 1)"
+cat << 'JSON' > "$MOCK_ROOT/.gitcore/features.json"
+{
+  "features": {
+    "feat-gate": {"id": "feat-gate", "status": "stable", "implemented_in": [], "tests": ["gate_fail"]},
+    "feat-cand": {"id": "feat-cand", "status": "planned", "implemented_in": [], "tests": ["cand_ok"]}
+  }
+}
+JSON
+mkdir -p "$TEST_DIR/bin9"
+cat << 'BIN' > "$TEST_DIR/bin9/cargo"
+#!/usr/bin/env bash
+if [[ "$*" == *"--no-run"* ]]; then exit 0; fi
+if [[ "$*" == *"gate_fail"* ]]; then echo "test result: FAILED. 0 passed"; exit 1; fi
+echo "test result: ok. 1 passed; 0 failed"
+exit 0
+BIN
+chmod +x "$TEST_DIR/bin9/cargo"
+(
+  export PATH="$TEST_DIR/bin9:$PATH"
+  export XAVIER_VERIFY_PER_ATTEMPT_SECS=1
+  OUT="$(bash "$TEST_DIR/verify-pipeline.sh" 2>&1)" || RC=$?
+  if [ "${RC:-0}" -ne 1 ]; then echo "FAIL: failing gating must fail pipeline, got ${RC:-0}"; echo "$OUT"; exit 1; fi
+  echo "PASS: Test Case 9"
+)
+
+echo "=========================================================="
+echo "Test Case 10: gating failed -> candidate lane skipped (single attempt)"
+cat << 'JSON' > "$MOCK_ROOT/.gitcore/features.json"
+{
+  "features": {
+    "feat-gate": {"id": "feat-gate", "status": "stable", "implemented_in": [], "tests": ["gate_fail"]},
+    "feat-cand": {"id": "feat-cand", "status": "planned", "implemented_in": [], "tests": ["cand_ok"]}
+  }
+}
+JSON
+mkdir -p "$TEST_DIR/bin10"
+cat << 'BIN' > "$TEST_DIR/bin10/cargo"
+#!/usr/bin/env bash
+if [[ "$*" == *"--no-run"* ]]; then exit 0; fi
+printf '%s\n' "$*" >> "$INVOCATIONS"
+if [[ "$*" == *"gate_fail"* ]]; then echo "test result: FAILED. 0 passed"; exit 1; fi
+echo "test result: ok. 1 passed; 0 failed"
+exit 0
+BIN
+chmod +x "$TEST_DIR/bin10/cargo"
+(
+  export PATH="$TEST_DIR/bin10:$PATH"
+  export INVOCATIONS="$TEST_DIR/invocations10"
+  export XAVIER_VERIFY_PER_ATTEMPT_SECS=1
+  rm -f "$INVOCATIONS"
+  OUT="$(bash "$TEST_DIR/verify-pipeline.sh" 2>&1)" || RC=$?
+  if [ "${RC:-0}" -ne 1 ]; then echo "FAIL: expected exit 1, got ${RC:-0}"; echo "$OUT"; exit 1; fi
+  if ! echo "$OUT" | grep -q 'Skipping candidate lane (gating failed)'; then echo "FAIL: candidate lane not skipped"; echo "$OUT"; exit 1; fi
+  if grep -q 'cand_ok' "$INVOCATIONS" 2>/dev/null; then echo "FAIL: candidate cargo ran despite gating failure"; cat "$INVOCATIONS"; exit 1; fi
+  echo "PASS: Test Case 10"
+)
+
+echo "=========================================================="
+echo "Test Case 11: budget exhaustion -> remaining skipped, exit unchanged"
+cat << 'JSON' > "$MOCK_ROOT/.gitcore/features.json"
+{
+  "features": {
+    "feat-gate": {"id": "feat-gate", "status": "stable", "implemented_in": [], "tests": ["gate_ok"]},
+    "feat-cand": {"id": "feat-cand", "status": "planned", "implemented_in": [], "tests": ["cand1", "cand2", "cand3"]}
+  }
+}
+JSON
+mkdir -p "$TEST_DIR/bin11"
+cat << 'BIN' > "$TEST_DIR/bin11/cargo"
+#!/usr/bin/env bash
+if [[ "$*" == *"--no-run"* ]]; then exit 0; fi
+echo "test result: ok. 1 passed; 0 failed"
+exit 0
+BIN
+chmod +x "$TEST_DIR/bin11/cargo"
+(
+  export PATH="$TEST_DIR/bin11:$PATH"
+  export XAVIER_VERIFY_PER_ATTEMPT_SECS=1
+  export CANDIDATE_LANE_BUDGET=0
+  OUT="$(bash "$TEST_DIR/verify-pipeline.sh" 2>&1)" || RC=$?
+  if [ "${RC:-0}" -ne 0 ]; then echo "FAIL: budget-skip must not fail pipeline, got ${RC:-0}"; echo "$OUT"; exit 1; fi
+  if ! echo "$OUT" | grep -q 'skipped (budget)'; then echo "FAIL: missing budget-skip marker"; echo "$OUT"; exit 1; fi
+  echo "PASS: Test Case 11"
+)
+
+echo "=========================================================="
+echo "Test Case 12: candidate name already in gating lane is skipped"
+cat << 'JSON' > "$MOCK_ROOT/.gitcore/features.json"
+{
+  "features": {
+    "feat-gate": {"id": "feat-gate", "status": "stable", "implemented_in": [], "tests": ["shared_test"]},
+    "feat-cand": {"id": "feat-cand", "status": "planned", "implemented_in": [], "tests": ["shared_test"]}
+  }
+}
+JSON
+mkdir -p "$TEST_DIR/bin12"
+cat << 'BIN' > "$TEST_DIR/bin12/cargo"
+#!/usr/bin/env bash
+if [[ "$*" == *"--no-run"* ]]; then exit 0; fi
+printf '%s\n' "$*" >> "$INVOCATIONS"
+echo "test result: ok. 1 passed; 0 failed"
+exit 0
+BIN
+chmod +x "$TEST_DIR/bin12/cargo"
+(
+  export PATH="$TEST_DIR/bin12:$PATH"
+  export INVOCATIONS="$TEST_DIR/invocations12"
+  export XAVIER_VERIFY_PER_ATTEMPT_SECS=1
+  rm -f "$INVOCATIONS"
+  OUT="$(bash "$TEST_DIR/verify-pipeline.sh" 2>&1)" || RC=$?
+  if [ "${RC:-0}" -ne 0 ]; then echo "FAIL: expected exit 0, got ${RC:-0}"; echo "$OUT"; exit 1; fi
+  if ! echo "$OUT" | grep -q 'skipped (already in gating lane)'; then echo "FAIL: shared name not skipped"; echo "$OUT"; exit 1; fi
+  CAND_RUNS="$(grep -c 'shared_test' "$INVOCATIONS" 2>/dev/null || true)"
+  if [ "$CAND_RUNS" -gt 4 ]; then echo "FAIL: candidate re-ran shared gating test ($CAND_RUNS invocations)"; cat "$INVOCATIONS"; exit 1; fi
+  echo "PASS: Test Case 12"
+)
+
 echo "All verify-pipeline tests passed"

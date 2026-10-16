@@ -37,7 +37,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/ledger-promote-evidence.py
-      - name: Evaluate beta features
+      # Promotions: beta -> stable (complete) plus planned/in_progress -> beta
+      # (built, tested, still incomplete). This step only reports; --apply in
+      # the propose job performs the evaluated promotions grouped by transition.
+      - name: Evaluate ledger features (beta->stable, planned/in_progress->beta)
         shell: bash
         run: |
           python3 scripts/ledger-promote.py --features .gitcore/features.json \
@@ -94,12 +97,12 @@ jobs:
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add .gitcore/features.json
-            git commit -m "chore: promote verified beta ledger features"
+            git commit -m "chore: promote verified ledger features"
             gh auth setup-git
             git push origin "$branch"
           fi
           if [ "$(gh pr list --head "$branch" --base main --state all --json number --jq length)" != 0 ]; then exit 0; fi
-          gh pr create --base main --head "$branch" --title "Promote verified beta ledger features" --body-file /tmp/ledger-report.md
+          gh pr create --base main --head "$branch" --title "Promote verified ledger features" --body-file /tmp/ledger-report.md
           # Both workflows support workflow_dispatch; explicit dispatch runs checks
           # even when the branch and PR were created with GITHUB_TOKEN.
           gh workflow run ci.yml --ref "$branch"
