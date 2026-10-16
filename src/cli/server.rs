@@ -551,6 +551,16 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         // the handler tests (which call `create_router()`) stayed green.
         .merge(clavis_routes())
         // ── Data Marketplace API ──────────────────────────────────────────
+        .merge({
+            #[cfg(feature = "market-v2")]
+            {
+                xavier::market_v2::mount(Router::new())
+            }
+            #[cfg(not(feature = "market-v2"))]
+            {
+                Router::new()
+            }
+        })
         .route(
             "/v1/marketplace/datasets",
             post(xavier::adapters::inbound::http::handlers::list_dataset_handler),

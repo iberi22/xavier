@@ -315,6 +315,11 @@ jobs:
       - name: Run E3 (una credencial nunca vuelve en memory_search)
         run: cargo test --package xavier --features ci-safe --test v1_api_ingest_test -- --test-threads=1
 
+      - name: Run Marketplace V2 Integrations Tests
+        run: |
+          cargo test -p xavier-market
+          cargo test -p xavier --features ci-safe,market-v2 --test market_v2_router_restart -- --test-threads=1
+
   # Job 3b: Espacios (per-space keys, stores, tokens, links, routing)
   #
   # These are `tests/*.rs` targets, so `cargo test --lib` never compiles or runs
