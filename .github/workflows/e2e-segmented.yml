@@ -1,12 +1,12 @@
 name: E2E Segmented
 
-# Runs 138 integration-test targets (some also covered by ci.yml), in
+# Runs 141 integration-test targets (some also covered by ci.yml), in
 # 13 independent jobs.
 #
 # Why (Belal, 2026-06-06): as a single job the first failing target hides every
 # target after it, and nobody learns whether the rest is green. One job per
 # segment, and inside each job the loop does not break on failure, so one run
-# reports the state of all 138 targets instead of just the first break.
+# reports the state of all 141 targets instead of just the first break.
 #
 # No job goes red on a failing target, on purpose: visibility first. A separate
 # gate job decides what blocks a release, so one broken segment never hides the
@@ -227,7 +227,7 @@ jobs:
           if-no-files-found: ignore
 
   e2e-04:
-    name: W04 resto_d (18)
+    name: W04 resto_d (19)
     if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
@@ -240,7 +240,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Run all 18 targets of wave 04
+      - name: Run all 19 targets of wave 04
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
         # and test counts, while the gate consumes the failed-target summary.
@@ -256,6 +256,7 @@ jobs:
             'distributed_tracer_test'
             'env_guard'
             'health_test'
+            'guardian_truth_test'
             'integration'
             'ivn_verdict'
             'messaging_status'
@@ -510,7 +511,7 @@ jobs:
           if-no-files-found: ignore
 
   e2e-09:
-    name: W09 memory_sync (8)
+    name: W09 memory_sync (9)
     if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
@@ -523,7 +524,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Run all 8 targets of wave 09
+      - name: Run all 9 targets of wave 09
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
         # and test counts, while the gate consumes the failed-target summary.
@@ -541,6 +542,7 @@ jobs:
             'memory_sync_e2e'
             'memory_sync_http'
             'memory_sync_unified'
+            'memory_write_integrity_e2e'
             'tgd_prune_gate_test'
           )
           failed=()
@@ -661,7 +663,7 @@ jobs:
           if-no-files-found: ignore
 
   e2e-12:
-    name: W12 codegraph (3)
+    name: W12 codegraph (4)
     if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
@@ -674,7 +676,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Run all 3 targets of wave 12
+      - name: Run all 4 targets of wave 12
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
         # and test counts, while the gate consumes the failed-target summary.
@@ -686,6 +688,7 @@ jobs:
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'codegraph_installer_e2e'
+            'codegraph_dump_path_e2e'
             'codegraph_scan_then_query'
             'codegraph_uds_ipc_e2e'
           )

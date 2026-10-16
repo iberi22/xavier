@@ -236,3 +236,82 @@ fn skill_transport_default_matches_memory_reads() {
         ClearanceLevel::Unclassified
     );
 }
+
+#[tokio::test]
+#[serial_test::serial]
+async fn skill_dispatch_rejects_weak_matches_and_counts_invalid_entries() {
+    use tracing::instrument::WithSubscriber;
+    use xavier::context::{
+        skill_dispatcher::MIN_DISPATCH_CONFIDENCE, skill_registry::SkillRegistry,
+    };
+
+    xavier::isolate_test_process!();
+    let f = Fixture::new().await;
+    let store = f._root.path().join("store");
+    for (folder, name, description) in [
+        (
+            "trace-audit",
+            "trace-audit",
+            "Audit the failed traces of a run",
+        ),
+        (
+            "not-a-skill",
+            "my skill",
+            "Audit the failed traces of a run",
+        ),
+    ] {
+        let dir = store.join(folder);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            format!("---\nname: \"{name}\"\ndescription: \"{description}\"\n---\nContent"),
+        )
+        .unwrap();
+    }
+
+    // Rejection counts are exposed in registry tracing, not in the HTTP response.
+    let log = tempfile::tempfile().unwrap();
+    let writer = log.try_clone().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(move || writer.try_clone().unwrap())
+        .finish();
+    let body = async {
+        let mut registry = SkillRegistry::new(vec![store]);
+        assert_eq!(registry.reindex().await.unwrap(), 3);
+        assert_eq!(registry.len(), 3);
+        assert!(registry.get("my skill").is_none());
+        let candidates = registry.search("failed", 10);
+        assert_eq!(candidates.len(), 1);
+        let score = candidates[0].0;
+        assert!(score > 0.0 && score < MIN_DISPATCH_CONFIDENCE, "{score}");
+
+        request(
+            &f.router(false),
+            "/api/skill/dispatch",
+            Some(json!({"task": "failed"})),
+            None,
+        )
+        .await
+    }
+    .with_subscriber(subscriber)
+    .await;
+    assert_eq!(body["ok"], true);
+    let data = &body["data"];
+    assert_eq!(data["skill_name"], "_none");
+    assert!(data["confidence"].as_f64().unwrap() < f64::from(MIN_DISPATCH_CONFIDENCE));
+    assert_eq!(data["context_pack"]["system_instructions"], "");
+    assert_eq!(data["context_pack"]["total_tokens"], 0);
+
+    use std::io::{Read, Seek, SeekFrom};
+    let mut log = log;
+    log.seek(SeekFrom::Start(0)).unwrap();
+    let mut output = String::new();
+    log.read_to_string(&mut output).unwrap();
+    assert!(
+        output.contains("3 skills indexed, 1 rejected, 3 total"),
+        "{output}"
+    );
+}
