@@ -375,8 +375,11 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         }
         self.evidence = json.loads((FIXTURES / 'evidence.json').read_text())
         self.evidence['per_feature_test_results']['planned'] = dict(
-            declared=['test_roundtrip'], passed=['test_roundtrip'], failed=[],
-            integration_targets_by_test={'test_roundtrip': ['integration']})
+            declared=['test_roundtrip'], passed=[], failed=[],
+            integration_targets_by_test={},
+            candidate_passed=['test_roundtrip'], candidate_failed=[],
+            candidate_integration_targets_by_test={'test_roundtrip': ['integration']},
+            candidate_tests=['test_roundtrip'])
         self.history = json.loads((FIXTURES / 'history.json').read_text())
         self.history['planned'] = ['a', 'b']
         self.path = self.root / '.gitcore' / 'features.json'
@@ -421,8 +424,10 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
     def test_planned_failing_test_blocked(self):
         self.evidence['per_feature_test_results']['planned'] = dict(
-            declared=['test_roundtrip'], passed=[], failed=['test_roundtrip'],
-            integration_targets_by_test={})
+            declared=['test_roundtrip'], passed=[], failed=[],
+            integration_targets_by_test={},
+            candidate_passed=[], candidate_failed=['test_roundtrip'],
+            candidate_integration_targets_by_test={}, candidate_tests=['test_roundtrip'])
         report, _ = self.run_all(apply=True)
         planned = report['features']['planned']
         self.assertFalse(planned['eligible'])
@@ -441,8 +446,12 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertEqual('planned', json.loads(self.path.read_text())['features']['planned']['status'])
 
     def test_planned_lib_only_blocked(self):
-        self.evidence['per_feature_test_results']['planned']['integration_targets_by_test'] = {
-            'test_roundtrip': []}
+        self.evidence['per_feature_test_results']['planned'] = dict(
+            declared=['test_roundtrip'], passed=[], failed=[],
+            integration_targets_by_test={},
+            candidate_passed=['test_roundtrip'], candidate_failed=[],
+            candidate_integration_targets_by_test={'test_roundtrip': []},
+            candidate_tests=['test_roundtrip'])
         self.evidence['integration_targets_passed'] = ['other']
         report, _ = self.run_all(apply=True)
         planned = report['features']['planned']
@@ -480,18 +489,104 @@ class PlannedBetaPromotionTests(unittest.TestCase):
                        '## in_progress->beta (0)', '## not promoted'):
             self.assertIn(header, err)
 
+    def test_open_gaps_block_planned(self):
+        self.features['features']['planned']['open_gaps'] = ['transport missing']
+        report, _ = self.run_all(apply=True)
+        planned = report['features']['planned']
+        self.assertFalse(planned['eligible'])
+        self.assertIn('open_gaps: 1', '; '.join(planned['reasons']))
+        self.assertEqual('planned', json.loads(self.path.read_text())['features']['planned']['status'])
+
+    def test_planned_reads_candidate_sets_not_gating(self):
+        # Gating sets are empty; only candidate evidence exists -> eligible.
+        report, _ = self.run_all()
+        planned = report['features']['planned']
+        self.assertTrue(planned['eligible'], planned['reasons'])
+        self.assertEqual(['test_roundtrip'], planned['candidate_passed'])
+        self.assertEqual([], planned['gating_passed'])
+        self.assertEqual(['test_roundtrip'], planned['evaluated_passed'])
+        self.assertEqual('candidate+gating(shared)', planned['evidence_lane'])
+        # Same test name but with no candidate evidence and no shared gating
+        # name -> blocked even though gating passed contains other names.
+        self.features['features']['planned']['tests'] = ['test_roundtrip']
+        self.evidence['per_feature_test_results']['planned'] = dict(
+            declared=['test_roundtrip'], passed=[], failed=[],
+            integration_targets_by_test={},
+            candidate_passed=[], candidate_failed=[],
+            candidate_integration_targets_by_test={}, candidate_tests=[])
+        # Make the name unshared: beta declares something else.
+        self.features['features']['beta']['tests'] = ['other_test']
+        self.evidence['per_feature_test_results']['beta'] = dict(
+            declared=['other_test'], passed=['test_roundtrip'], failed=[],
+            integration_targets_by_test={})
+        report, _ = self.run_all()
+        self.assertFalse(report['features']['planned']['eligible'])
+        self.assertIn('declared tests failed or unresolved',
+                      '; '.join(report['features']['planned']['reasons']))
+
+    def test_shared_name_candidate_failure_does_not_block_stable(self):
+        # Planned and beta share test_roundtrip; candidate run fails but
+        # gating run passes -> beta stays eligible, planned is blocked.
+        self.evidence['per_feature_test_results']['beta'] = dict(
+            declared=['test_roundtrip'], passed=['test_roundtrip'], failed=[],
+            integration_targets_by_test={'test_roundtrip': ['integration']},
+            candidate_passed=[], candidate_failed=['test_roundtrip'],
+            candidate_integration_targets_by_test={}, candidate_tests=['test_roundtrip'])
+        self.evidence['per_feature_test_results']['planned'] = dict(
+            declared=['test_roundtrip'], passed=[], failed=[],
+            integration_targets_by_test={},
+            candidate_passed=[], candidate_failed=['test_roundtrip'],
+            candidate_integration_targets_by_test={}, candidate_tests=['test_roundtrip'])
+        report, _ = self.run_all()
+        self.assertTrue(report['features']['beta']['eligible'],
+                        report['features']['beta']['reasons'])
+        self.assertEqual('gating', report['features']['beta']['evidence_lane'])
+        self.assertFalse(report['features']['planned']['eligible'])
+
+    def test_shared_name_gating_evidence_satisfies_planned(self):
+        # Planned test shared with gating: gating evidence alone suffices
+        # (candidate lane skips names already in TEST_LIST).
+        self.evidence['per_feature_test_results']['planned'] = dict(
+            declared=['test_roundtrip'], passed=['test_roundtrip'], failed=[],
+            integration_targets_by_test={'test_roundtrip': ['integration']},
+            candidate_passed=[], candidate_failed=[],
+            candidate_integration_targets_by_test={}, candidate_tests=[])
+        report, _ = self.run_all()
+        self.assertTrue(report['features']['planned']['eligible'],
+                        report['features']['planned']['reasons'])
+
     def test_candidate_marker_is_parsed(self):
         log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
                '  ▶ test_roundtrip [candidate]\n    ✅ --test integration (passed=2)\n'
                '  ✅ all declared tests passed\n')
         results, targets = collector.parse_log(log, self.features)
-        self.assertEqual(['test_roundtrip'], results['planned']['passed'])
+        # Candidate results never pollute gating sets.
+        self.assertEqual([], results['planned']['passed'])
+        self.assertEqual([], results['planned']['failed'])
+        self.assertEqual(['test_roundtrip'], results['planned']['candidate_passed'])
+        self.assertEqual([], results['planned']['candidate_failed'])
         self.assertEqual(['test_roundtrip'], results['planned']['candidate_tests'])
-        self.assertEqual(['integration'], targets)
+        self.assertEqual({'test_roundtrip': ['integration']},
+                         results['planned']['candidate_integration_targets_by_test'])
+        self.assertEqual([], targets)
         plain = log.replace(' [candidate]', '')
-        results, _ = collector.parse_log(plain, self.features)
+        results, targets = collector.parse_log(plain, self.features)
         self.assertEqual([], results['planned']['candidate_tests'])
+        self.assertEqual([], results['planned']['candidate_passed'])
         self.assertEqual(['test_roundtrip'], results['planned']['passed'])
+        self.assertEqual(['integration'], targets)
+
+    def test_candidate_failure_does_not_pollute_gating(self):
+        log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
+               '  ▶ test_roundtrip\n    ✅ --test integration (passed=2)\n'
+               '  ▶ test_roundtrip [candidate]\n    ❌ FAILED: test_roundtrip\n'
+               '  ✅ all declared tests passed\n')
+        results, targets = collector.parse_log(log, self.features)
+        self.assertEqual(['test_roundtrip'], results['beta']['passed'])
+        self.assertEqual([], results['beta']['failed'])
+        self.assertEqual([], results['beta']['candidate_passed'])
+        self.assertEqual(['test_roundtrip'], results['beta']['candidate_failed'])
+        self.assertEqual(['integration'], targets)
 
 
 if __name__ == '__main__':

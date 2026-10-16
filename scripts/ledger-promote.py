@@ -5,10 +5,13 @@ History is {feature_id: [green_sha, ...]}. The beta -> stable rule is
 conservative (requires numeric progress_pct >= 100, no pending steps, no
 open honesty notes or open_gaps). The planned/in_progress -> beta rule
 requires the same evidence, test, integration and streak checks, but
-progress_pct < 100, pending steps, honesty notes and open_gaps do NOT block
-(beta means 'built, tested, incomplete'); only malformed steps/open_gaps
-block, and incompleteness is listed in the report. JSON report is stdout;
-Markdown is stderr. Dry runs never modify either input.
+progress_pct < 100, pending steps and honesty notes do NOT block
+(beta means 'built, tested, incomplete'); non-empty open_gaps DOES block,
+as do malformed steps/open_gaps, and incompleteness is listed in the report.
+The planned/in_progress lane evaluates declared tests against the candidate
+lane sets (candidate_passed/candidate_failed) plus the gating sets for test
+names shared with gating features; beta -> stable uses only the gating sets.
+JSON report is stdout; Markdown is stderr. Dry runs never modify either input.
 """
 import argparse
 import datetime as dt
@@ -117,13 +120,15 @@ PROMOTABLE_TRANSITIONS = {'beta': 'beta->stable', 'planned': 'planned->beta',
 def beta_completeness_split(feature):
     """Split completeness reasons into (blocking, informational).
 
-    The planned/in_progress -> beta lane only blocks on malformed ledger
-    data; numeric progress < 100, pending steps, honesty notes and open gaps
-    mean 'built, tested, incomplete' and are reported, never blocking.
+    The planned/in_progress -> beta lane blocks on malformed ledger data
+    AND on non-empty open_gaps; numeric progress < 100, pending steps and
+    honesty notes mean 'built, tested, incomplete' and are reported, never
+    blocking.
     """
     blocking, informational = [], []
     for reason in completeness_reasons(feature):
-        if 'malformed' in reason or 'not numeric' in reason or 'not finite' in reason:
+        if ('malformed' in reason or 'not numeric' in reason or 'not finite' in reason
+                or reason.startswith('open_gaps')):
             blocking.append(reason)
         else:
             informational.append(reason)
@@ -169,6 +174,24 @@ def evaluate(document, evidence, history, root, streak):
         common.append('invalid consecutive main SHA sequence')
     indexed = rust_tests(root)
     targets = set(evidence.get('integration_targets_passed', []))
+    per_feature = evidence.get('per_feature_test_results', {})
+    # Test names already evidenced by the gating lane: declared by any gating
+    # feature (the same set verify-pipeline.sh puts in TEST_LIST).
+    gating_declared = set()
+    for feature in document['features'].values():
+        if feature.get('status') in ('stable', 'beta', 'implemented', 'active',
+                                      'in_progress'):
+            declared_tests = feature.get('tests', [])
+            if isinstance(declared_tests, list):
+                gating_declared.update(declared_tests)
+    # Candidate integration targets (kept separate from gating targets so the
+    # candidate lane cannot pollute gating evidence).
+    candidate_targets_global = set()
+    for res in per_feature.values():
+        attrib = res.get('candidate_integration_targets_by_test', {})
+        if isinstance(attrib, dict):
+            for vals in attrib.values():
+                candidate_targets_global.update(vals or [])
     results = {}
     for fid, feature in sorted(document['features'].items()):
         status = feature.get('status')
@@ -176,10 +199,18 @@ def evaluate(document, evidence, history, root, streak):
         if transition is None:
             results[fid] = {'eligible': False,
                             'reasons': ['status is not beta, planned, or in_progress'],
-                            'transition': None, 'informational': []}
+                            'transition': None, 'informational': [],
+                            'evidence_lane': 'none', 'gating_passed': [],
+                            'gating_failed': [], 'candidate_passed': [],
+                            'candidate_failed': [], 'evaluated_passed': [],
+                            'evaluated_failed': []}
             continue
         declared = feature.get('tests', [])
-        result = evidence.get('per_feature_test_results', {}).get(fid, {})
+        result = per_feature.get(fid, {})
+        gating_passed = set(result.get('passed', []))
+        gating_failed = set(result.get('failed', []))
+        cand_passed = set(result.get('candidate_passed', []))
+        cand_failed = set(result.get('candidate_failed', []))
         missing_list = []
         if not declared or not isinstance(declared, list):
             missing_list.append('no declared test list')
@@ -188,20 +219,50 @@ def evaluate(document, evidence, history, root, streak):
             reasons = list(common)
             reasons.extend(completeness_reasons(feature))
             reasons.extend(missing_list)
+            evaluated_passed, evaluated_failed = gating_passed, gating_failed
+            effective_result, effective_targets = result, targets
+            evidence_lane = 'gating'
         else:
             blocking, informational = beta_completeness_split(feature)
             reasons = list(common) + blocking + missing_list
             informational = list(informational)
+            # Planned/in_progress lane: candidate sets, plus gating sets for
+            # names shared with gating features (those names are skipped by
+            # the candidate lane because the gating lane already evidences
+            # them).
+            evaluated_passed, evaluated_failed = set(), set()
+            merged_attrib = {}
+            gating_attrib = result.get('integration_targets_by_test', {})
+            cand_attrib = result.get('candidate_integration_targets_by_test', {})
+            if not isinstance(gating_attrib, dict):
+                gating_attrib = {}
+            if not isinstance(cand_attrib, dict):
+                cand_attrib = {}
+            for test in declared:
+                shared = test in gating_declared
+                if test in cand_passed or (shared and test in gating_passed):
+                    evaluated_passed.add(test)
+                if test in cand_failed or (shared and test in gating_failed):
+                    evaluated_failed.add(test)
+                merged = set(cand_attrib.get(test, []) or [])
+                if shared:
+                    merged.update(gating_attrib.get(test, []) or [])
+                if merged:
+                    merged_attrib[test] = sorted(merged)
+            effective_result = dict(result, passed=sorted(evaluated_passed),
+                                      integration_targets_by_test=merged_attrib)
+            effective_targets = targets | candidate_targets_global
+            evidence_lane = 'candidate+gating(shared)'
         if set(result.get('declared', [])) != set(declared):
             reasons.append('declared test evidence differs from ledger')
         if status != 'beta':
             for test in declared:
                 if not (any(linked(test, path, name) for path, name, _ in indexed)
-                        or resolvable_target(test, root, targets)):
+                        or resolvable_target(test, root, targets | candidate_targets_global)):
                     reasons.append(f'declared test missing from index: {test}')
-        if not set(declared) <= set(result.get('passed', [])) or result.get('failed'):
+        if not set(declared) <= set(evaluated_passed) or evaluated_failed & set(declared):
             reasons.append('declared tests failed or unresolved')
-        if not integration_linked(declared, result, targets):
+        if not integration_linked(declared, effective_result, effective_targets):
             reasons.append('no linked integration/E2E evidence')
         if any(bug and linked(test, path, name)
                for test in declared for path, name, bug in indexed):
@@ -216,7 +277,14 @@ def evaluate(document, evidence, history, root, streak):
             reasons.append(f'green streak {count} < {streak}')
         results[fid] = {'eligible': not reasons, 'reasons': reasons,
                         'green_streak': count, 'transition': transition,
-                        'informational': informational if status != 'beta' else []}
+                        'informational': informational if status != 'beta' else [],
+                        'evidence_lane': evidence_lane,
+                        'gating_passed': sorted(gating_passed & set(declared)),
+                        'gating_failed': sorted(gating_failed & set(declared)),
+                        'candidate_passed': sorted(cand_passed & set(declared)),
+                        'candidate_failed': sorted(cand_failed & set(declared)),
+                        'evaluated_passed': sorted(evaluated_passed & set(declared)),
+                        'evaluated_failed': sorted(evaluated_failed & set(declared))}
     return results
 
 

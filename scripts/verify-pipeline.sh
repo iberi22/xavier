@@ -290,11 +290,67 @@ PY
     fi
   done < "$TEST_LIST"
   # Candidate lane (planned only, NON-GATING): execute the declared tests of
-  # `planned` features so the promoter has evidence for planned->beta. Gating
-  # behaviour above is unchanged: CAND_FAILED never touches FAILED and never
-  # changes the exit code. Lines carry a `[candidate]` marker so
-  # ledger-promote-evidence can tell the lanes apart.
+  # `planned` features so the promoter has evidence for planned->beta. The
+  # lane runs AFTER the gating result is decided and never changes it:
+  # CAND_FAILED never touches FAILED and never changes the exit code. Lines
+  # carry a `[candidate]` marker so ledger-promote-evidence can tell the
+  # lanes apart. Names already in the gating TEST_LIST are skipped (already
+  # evidenced by the gating lane). Each candidate gets ONE cargo attempt
+  # (no retries) under $CANDIDATE_TEST_TIMEOUT (default 300s); the whole
+  # lane has a $CANDIDATE_LANE_BUDGET budget (default 900s) after which the
+  # remaining names report "skipped (budget)".
+  if [ "$FAILED" -ne 0 ]; then
+    echo "==> [4b/5] Skipping candidate lane (gating failed)..."
+  else
   echo "==> [4b/5] Executing candidate tests (planned, non-gating)..."
+  CAND_TIMEOUT="${CANDIDATE_TEST_TIMEOUT:-300}"
+  CAND_BUDGET="${CANDIDATE_LANE_BUDGET:-900}"
+  if command -v timeout >/dev/null 2>&1; then CAND_TIMEOUT_BIN="timeout $CAND_TIMEOUT"; else CAND_TIMEOUT_BIN=""; fi
+  CAND_START="$SECONDS"
+  # run_candidate_once: exactly ONE cargo invocation for the test (no
+  # fallback sweeps/retries), under the candidate per-test timeout.
+  run_candidate_once() {
+    local testname="$1" fnname files f inv filter_arg
+    FAIL_OUT=""
+    case "$testname" in
+      *\ *)
+        echo "  ⚠ candidate (non-gating) prose, not a test filter: '$testname'"
+        return 1 ;;
+    esac
+    fnname="${testname##*::}"
+    files="$(cd "$ROOT" && grep -rl --include='*.rs' -e "fn $fnname" src code-graph crates tests 2>/dev/null | head -1)"
+    if [ -n "$files" ]; then
+      for f in $files; do
+        inv="$(file_to_invocation "$f")"
+        [ -z "$inv" ] && continue
+        TRY_LABEL="${inv%%|*} (candidate)"
+        case "$inv" in
+          *"--test "*) filter_arg="$fnname" ;;
+          *) filter_arg="$testname" ;;
+        esac
+        # shellcheck disable=SC2086: intentional word-splitting of cargo args
+        OUT="$(cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_DIR" $CAND_TIMEOUT_BIN cargo ${inv#*|} "$filter_arg" 2>&1)"
+        RC=$?
+        PASSED="$(printf '%s' "$OUT" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | head -1)"
+        PASSED="${PASSED:-0}"
+        if [ "$RC" -eq 0 ] && [ "$PASSED" -ge 1 ]; then
+          echo "    ✅ $TRY_LABEL (passed=$PASSED)"
+          return 0
+        fi
+        return 1
+      done
+    fi
+    TRY_LABEL="xavier --lib (candidate)"
+    OUT="$(cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_DIR" $CAND_TIMEOUT_BIN cargo test -p xavier --lib "$testname" 2>&1)"
+    RC=$?
+    PASSED="$(printf '%s' "$OUT" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | head -1)"
+    PASSED="${PASSED:-0}"
+    if [ "$RC" -eq 0 ] && [ "$PASSED" -ge 1 ]; then
+      echo "    ✅ $TRY_LABEL (passed=$PASSED)"
+      return 0
+    fi
+    return 1
+  }
   CAND_LIST="$(mktemp)"
   CAND_FAILED=0
   if python3 - "$LEDGER" << 'PY' > "$CAND_LIST"
@@ -312,8 +368,17 @@ PY
   then
     while IFS= read -r testname; do
       [ -z "$testname" ] && continue
+      if grep -Fxq -- "$testname" "$TEST_LIST" 2>/dev/null; then
+        echo "  ▶ $testname [candidate] skipped (already in gating lane)"
+        continue
+      fi
+      ELAPSED=$((SECONDS - CAND_START))
+      if [ "$ELAPSED" -ge "$CAND_BUDGET" ]; then
+        echo "  ▶ $testname [candidate] skipped (budget)"
+        continue
+      fi
       echo "  ▶ $testname [candidate]"
-      if ! run_filter "$testname"; then
+      if ! run_candidate_once "$testname"; then
         echo "  ⚠ candidate (non-gating) produced no evidence: $testname"
         CAND_FAILED=1
       fi
@@ -326,6 +391,7 @@ PY
     echo "  ⚠ candidate lane had failures (non-gating — pipeline result unchanged)"
   else
     echo "  ✅ candidate lane complete"
+  fi
   fi
   rm -f "$TEST_LIST"
   rm -f "$SEEN_ERRORS_FILE"
