@@ -70,7 +70,25 @@ while read -r _lr _ls _rr _rs; do
     [ -z "${_ls:-}" ] && continue
     PUSH_LINES=$(( PUSH_LINES + 1 ))
     if [ -z "${_rs:-}" ] || [ "$_rs" = "0000000000000000000000000000000000000000" ]; then
-        SCAN_RANGES+=("$_ls" "  (rama nueva en el remoto)")
+        # Brand-new remote branch. A bare "$_ls" as range means "every ancestor",
+        # i.e. the whole history (hundreds of old fixture hits, so the push always
+        # fails). Only the commits the default branch doesn't already have are new:
+        # bound the range at the merge-base with origin/main (or origin/master).
+        _NEW_BASE=""
+        for _base in origin/main origin/master; do
+            if git rev-parse --verify -q "$_base" >/dev/null 2>&1; then
+                _NEW_BASE="$(git merge-base "$_base" "$_ls" 2>/dev/null || true)"
+                [ -n "$_NEW_BASE" ] && break
+            fi
+        done
+        if [ -n "$_NEW_BASE" ]; then
+            SCAN_RANGES+=("$_NEW_BASE..$_ls" "  (rama nueva) $_lr → $_rr, desde merge-base con $_base")
+            MSG_RANGES+=("$_NEW_BASE..$_ls")
+        else
+            # No default branch to compare against: fall back to the full history.
+            # (commit messages then use the bounded last-resort window below).
+            SCAN_RANGES+=("$_ls" "  (rama nueva, sin merge-base: historial completo)")
+        fi
         continue
     fi
     # rev-parse both sides so a stale/invalid entry cannot poison the range
