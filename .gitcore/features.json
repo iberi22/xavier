@@ -3393,7 +3393,15 @@
       ],
       "passes": false,
       "notes": "Registers the autonomous-delivery feature (P01, docs/CI only, no code PR). Spec: docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md; SRS mapping: REQ-085 (planned) in docs/SRS/REQUIREMENTS.md. Design: docs/design/trunk-based/01-DESIGN.md (flow + ship/show/ask), 02-AUTONOMOUS-PIPELINE.md (stages/gates), 03-DONE-PROTOCOL.md (DONE verifier contract); policy: docs/adr/ADR-035-trunk-based-ship-show-ask.md (accepted 2026-09-27). A docs/SRS/** change is Ask class and needs pre-merge panel approval. scripts/done-check.sh implements task/feature/increment bundle verification; pr-gate runs it in SHADOW mode. The 8-stage driver and evidence-bundle builder remain pending. Status changes only on a green scripts/verify-pipeline.sh run after executed tests; never hand-promoted.",
-      "tests": [],
+      "tests": [
+        "tests/delivery_scripts.rs::delivery_done_check_task_suite",
+        "tests/delivery_scripts.rs::delivery_done_check_feature_suite",
+        "tests/delivery_scripts.rs::delivery_done_check_increment_suite",
+        "tests/delivery_scripts.rs::delivery_atlas_review_adapter_suite",
+        "tests/delivery_scripts.rs::delivery_runner_suite",
+        "tests/delivery_scripts.rs::delivery_dag_check_suite",
+        "tests/delivery_scripts.rs::delivery_scope_check_suite"
+      ],
       "req_ids": [
         "REQ-085"
       ]
@@ -3436,6 +3444,12 @@
         "Offline verification: docker run --network none -> cargo build --offline && cargo test --offline --no-run && a hermetic lib-test subset",
         "Regenerate threat_model.md with KSM when ksm-context.yaml or the code layout changes (--check detects drift)",
         "Enrolment PR to anthropics/oss-scanner only after the owner provides a public security contact"
+      ],
+      "implemented_in": ".oss-scanner/",
+      "tests": [
+        "tests/oss_scanner_config.rs::oss_scanner_dockerfile_contract",
+        "tests/oss_scanner_config.rs::oss_scanner_toolchain_matches_ci_msrv",
+        "tests/oss_scanner_config.rs::oss_scanner_threat_model_exists"
       ],
       "passes": false,
       "notes": "Validated: project.yaml for xavier passes the upstream tools/validate.py (check_project) from oss-scanner 2cef161; KSM defensive_auditor on src/ reports 0 findings after the Rust unsafe-only rule fix (previously 11 false positives). Scanner-like build (clean clone, root .dockerignore removed as tools/check_build.py does): docker build OK (~16 min, image 32.5 GB, debug target dir). Inside --network none with a login shell: cargo build --offline OK, cargo test --offline --no-run OK, cargo test --offline --lib -- --test-threads=1: 3662 passed, 0 failed, 1 ignored (351 s). In parallel (--test-threads=4) 1-4 different tests fail per run and each passes alone: flaky under parallelism (seen: tools_secrets temp-file cleanup, connection_manager fd/eviction counts, conversations_db CRUD, qmd bus quota). Stabilizing them is follow-up work. Status moves to stable after the enrolment PR to anthropics/oss-scanner (needs an owner-provided public security contact)."
