@@ -199,6 +199,9 @@ PY
       tests/mesh_integration.rs)
         echo "--test mesh_integration (mesh)|test --features mesh --test mesh_integration" ;;
       src/*)            echo "xavier --lib|test -p xavier --lib" ;;
+      code-graph/tests/*.rs)
+        local base; base="$(basename "$1" .rs)"
+        echo "code-graph --test $base|test -p code-graph --test $base" ;;
       code-graph/*)     echo "code-graph --lib|test -p code-graph --lib" ;;
       crates/xavier-core-logic/*) echo "xavier-core-logic|test -p xavier-core-logic --lib" ;;
       crates/xavier-wasm/*)       echo "xavier-wasm|test -p xavier-wasm --lib" ;;
@@ -212,6 +215,17 @@ PY
           echo "crate $crate (all features)|test -p $crate --all-features --lib"
         else
           echo "crate $crate|test -p $crate --lib"
+        fi ;;
+      tests/integration/*.rs)
+        # Modules of tests/integration.rs run in the `integration` target; files that are
+        # their own [[test]] target run as such; anything else is not compiled at all.
+        local base; base="$(basename "$1" .rs)"
+        if grep -qF "#[path = \"integration/$base.rs\"]" "$ROOT/tests/integration.rs" 2>/dev/null; then
+          echo "--test integration|test -p xavier --features test-utils --test integration"
+        elif [[ " $TEST_TARGETS " == *" $base "* ]]; then
+          echo "--test $base|test -p xavier --features test-utils --test $base"
+        else
+          echo ""
         fi ;;
       tests/e2e/*|tests/*.rs)
         local base; base="$(basename "$1" .rs)"
