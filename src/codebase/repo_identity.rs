@@ -35,6 +35,9 @@ pub struct RepoIdentity {
     pub project_id: String,
     /// Canonical absolute repo root (git root when inside a git checkout).
     pub root: String,
+    /// Closest product directory containing `.xavier/config.toml`, when present.
+    #[serde(default)]
+    pub package_root: Option<String>,
     /// Commit the index corresponds to: `.xavier/codegraph-sync-commit`
     /// content, else current git HEAD, else `"unknown"`.
     pub indexed_commit: String,
@@ -175,6 +178,12 @@ pub fn derive_repo_identity(cwd: &Path) -> RepoIdentity {
     RepoIdentity {
         project_id,
         root: canonical.to_string_lossy().into_owned(),
+        package_root: nearest_config_ancestor(&cwd_abs).map(|path| {
+            path.canonicalize()
+                .unwrap_or(path)
+                .to_string_lossy()
+                .into_owned()
+        }),
         indexed_commit: read_indexed_commit(&canonical),
     }
 }

@@ -154,14 +154,14 @@ pub fn memory_store_path_for_root(repo_root: &Path) -> PathBuf {
 /// Path to the memory store for a request that carries an explicit
 /// [`RepoIdentity`].
 ///
-/// `project_id` is intentionally *not* part of the file name: the identity's
-/// `root` already determines the location, and two spellings of one repo must
-/// not produce two files. The project id is what tells two products inside one
-/// monorepo apart, and that separation happens because each product carries its
-/// own `root` (and its own `.xavier/config.toml`), not because the id is
-/// encoded in a path.
+/// `project_id` is intentionally *not* part of the file name. The closest
+/// product config determines `package_root`, keeping products in a monorepo
+/// separate even though they share a git `root`. Identities without a package
+/// root (including older CLI requests) fall back to the repository root.
 pub fn memory_store_path_for_identity(identity: &RepoIdentity) -> PathBuf {
-    memory_store_path_for_root(Path::new(&identity.root))
+    memory_store_path_for_root(Path::new(
+        identity.package_root.as_deref().unwrap_or(&identity.root),
+    ))
 }
 
 /// The store the daemon must open when it wants the per-repo store of
@@ -178,6 +178,64 @@ pub fn select_memory_store_path(repo_root: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    xavier::isolate_test_process!();
+
+    #[test]
+    fn monorepo_products_resolve_to_distinct_memory_files() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = fake_repo(&tmp.path().join("monorepo"));
+        let mut identities = Vec::new();
+        for product in ["alpha", "beta"] {
+            let root = repo.join("apps").join(product);
+            std::fs::create_dir_all(root.join(".xavier")).expect("mkdir package");
+            std::fs::write(
+                root.join(".xavier/config.toml"),
+                format!("project_id = \"{product}\"\n"),
+            )
+            .expect("write config");
+            let nested = root.join("src/deep");
+            std::fs::create_dir_all(&nested).expect("mkdir nested");
+            let identity = crate::codebase::repo_identity::derive_repo_identity(&nested);
+            assert_eq!(identity.root, repo.to_string_lossy());
+            assert_eq!(
+                identity.package_root.as_deref(),
+                root.to_str(),
+                "nested callers must resolve the closest product config"
+            );
+            assert_eq!(
+                memory_store_path_for_identity(&identity),
+                root.join(".xavier/memory.sqlite3")
+            );
+            identities.push(identity);
+        }
+        assert_ne!(
+            memory_store_path_for_identity(&identities[0]),
+            memory_store_path_for_identity(&identities[1]),
+            "products sharing a git root must not share a memory file"
+        );
+    }
+
+    #[test]
+    fn identity_without_package_root_falls_back_to_root() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = fake_repo(&tmp.path().join("legacy"));
+        let identity: RepoIdentity = serde_json::from_value(serde_json::json!({
+            "project_id": "legacy",
+            "root": root.to_string_lossy(),
+            "indexed_commit": "unknown"
+        }))
+        .expect("old CLI identity must deserialize");
+        assert_eq!(identity.package_root, None);
+        assert_eq!(
+            memory_store_path_for_identity(&identity),
+            root.join(".xavier/memory.sqlite3")
+        );
+        assert_eq!(
+            crate::codebase::repo_identity::derive_repo_identity(&root).package_root,
+            None
+        );
+    }
 
     /// Mirrors `codegraph_paths.rs`: serialise against the tests that mutate
     /// the override env var.
