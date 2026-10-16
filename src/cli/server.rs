@@ -3592,6 +3592,11 @@ mod feature_route_parity_tests {
         let reference = include_str!("../adapters/inbound/http/routes.rs");
         let mut checked = 0;
         for registration in reference.split(".route(").skip(1) {
+            // Only literal-path registrations; skip dynamic calls such as
+            // `router.route(&name)`.
+            if !registration.trim_start().starts_with('"') {
+                continue;
+            }
             let path = registration.split('"').nth(1).expect("route path");
             if !["/v1/identity/", "/v1/ivn/karma/", "/v1/marketplace/"]
                 .iter()
