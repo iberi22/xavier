@@ -10,7 +10,12 @@ use xavier::adapters::inbound::http::routes::create_router;
 
 #[tokio::test]
 async fn test_list_datasets_returns_available_datasets() {
-    let router = create_router();
+    let router = create_router().layer(axum::Extension(xavier::security::auth::Claims::new(
+        "marketplace-test-admin".into(),
+        String::new(),
+        xavier::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    )));
 
     let list_payload = json!({
         "name": "Marketplace List Test Dataset",
@@ -63,7 +68,12 @@ async fn test_list_datasets_returns_available_datasets() {
 
 #[tokio::test]
 async fn test_query_dataset_valid_and_invalid_id() {
-    let router = create_router();
+    let router = create_router().layer(axum::Extension(xavier::security::auth::Claims::new(
+        "marketplace-test-admin".into(),
+        String::new(),
+        xavier::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    )));
 
     let list_payload = json!({
         "name": "Query Test Dataset",
@@ -135,7 +145,12 @@ async fn test_query_dataset_valid_and_invalid_id() {
 
 #[tokio::test]
 async fn test_revoke_dataset_removes_access() {
-    let router = create_router();
+    let router = create_router().layer(axum::Extension(xavier::security::auth::Claims::new(
+        "marketplace-test-admin".into(),
+        String::new(),
+        xavier::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    )));
 
     let list_payload = json!({
         "name": "Revoke Test Dataset",
@@ -197,7 +212,12 @@ async fn test_revoke_dataset_removes_access() {
 
 #[tokio::test]
 async fn test_list_dataset_with_invalid_signature_rejected() {
-    let router = create_router();
+    let router = create_router().layer(axum::Extension(xavier::security::auth::Claims::new(
+        "marketplace-test-admin".into(),
+        String::new(),
+        xavier::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    )));
 
     let invalid_sig_payload = json!({
         "name": "Invalid Sig Dataset",
@@ -231,7 +251,12 @@ async fn test_list_dataset_with_invalid_signature_rejected() {
 
 #[tokio::test]
 async fn test_pricing_metadata_responses() {
-    let router = create_router();
+    let router = create_router().layer(axum::Extension(xavier::security::auth::Claims::new(
+        "marketplace-test-admin".into(),
+        String::new(),
+        xavier::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    )));
 
     let pricing_req = Request::builder()
         .uri("/v1/marketplace/pricing?size=1000&reputation=0.8")
@@ -255,7 +280,12 @@ async fn test_pricing_metadata_responses() {
 
 #[tokio::test]
 async fn test_marketplace_full_lifecycle() {
-    let router = create_router();
+    let router = create_router().layer(axum::Extension(xavier::security::auth::Claims::new(
+        "marketplace-test-admin".into(),
+        String::new(),
+        xavier::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    )));
 
     // 1. GET /v1/marketplace/pricing preview
     let pricing_req = Request::builder()

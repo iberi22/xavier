@@ -553,7 +553,9 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         // ── Data Marketplace API ──────────────────────────────────────────
         .route(
             "/v1/marketplace/datasets",
-            post(xavier::adapters::inbound::http::handlers::list_dataset_handler),
+            post(xavier::adapters::inbound::http::handlers::list_dataset_handler).layer(
+                axum::middleware::from_fn(require_permission(|r| r.can_add_memory())),
+            ),
         )
         .route(
             "/v1/marketplace/datasets",
@@ -565,7 +567,9 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         )
         .route(
             "/v1/marketplace/datasets/{id}",
-            delete(xavier::adapters::inbound::http::handlers::revoke_dataset_handler),
+            delete(xavier::adapters::inbound::http::handlers::revoke_dataset_handler).layer(
+                axum::middleware::from_fn(require_permission(|r| r.can_delete_memory())),
+            ),
         )
         .route(
             "/v1/marketplace/pricing",
@@ -574,7 +578,9 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         // ── Identity Verification Network (IVN) API ─────────────────────────
         .route(
             "/v1/identity/request",
-            post(xavier::adapters::inbound::http::handlers::create_identity_request_handler),
+            post(xavier::adapters::inbound::http::handlers::create_identity_request_handler).layer(
+                axum::middleware::from_fn(require_permission(|r| r.can_add_memory())),
+            ),
         )
         .route(
             "/v1/identity/request/{id}",
@@ -582,7 +588,9 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         )
         .route(
             "/v1/identity/{id}/vote",
-            post(xavier::adapters::inbound::http::handlers::vote_identity_request_handler),
+            post(xavier::adapters::inbound::http::handlers::vote_identity_request_handler).layer(
+                axum::middleware::from_fn(require_permission(|r| r.can_add_memory())),
+            ),
         )
         .route(
             "/v1/identity/requests",

@@ -50,6 +50,8 @@ pub struct DataPage {
 pub struct DataMarketplace {
     /// Active and inactive dataset listings
     datasets: HashMap<DatasetId, (DatasetMetadata, bool)>,
+    #[serde(skip)]
+    load_error: Option<String>,
 }
 
 impl DataMarketplace {
@@ -57,7 +59,39 @@ impl DataMarketplace {
     pub fn new() -> Self {
         Self {
             datasets: HashMap::new(),
+            load_error: None,
         }
+    }
+
+    /// Reload persisted listings, including revocations.
+    pub fn load() -> Result<Self, String> {
+        super::ivn_storage::load_json(&super::ivn_storage::ivn_root()?.join("datasets.json"))
+    }
+
+    /// Persist the complete listing state before acknowledging a write.
+    pub fn save(&self) -> Result<(), String> {
+        if let Some(err) = &self.load_error {
+            return Err(err.clone());
+        }
+        super::ivn_storage::save_json(&super::ivn_storage::ivn_root()?.join("datasets.json"), self)
+    }
+
+    /// Load at first use, retaining errors to prevent overwriting unreadable state.
+    pub fn load_or_unavailable() -> Self {
+        Self::load().unwrap_or_else(|err| {
+            tracing::error!(error = %err, "Failed to load marketplace datasets");
+            Self {
+                load_error: Some(err),
+                ..Self::new()
+            }
+        })
+    }
+
+    /// Publisher identity recorded when the dataset was listed.
+    pub fn publisher(&self, id: &DatasetId) -> Option<&str> {
+        self.datasets
+            .get(id)
+            .map(|(metadata, _)| metadata.publisher.as_str())
     }
 
     /// Lists a new dataset in the marketplace and returns its unique ID.
@@ -166,6 +200,7 @@ impl DataMarketplace {
 
 #[cfg(test)]
 mod tests {
+    crate::isolate_test_process!();
     use super::*;
 
     #[test]

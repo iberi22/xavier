@@ -114,10 +114,11 @@ pub struct AgentKarmaRecord {
     pub last_decay: u64,
 }
 
-/// Persistent Karma engine managing rewards, sanctions, tiers, decay, and persistence to `data/ivn/karma.json`.
+/// Persistent Karma engine managing rewards, sanctions, tiers, decay, and persistence under the shared IVN root.
 #[derive(Debug, Clone)]
 pub struct KarmaEngine {
     storage_path: PathBuf,
+    load_error: Option<String>,
     records: HashMap<String, AgentKarmaRecord>,
 }
 
@@ -128,9 +129,34 @@ impl Default for KarmaEngine {
 }
 
 impl KarmaEngine {
-    /// Create new KarmaEngine using default storage path `data/ivn/karma.json`
+    /// Load canonical storage, importing the legacy file only when absent.
     pub fn new() -> Self {
-        Self::with_path(PathBuf::from("data/ivn/karma.json"))
+        let storage_path = match super::ivn_storage::ivn_root() {
+            Ok(root) => root.join("karma.json"),
+            Err(error) => {
+                tracing::error!(%error, "Karma persistence disabled");
+                return Self {
+                    storage_path: PathBuf::new(),
+                    load_error: Some(error),
+                    records: HashMap::new(),
+                };
+            }
+        };
+        let legacy_path = PathBuf::from("data/ivn/karma.json");
+        if matches!(storage_path.try_exists(), Ok(false))
+            && matches!(legacy_path.try_exists(), Ok(true))
+        {
+            tracing::warn!(path = %legacy_path.display(), "Reading legacy karma storage once; future writes use the IVN root");
+            let mut engine = Self::with_path(legacy_path);
+            engine.storage_path = storage_path;
+            if engine.load_error.is_none() {
+                if let Err(error) = engine.save() {
+                    tracing::error!(%error, "Failed to persist imported karma");
+                }
+            }
+            return engine;
+        }
+        Self::with_path(storage_path)
     }
 
     /// Create KarmaEngine with custom storage path
@@ -138,19 +164,37 @@ impl KarmaEngine {
         let storage_path = path.into();
         let mut engine = Self {
             storage_path,
+            load_error: None,
             records: HashMap::new(),
         };
-        let _ = engine.load();
+        if let Err(error) = engine.load() {
+            tracing::error!(%error, "Failed to load karma storage");
+        }
         engine
     }
 
     /// Load records from storage file if it exists
     pub fn load(&mut self) -> Result<(), String> {
-        if !self.storage_path.exists() {
-            return Ok(());
+        if let Some(error) = &self.load_error {
+            return Err(error.clone());
         }
-        let data = std::fs::read_to_string(&self.storage_path)
-            .map_err(|e| format!("Failed to read karma file: {}", e))?;
+        let result = self.load_records();
+        if let Err(error) = &result {
+            self.load_error = Some(error.clone());
+            self.records.clear();
+        }
+        result
+    }
+
+    fn load_records(&mut self) -> Result<(), String> {
+        let data = match std::fs::read_to_string(&self.storage_path) {
+            Ok(data) => data,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => {
+                tracing::error!(%error, path = %self.storage_path.display(), "Failed to read karma storage");
+                return Err(format!("Failed to read karma file: {error}"));
+            }
+        };
 
         let envelope: KarmaStorageEnvelope = match serde_json::from_str(&data) {
             Ok(env) => env,
@@ -160,7 +204,7 @@ impl KarmaEngine {
                     e
                 );
                 self.records = HashMap::new();
-                return Ok(());
+                return Err("Invalid karma storage envelope".into());
             }
         };
 
@@ -172,7 +216,7 @@ impl KarmaEngine {
             Err(_) => {
                 tracing::error!("Tampering detected in karma.json: invalid hmac hex");
                 self.records = HashMap::new();
-                return Ok(());
+                return Err("Invalid karma storage HMAC encoding".into());
             }
         };
 
@@ -181,7 +225,7 @@ impl KarmaEngine {
         {
             tracing::error!("Tampering detected in karma.json");
             self.records = HashMap::new();
-            return Ok(());
+            return Err("Invalid karma storage HMAC".into());
         }
 
         let records: HashMap<String, AgentKarmaRecord> =
@@ -193,7 +237,7 @@ impl KarmaEngine {
                         e
                     );
                     self.records = HashMap::new();
-                    return Ok(());
+                    return Err("Invalid karma records JSON".into());
                 }
             };
 
@@ -203,10 +247,8 @@ impl KarmaEngine {
 
     /// Save records to storage file
     pub fn save(&self) -> Result<(), String> {
-        if let Some(parent) = self.storage_path.parent() {
-            if !parent.exists() {
-                let _ = std::fs::create_dir_all(parent);
-            }
+        if let Some(error) = &self.load_error {
+            return Err(error.clone());
         }
         let records_json = serde_json::to_string_pretty(&self.records)
             .map_err(|e| format!("Failed to serialize karma records: {}", e))?;
@@ -221,12 +263,7 @@ impl KarmaEngine {
             records_json,
         };
 
-        let json = serde_json::to_string_pretty(&envelope)
-            .map_err(|e| format!("Failed to serialize karma envelope: {}", e))?;
-
-        std::fs::write(&self.storage_path, json)
-            .map_err(|e| format!("Failed to write karma file: {}", e))?;
-        Ok(())
+        super::ivn_storage::save_json(&self.storage_path, &envelope)
     }
 
     /// Award karma to an agent for a specified reason
@@ -246,7 +283,9 @@ impl KarmaEngine {
         });
 
         let new_karma = record.karma;
-        let _ = self.save();
+        if let Err(error) = self.save() {
+            tracing::error!(%error, "Failed to persist karma storage");
+        }
         new_karma
     }
 
@@ -268,7 +307,9 @@ impl KarmaEngine {
         });
 
         let new_karma = record.karma;
-        let _ = self.save();
+        if let Err(error) = self.save() {
+            tracing::error!(%error, "Failed to persist karma storage");
+        }
         new_karma
     }
 
@@ -302,7 +343,9 @@ impl KarmaEngine {
             record.last_decay = now;
         }
 
-        let _ = self.save();
+        if let Err(error) = self.save() {
+            tracing::error!(%error, "Failed to persist karma storage");
+        }
     }
 }
 

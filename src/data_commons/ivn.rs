@@ -14,42 +14,42 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 use thiserror::Error;
 
-static EXCLUSION_STORE: RwLock<Option<HashMap<String, u64>>> = RwLock::new(None);
-
-fn resolve_exclusion_path() -> std::path::PathBuf {
-    if let Ok(env_path) = std::env::var("XAVIER_DATA_DIR") {
-        std::path::PathBuf::from(env_path)
-            .join("ivn")
-            .join("exclusions.json")
-    } else if let Some(data_dir) = dirs::data_dir() {
-        data_dir.join("xavier").join("ivn").join("exclusions.json")
-    } else {
-        std::path::PathBuf::from("data")
-            .join("ivn")
-            .join("exclusions.json")
-    }
+struct ExclusionStore {
+    entries: HashMap<String, u64>,
+    load_error: Option<String>,
 }
 
-fn load_exclusions_from_disk() -> HashMap<String, u64> {
-    let path = resolve_exclusion_path();
-    if !path.exists() {
-        return HashMap::new();
-    }
-    match std::fs::read_to_string(&path) {
-        Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
-        Err(_) => HashMap::new(),
-    }
+static EXCLUSION_STORE: RwLock<Option<ExclusionStore>> = RwLock::new(None);
+
+fn resolve_exclusion_path() -> Result<std::path::PathBuf, String> {
+    Ok(super::ivn_storage::ivn_root()?.join("exclusions.json"))
 }
 
-fn save_exclusions_to_disk(map: &HashMap<String, u64>) {
-    let path = resolve_exclusion_path();
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            let _ = std::fs::create_dir_all(parent);
+fn load_exclusions_from_disk() -> ExclusionStore {
+    match resolve_exclusion_path().and_then(|path| super::ivn_storage::load_json(&path)) {
+        Ok(entries) => ExclusionStore {
+            entries,
+            load_error: None,
+        },
+        Err(error) => {
+            tracing::error!(%error, "Failed to load IVN exclusions; persistence disabled");
+            ExclusionStore {
+                entries: HashMap::new(),
+                load_error: Some(error),
+            }
         }
     }
-    if let Ok(serialized) = serde_json::to_string_pretty(map) {
-        let _ = std::fs::write(&path, serialized);
+}
+
+fn save_exclusions_to_disk(store: &ExclusionStore) {
+    let result = if let Some(error) = &store.load_error {
+        Err(error.clone())
+    } else {
+        resolve_exclusion_path()
+            .and_then(|path| super::ivn_storage::save_json(&path, &store.entries))
+    };
+    if let Err(error) = result {
+        tracing::error!(%error, "Failed to persist IVN exclusions");
     }
 }
 
@@ -60,7 +60,7 @@ pub fn record_exclusion(node_id: &WalletAddress, until_timestamp: u64) {
         Err(poisoned) => poisoned.into_inner(),
     };
     let map = store.get_or_insert_with(load_exclusions_from_disk);
-    map.insert(node_id.0.clone(), until_timestamp);
+    map.entries.insert(node_id.0.clone(), until_timestamp);
     save_exclusions_to_disk(map);
 }
 
@@ -80,7 +80,7 @@ pub fn is_excluded_at(node_id: &WalletAddress, current_time: u64) -> bool {
         Err(poisoned) => poisoned.into_inner(),
     };
     let map = store.get_or_insert_with(load_exclusions_from_disk);
-    if let Some(&until) = map.get(&node_id.0) {
+    if let Some(&until) = map.entries.get(&node_id.0) {
         return current_time < until;
     }
     false
@@ -92,16 +92,9 @@ pub fn clear_exclusions() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     };
-    if let Some(map) = store.as_mut() {
-        map.clear();
-        save_exclusions_to_disk(map);
-    } else {
-        *store = Some(HashMap::new());
-        let path = resolve_exclusion_path();
-        if path.exists() {
-            let _ = std::fs::remove_file(path);
-        }
-    }
+    let map = store.get_or_insert_with(load_exclusions_from_disk);
+    map.entries.clear();
+    save_exclusions_to_disk(map);
 }
 
 /// IVN configuration parameters
