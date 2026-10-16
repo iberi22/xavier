@@ -221,6 +221,7 @@ async fn create_space(manager: &Arc<SpaceManager>, id: &str, owner: &str, encryp
                 mode: UnlockMode::NodeUnlock,
                 password: None,
                 encrypt_records: encrypt,
+                protocol: None,
             },
         )
         .await
@@ -493,6 +494,7 @@ async fn locked_space_is_refused_until_unlocked() {
                 mode: UnlockMode::PasswordRequired,
                 password: Some("correct horse battery staple".into()),
                 encrypt_records: false,
+                protocol: None,
             },
         )
         .await

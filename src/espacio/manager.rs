@@ -17,6 +17,9 @@ use super::keys::{NodeKek, RecoveryCode, UnlockMode};
 use super::migrate::{self, AdoptableDb, LegacySpace, LegacyWorkspace};
 use super::permissions::SpaceMembership;
 use super::store::{self, SpaceStores};
+use crate::memory::store::MemoryBackend;
+use crate::workspace::config::SyncPolicy;
+use crate::workspace::protocol::{SpaceProtocol, TransportKind};
 
 /// Payload for creating a new Space
 #[derive(Clone, Serialize, Deserialize)]
@@ -43,6 +46,10 @@ pub struct CreateSpaceRequest {
     /// to get a plaintext-memory space (the choice is persisted in `space.json`).
     #[serde(default)]
     pub encrypt_records: Option<bool>,
+    /// Per-space protocol (rules). Absent means [`SpaceProtocol::default`],
+    /// which is what every space gets when it has no protocol of its own.
+    #[serde(default)]
+    pub protocol: Option<SpaceProtocol>,
 }
 
 impl std::fmt::Debug for CreateSpaceRequest {
@@ -70,6 +77,9 @@ pub struct KeyOptions {
     pub password: Option<String>,
     /// Encrypt message content with the space key (default true).
     pub encrypt_records: bool,
+    /// The space's own protocol (rules). `None` keeps [`SpaceProtocol::default`]
+    /// and writes nothing extra to `space.json`.
+    pub protocol: Option<SpaceProtocol>,
 }
 
 impl Default for KeyOptions {
@@ -78,6 +88,7 @@ impl Default for KeyOptions {
             mode: UnlockMode::NodeUnlock,
             password: None,
             encrypt_records: true,
+            protocol: None,
         }
     }
 }
@@ -128,6 +139,11 @@ struct SpaceDescriptor {
     legacy: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     legacy_store: Option<LegacyWorkspace>,
+    /// Per-space protocol. Absent in descriptors written before it existed,
+    /// and for spaces created without one: both use [`SpaceProtocol::default`].
+    /// Only written when the space was created with an explicit protocol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    protocol: Option<SpaceProtocol>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -139,8 +155,36 @@ struct EncryptionMeta {
 const DESCRIPTOR_VERSION: u32 = 1;
 const KEYSTORE_VERSION: u32 = 1;
 
+/// What this build can honour for a space's protocol. Everything else in
+/// [`SpaceProtocol::validate`] is structural; these are the v1 limits: no
+/// sync, no mirror and no transport beyond local, because nothing in the
+/// space workspace builder implements them yet. Fail closed rather than
+/// accept a rule that would silently do nothing.
+fn check_protocol(p: &SpaceProtocol) -> std::result::Result<(), String> {
+    p.validate().map_err(|e| e.join("; "))?;
+    let mut unsupported = Vec::new();
+    if p.sync.policy != SyncPolicy::LocalOnly {
+        unsupported.push("sync.policy must be local_only in this version");
+    }
+    if p.sync.mirror_target.is_some() {
+        unsupported.push("sync.mirror_target is not supported in this version");
+    }
+    if p.transport.kind != TransportKind::LocalOnly || !p.transport.chain.is_empty() {
+        unsupported.push("transport must be local_only in this version");
+    }
+    if unsupported.is_empty() {
+        Ok(())
+    } else {
+        Err(unsupported.join("; "))
+    }
+}
+
 impl SpaceDescriptor {
-    fn from_info(info: &SpaceInfo, encryption: Option<EncryptionMeta>) -> Self {
+    fn from_info(
+        info: &SpaceInfo,
+        encryption: Option<EncryptionMeta>,
+        protocol: Option<SpaceProtocol>,
+    ) -> Self {
         Self {
             version: DESCRIPTOR_VERSION,
             id: info.id.clone(),
@@ -153,6 +197,7 @@ impl SpaceDescriptor {
             encryption,
             legacy: false,
             legacy_store: None,
+            protocol,
         }
     }
 
@@ -179,6 +224,8 @@ pub enum SpaceError {
     NotFound(String),
     #[error("Invalid space id: {0}")]
     InvalidId(String),
+    #[error("Invalid space protocol: {0}")]
+    InvalidProtocol(String),
     #[error("Storage error: {0}")]
     Storage(String),
 }
@@ -188,6 +235,9 @@ pub enum SpaceError {
 #[derive(Debug, Default)]
 pub struct SpaceManager {
     spaces: Arc<RwLock<HashMap<String, SpaceInfo>>>,
+    /// Explicit per-space protocols, loaded with the descriptors. A registered
+    /// space without an entry runs with [`SpaceProtocol::default`].
+    protocols: Arc<RwLock<HashMap<String, SpaceProtocol>>>,
     /// Spaces whose `space.json` could not be loaded: id -> reason. Their
     /// data is never touched.
     unavailable: Arc<RwLock<HashMap<String, String>>>,
@@ -205,6 +255,7 @@ impl SpaceManager {
     pub fn new(base_dir: impl Into<PathBuf>) -> Self {
         Self {
             spaces: Arc::new(RwLock::new(HashMap::new())),
+            protocols: Arc::new(RwLock::new(HashMap::new())),
             unavailable: Arc::new(RwLock::new(HashMap::new())),
             base_dir: base_dir.into(),
             stores: SpaceStores::in_memory(),
@@ -256,7 +307,7 @@ impl SpaceManager {
                 Err(e) => tracing::warn!("espacio: legacy descriptor not written: {e}"),
             }
         }
-        let (spaces, unavailable, encrypted, legacy_found) = Self::scan(&base_dir);
+        let (spaces, protocols, unavailable, encrypted, legacy_found) = Self::scan(&base_dir);
         if let Some(ring) = stores.key_ring() {
             for id in spaces.keys() {
                 stores.prime_encryption(id);
@@ -270,6 +321,7 @@ impl SpaceManager {
         }
         Self {
             spaces: Arc::new(RwLock::new(spaces)),
+            protocols: Arc::new(RwLock::new(protocols)),
             unavailable: Arc::new(RwLock::new(unavailable)),
             base_dir,
             stores,
@@ -329,23 +381,25 @@ impl SpaceManager {
         self.stores.clone()
     }
 
-    /// Returns the registered spaces, the unavailable ones and the ids whose
-    /// descriptor says they are encrypted.
+    /// Returns the registered spaces, their explicit protocols, the
+    /// unavailable ones and the ids whose descriptor says they are encrypted.
     #[allow(clippy::type_complexity)]
     fn scan(
         base_dir: &Path,
     ) -> (
         HashMap<String, SpaceInfo>,
+        HashMap<String, SpaceProtocol>,
         HashMap<String, String>,
         Vec<String>,
         Option<LegacySpace>,
     ) {
         let mut legacy_found = None;
         let mut spaces = HashMap::new();
+        let mut protocols = HashMap::new();
         let mut unavailable = HashMap::new();
         let mut encrypted = Vec::new();
         let Ok(rd) = std::fs::read_dir(base_dir) else {
-            return (spaces, unavailable, encrypted, legacy_found);
+            return (spaces, protocols, unavailable, encrypted, legacy_found);
         };
         for entry in rd.flatten() {
             let dir = entry.path();
@@ -377,6 +431,12 @@ impl SpaceManager {
                     } else {
                         Err(format!("descriptor id {:?} does not match directory", d.id))
                     }
+                })
+                .and_then(|d| {
+                    if let Some(p) = &d.protocol {
+                        check_protocol(p).map_err(|e| format!("unsupported protocol: {e}"))?;
+                    }
+                    Ok(d)
                 });
             match loaded {
                 Ok(d) if d.legacy => {
@@ -395,6 +455,9 @@ impl SpaceManager {
                     if d.encryption.is_some_and(|e| e.enabled) {
                         encrypted.push(name.clone());
                     }
+                    if let Some(p) = d.protocol.clone() {
+                        protocols.insert(name.clone(), p);
+                    }
                     spaces.insert(name, d.into_info(dir));
                 }
                 Err(reason) => {
@@ -406,7 +469,7 @@ impl SpaceManager {
                 }
             }
         }
-        (spaces, unavailable, encrypted, legacy_found)
+        (spaces, protocols, unavailable, encrypted, legacy_found)
     }
 
     /// Spaces that exist on disk but whose descriptor failed to load.
@@ -504,6 +567,22 @@ impl SpaceManager {
             // The id of the legacy default workspace stays reserved.
             return Err(anyhow!(SpaceError::AlreadyExists(id)));
         }
+        if let Some(p) = &opts.protocol {
+            // Refused before anything is written. The protocol must agree
+            // with the encryption this create will actually use.
+            check_protocol(p).map_err(|e| anyhow!(SpaceError::InvalidProtocol(e)))?;
+            let encrypted = opts.encrypt_records && self.stores.key_ring().is_some();
+            if p.storage.encrypt_records != encrypted {
+                return Err(anyhow!(SpaceError::InvalidProtocol(format!(
+                    "storage.encrypt_records must be {encrypted} for this space"
+                ))));
+            }
+            if encrypted && p.storage.backend != MemoryBackend::Vec {
+                return Err(anyhow!(SpaceError::InvalidProtocol(
+                    "an encrypting space requires storage.backend vec".into()
+                )));
+            }
+        }
         let mut guard = self.spaces.write().await;
         if guard.contains_key(&id) || self.unavailable.read().await.contains_key(&id) {
             return Err(anyhow!(SpaceError::AlreadyExists(id)));
@@ -551,8 +630,9 @@ impl SpaceManager {
             }
             store.add_member(&info.owner_node, SpaceRole::Admin)?;
             if self.stores.is_persistent() {
-                let bytes =
-                    serde_json::to_vec_pretty(&SpaceDescriptor::from_info(&info, encryption))?;
+                let descriptor =
+                    SpaceDescriptor::from_info(&info, encryption, opts.protocol.clone());
+                let bytes = serde_json::to_vec_pretty(&descriptor)?;
                 store::write_atomic(&info.storage_path.join(store::DESCRIPTOR_FILE), &bytes)?;
             }
             Ok(())
@@ -564,8 +644,22 @@ impl SpaceManager {
             }
             return Err(anyhow!(SpaceError::Storage(e.to_string())));
         }
+        if let Some(p) = opts.protocol {
+            self.protocols.write().await.insert(id.clone(), p);
+        }
         guard.insert(id, info.clone());
         Ok((info, recovery))
+    }
+
+    /// The protocol of a space: the one it was created with, otherwise
+    /// [`SpaceProtocol::default`]. Read by the space workspace builder.
+    pub async fn protocol(&self, id: &str) -> SpaceProtocol {
+        self.protocols
+            .read()
+            .await
+            .get(id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Get a Space by id
@@ -629,6 +723,7 @@ impl SpaceManager {
                 ))));
             }
         }
+        self.protocols.write().await.remove(id);
         // No inheritance by id reuse: links of other spaces that name the
         // deleted space as grantee are revoked now.
         let others: Vec<String> = guard.keys().cloned().collect();
@@ -1006,6 +1101,178 @@ mod persistence_tests {
         assert!(SpaceManager::open(tmp.path()).list().await.is_empty());
     }
 
+    // ---- per-space protocol ----
+
+    /// A plaintext, sqlite-backed protocol: valid without a key ring.
+    fn plain_protocol() -> SpaceProtocol {
+        let mut p = SpaceProtocol::default();
+        p.storage.backend = MemoryBackend::Sqlite;
+        p.storage.encrypt_records = false;
+        p.limits.plan = crate::workspace::config::PlanTier::Personal;
+        p.members_cap = 5;
+        p
+    }
+
+    fn with_protocol(protocol: SpaceProtocol) -> KeyOptions {
+        KeyOptions {
+            protocol: Some(protocol),
+            ..KeyOptions::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_protocol_survives_restart_and_default_is_used_otherwise() {
+        let tmp = tempfile::tempdir().unwrap();
+        {
+            let mgr = SpaceManager::open(tmp.path());
+            mgr.create_with_keys(
+                "esp_p".into(),
+                "p".into(),
+                "".into(),
+                "owner".into(),
+                false,
+                with_protocol(plain_protocol()),
+            )
+            .await
+            .unwrap();
+            mk(&mgr, "esp_d").await;
+        }
+        let mgr = SpaceManager::open(tmp.path());
+        let p = mgr.protocol("esp_p").await;
+        assert_eq!(p.storage.backend, MemoryBackend::Sqlite);
+        assert_eq!(p.members_cap, 5);
+        assert!(matches!(
+            p.limits.plan,
+            crate::workspace::config::PlanTier::Personal
+        ));
+        let d = mgr.protocol("esp_d").await;
+        assert_eq!(d.storage.backend, MemoryBackend::Vec);
+        assert_eq!(d.members_cap, SpaceProtocol::default().members_cap);
+        // A space created without a protocol keeps its descriptor unchanged.
+        let json = std::fs::read_to_string(tmp.path().join("spaces/esp_d/space.json")).unwrap();
+        assert!(!json.contains("\"protocol\""));
+    }
+
+    #[tokio::test]
+    async fn protocol_is_dropped_with_its_space() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = SpaceManager::open(tmp.path());
+        mgr.create_with_keys(
+            "esp_p".into(),
+            "p".into(),
+            "".into(),
+            "owner".into(),
+            false,
+            with_protocol(plain_protocol()),
+        )
+        .await
+        .unwrap();
+        mgr.delete("esp_p").await.unwrap();
+        assert_eq!(
+            mgr.protocol("esp_p").await.storage.backend,
+            MemoryBackend::Vec
+        );
+    }
+
+    #[tokio::test]
+    async fn protocol_this_build_cannot_honour_is_refused_before_any_write() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = SpaceManager::open(tmp.path());
+        let mut p = plain_protocol();
+        p.transport.kind = TransportKind::Https;
+        let err = mgr
+            .create_with_keys(
+                "esp_x".into(),
+                "x".into(),
+                "".into(),
+                "owner".into(),
+                false,
+                with_protocol(p),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err.downcast_ref::<SpaceError>(),
+            Some(SpaceError::InvalidProtocol(_))
+        ));
+        assert!(!tmp.path().join("spaces/esp_x").exists());
+        assert!(mgr.get("esp_x").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn encryption_must_match_the_protocol() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = SpaceManager::open_with_keys(tmp.path(), node());
+        let create = |id: &'static str, opts: KeyOptions| {
+            let mgr = &mgr;
+            async move {
+                mgr.create_with_keys(id.into(), id.into(), "".into(), "owner".into(), false, opts)
+                    .await
+            }
+        };
+        // An encrypting space cannot claim plaintext records...
+        assert!(create("esp_plain", with_protocol(plain_protocol()))
+            .await
+            .is_err());
+        // ...nor a backend other than vec, which is the only one that seals.
+        let mut sqlite = SpaceProtocol::default();
+        sqlite.storage.backend = MemoryBackend::Sqlite;
+        assert!(create("esp_sqlite", with_protocol(sqlite)).await.is_err());
+        assert!(!tmp.path().join("spaces/esp_plain").exists());
+        assert!(!tmp.path().join("spaces/esp_sqlite").exists());
+        // The matching protocol is accepted.
+        create("esp_ok", with_protocol(SpaceProtocol::default()))
+            .await
+            .unwrap();
+        assert!(mgr.protocol("esp_ok").await.storage.encrypt_records);
+
+        // Without a key ring nothing is encrypted, so the default protocol
+        // (encrypt_records = true) cannot be applied.
+        let plain_mgr = SpaceManager::open(tmp.path().join("plain"));
+        let err = plain_mgr
+            .create_with_keys(
+                "esp_q".into(),
+                "q".into(),
+                "".into(),
+                "owner".into(),
+                false,
+                with_protocol(SpaceProtocol::default()),
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("encrypt_records must be false"));
+    }
+
+    #[tokio::test]
+    async fn invalid_protocol_on_disk_makes_space_unavailable() {
+        let tmp = tempfile::tempdir().unwrap();
+        {
+            let mgr = SpaceManager::open(tmp.path());
+            mgr.create_with_keys(
+                "esp_p".into(),
+                "p".into(),
+                "".into(),
+                "owner".into(),
+                false,
+                with_protocol(plain_protocol()),
+            )
+            .await
+            .unwrap();
+        }
+        let path = tmp.path().join("spaces/esp_p/space.json");
+        let json = std::fs::read_to_string(&path).unwrap();
+        // Rewrite the transport kind to one this build cannot honour.
+        std::fs::write(
+            &path,
+            json.replace("\"kind\": \"local_only\"", "\"kind\": \"https\""),
+        )
+        .unwrap();
+
+        let mgr = SpaceManager::open(tmp.path());
+        assert!(mgr.get("esp_p").await.is_err());
+        assert_eq!(mgr.unavailable().await.len(), 1);
+    }
+
     // ---- WP-13j: keyed spaces ----
 
     use crate::espacio::keys::{KeysError, StaticNodeKek};
@@ -1088,6 +1355,7 @@ mod persistence_tests {
                 mode: UnlockMode::PasswordRequired,
                 password: Some(PW.into()),
                 encrypt_records: true,
+                protocol: None,
             },
         )
         .await

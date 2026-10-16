@@ -1381,10 +1381,10 @@ pub async fn space_workspace_is_cached(space_id: &str) -> bool {
     SPACE_WORKSPACES.lock().await.contains_key(space_id)
 }
 
-/// Workspace config of a space: its own id, no shared token, path-only
-/// backend taken from the space protocol. Never reads env or node settings.
-fn config_for_space(space_id: &str) -> WorkspaceConfig {
-    let protocol = super::protocol::SpaceProtocol::default();
+/// Workspace config of a space: its own id, no shared token, and the backend,
+/// limits, embedding and sync rules of the space's protocol. Never reads env
+/// or node settings.
+fn config_for_space(space_id: &str, protocol: super::protocol::SpaceProtocol) -> WorkspaceConfig {
     WorkspaceConfig {
         id: space_id.to_string(),
         token: String::new(),
@@ -1396,7 +1396,7 @@ fn config_for_space(space_id: &str) -> WorkspaceConfig {
         embedding_provider_mode: protocol.embedding_mode,
         managed_google_embeddings: false,
         sync_policy: protocol.sync.policy,
-        dedup: Default::default(),
+        dedup: protocol.dedup.clone().unwrap_or_default(),
         protocol,
     }
 }
@@ -1415,6 +1415,7 @@ pub async fn space_workspace_context(
     if info.id != space_id {
         return Err(SpaceScopeError::Unavailable);
     }
+    let protocol = manager.protocol(space_id).await;
     if let Some(ring) = manager.key_ring() {
         if ring.is_locked(space_id) {
             invalidate_space_workspace(space_id).await;
@@ -1494,7 +1495,7 @@ pub async fn space_workspace_context(
             // A fresh build always starts from a fresh pool for this path.
             release_space_connections(&info.storage_path);
             let ws = WorkspaceState::new_for_space_keyed(
-                config_for_space(space_id),
+                config_for_space(space_id, protocol.clone()),
                 RuntimeConfig::default(),
                 info.storage_path.join("workspace"),
                 info.storage_path.clone(),
@@ -1828,5 +1829,30 @@ mod space_cache_tests {
         invalidate_space_workspace("esp_c2").await;
         invalidate_space_workspace("esp_c3").await;
         std::env::remove_var("XAVIER_SPACE_WORKSPACE_CACHE_MAX");
+    }
+
+    #[test]
+    fn space_config_follows_the_space_protocol() {
+        use crate::workspace::config::{PlanTier, SyncPolicy};
+        use crate::workspace::protocol::SpaceProtocol;
+
+        let default = config_for_space("esp_d", SpaceProtocol::default());
+        assert_eq!(default.memory_backend, MemoryBackend::Vec);
+        assert!(matches!(default.plan, PlanTier::Community));
+        assert_eq!(default.sync_policy, SyncPolicy::LocalOnly);
+        assert_eq!(default.storage_limit_bytes, None);
+
+        let mut p = SpaceProtocol::default();
+        p.storage.backend = MemoryBackend::Sqlite;
+        p.limits.plan = PlanTier::Personal;
+        p.limits.storage_limit_bytes = Some(4096);
+        p.limits.request_limit = Some(7);
+        let cfg = config_for_space("esp_p", p);
+        assert_eq!(cfg.id, "esp_p");
+        assert_eq!(cfg.memory_backend, MemoryBackend::Sqlite);
+        assert!(matches!(cfg.plan, PlanTier::Personal));
+        assert_eq!(cfg.storage_limit_bytes, Some(4096));
+        assert_eq!(cfg.request_limit, Some(7));
+        assert_eq!(cfg.protocol.storage.backend, MemoryBackend::Sqlite);
     }
 }

@@ -2,7 +2,9 @@
 //!
 //! Declarative, validated description of how a space stores, syncs and
 //! transports data. Reuses the existing `MemoryBackend`, `SyncPolicy`,
-//! `PlanTier` and `EmbeddingProviderMode` types. Nothing consumes it yet.
+//! `PlanTier` and `EmbeddingProviderMode` types. Each space persists its own
+//! protocol in `space.json` (see `espacio::SpaceManager::protocol`); the space
+//! workspace builder reads it, and spaces without one use the default.
 use super::config::{EmbeddingProviderMode, PlanTier, SyncPolicy};
 use crate::memory::store::MemoryBackend;
 use crate::settings::types::DedupSettings;

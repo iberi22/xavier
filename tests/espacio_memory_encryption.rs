@@ -223,6 +223,7 @@ async fn create_space(manager: &Arc<SpaceManager>, id: &str, owner: &str, encryp
                 mode: UnlockMode::NodeUnlock,
                 password: None,
                 encrypt_records: encrypt,
+                protocol: None,
             },
         )
         .await
