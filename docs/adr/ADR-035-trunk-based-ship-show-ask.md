@@ -90,13 +90,13 @@ A rollback snapshot of both rulesets was taken before this change. Restore it as
 
 ### Third change: strict off, no merge queue (owner-authorized 2026-10-16)
 
-Strict mode did not scale. With three agent lanes opening PRs at once, every merge sent every other open PR back through `gh pr update-branch` and a full CI re-run. On 2026-10-16 about 70 runs were queued and no PR merged for over an hour.
+Strict mode did not scale. With three agent lanes opening PRs at once, every merge sent every other open PR back through `gh pr update-branch` and a full CI re-run. On 2026-10-16 the Actions queue backed up (about 70 runs by the operator's count) and no PR merged for over an hour.
 
 The owner authorized two things: turn on the GitHub merge queue and drop the up-to-date requirement. What was applied to ruleset `r1`:
 
 - `required_status_checks`: `strict_required_status_checks_policy` is now `false`. `Shadow Fast Gate` and `CI Gate` are still required. Other rules and the Admin bypass did not change, and `ruleone` was not touched.
 - Merge queue: **not enabled**. GitHub only offers merge queues on repositories owned by an organization. `iberi22/xavier` is owned by a user, and creating a `merge_queue` rule returns `422 Invalid rule 'merge_queue'`. To get a queue later, move the repository into an organization, add `merge_group:` to the workflows that report the required checks, and add the `merge_queue` rule (squash, ALLGREEN).
 - Agent merge flow: agents merge with `gh pr merge --squash` once the required checks are green, or arm `gh pr merge --squash --auto`. They no longer run `gh pr update-branch`, and they still never use `--admin`.
-- Trade-off: a PR can now merge while it is behind `main`. Its CI ran against an older base, so two PRs that are each green can still break `main` when combined. The push-triggered CI on `main` is the backstop. Revert a red `main` at once instead of waiting for a forward fix.
+- Trade-off: a PR can now merge while it is behind `main`. Its CI ran against an older base, so two PRs that are each green can still break `main` when combined. `ci.yml` also runs on `push` to `main`, and that run is the backstop. Revert a red `main` at once instead of waiting for a forward fix.
 
-Rollback: before this change the operator saved a `GET` of both rulesets. To restore strict mode, `PUT` `r1` back with `strict_required_status_checks_policy: true`.
+Rollback: before this change the operator saved a `GET` of both rulesets. To restore strict mode, `PUT` the saved `GET` body for `r1` (writable fields only), not a partial `rules` array: a ruleset `PUT` replaces every rule.
