@@ -767,8 +767,12 @@ jobs:
           set -u
           gate_failed=0
           check() {
-            local job="$1" result="$2"
-            if [ -z "$result" ]; then
+            local job="$1" result="$2" status="$3"
+            if [ -z "$result" ] && { [ "$status" = "failure" ] || [ "$status" = "cancelled" ]; }; then
+              # The job died before reporting (e.g. a setup step failed): never read that as a pass.
+              echo "::error::$job ended with status $status before reporting targets"
+              gate_failed=1
+            elif [ -z "$result" ]; then
               echo "$job: skipped"
             elif [ "$result" != "none" ]; then
               echo "::error::$job reported failing targets: $result"
@@ -777,19 +781,19 @@ jobs:
               echo "$job: all targets passed"
             fi
           }
-          check e2e-01 '${{ needs.e2e-01.outputs.failed }}'
-          check e2e-02 '${{ needs.e2e-02.outputs.failed }}'
-          check e2e-03 '${{ needs.e2e-03.outputs.failed }}'
-          check e2e-04 '${{ needs.e2e-04.outputs.failed }}'
-          check e2e-05 '${{ needs.e2e-05.outputs.failed }}'
-          check e2e-06 '${{ needs.e2e-06.outputs.failed }}'
-          check e2e-07 '${{ needs.e2e-07.outputs.failed }}'
-          check e2e-08 '${{ needs.e2e-08.outputs.failed }}'
-          check e2e-09 '${{ needs.e2e-09.outputs.failed }}'
-          check e2e-10 '${{ needs.e2e-10.outputs.failed }}'
-          check e2e-11 '${{ needs.e2e-11.outputs.failed }}'
-          check e2e-12 '${{ needs.e2e-12.outputs.failed }}'
-          check e2e-13 '${{ needs.e2e-13.outputs.failed }}'
+          check e2e-01 '${{ needs.e2e-01.outputs.failed }}' '${{ needs.e2e-01.result }}'
+          check e2e-02 '${{ needs.e2e-02.outputs.failed }}' '${{ needs.e2e-02.result }}'
+          check e2e-03 '${{ needs.e2e-03.outputs.failed }}' '${{ needs.e2e-03.result }}'
+          check e2e-04 '${{ needs.e2e-04.outputs.failed }}' '${{ needs.e2e-04.result }}'
+          check e2e-05 '${{ needs.e2e-05.outputs.failed }}' '${{ needs.e2e-05.result }}'
+          check e2e-06 '${{ needs.e2e-06.outputs.failed }}' '${{ needs.e2e-06.result }}'
+          check e2e-07 '${{ needs.e2e-07.outputs.failed }}' '${{ needs.e2e-07.result }}'
+          check e2e-08 '${{ needs.e2e-08.outputs.failed }}' '${{ needs.e2e-08.result }}'
+          check e2e-09 '${{ needs.e2e-09.outputs.failed }}' '${{ needs.e2e-09.result }}'
+          check e2e-10 '${{ needs.e2e-10.outputs.failed }}' '${{ needs.e2e-10.result }}'
+          check e2e-11 '${{ needs.e2e-11.outputs.failed }}' '${{ needs.e2e-11.result }}'
+          check e2e-12 '${{ needs.e2e-12.outputs.failed }}' '${{ needs.e2e-12.result }}'
+          check e2e-13 '${{ needs.e2e-13.outputs.failed }}' '${{ needs.e2e-13.result }}'
           if [ "$gate_failed" -ne 0 ]; then
             echo "E2E gate FAILED: at least one wave reported failing targets"
             exit 1

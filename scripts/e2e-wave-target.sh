@@ -6,6 +6,10 @@
 E2E_ZERO_TEST_ALLOWLIST=(
   # gated on the `local-gllm` feature, which the E2E waves do not build (needs a local model).
   quick_embed_test
+  # whole file is behind cfg(feature = "ratatui") (cli-interactive), not part of ci-safe.
+  tui_screenshot_e2e
+  # its only test is #[ignore] (needs a local chat model); reports 0 passed, 1 ignored.
+  e2e_chat_local
 )
 
 run_wave_target() {
