@@ -700,11 +700,11 @@ Information groups with ACL read/write/audit enforced on ALL reads, audited. `Gr
 - **Docs:** Docs — Vault anti-exfiltration + MCP + OpenBao + dashboard leases
 
 ### Description
-`AntiExfilDetector` blocks bulk lends (>10/min per agent) and external IPs (allow 127/10/192.168 only). MCP stub `resolve_via_mcp`, OpenBao stub `fetch_from_openbao`, dashboard view `VaultDashboardLease` via `dashboard_leases` (masked tokens, expiry).
+`AntiExfilDetector` blocks bulk lends (>10/min per agent) and external IPs (allow 127/10/192.168 only). Deprecated MCP resolution and OpenBao stubs removed (2026-10-15); dashboard view `VaultDashboardLease` via `dashboard_leases` (masked tokens, expiry).
 
 ### Acceptance criteria
 - [x] `AntiExfilDetector::check_and_record` enforces rate limit + `is_allowed_ip`
-- [x] `resolve_via_mcp` + `fetch_from_openbao` stubs
+- [x] Deprecated MCP resolution and OpenBao stubs removed (2026-10-15)
 - [x] `dashboard_leases` returns `VaultDashboardLease` list
 - [x] Grep `Vault` in `src/secrets/lending.rs` >=1
 

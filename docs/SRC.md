@@ -1295,7 +1295,6 @@ xavier/
 │   │   ├── local.rs
 │   │   ├── local_vault.rs
 │   │   ├── mod.rs
-│   │   ├── openbao.rs
 │   │   ├── store.rs
 │   │   ├── tests.rs
 │   │   └── vault.rs

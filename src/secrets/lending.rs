@@ -163,7 +163,7 @@ impl<A: AuditLogger> KeyLendingEngine<A> {
     }
 }
 
-/// Vault anti-exfiltration detector + MCP + OpenBao stub (WAVE-3.05)
+/// Vault anti-exfiltration detector (WAVE-3.05)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AntiExfilDetector {
     pub max_lends_per_minute: u32,
@@ -222,20 +222,6 @@ impl AntiExfilDetector {
         }
         ip.starts_with("127.") || ip.starts_with("10.") || ip.starts_with("192.168.") || ip == "::1"
     }
-}
-
-pub fn resolve_via_mcp(secret_id: &str, mcp_endpoint: &str) -> Result<String, SecretError> {
-    if mcp_endpoint.is_empty() {
-        return Err(SecretError::NotFound("MCP endpoint empty".into()));
-    }
-    Ok(format!("mcp_resolved:{secret_id}"))
-}
-
-pub fn fetch_from_openbao(secret_id: &str, openbao_url: &str) -> Result<String, SecretError> {
-    if openbao_url.is_empty() {
-        return Err(SecretError::NotFound("OpenBao URL empty".into()));
-    }
-    Ok(format!("openbao:{secret_id}"))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
