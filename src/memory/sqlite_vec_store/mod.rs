@@ -56,6 +56,7 @@ pub struct VecSqliteMemoryStore {
     /// Key binding of an encrypted space's store. `None` = default/legacy
     /// store behaviour (node-level at-rest encryption).
     pub(crate) crypto: Option<at_rest::SpaceCrypto>,
+    pub(crate) repo_root: Option<std::path::PathBuf>,
 }
 
 /// ConnectionManager project_id for a vec-store file path.
@@ -147,6 +148,15 @@ impl VecSqliteMemoryStore {
                 crate::settings::types::DedupSettings::default(),
             )),
             crypto: None,
+            repo_root: if profile == PoolProfile::RepoStore {
+                config
+                    .path
+                    .parent()
+                    .and_then(|p| p.parent())
+                    .map(|p| p.to_path_buf())
+            } else {
+                None
+            },
         };
 
         // Initialize schema
