@@ -209,6 +209,7 @@ echo "Test Case 6: Nested integration files use the integration target"
 echo "Test Case 7: Code-graph integration and unit tests use their owning targets"
 mkdir -p "$MOCK_ROOT/tests/integration" "$MOCK_ROOT/code-graph/tests" "$MOCK_ROOT/code-graph/src" "$TEST_DIR/bin6"
 cp "$REAL_ROOT/tests/integration/agents_test.rs" "$MOCK_ROOT/tests/integration/"
+cp "$REAL_ROOT/tests/integration.rs" "$MOCK_ROOT/tests/"
 cp "$REAL_ROOT/code-graph/tests/fingerprint.rs" "$MOCK_ROOT/code-graph/tests/"
 cp "$REAL_ROOT/code-graph/src/fingerprint.rs" "$MOCK_ROOT/code-graph/src/"
 python3 - "$REAL_ROOT" "$MOCK_ROOT" "$TEST_DIR/expected-invocations" << 'PY'

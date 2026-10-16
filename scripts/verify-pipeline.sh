@@ -217,7 +217,16 @@ PY
           echo "crate $crate|test -p $crate --lib"
         fi ;;
       tests/integration/*.rs)
-        echo "--test integration|test -p xavier --features test-utils --test integration" ;;
+        # Modules of tests/integration.rs run in the `integration` target; files that are
+        # their own [[test]] target run as such; anything else is not compiled at all.
+        local base; base="$(basename "$1" .rs)"
+        if grep -qF "#[path = \"integration/$base.rs\"]" "$ROOT/tests/integration.rs" 2>/dev/null; then
+          echo "--test integration|test -p xavier --features test-utils --test integration"
+        elif [[ " $TEST_TARGETS " == *" $base "* ]]; then
+          echo "--test $base|test -p xavier --features test-utils --test $base"
+        else
+          echo ""
+        fi ;;
       tests/e2e/*|tests/*.rs)
         local base; base="$(basename "$1" .rs)"
         echo "--test $base|test -p xavier --features test-utils --test $base" ;;

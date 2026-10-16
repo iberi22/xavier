@@ -3410,10 +3410,7 @@
         "Next (separate change): Xavier MCP tool that loads the KSM bundle and runs the matcher on the indexed project"
       ],
       "verification": "cargo test -p code-graph --test fingerprint; cargo clippy -p code-graph --all-targets -- -D warnings",
-      "implemented_in": [
-        "code-graph/src/fingerprint.rs",
-        "code-graph/src/main.rs"
-      ],
+      "implemented_in": "code-graph/src/fingerprint.rs, code-graph/src/main.rs",
       "tests": [
         "code-graph/tests/fingerprint.rs::c_function_shape",
         "code-graph/tests/fingerprint.rs::golden_kgram_key_pins_hash_rule",
