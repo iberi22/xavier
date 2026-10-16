@@ -16,6 +16,7 @@ Welcome to the Xavier documentation!
 
 - [API Reference](./api/README.md) - HTTP API endpoints
 - [Architecture](./ARCHITECTURE/ARCHITECTURE.md) - System design
+- [Mesh capability status](./mesh/STATUS.md) - What the Xavier mesh does today, and what it does not
 - [Security](../.github/SECURITY.md) - Security model and configuration
 
 ## Planning
