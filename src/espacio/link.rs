@@ -455,6 +455,7 @@ mod tests {
                     mode: UnlockMode::PasswordRequired,
                     password: Some("correct horse battery staple 42".into()),
                     encrypt_records: false,
+                    protocol: None,
                 },
             )
             .await

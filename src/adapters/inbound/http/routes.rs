@@ -1356,6 +1356,7 @@ pub async fn espacio_admin_create_handler(
             .unwrap_or(crate::espacio::UnlockMode::NodeUnlock),
         password: payload.password,
         encrypt_records: payload.encrypt_records.unwrap_or(true),
+        protocol: payload.protocol,
     };
     let work = {
         let manager = manager.clone();
@@ -1418,7 +1419,7 @@ fn espacio_error_response(err: anyhow::Error) -> axum::response::Response {
     use axum::http::StatusCode;
     let status = match err.downcast_ref::<SpaceError>() {
         Some(SpaceError::AlreadyExists(_)) => StatusCode::CONFLICT,
-        Some(SpaceError::InvalidId(_)) => StatusCode::BAD_REQUEST,
+        Some(SpaceError::InvalidId(_) | SpaceError::InvalidProtocol(_)) => StatusCode::BAD_REQUEST,
         Some(SpaceError::NotFound(_)) => StatusCode::NOT_FOUND,
         _ => match err.downcast_ref::<crate::espacio::KeysError>() {
             Some(crate::espacio::KeysError::WeakPassword(_)) => StatusCode::BAD_REQUEST,
@@ -1464,7 +1465,8 @@ pub async fn espacio_create_handler(
                         crate::adapters::inbound::http::handlers::error_json(space_err),
                     )
                         .into_response(),
-                    crate::espacio::SpaceError::InvalidId(_) => (
+                    crate::espacio::SpaceError::InvalidId(_)
+                    | crate::espacio::SpaceError::InvalidProtocol(_) => (
                         StatusCode::BAD_REQUEST,
                         crate::adapters::inbound::http::handlers::error_json(space_err),
                     )
