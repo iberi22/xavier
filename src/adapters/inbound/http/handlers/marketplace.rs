@@ -3,11 +3,12 @@
 //! Exposes dataset listing, query with payment, revocation, and pricing oracle previews over REST.
 
 use super::error_response;
+use crate::security::auth::{Claims, Permission, UserRole};
 use axum::{
     extract::{Path, Query},
     http::StatusCode,
     response::IntoResponse,
-    Json,
+    Extension, Json,
 };
 #[cfg(feature = "post-quantum")]
 use oqs::sig::{Algorithm as SigAlg, Sig};
@@ -26,7 +27,7 @@ use crate::data_commons::pricing::{
 // ---------------------------------------------------------------------------
 
 static MARKETPLACE: LazyLock<RwLock<DataMarketplace>> =
-    LazyLock::new(|| RwLock::new(DataMarketplace::new()));
+    LazyLock::new(|| RwLock::new(DataMarketplace::load_or_unavailable()));
 
 /// Wire or override the active `DataMarketplace` instance.
 pub fn init_marketplace(marketplace: DataMarketplace) {
@@ -212,8 +213,21 @@ pub fn verify_mldsa65_signature(req: &ListDatasetRequest) -> Result<(), &'static
     Err("ML-DSA-65 signature verification requires post-quantum feature")
 }
 
-/// `POST /v1/marketplace/datasets` — list a new dataset (auth: wallet signature ML-DSA-65).
-pub async fn list_dataset_handler(Json(req): Json<ListDatasetRequest>) -> impl IntoResponse {
+/// `POST /v1/marketplace/datasets` — list as the authenticated publisher or admin.
+pub async fn list_dataset_handler(
+    claims: Option<Extension<Claims>>,
+    Json(req): Json<ListDatasetRequest>,
+) -> impl IntoResponse {
+    let Some(Extension(claims)) = claims else {
+        return error_response(StatusCode::FORBIDDEN, "Missing authentication claims")
+            .into_response();
+    };
+    if !claims.role.can_add_memory()
+        || (claims.role != UserRole::Admin && claims.sub != req.publisher)
+    {
+        return error_response(StatusCode::FORBIDDEN, "Dataset owner or admin required")
+            .into_response();
+    }
     if let Err(err) = verify_mldsa65_signature(&req) {
         return error_response(StatusCode::UNAUTHORIZED, err).into_response();
     }
@@ -230,7 +244,12 @@ pub async fn list_dataset_handler(Json(req): Json<ListDatasetRequest>) -> impl I
     };
 
     let mut marketplace = current_marketplace_mut();
-    let dataset_id = marketplace.list_dataset(metadata);
+    let mut updated = marketplace.clone();
+    let dataset_id = updated.list_dataset(metadata);
+    if let Err(err) = updated.save() {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
+    }
+    *marketplace = updated;
 
     (
         StatusCode::CREATED,
@@ -306,20 +325,41 @@ pub async fn query_dataset_handler(
 }
 
 /// `DELETE /v1/marketplace/datasets/{id}` — revoke a dataset (seller only).
-pub async fn revoke_dataset_handler(Path(id): Path<String>) -> impl IntoResponse {
+pub async fn revoke_dataset_handler(
+    claims: Option<Extension<Claims>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let Some(Extension(claims)) = claims else {
+        return error_response(StatusCode::FORBIDDEN, "Missing authentication claims")
+            .into_response();
+    };
     let mut marketplace = current_marketplace_mut();
     let dataset_id = DatasetId(id.clone());
 
-    match marketplace.revoke_dataset(&dataset_id) {
-        Ok(()) => (
-            StatusCode::OK,
-            Json(json!({
-                "status": "ok",
-                "message": "Dataset revoked successfully",
-                "dataset_id": id
-            })),
-        )
-            .into_response(),
+    if !claims.role.can_delete_memory()
+        || (claims.role != UserRole::Admin
+            && marketplace.publisher(&dataset_id) != Some(claims.sub.as_str()))
+    {
+        return error_response(StatusCode::FORBIDDEN, "Dataset owner or admin required")
+            .into_response();
+    }
+    let mut updated = marketplace.clone();
+    match updated.revoke_dataset(&dataset_id) {
+        Ok(()) => {
+            if let Err(err) = updated.save() {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
+            }
+            *marketplace = updated;
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "status": "ok",
+                    "message": "Dataset revoked successfully",
+                    "dataset_id": id
+                })),
+            )
+                .into_response()
+        }
         Err(err) => error_response(StatusCode::BAD_REQUEST, err).into_response(),
     }
 }
@@ -372,6 +412,7 @@ pub async fn get_pricing_preview_handler(
 
 #[cfg(test)]
 mod tests {
+    crate::isolate_test_process!();
     use super::*;
 
     #[test]

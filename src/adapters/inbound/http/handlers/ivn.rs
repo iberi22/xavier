@@ -7,7 +7,7 @@ use axum::{
     extract::{Path, Query},
     http::StatusCode,
     response::IntoResponse,
-    Json,
+    Extension, Json,
 };
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
@@ -20,12 +20,14 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock, RwLock};
 
+use super::error_response;
 use crate::data_commons::ivn::{
     apply_rewards, apply_sanctions, IvnConfig, IvnError, KarmaEngine, ValidatorCandidate,
     ValidatorSelection, Verdict, VerdictEngine, VerdictStatus, Vote,
 };
 use crate::data_commons::reputation::{EigenTrustEngine, ReputationConfig};
 use crate::data_commons::types::WalletAddress;
+use crate::security::auth::{Claims, Permission};
 
 // ---------------------------------------------------------------------------
 // Module Singleton / Persistent State
@@ -78,11 +80,51 @@ impl From<&Verdict> for VerdictDto {
     }
 }
 
-/// In-memory engine store for IVN state management.
-#[derive(Debug, Default)]
+/// Lazily loaded IVN state with private JSON snapshots for identity requests.
+#[derive(Debug)]
 pub struct IvnEngineStore {
     pub requests: HashMap<String, IdentityRequestRecord>,
     pub karma_engine: KarmaEngine,
+    load_error: Option<String>,
+}
+
+impl IvnEngineStore {
+    /// Reload identity requests and their votes from the IVN root.
+    pub fn load() -> Result<Self, String> {
+        Ok(Self {
+            requests: crate::data_commons::ivn_storage::load_json(
+                &crate::data_commons::ivn_storage::ivn_root()?.join("requests.json"),
+            )?,
+            karma_engine: KarmaEngine::new(),
+            load_error: None,
+        })
+    }
+
+    fn save_requests(
+        &self,
+        requests: &HashMap<String, IdentityRequestRecord>,
+    ) -> Result<(), String> {
+        if let Some(err) = &self.load_error {
+            return Err(err.clone());
+        }
+        crate::data_commons::ivn_storage::save_json(
+            &crate::data_commons::ivn_storage::ivn_root()?.join("requests.json"),
+            requests,
+        )
+    }
+}
+
+impl Default for IvnEngineStore {
+    fn default() -> Self {
+        Self::load().unwrap_or_else(|err| {
+            tracing::error!(error = %err, "Failed to load IVN requests");
+            Self {
+                requests: HashMap::new(),
+                karma_engine: KarmaEngine::new(),
+                load_error: Some(err),
+            }
+        })
+    }
 }
 
 static IVN_STORE: LazyLock<RwLock<IvnEngineStore>> =
@@ -380,8 +422,15 @@ pub fn select_validators_with_diversity<R: Rng + ?Sized>(
 /// Selects 5 karma-weighted validators from the node pool, sets status to `Pending`,
 /// and records the initial request.
 pub async fn create_identity_request_handler(
+    claims: Option<Extension<Claims>>,
     Json(payload): Json<CreateIdentityRequest>,
 ) -> impl IntoResponse {
+    if !claims
+        .as_ref()
+        .is_some_and(|Extension(c)| c.role.can_add_memory())
+    {
+        return error_response(StatusCode::FORBIDDEN, "Write permission required").into_response();
+    }
     let now = current_timestamp();
     let request_id = format!("ivn_req_{}", ulid::Ulid::new());
 
@@ -450,7 +499,12 @@ pub async fn create_identity_request_handler(
 
     {
         let mut store = current_ivn_store_mut();
-        store.requests.insert(request_id.clone(), record.clone());
+        let mut updated = store.requests.clone();
+        updated.insert(request_id.clone(), record.clone());
+        if let Err(err) = store.save_requests(&updated) {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
+        }
+        store.requests = updated;
     }
 
     (
@@ -466,6 +520,7 @@ pub async fn create_identity_request_handler(
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {
+    crate::isolate_test_process!();
     use super::*;
 
     #[test]
@@ -779,6 +834,14 @@ mod tests {
         use axum::Json;
 
         let tmp_dir = tempfile::tempdir().expect("tempdir");
+        struct RestoreCwd(std::path::PathBuf);
+        impl Drop for RestoreCwd {
+            fn drop(&mut self) {
+                std::env::set_current_dir(&self.0).unwrap();
+            }
+        }
+        let _cwd = RestoreCwd(std::env::current_dir().unwrap());
+        std::env::set_current_dir(tmp_dir.path()).unwrap();
         let prev_data_dir = std::env::var_os("XAVIER_DATA_DIR");
         std::env::set_var("XAVIER_DATA_DIR", tmp_dir.path());
         clear_exclusions();
@@ -854,6 +917,12 @@ mod tests {
         // Total 5 votes -> Quorum met -> Final status: Rejected!
         for v_id in [&val1, &val2, &val3, &val4] {
             let res = vote_identity_request_handler(
+                Some(Extension(Claims::new(
+                    v_id.to_string(),
+                    String::new(),
+                    crate::security::auth::UserRole::User,
+                    chrono::Duration::hours(1),
+                ))),
                 Path(req_id.clone()),
                 Json(VoteRequest {
                     validator_node_id: v_id.to_string(),
@@ -866,6 +935,12 @@ mod tests {
         }
 
         let res5 = vote_identity_request_handler(
+            Some(Extension(Claims::new(
+                val5_fp.clone(),
+                String::new(),
+                crate::security::auth::UserRole::User,
+                chrono::Duration::hours(1),
+            ))),
             Path(req_id.clone()),
             Json(VoteRequest {
                 validator_node_id: val5_fp.clone(),
@@ -955,13 +1030,22 @@ pub async fn get_identity_request_handler(Path(id): Path<String>) -> impl IntoRe
 /// Enforces validator authorization (returns 403 Forbidden if validator_node_id is not
 /// in the assigned validators list). Evaluates state transitions: Pending -> Passed/Rejected/QuorumNotMet.
 pub async fn vote_identity_request_handler(
+    claims: Option<Extension<Claims>>,
     Path(id): Path<String>,
     Json(payload): Json<VoteRequest>,
 ) -> impl IntoResponse {
+    let Some(Extension(claims)) = claims else {
+        return error_response(StatusCode::FORBIDDEN, "Missing authentication claims")
+            .into_response();
+    };
+    if !claims.role.can_add_memory() {
+        return error_response(StatusCode::FORBIDDEN, "Write permission required").into_response();
+    }
     let now = current_timestamp();
     let mut store = current_ivn_store_mut();
+    let mut updated = store.requests.clone();
 
-    let record = match store.requests.get_mut(&id) {
+    let record = match updated.get_mut(&id) {
         Some(r) => r,
         None => {
             return (
@@ -976,10 +1060,10 @@ pub async fn vote_identity_request_handler(
     };
 
     // Check if the voting node is assigned as a validator for this request
-    let is_authorized = record
-        .assigned_validators
-        .iter()
-        .any(|v| v.node_id == payload.validator_node_id || v.wallet == payload.validator_node_id);
+    let is_authorized = record.assigned_validators.iter().any(|v| {
+        (v.node_id == payload.validator_node_id || v.wallet == payload.validator_node_id)
+            && (v.node_id == claims.sub || v.wallet == claims.sub)
+    });
 
     if !is_authorized {
         return (
@@ -995,10 +1079,19 @@ pub async fn vote_identity_request_handler(
             .into_response();
     }
 
-    // Insert or update vote
-    record
-        .votes
-        .insert(payload.validator_node_id.clone(), payload.vote);
+    if record.votes.contains_key(&claims.sub)
+        || record
+            .assigned_validators
+            .iter()
+            .filter(|v| v.node_id == claims.sub || v.wallet == claims.sub)
+            .any(|v| record.votes.contains_key(&v.node_id) || record.votes.contains_key(&v.wallet))
+    {
+        return error_response(StatusCode::FORBIDDEN, "Principal has already voted")
+            .into_response();
+    }
+
+    // Record the authenticated principal, never a caller-controlled voter key.
+    record.votes.insert(claims.sub.clone(), payload.vote);
     record.updated_at = now;
 
     // Evaluate current votes using VerdictEngine
@@ -1008,66 +1101,20 @@ pub async fn vote_identity_request_handler(
 
     record.verdict = Some(VerdictDto::from(&verdict));
 
-    // Update status based on verdict evaluation once all assigned validators have voted or verdict is final
+    let previous_status = record.status;
     match verdict.status {
-        VerdictStatus::Passed => {
-            let previously_passed = record.status == IdentityRequestStatus::Passed;
-            record.status = IdentityRequestStatus::Passed;
-            if !previously_passed {
-                let mut engine = EigenTrustEngine::new(ReputationConfig::default(), Vec::new());
-                let applicant_wallet = WalletAddress(record.applicant.clone());
-                let validator_votes: Vec<(WalletAddress, Vote)> = record
-                    .votes
-                    .iter()
-                    .map(|(v_id, vote)| (WalletAddress(v_id.clone()), *vote))
-                    .collect();
-                apply_rewards(&mut engine, &verdict, &applicant_wallet, &validator_votes);
-
-                // Derive false-positive validators (who voted Reject on a Passed request)
-                let fp_validators: Vec<WalletAddress> = record
-                    .votes
-                    .iter()
-                    .filter(|(_, vote)| **vote == Vote::Reject)
-                    .map(|(v_id, _)| WalletAddress(v_id.clone()))
-                    .collect();
-                if !fp_validators.is_empty() {
-                    apply_sanctions(&mut engine, &fp_validators, None, now);
-                }
-            }
+        VerdictStatus::Passed => record.status = IdentityRequestStatus::Passed,
+        VerdictStatus::Rejected if record.votes.len() >= record.assigned_validators.len() => {
+            record.status = IdentityRequestStatus::Rejected;
         }
-        VerdictStatus::Rejected => {
-            if record.votes.len() >= record.assigned_validators.len() {
-                let previously_rejected = record.status == IdentityRequestStatus::Rejected;
-                record.status = IdentityRequestStatus::Rejected;
-                if !previously_rejected {
-                    let mut engine = EigenTrustEngine::new(ReputationConfig::default(), Vec::new());
-                    let applicant_wallet = WalletAddress(record.applicant.clone());
-                    let validator_votes: Vec<(WalletAddress, Vote)> = record
-                        .votes
-                        .iter()
-                        .map(|(v_id, vote)| (WalletAddress(v_id.clone()), *vote))
-                        .collect();
-                    apply_rewards(&mut engine, &verdict, &applicant_wallet, &validator_votes);
-
-                    // Derive false-positive validators (who voted Check on a Rejected request)
-                    let fp_validators: Vec<WalletAddress> = record
-                        .votes
-                        .iter()
-                        .filter(|(_, vote)| **vote == Vote::Check)
-                        .map(|(v_id, _)| WalletAddress(v_id.clone()))
-                        .collect();
-                    apply_sanctions(&mut engine, &fp_validators, Some(&applicant_wallet), now);
-                }
-            }
+        VerdictStatus::QuorumNotMet if record.votes.len() >= record.assigned_validators.len() => {
+            record.status = IdentityRequestStatus::QuorumNotMet;
         }
-        VerdictStatus::QuorumNotMet => {
-            if record.votes.len() >= record.assigned_validators.len() {
-                record.status = IdentityRequestStatus::QuorumNotMet;
-            }
-        }
+        _ => {}
     }
+    let finalized = record.clone();
 
-    (
+    let response = (
         StatusCode::OK,
         Json(json!({
             "status": "ok",
@@ -1078,7 +1125,42 @@ pub async fn vote_identity_request_handler(
             "verdict": record.verdict
         })),
     )
-        .into_response()
+        .into_response();
+    if let Err(err) = store.save_requests(&updated) {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, err).into_response();
+    }
+    store.requests = updated;
+    // Persist the accepted vote before publishing verdict side effects.
+    if finalized.status != previous_status
+        && matches!(
+            finalized.status,
+            IdentityRequestStatus::Passed | IdentityRequestStatus::Rejected
+        )
+    {
+        let mut engine = EigenTrustEngine::new(ReputationConfig::default(), Vec::new());
+        let applicant = WalletAddress(finalized.applicant);
+        let votes: Vec<(WalletAddress, Vote)> = finalized
+            .votes
+            .iter()
+            .map(|(id, vote)| (WalletAddress(id.clone()), *vote))
+            .collect();
+        apply_rewards(&mut engine, &verdict, &applicant, &votes);
+        let incorrect = if finalized.status == IdentityRequestStatus::Passed {
+            Vote::Reject
+        } else {
+            Vote::Check
+        };
+        let validators: Vec<WalletAddress> = votes
+            .iter()
+            .filter(|(_, vote)| *vote == incorrect)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let liar = (finalized.status == IdentityRequestStatus::Rejected).then_some(&applicant);
+        if !validators.is_empty() || liar.is_some() {
+            apply_sanctions(&mut engine, &validators, liar, now);
+        }
+    }
+    response
 }
 
 /// `GET /v1/identity/requests` — Paginated list of identity verification requests.

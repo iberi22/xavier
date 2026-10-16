@@ -10,9 +10,28 @@ use xavier::adapters::inbound::http::handlers::ivn::{
 };
 use xavier::adapters::inbound::http::routes::create_router;
 use xavier::data_commons::ivn::Vote;
+use xavier::security::auth::{Claims, UserRole};
+
+fn principal(id: &str) -> Claims {
+    Claims::new(
+        id.into(),
+        String::new(),
+        UserRole::User,
+        chrono::Duration::hours(1),
+    )
+}
 
 #[tokio::test]
 async fn test_ivn_api_full_lifecycle() {
+    let temp = tempfile::tempdir().unwrap();
+    struct RestoreCwd(std::path::PathBuf);
+    impl Drop for RestoreCwd {
+        fn drop(&mut self) {
+            std::env::set_current_dir(&self.0).unwrap();
+        }
+    }
+    let _cwd = RestoreCwd(std::env::current_dir().unwrap());
+    std::env::set_current_dir(temp.path()).unwrap();
     // Reset IVN engine store for test isolation
     init_ivn_engine(IvnEngineStore::default());
 
@@ -79,6 +98,7 @@ async fn test_ivn_api_full_lifecycle() {
     });
 
     let create_req = Request::builder()
+        .extension(principal("applicant"))
         .uri("/v1/identity/request")
         .method(Method::POST)
         .header("content-type", "application/json")
@@ -128,6 +148,7 @@ async fn test_ivn_api_full_lifecycle() {
     });
 
     let unauth_req = Request::builder()
+        .extension(principal("unauthorized_malicious_node"))
         .uri(format!("/v1/identity/{}/vote", req_id))
         .method(Method::POST)
         .header("content-type", "application/json")
@@ -146,6 +167,7 @@ async fn test_ivn_api_full_lifecycle() {
         });
 
         let vote_req = Request::builder()
+            .extension(principal(node_id))
             .uri(format!("/v1/identity/{}/vote", req_id))
             .method(Method::POST)
             .header("content-type", "application/json")

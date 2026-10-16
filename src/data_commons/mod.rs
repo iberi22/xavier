@@ -30,6 +30,7 @@
 pub mod funnel;
 pub mod governance;
 pub mod ivn;
+pub mod ivn_storage;
 pub mod maintainer;
 pub mod marketplace;
 pub mod mesh_bridge;

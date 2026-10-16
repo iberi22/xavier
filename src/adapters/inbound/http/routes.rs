@@ -237,7 +237,9 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         // ── Data Marketplace API ──────────────────────────────────────────
         .route(
             "/v1/marketplace/datasets",
-            post(crate::adapters::inbound::http::handlers::list_dataset_handler),
+            post(crate::adapters::inbound::http::handlers::list_dataset_handler).layer(
+                axum::middleware::from_fn(require_permission(|r| r.can_add_memory())),
+            ),
         )
         .route(
             "/v1/marketplace/datasets",
@@ -249,7 +251,9 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         )
         .route(
             "/v1/marketplace/datasets/{id}",
-            delete(crate::adapters::inbound::http::handlers::revoke_dataset_handler),
+            delete(crate::adapters::inbound::http::handlers::revoke_dataset_handler).layer(
+                axum::middleware::from_fn(require_permission(|r| r.can_delete_memory())),
+            ),
         )
         .route(
             "/v1/marketplace/pricing",
@@ -258,7 +262,9 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         // ── Identity Verification Network (IVN) API ─────────────────────────
         .route(
             "/v1/identity/request",
-            post(crate::adapters::inbound::http::handlers::create_identity_request_handler),
+            post(crate::adapters::inbound::http::handlers::create_identity_request_handler).layer(
+                axum::middleware::from_fn(require_permission(|r| r.can_add_memory())),
+            ),
         )
         .route(
             "/v1/identity/request/{id}",
@@ -266,7 +272,9 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         )
         .route(
             "/v1/identity/{id}/vote",
-            post(crate::adapters::inbound::http::handlers::vote_identity_request_handler),
+            post(crate::adapters::inbound::http::handlers::vote_identity_request_handler).layer(
+                axum::middleware::from_fn(require_permission(|r| r.can_add_memory())),
+            ),
         )
         .route(
             "/v1/identity/requests",
