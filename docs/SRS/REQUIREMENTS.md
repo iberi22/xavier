@@ -1541,6 +1541,7 @@ Each product repo with explicit opt-in SHALL own a physical SQLite memory store 
 - [ ] `repo_store_rows_unreadable_with_node_key` green; `global_store_still_uses_node_key` green; no existing row modified
 - [ ] `add_with_repo_leaves_global_store_file_byte_identical` (sha256 unchanged) and `mcp_cannot_create_repo_store` green
 - [ ] `clearance_ceiling_applies_to_federated_results`, `model_mismatch_skips_vector_leg_and_flags_store`, `slow_store_times_out_and_result_is_partial_with_status`, `legacy_leg_is_read_only` green
+- [ ] `no_repos_uses_qmd_path_unchanged` and `add_without_repo_behaves_exactly_as_today` green; `repo_record_key_is_domain_separated_from_package_kek`, `merge_is_rank_based_and_deterministic` and `spelling_variants_share_one_pool` green
 
 ---
 

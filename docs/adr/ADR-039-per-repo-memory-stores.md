@@ -80,8 +80,9 @@ encrypted per record with a per-repo key. The verified constraints behind it are
   verification); the SQL `legacy` leg ranks differently from `QmdMemory` and is documented
   as such; BM25 stays path-only on encrypted rows (as in production today per ADR-038);
   federated reads are not a cross-store consistent snapshot.
-- **What would invalidate this decision:** measured `min_idle`/fd/RAM numbers from T3
+- **What would invalidate this decision:** measured `min_idle`/fd numbers from T3 and RAM numbers from T5
   showing the `RepoStore` profile does not fit the cgroup budget, or a verified need for
   cross-store atomic writes (2PC), which this design deliberately excludes.
+- **Follow-up (recorded per design §6):** converging `MultiDbManager` and the separate code-graph cache onto the same registry is a later change, not part of this decision.
 - **Out of scope:** cross-machine sync and master-key sharing are not part of this
   decision; they belong to the mesh wave (issue #3195) behind their own key-sharing ADR.
