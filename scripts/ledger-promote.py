@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Conservative beta promoter. History is {feature_id: [green_sha, ...]}.
+"""Ledger promoter: beta -> stable plus planned/in_progress -> beta.
 
-Evidence additionally carries main_shas (newest first, including sha) to prove
-adjacency, and optional ledger_sha/e2e_sha (default sha). Missing evidence blocks.
-JSON report is stdout; Markdown is stderr. Dry runs never modify either input.
+History is {feature_id: [green_sha, ...]}. The beta -> stable rule is
+conservative (requires numeric progress_pct >= 100, no pending steps, no
+open honesty notes or open_gaps). The planned/in_progress -> beta rule
+requires the same evidence, test, integration and streak checks, but
+progress_pct < 100, pending steps, honesty notes and open_gaps do NOT block
+(beta means 'built, tested, incomplete'); only malformed steps/open_gaps
+block, and incompleteness is listed in the report. JSON report is stdout;
+Markdown is stderr. Dry runs never modify either input.
 """
 import argparse
 import datetime as dt
@@ -104,6 +109,52 @@ def linked(test, path, name):
     return test in (path, Path(path).stem) or test.split('::')[-1] == name
 
 
+# Promotable statuses and the transition each one proposes.
+PROMOTABLE_TRANSITIONS = {'beta': 'beta->stable', 'planned': 'planned->beta',
+                          'in_progress': 'in_progress->beta'}
+
+
+def beta_completeness_split(feature):
+    """Split completeness reasons into (blocking, informational).
+
+    The planned/in_progress -> beta lane only blocks on malformed ledger
+    data; numeric progress < 100, pending steps, honesty notes and open gaps
+    mean 'built, tested, incomplete' and are reported, never blocking.
+    """
+    blocking, informational = [], []
+    for reason in completeness_reasons(feature):
+        if 'malformed' in reason or 'not numeric' in reason or 'not finite' in reason:
+            blocking.append(reason)
+        else:
+            informational.append(reason)
+    return blocking, informational
+
+
+def resolvable_target(test, root, targets):
+    """A declared test naming an integration target file that exists on disk
+    (or that passed as an integration target in this evidence) counts as
+    resolvable even when its fn is not in the Rust unit-test index."""
+    match = re.fullmatch(r'tests/([\w-]+)\.rs(?:::[\w:]+)?', test)
+    return bool(match) and (
+        (root / 'tests' / (match[1] + '.rs')).exists() or match[1] in targets)
+
+
+def integration_linked(declared, result, targets):
+    attributed = result.get('integration_targets_by_test')
+    if isinstance(attributed, dict):
+        return any(
+            test in result.get('passed', [])
+            and bool(set(attributed.get(test, [])) & targets)
+            for test in declared
+        )
+    # Older evidence must explicitly bind a passed declaration to a target.
+    return any(
+        (match := re.fullmatch(r'tests/([\w-]+)\.rs::[\w:]+', test))
+        and test in result.get('passed', []) and match[1] in targets
+        for test in declared
+    )
+
+
 def evaluate(document, evidence, history, root, streak):
     sha = evidence.get('sha')
     chain = evidence.get('main_shas', [sha])
@@ -117,38 +168,40 @@ def evaluate(document, evidence, history, root, streak):
     if not chain or chain[0] != sha or len(set(chain)) != len(chain):
         common.append('invalid consecutive main SHA sequence')
     indexed = rust_tests(root)
+    targets = set(evidence.get('integration_targets_passed', []))
     results = {}
     for fid, feature in sorted(document['features'].items()):
-        reasons = list(common)
-        if feature.get('status') != 'beta':
-            results[fid] = {'eligible': False, 'reasons': ['status is not beta']}
+        status = feature.get('status')
+        transition = PROMOTABLE_TRANSITIONS.get(status)
+        if transition is None:
+            results[fid] = {'eligible': False,
+                            'reasons': ['status is not beta, planned, or in_progress'],
+                            'transition': None, 'informational': []}
             continue
-        reasons.extend(completeness_reasons(feature))
         declared = feature.get('tests', [])
         result = evidence.get('per_feature_test_results', {}).get(fid, {})
+        missing_list = []
         if not declared or not isinstance(declared, list):
-            reasons.append('no declared test list')
+            missing_list.append('no declared test list')
             declared = []
+        if status == 'beta':
+            reasons = list(common)
+            reasons.extend(completeness_reasons(feature))
+            reasons.extend(missing_list)
+        else:
+            blocking, informational = beta_completeness_split(feature)
+            reasons = list(common) + blocking + missing_list
+            informational = list(informational)
         if set(result.get('declared', [])) != set(declared):
             reasons.append('declared test evidence differs from ledger')
+        if status != 'beta':
+            for test in declared:
+                if not (any(linked(test, path, name) for path, name, _ in indexed)
+                        or resolvable_target(test, root, targets)):
+                    reasons.append(f'declared test missing from index: {test}')
         if not set(declared) <= set(result.get('passed', [])) or result.get('failed'):
             reasons.append('declared tests failed or unresolved')
-        targets = set(evidence.get('integration_targets_passed', []))
-        attributed = result.get('integration_targets_by_test')
-        if isinstance(attributed, dict):
-            integration = any(
-                test in result.get('passed', [])
-                and bool(set(attributed.get(test, [])) & targets)
-                for test in declared
-            )
-        else:
-            # Older evidence must explicitly bind a passed declaration to a target.
-            integration = any(
-                (match := re.fullmatch(r'tests/([\w-]+)\.rs::[\w:]+', test))
-                and test in result.get('passed', []) and match[1] in targets
-                for test in declared
-            )
-        if not integration:
+        if not integration_linked(declared, result, targets):
             reasons.append('no linked integration/E2E evidence')
         if any(bug and linked(test, path, name)
                for test in declared for path, name, bug in indexed):
@@ -161,7 +214,9 @@ def evaluate(document, evidence, history, root, streak):
             count += 1
         if count < streak:
             reasons.append(f'green streak {count} < {streak}')
-        results[fid] = {'eligible': not reasons, 'reasons': reasons, 'green_streak': count}
+        results[fid] = {'eligible': not reasons, 'reasons': reasons,
+                        'green_streak': count, 'transition': transition,
+                        'informational': informational if status != 'beta' else []}
     return results
 
 
@@ -185,16 +240,52 @@ def main():
     if args.apply and eligible:
         now = evidence.get('verified_at') or dt.datetime.now(dt.timezone.utc).isoformat()
         for fid in eligible:
-            document['features'][fid].update(
-                status='stable', passes=True, progress_pct=100, last_tested=now[:10],
-                ledger=dict(promoted_by='post-merge-ci', full_verifier_run=evidence['run_url'],
-                            sha=evidence['sha'], promoted_at=now))
+            if results[fid].get('transition') == 'beta->stable':
+                document['features'][fid].update(
+                    status='stable', passes=True, progress_pct=100, last_tested=now[:10],
+                    ledger=dict(promoted_by='post-merge-ci', full_verifier_run=evidence['run_url'],
+                                sha=evidence['sha'], promoted_at=now))
+            else:
+                # planned/in_progress -> beta edits status only (plus a dated
+                # note); progress_pct and every other field are left untouched.
+                old = document['features'][fid].get('status')
+                note = (f"promoted {old}->beta by ledger promoter "
+                        f"on {evidence['sha']} ({now[:10]})")
+                prior = document['features'][fid].get('notes', '')
+                document['features'][fid].update(
+                    status='beta',
+                    notes=(str(prior) + '\n' if prior else '') + note)
         write(args.features, document)
-    report = dict(sha=evidence.get('sha'), dry_run=not args.apply, features=results)
+    promotions = {}
+    for fid in eligible:
+        promotions.setdefault(results[fid].get('transition'), []).append(fid)
+    promotions = {key: sorted(fids) for key, fids in sorted(promotions.items())}
+    report = dict(sha=evidence.get('sha'), dry_run=not args.apply,
+                  promotions=promotions, features=results)
     print(json.dumps(report, indent=2, sort_keys=True))
     print('# Ledger promotion\n', file=sys.stderr)
+    for transition in ('beta->stable', 'planned->beta', 'in_progress->beta'):
+        members = sorted(fid for fid in eligible
+                         if results[fid].get('transition') == transition)
+        print(f'## {transition} ({len(members)})', file=sys.stderr)
+        for fid in members:
+            if transition == 'beta->stable':
+                detail = 'eligible beta → stable'
+            else:
+                detail = f"eligible {results[fid]['transition']}"
+                info = results[fid].get('informational', [])
+                if info:
+                    detail += '; beta-incomplete: ' + '; '.join(info)
+            print(f'- {fid}: {detail}', file=sys.stderr)
+    print('## not promoted', file=sys.stderr)
     for fid, result in results.items():
-        detail = '; '.join(result['reasons']) or 'eligible beta → stable'
+        if result['eligible']:
+            continue
+        detail = '; '.join(result['reasons'])
+        info = result.get('informational', [])
+        if info:
+            suffix = 'beta-incomplete: ' + '; '.join(info)
+            detail = f'{detail}; {suffix}' if detail else suffix
         print(f'- {fid}: {detail}', file=sys.stderr)
 
 

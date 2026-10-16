@@ -289,6 +289,44 @@ PY
       ZERO_MATCH=1
     fi
   done < "$TEST_LIST"
+  # Candidate lane (planned only, NON-GATING): execute the declared tests of
+  # `planned` features so the promoter has evidence for planned->beta. Gating
+  # behaviour above is unchanged: CAND_FAILED never touches FAILED and never
+  # changes the exit code. Lines carry a `[candidate]` marker so
+  # ledger-promote-evidence can tell the lanes apart.
+  echo "==> [4b/5] Executing candidate tests (planned, non-gating)..."
+  CAND_LIST="$(mktemp)"
+  CAND_FAILED=0
+  if python3 - "$LEDGER" << 'PY' > "$CAND_LIST"
+import json, sys
+ledger = json.load(open(sys.argv[1]))
+raw = ledger.get("features", [])
+feats = list(raw.values()) if isinstance(raw, dict) else raw
+for f in feats:
+    if f.get("status") == "planned":
+        tests = f.get("tests")
+        tests = tests if isinstance(tests, list) else ([tests] if tests else [])
+        for t in tests:
+            print(t)
+PY
+  then
+    while IFS= read -r testname; do
+      [ -z "$testname" ] && continue
+      echo "  ▶ $testname [candidate]"
+      if ! run_filter "$testname"; then
+        echo "  ⚠ candidate (non-gating) produced no evidence: $testname"
+        CAND_FAILED=1
+      fi
+    done < "$CAND_LIST"
+  else
+    echo "  ⚠ candidate test list generation failed (non-gating, continuing)"
+  fi
+  rm -f "$CAND_LIST"
+  if [ "$CAND_FAILED" -ne 0 ]; then
+    echo "  ⚠ candidate lane had failures (non-gating — pipeline result unchanged)"
+  else
+    echo "  ✅ candidate lane complete"
+  fi
   rm -f "$TEST_LIST"
   rm -f "$SEEN_ERRORS_FILE"
   if [ "$FAILED" -ne 0 ]; then

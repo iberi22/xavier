@@ -259,10 +259,10 @@ class PromoterTests(unittest.TestCase):
         del self.evidence['run_url']
         self.blocked('missing full verifier run URL')
 
-    def test_non_beta_with_complete_evidence(self):
+    def test_non_promotable_status_with_complete_evidence(self):
         self.assertTrue(self.run_promoter()['eligible'])
-        self.features['features']['beta']['status'] = 'in_progress'
-        self.blocked('status is not beta')
+        self.features['features']['beta']['status'] = 'stable'
+        self.blocked('status is not beta, planned, or in_progress')
 
     def test_unit_only_name_collision_is_rejected(self):
         (self.root / 'src').mkdir()
@@ -354,6 +354,144 @@ class PromoterTests(unittest.TestCase):
                         log.replace('▶ test_roundtrip', '▶ test_other'),
                         log.replace('✅ all declared tests passed', '')):
             self.assertEqual([], collector.parse_log(invalid, self.features)[0]['beta']['passed'])
+
+
+class PlannedBetaPromotionTests(unittest.TestCase):
+    """planned/in_progress -> beta lane (beta -> stable is covered above)."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / '.gitcore').mkdir()
+        (self.root / 'tests').mkdir()
+        (self.root / 'tests' / 'integration.rs').write_text('#[test]\nfn test_roundtrip() {}\n')
+        self.features = json.loads((FIXTURES / 'features.json').read_text())
+        self.features['features']['planned'] = {
+            'status': 'planned', 'progress_pct': 40,
+            'tests': ['test_roundtrip'],
+            'steps': ['PENDING: build transport'],
+            'notes': 'early prototype, TODO remaining',
+        }
+        self.evidence = json.loads((FIXTURES / 'evidence.json').read_text())
+        self.evidence['per_feature_test_results']['planned'] = dict(
+            declared=['test_roundtrip'], passed=['test_roundtrip'], failed=[],
+            integration_targets_by_test={'test_roundtrip': ['integration']})
+        self.history = json.loads((FIXTURES / 'history.json').read_text())
+        self.history['planned'] = ['a', 'b']
+        self.path = self.root / '.gitcore' / 'features.json'
+
+    def run_all(self, apply=False):
+        self.path.write_text(json.dumps(self.features))
+        evidence, history = self.root / 'evidence.json', self.root / 'history.json'
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        before = {p: p.read_bytes() for p in (self.path, evidence, history)}
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py'),
+                                 '--features', str(self.path), '--evidence', str(evidence),
+                                 '--history', str(history)] + (['--apply'] if apply else []),
+                                capture_output=True, text=True, check=True)
+        self.assertIn('# Ledger promotion', result.stderr)
+        if not apply:
+            self.assertEqual(before, {p: p.read_bytes() for p in before})
+        return json.loads(result.stdout), result.stderr
+
+    def test_planned_eligible_promotes_to_beta(self):
+        report, err = self.run_all(apply=True)
+        planned = report['features']['planned']
+        self.assertTrue(planned['eligible'], planned['reasons'])
+        self.assertEqual('planned->beta', planned['transition'])
+        self.assertIn('progress_pct 40 < 100', ' ; '.join(planned['informational']))
+        self.assertTrue(any(reason.startswith('step pending:')
+                            for reason in planned['informational']))
+        self.assertTrue(any(reason.startswith('open honesty note:')
+                            for reason in planned['informational']))
+        data = json.loads(self.path.read_text())['features']['planned']
+        self.assertEqual('beta', data['status'])
+        self.assertEqual(40, data['progress_pct'])
+        self.assertNotIn('passes', data)
+        self.assertNotIn('ledger', data)
+        self.assertIn('promoted planned->beta by ledger promoter on c', data['notes'])
+        self.assertEqual(['planned'], report['promotions'].get('planned->beta'))
+        self.assertIn('## planned->beta (1)', err)
+
+    def test_planned_dry_run_writes_nothing(self):
+        report, _ = self.run_all()
+        self.assertTrue(report['features']['planned']['eligible'])
+
+    def test_planned_failing_test_blocked(self):
+        self.evidence['per_feature_test_results']['planned'] = dict(
+            declared=['test_roundtrip'], passed=[], failed=['test_roundtrip'],
+            integration_targets_by_test={})
+        report, _ = self.run_all(apply=True)
+        planned = report['features']['planned']
+        self.assertFalse(planned['eligible'])
+        self.assertIn('declared tests failed or unresolved', '; '.join(planned['reasons']))
+        self.assertEqual('planned', json.loads(self.path.read_text())['features']['planned']['status'])
+
+    def test_planned_missing_test_blocked(self):
+        self.features['features']['planned']['tests'] = ['ghost_test']
+        self.evidence['per_feature_test_results']['planned'] = dict(
+            declared=[], passed=[], failed=[], integration_targets_by_test={})
+        report, _ = self.run_all(apply=True)
+        planned = report['features']['planned']
+        self.assertFalse(planned['eligible'])
+        self.assertIn('declared test missing from index: ghost_test',
+                      '; '.join(planned['reasons']))
+        self.assertEqual('planned', json.loads(self.path.read_text())['features']['planned']['status'])
+
+    def test_planned_lib_only_blocked(self):
+        self.evidence['per_feature_test_results']['planned']['integration_targets_by_test'] = {
+            'test_roundtrip': []}
+        self.evidence['integration_targets_passed'] = ['other']
+        report, _ = self.run_all(apply=True)
+        planned = report['features']['planned']
+        self.assertFalse(planned['eligible'])
+        self.assertIn('no linked integration', '; '.join(planned['reasons']))
+        self.assertEqual('planned', json.loads(self.path.read_text())['features']['planned']['status'])
+
+    def test_in_progress_eligible(self):
+        self.features['features']['in_progress'] = dict(
+            self.features['features']['planned'], status='in_progress')
+        self.evidence['per_feature_test_results']['in_progress'] = dict(
+            self.evidence['per_feature_test_results']['planned'])
+        self.history['in_progress'] = ['a', 'b']
+        report, _ = self.run_all(apply=True)
+        progressing = report['features']['in_progress']
+        self.assertTrue(progressing['eligible'], progressing['reasons'])
+        data = json.loads(self.path.read_text())['features']['in_progress']
+        self.assertEqual('beta', data['status'])
+        self.assertIn('promoted in_progress->beta by ledger promoter on c', data['notes'])
+        self.assertEqual(['in_progress'], report['promotions'].get('in_progress->beta'))
+
+    def test_malformed_steps_block_planned(self):
+        self.features['features']['planned']['steps'] = 'PENDING'
+        report, _ = self.run_all(apply=True)
+        planned = report['features']['planned']
+        self.assertFalse(planned['eligible'])
+        self.assertIn('steps malformed', '; '.join(planned['reasons']))
+        self.assertEqual('planned', json.loads(self.path.read_text())['features']['planned']['status'])
+
+    def test_report_groups_promotions_by_transition(self):
+        report, err = self.run_all()
+        self.assertEqual(['beta'], report['promotions'].get('beta->stable'))
+        self.assertEqual(['planned'], report['promotions'].get('planned->beta'))
+        for header in ('## beta->stable (1)', '## planned->beta (1)',
+                       '## in_progress->beta (0)', '## not promoted'):
+            self.assertIn(header, err)
+
+    def test_candidate_marker_is_parsed(self):
+        log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
+               '  ▶ test_roundtrip [candidate]\n    ✅ --test integration (passed=2)\n'
+               '  ✅ all declared tests passed\n')
+        results, targets = collector.parse_log(log, self.features)
+        self.assertEqual(['test_roundtrip'], results['planned']['passed'])
+        self.assertEqual(['test_roundtrip'], results['planned']['candidate_tests'])
+        self.assertEqual(['integration'], targets)
+        plain = log.replace(' [candidate]', '')
+        results, _ = collector.parse_log(plain, self.features)
+        self.assertEqual([], results['planned']['candidate_tests'])
+        self.assertEqual(['test_roundtrip'], results['planned']['passed'])
 
 
 if __name__ == '__main__':
