@@ -17,7 +17,7 @@ We take the security of Xavier seriously. If you discover a security vulnerabili
 
 ### How to Report
 
-1. **Email**: Send details to [security@swal.ai](mailto:security@swal.ai)
+1. **Email**: Send details to [security@swal.network](mailto:security@swal.network)
 2. **PGP Key**: _(TBD — encrypted reports coming soon)_
 3. **Response Timeline**: We aim to acknowledge receipt within 48 hours and provide an initial assessment within 5 business days.
 
