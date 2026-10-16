@@ -417,45 +417,65 @@ async fn start_f12_server() -> (String, tempfile::TempDir, F12State) {
     (url, temp_dir, state)
 }
 
+/// Registers a node under the wallet owned by `key`, via the challenge-response flow.
+async fn register_wallet_node_live(
+    client: &reqwest::Client,
+    url: &str,
+    key: &NodeIdentity,
+    node_id: &str,
+    iroh_addr: &str,
+) -> reqwest::StatusCode {
+    let wallet_id = xavier::mesh::derive_wallet_id(&key.public_key);
+    let challenge: xavier::mesh::wallet_ownership::WalletChallenge = client
+        .get(format!(
+            "{}/v1/f12/private-mesh/challenge?wallet_id={}",
+            url, wallet_id
+        ))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let proof = xavier::mesh::wallet_ownership::sign_wallet_registration(key, &challenge, node_id);
+
+    client
+        .post(format!("{}/v1/f12/private-mesh/nodes", url))
+        .json(&serde_json::json!({
+            "node_id": node_id,
+            "wallet_id": wallet_id,
+            "name": node_id,
+            "iroh_addr": iroh_addr,
+            "proof": proof,
+        }))
+        .send()
+        .await
+        .unwrap()
+        .status()
+}
+
 #[tokio::test]
 #[serial]
 async fn test_e2e_cross_wallet_rejected_live() {
     let (url, _dir, _state) = start_f12_server().await;
     let client = reqwest::Client::new();
+    let key_a = NodeIdentity::generate();
+    let key_b = NodeIdentity::generate();
+    let wallet_a = xavier::mesh::derive_wallet_id(&key_a.public_key);
 
-    // Register node A under wallet-a
-    let reg_a = client
-        .post(format!("{}/v1/f12/private-mesh/nodes", url))
-        .json(&serde_json::json!({
-            "node_id": "node-a",
-            "wallet_id": "wallet-a",
-            "name": "Node A",
-            "iroh_addr": "addr-a"
-        }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(reg_a.status(), reqwest::StatusCode::CREATED);
+    // Register node A under wallet-a, proving ownership of wallet-a's key
+    let reg_a = register_wallet_node_live(&client, &url, &key_a, "node-a", "addr-a").await;
+    assert_eq!(reg_a, reqwest::StatusCode::CREATED);
 
-    // Register node B under wallet-b
-    let reg_b = client
-        .post(format!("{}/v1/f12/private-mesh/nodes", url))
-        .json(&serde_json::json!({
-            "node_id": "node-b",
-            "wallet_id": "wallet-b",
-            "name": "Node B",
-            "iroh_addr": "addr-b"
-        }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(reg_b.status(), reqwest::StatusCode::CREATED);
+    // Register node B under wallet-b, proving ownership of wallet-b's key
+    let reg_b = register_wallet_node_live(&client, &url, &key_b, "node-b", "addr-b").await;
+    assert_eq!(reg_b, reqwest::StatusCode::CREATED);
 
     // Attempt sync targeting node B using wallet-a -> 403 Forbidden
     let sync_res = client
         .post(format!("{}/v1/f12/private-mesh/sync", url))
         .json(&serde_json::json!({
-            "wallet_id": "wallet-a",
+            "wallet_id": wallet_a,
             "target_node": "node-b"
         }))
         .send()
