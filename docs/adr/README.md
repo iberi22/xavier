@@ -8,6 +8,7 @@
 
 *Lista de decisiones de arquitectura*
 
+- [ADR-046 — Marketplace currency, settlement and licensing](ADR-046-marketplace-currency-settlement-licensing.md) — Propuesto, 2026-10-16
 - [ADR-045 — Compaction opt-in and ingestion cursors](ADR-045-compaction-opt-in-and-ingestion-cursors.md) — Aceptado, 2026-10-12
 - [ADR-044 — Skill adapter discovery matrix](ADR-044-skill-adapter-discovery-matrix.md) — Propuesto, 2026-10-11
 - [ADR-043 — Master key initialization fails closed on ambiguous state](ADR-043-master-key-init-fail-closed.md) — Propuesto, 2026-10-08
