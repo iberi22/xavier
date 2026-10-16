@@ -69,15 +69,10 @@ fn generate_totp_code(secret_b32: &str, email: &str) -> String {
         .with_issuer(Some("Xavier".to_string()))
         .build()
         .expect("build TOTP");
-    // NOTE: The production server code in `src/auth2/mod.rs` divides the Unix timestamp
-    // by 30 before passing it to `totp.check(&payload.code, time)`. To be bug-compatible
-    // with this server-side double-division behavior, we must also divide the timestamp
-    // by 30 here before generating the TOTP token.
     let time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_secs()
-        / 30;
+        .as_secs();
     totp.generate(time).to_string()
 }
 

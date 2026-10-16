@@ -25,14 +25,9 @@ impl XavierServer {
         let token = "test-token-123".to_string();
         let data_dir = tempfile::tempdir().unwrap();
 
-        // Build the binary first to ensure it exists
-        let status = Command::new("cargo")
-            .args(["build", "--bin", "xavier"])
-            .status()
-            .expect("failed to build xavier");
-        assert!(status.success());
-
-        let child = Command::new("./target/debug/xavier")
+        let child = Command::new(env!("CARGO_BIN_EXE_xavier"))
+            .current_dir(data_dir.path())
+            .env("XAVIER_HOME", data_dir.path())
             .env("XAVIER_PORT", port.to_string())
             .env("XAVIER_TOKEN", &token)
             .env("XAVIER_PROXY_RATE_LIMIT", limit.to_string())

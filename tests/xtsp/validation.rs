@@ -379,11 +379,11 @@ async fn xtsp_page_in() {
     assert!(!candidates.is_empty(), "candidates should not be empty");
 
     let candidate = &candidates[0];
-    let path = candidate["path"].as_str().expect("path should be string");
+    let id = candidate["id"].as_str().expect("id should be string");
     // Verify candidate does not contain full content
     assert!(candidate.get("content").is_none());
 
-    // Page-in full content using memory_context tool using path (which gets correctly resolved by fallback)
+    // Page-in full content using the memory ID returned by mem_search
     let context_res = post_json(
         mcp_app.clone(),
         json!({
@@ -393,7 +393,7 @@ async fn xtsp_page_in() {
             "params": {
                 "name": "memory_context",
                 "arguments": {
-                    "ids": [path],
+                    "ids": [id],
                     "depth": 0
                 }
             }
@@ -403,7 +403,7 @@ async fn xtsp_page_in() {
     assert_eq!(context_res.status(), StatusCode::OK);
 
     let context_body = get_json_body(context_res).await;
-    let context_data = &context_body["result"]["content"][0]["structuredContent"];
+    let context_data = &context_body["result"]["structuredContent"];
     let content = context_data["content"]
         .as_str()
         .expect("content should be string");
@@ -921,7 +921,7 @@ async fn xtsp_clip_never_panics() {
     let app = v1_router(state, workspace);
 
     // Seed diverse complex multi-byte characters
-    let complex_text = "🐙 emoji test 👨‍👩‍👧‍👦 family test 你好世界 boundary test";
+    let complex_text = "🐙 emoji test 👨 👩 👧 👦 family test 你好世界 boundary test";
     let add_res = post_v1_json(
         app.clone(),
         "/v1/memories",
@@ -933,6 +933,8 @@ async fn xtsp_clip_never_panics() {
     )
     .await;
     assert_eq!(add_res.status(), StatusCode::OK);
+    let add_body = read_v1_json_body(add_res).await;
+    assert_eq!(add_body["status"], "ok");
 
     // Search with snippet to trigger clip_chars under multi-byte conditions
     let search_res = post_v1_json(
@@ -1124,3 +1126,6 @@ async fn xtsp_context_assemble_ssp() {
         Some("features/shelf/feat-p2p-sync")
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

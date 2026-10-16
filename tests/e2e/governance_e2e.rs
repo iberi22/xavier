@@ -140,11 +140,16 @@ async fn test_onchain_sync_from_chain_e2e() {
     let client = OnchainDaoClient::new(config);
     let mut dao = GovernanceDao::new();
 
-    // Verify sync_from_chain handles unreachable/mock RPC cleanly by returning an error on invalid connection
     let result = client.sync_from_chain(&mut dao, 0).await;
+    #[cfg(feature = "dao-evm")]
     assert!(
         result.is_err(),
         "sync_from_chain should return an error when connecting to unreachable RPC endpoint"
+    );
+    #[cfg(not(feature = "dao-evm"))]
+    assert!(
+        matches!(result, Ok(0)),
+        "sync stub should return zero events"
     );
 }
 
