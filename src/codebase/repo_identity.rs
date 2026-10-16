@@ -35,6 +35,9 @@ pub struct RepoIdentity {
     pub project_id: String,
     /// Canonical absolute repo root (git root when inside a git checkout).
     pub root: String,
+    /// Closest product directory containing `.xavier/config.toml`, when present.
+    #[serde(default)]
+    pub package_root: Option<String>,
     /// Commit the index corresponds to: `.xavier/codegraph-sync-commit`
     /// content, else current git HEAD, else `"unknown"`.
     pub indexed_commit: String,
@@ -175,6 +178,12 @@ pub fn derive_repo_identity(cwd: &Path) -> RepoIdentity {
     RepoIdentity {
         project_id,
         root: canonical.to_string_lossy().into_owned(),
+        package_root: nearest_config_ancestor(&cwd_abs).map(|path| {
+            path.canonicalize()
+                .unwrap_or(path)
+                .to_string_lossy()
+                .into_owned()
+        }),
         indexed_commit: read_indexed_commit(&canonical),
     }
 }
@@ -185,10 +194,19 @@ pub fn derive_repo_identity(cwd: &Path) -> RepoIdentity {
 /// [`derive_repo_identity`] resolve products through it, so a product's
 /// identity cannot depend on which caller asked.
 pub fn nearest_config_ancestor(dir: &Path) -> Option<PathBuf> {
-    let mut current = Some(dir);
+    let canonical = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    let root = find_repo_root(&canonical)?;
+    let root = root.canonicalize().unwrap_or(root);
+    let mut current = Some(canonical.as_path());
     while let Some(candidate) = current {
+        if !candidate.starts_with(&root) {
+            break;
+        }
         if crate::codebase::repo_config::repo_config_path(candidate).is_file() {
             return Some(candidate.to_path_buf());
+        }
+        if candidate == root {
+            break;
         }
         current = candidate.parent();
     }
@@ -344,6 +362,28 @@ mod repo_config_identity_tests {
             derive_repo_identity(&repo).project_id,
             derive_project_id(&repo)
         );
+    }
+
+    #[test]
+    fn config_above_repo_root_is_ignored() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(tmp.path().join(".xavier")).expect("mkdir config");
+        std::fs::write(
+            tmp.path().join(".xavier/config.toml"),
+            "project_id = \"outside\"\n",
+        )
+        .expect("write config");
+        let repo = tmp.path().join("repo");
+        git_repo(&repo);
+        let nested = repo.join("src/deep");
+        std::fs::create_dir_all(&nested).expect("mkdir nested");
+
+        for dir in [&repo, &nested] {
+            assert_eq!(nearest_config_ancestor(dir), None);
+            let identity = derive_repo_identity(dir);
+            assert_eq!(identity.project_id, derive_project_id(&repo));
+            assert_eq!(identity.package_root, None);
+        }
     }
 
     /// A malformed config must not take the identity down with it: the
