@@ -65,11 +65,13 @@ machine never builds. PRs must be mergeable as-is:
 - `.gitcore/features.json` is the source of truth (status, tests, files).
 - Run `scripts/verify-pipeline.sh` to see the real state — it EXECUTES the
   declared tests. The pipeline is the judge; status is never hand-promoted.
-- **Post-merge lane** — the Ledger Promoter runs only on manual dispatch, is disabled until the owner sets `LEDGER_PROMOTER_ENABLED=true`, and defaults to dry run. It uses full verifier evidence from `main` to propose beta → stable promotions only for entries with numeric progress_pct ≥ 100, no step marked pending/unbuilt, and no open honesty notes or open_gaps (honesty_reviewed never bypasses these blockers); promotion lands only when the bot PR merges through normal checks.
+  `planned` tests run in a non-gating candidate lane (failures never fail the
+  run); their results feed the promoter as marked candidate evidence.
+- **Post-merge lane** — the Ledger Promoter runs only on manual dispatch, is disabled until the owner sets `LEDGER_PROMOTER_ENABLED=true`, and defaults to dry run. It uses full verifier evidence from `main` to propose (a) beta → stable promotions only for entries with numeric progress_pct ≥ 100, no step marked pending/unbuilt, and no open honesty notes or open_gaps (honesty_reviewed never bypasses these blockers); and (b) planned/in_progress → beta promotions for entries whose declared tests are all green on main evidence with integration/E2E linkage and the required green streak — progress_pct < 100, pending steps and honesty notes do NOT block beta (beta means 'built, tested, incomplete'; malformed steps and any non-empty open_gaps block, and incompleteness is listed in the report). Status is still never raised by hand; promotion lands only when the bot PR merges through normal checks.
 
 ## 5. Modifying features.json
 
-- Never change `status` to a higher value by hand — a green run promotes it.
+- Never change `status` to a higher value by hand — only the Ledger Promoter may propose planned/in_progress → beta (built and tested, still incomplete) and beta → stable (complete) on green main evidence; a green run promotes it.
 - New feature: PR that adds the spec (`docs/features/specs/FEATURE-*.md`) +
   the ledger entry (`status: planned`) + implementation + tests.
 

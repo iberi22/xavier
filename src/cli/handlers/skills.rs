@@ -6,13 +6,12 @@
 //! The filesystem policy and resolved roots come from the manifest's own declared
 //! source/target directories, so no new `XAVIER_SKILL_*` env var is read here.
 
-use axum::{extract::State, http::StatusCode, response::Response, Json};
+use axum::{http::StatusCode, response::Response};
 use serde::Deserialize;
 use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::cli::handlers::json_response;
-use crate::cli::state::CliState;
 use xavier::context::skill_controller::manifest::Manifest;
 use xavier::context::skill_controller::plan::{ProjectionPlan, ResolvedRoots};
 use xavier::context::skill_controller::planner::build_plan;
@@ -249,38 +248,6 @@ async fn rollback_skills(req: SkillsRollbackRequest, journal: Journal) -> Respon
             format!("rollback task failed: {e}"),
         ),
     }
-}
-
-/// `POST` handler for `xavier skills plan`.
-pub async fn skills_plan_handler(
-    State(_state): State<CliState>,
-    Json(payload): Json<SkillsPlanRequest>,
-) -> Response {
-    plan_skills(payload).await
-}
-
-/// `POST` handler for `xavier skills apply --plan <file>`.
-pub async fn skills_apply_handler(
-    State(_state): State<CliState>,
-    Json(payload): Json<SkillsApplyRequest>,
-) -> Response {
-    let journal = match Journal::from_settings() {
-        Ok(j) => j,
-        Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-    };
-    apply_skills(payload, journal).await
-}
-
-/// `POST` handler for `xavier skills rollback`.
-pub async fn skills_rollback_handler(
-    State(_state): State<CliState>,
-    Json(payload): Json<SkillsRollbackRequest>,
-) -> Response {
-    let journal = match Journal::from_settings() {
-        Ok(j) => j,
-        Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-    };
-    rollback_skills(payload, journal).await
 }
 
 #[cfg(test)]
