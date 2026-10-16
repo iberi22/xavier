@@ -17,6 +17,9 @@ use serde_json::{json, Value};
 use tower::util::ServiceExt;
 use xavier::adapters::inbound::http::routes::create_router;
 
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();
+
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// Points the market store at a tempdir file and turns the beta flag on.
