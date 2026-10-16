@@ -265,6 +265,25 @@ mod tests {
     use super::*;
     use serde::Serialize;
 
+    struct ConfigDirGuard(Option<std::ffi::OsString>);
+
+    impl ConfigDirGuard {
+        fn set(path: &std::path::Path) -> Self {
+            let previous = std::env::var_os("XAVIER_CONFIG_DIR");
+            std::env::set_var("XAVIER_CONFIG_DIR", path);
+            Self(previous)
+        }
+    }
+
+    impl Drop for ConfigDirGuard {
+        fn drop(&mut self) {
+            match &self.0 {
+                Some(value) => std::env::set_var("XAVIER_CONFIG_DIR", value),
+                None => std::env::remove_var("XAVIER_CONFIG_DIR"),
+            }
+        }
+    }
+
     #[derive(Serialize)]
     struct TestPayload {
         node_id: String,
@@ -294,6 +313,22 @@ mod tests {
         let mut mgr = DataConsentManager::new(NodeId("xv1-test".to_string()));
         mgr.set_consent("cpu_usage", ConsentLevel::Full);
         assert_eq!(mgr.get_consent("cpu_usage"), ConsentLevel::Full);
+    }
+
+    #[test]
+    fn test_opt_out() {
+        let mut mgr = DataConsentManager::new(NodeId("xv1-test".to_string()));
+        mgr.set_consent("full_report", ConsentLevel::Full);
+        mgr.set_consent("full_report", ConsentLevel::None);
+
+        let payload = TestPayload {
+            node_id: "xv1-test".to_string(),
+            metric_name: "full_report".to_string(),
+            value: 100.0,
+            timestamp: 12345,
+        };
+        let result = mgr.sanitize_payload("full_report", &payload).unwrap();
+        assert!(result.is_none());
     }
 
     #[test]
@@ -329,6 +364,61 @@ mod tests {
         assert!(!obj.contains_key("node_id"));
     }
 
+    #[derive(Serialize)]
+    struct ErrorReportPayload {
+        node_id: String,
+        event_kind: String,
+        sanitized_message: String,
+        timestamp: i64,
+        extra_info: String,
+    }
+
+    #[test]
+    fn test_metadata_error_report() {
+        let mut mgr = DataConsentManager::new(NodeId("xv1-test".to_string()));
+        mgr.set_consent("error_report", ConsentLevel::Metadata);
+
+        let payload = ErrorReportPayload {
+            node_id: "xv1-test".to_string(),
+            event_kind: "crash".to_string(),
+            sanitized_message: "boom".to_string(),
+            timestamp: 12345,
+            extra_info: "should be dropped".to_string(),
+        };
+        let result = mgr.sanitize_payload("error_report", &payload).unwrap();
+        let val = result.expect("should return Some");
+        let obj = val.as_object().unwrap();
+
+        assert!(obj.contains_key("event_kind"));
+        assert!(obj.contains_key("sanitized_message"));
+        assert!(obj.contains_key("timestamp"));
+
+        assert!(!obj.contains_key("node_id"));
+        assert!(!obj.contains_key("extra_info"));
+    }
+
+    #[test]
+    fn test_metadata_unknown_type() {
+        let mut mgr = DataConsentManager::new(NodeId("xv1-test".to_string()));
+        mgr.set_consent("unknown_metric", ConsentLevel::Metadata);
+
+        let payload = TestPayload {
+            node_id: "xv1-test".to_string(),
+            metric_name: "unknown_metric".to_string(),
+            value: 10.0,
+            timestamp: 12345,
+        };
+        let result = mgr.sanitize_payload("unknown_metric", &payload).unwrap();
+        let val = result.expect("should return Some");
+        let obj = val.as_object().unwrap();
+
+        assert!(obj.contains_key("timestamp"));
+
+        assert!(!obj.contains_key("node_id"));
+        assert!(!obj.contains_key("metric_name"));
+        assert!(!obj.contains_key("value"));
+    }
+
     #[test]
     fn test_full_preserves_all() {
         let mgr = make_manager();
@@ -360,5 +450,141 @@ mod tests {
         assert!(obj.contains_key("node_id"));
         assert_ne!(obj["node_id"], "xv1-sensitive");
         assert!(obj["node_id"].as_str().unwrap().starts_with("anon-"));
+    }
+
+    #[derive(Serialize)]
+    struct PayloadWithoutNodeId {
+        metric_name: String,
+        value: f64,
+        timestamp: i64,
+    }
+
+    #[test]
+    fn test_anonymized_without_node_id() {
+        let mut mgr = make_manager();
+        mgr.set_consent("anonymous_report", ConsentLevel::Anonymized);
+        let payload = PayloadWithoutNodeId {
+            metric_name: "anonymous_report".to_string(),
+            value: 12.3,
+            timestamp: 4000,
+        };
+        let result = mgr.sanitize_payload("anonymous_report", &payload).unwrap();
+        let val = result.expect("should return Some");
+        let obj = val.as_object().unwrap();
+        assert!(!obj.contains_key("node_id"));
+    }
+
+    #[test]
+    fn test_hash_behaviour() {
+        let mgr1 = DataConsentManager::new(NodeId("xv1-same".to_string()));
+        let mgr2 = DataConsentManager::new(NodeId("xv1-same".to_string()));
+        let mgr3 = DataConsentManager::new(NodeId("xv1-different".to_string()));
+
+        let hash1 = mgr1.hash_node_id();
+        let hash2 = mgr2.hash_node_id();
+        let hash3 = mgr3.hash_node_id();
+
+        assert_eq!(hash1, hash2);
+        assert_ne!(hash1, hash3);
+    }
+
+    #[test]
+    fn test_non_object_payload_under_metadata() {
+        let mut mgr = make_manager();
+        mgr.set_consent("metadata_array", ConsentLevel::Metadata);
+        let payload = vec![1, 2];
+        let result = mgr.sanitize_payload("metadata_array", &payload).unwrap();
+        let val = result.expect("should return Some");
+        // The non-object pass-through (sanitize_payload on an array) is pinned as current behaviour.
+        assert_eq!(val, serde_json::json!([1, 2]));
+    }
+
+    #[test]
+    fn test_accessors() {
+        let mut mgr = DataConsentManager::new(NodeId("xv1-accessors".to_string()));
+        assert_eq!(mgr.node_id().0, "xv1-accessors");
+
+        mgr.set_consent("type1", ConsentLevel::Full);
+        mgr.set_consent("type2", ConsentLevel::Metadata);
+
+        let map = mgr.consent_map();
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("type1").copied(), Some(ConsentLevel::Full));
+        assert_eq!(map.get("type2").copied(), Some(ConsentLevel::Metadata));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_registry_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = ConfigDirGuard::set(dir.path());
+
+        let future_time = (chrono::Utc::now().timestamp() + 3600) as u64;
+        let token = ActiveConsent {
+            token_id: "tok123".to_string(),
+            workspace_id: "ws1".to_string(),
+            expires_at: future_time,
+            token: "secret".to_string(),
+        };
+
+        DataConsentManager::register_active_consent(token.clone()).unwrap();
+
+        let active = DataConsentManager::list_active_consents().unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].token_id, "tok123");
+
+        DataConsentManager::revoke_consent("tok123").unwrap();
+
+        let active_after = DataConsentManager::list_active_consents().unwrap();
+        assert_eq!(active_after.len(), 0);
+
+        assert!(DataConsentManager::is_token_revoked("tok123").unwrap());
+
+        // Revoke again to test idempotence
+        DataConsentManager::revoke_consent("tok123").unwrap();
+        let active_final = DataConsentManager::list_active_consents().unwrap();
+        assert_eq!(active_final.len(), 0);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_registry_revoke_idempotence() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = ConfigDirGuard::set(dir.path());
+
+        let future_time = (chrono::Utc::now().timestamp() + 3600) as u64;
+        let token = ActiveConsent {
+            token_id: "tok123".to_string(),
+            workspace_id: "ws1".to_string(),
+            expires_at: future_time,
+            token: "secret".to_string(),
+        };
+
+        DataConsentManager::register_active_consent(token).unwrap();
+        DataConsentManager::revoke_consent("tok123").unwrap();
+        DataConsentManager::revoke_consent("tok123").unwrap(); // Idempotence check
+
+        let active_final = DataConsentManager::list_active_consents().unwrap();
+        assert_eq!(active_final.len(), 0);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_expiry() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = ConfigDirGuard::set(dir.path());
+
+        let past_time = (chrono::Utc::now().timestamp() - 3600) as u64;
+        let token = ActiveConsent {
+            token_id: "tok_expired".to_string(),
+            workspace_id: "ws1".to_string(),
+            expires_at: past_time,
+            token: "secret".to_string(),
+        };
+
+        DataConsentManager::register_active_consent(token).unwrap();
+
+        let active = DataConsentManager::list_active_consents().unwrap();
+        assert_eq!(active.len(), 0);
     }
 }
