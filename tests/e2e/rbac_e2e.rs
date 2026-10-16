@@ -269,12 +269,18 @@ async fn test_rbac_mcp_mutative_tools_readonly_blocked() {
     let admin_token = generate_jwt(&admin_user, jwt_secret.as_bytes()).unwrap();
     let admin_claims = validate_jwt(&admin_token, jwt_secret.as_bytes()).unwrap();
 
-    let result = xavier::server::mcp::server::handle_tool_call(
-        app_state,
-        workspace_ctx,
-        Some(&admin_claims),
-        "create_memory",
-        json!({"path": "test/path", "content": "test content"}),
+    let result = xavier::server::mcp::tools_memory::with_mcp_caller(
+        xavier::server::mcp::tools_memory::McpCaller {
+            space: None,
+            clearance: xavier::security::clearance::role_clearance(admin_claims.role),
+        },
+        xavier::server::mcp::server::handle_tool_call(
+            app_state,
+            workspace_ctx,
+            Some(&admin_claims),
+            "create_memory",
+            json!({"path": "test/path", "content": "test content"}),
+        ),
     )
     .await;
 

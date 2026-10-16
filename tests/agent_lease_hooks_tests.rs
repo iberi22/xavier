@@ -1,14 +1,24 @@
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use xavier::agents::runtime::{AgentRuntime, RuntimeConfig};
+use xavier::codebase::connection_manager::ConnectionManager;
 use xavier::coordination::core::CoordinationCore;
 use xavier::coordination::events::XavierEventBus;
 use xavier::coordination::secrets::KeyLendingEngine;
 use xavier::memory::qmd_memory::QmdMemory;
 use xavier::secrets::audit::QmdAuditLogger;
 
+static METRICS_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tokio::test]
 async fn test_agent_task_lifecycle_lease_revocation() {
+    let _guard = METRICS_MUTEX.lock().await;
+    let metrics_dir = tempfile::tempdir().unwrap();
+    ConnectionManager::global().disconnect("metrics");
+    ConnectionManager::global()
+        .connect_with_path("metrics", metrics_dir.path().join("metrics.db"))
+        .unwrap();
+
     // 1. Setup Event Bus and Secrets Engine
     let event_bus = XavierEventBus::new(100);
     let audit_logger = Box::new(QmdAuditLogger::new());
@@ -62,6 +72,13 @@ async fn test_agent_task_lifecycle_lease_revocation() {
 
 #[tokio::test]
 async fn test_agent_task_failure_lease_revocation() {
+    let _guard = METRICS_MUTEX.lock().await;
+    let metrics_dir = tempfile::tempdir().unwrap();
+    ConnectionManager::global().disconnect("metrics");
+    ConnectionManager::global()
+        .connect_with_path("metrics", metrics_dir.path().join("metrics.db"))
+        .unwrap();
+
     // 1. Setup
     let event_bus = XavierEventBus::new(100);
     let audit_logger = Box::new(QmdAuditLogger::new());
