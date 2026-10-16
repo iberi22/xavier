@@ -19,6 +19,7 @@
 
 pub mod adapter;
 pub mod diff;
+pub mod index;
 pub mod manifest;
 pub mod merge;
 pub mod push_pull;
@@ -165,6 +166,9 @@ pub struct PeerMemorySync {
     /// Defaults to `ClearanceLevel::Unclassified` (the lowest ceiling,
     /// matching unauthenticated push requests).
     pub clearance_ceiling: ClearanceLevel,
+    /// QMD index that `/memory/search` reads. When set, every batch applied by
+    /// [`PeerMemorySync::apply_received_diffs`] is mirrored into it.
+    search_index: Option<Arc<crate::memory::qmd_memory::QmdMemory>>,
 }
 
 impl PeerMemorySync {
@@ -194,6 +198,7 @@ impl PeerMemorySync {
             node_id,
             peer_token,
             last_sync_map: tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            search_index: None,
             clearance_ceiling: std::env::var("XAVIER_SYNC_CLEARANCE_CEILING")
                 .ok()
                 .map(|v| crate::security::clearance::parse_requester_level(&v))
@@ -220,6 +225,7 @@ impl PeerMemorySync {
             node_id,
             peer_token,
             last_sync_map: tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            search_index: None,
             clearance_ceiling: std::env::var("XAVIER_SYNC_CLEARANCE_CEILING")
                 .ok()
                 .map(|v| crate::security::clearance::parse_requester_level(&v))
@@ -248,6 +254,13 @@ impl PeerMemorySync {
         self.clearance_ceiling
     }
 
+    /// Makes received records searchable: every batch applied through
+    /// [`PeerMemorySync::apply_received_diffs`] is mirrored into `index`.
+    pub fn with_search_index(mut self, index: Arc<crate::memory::qmd_memory::QmdMemory>) -> Self {
+        self.search_index = Some(index);
+        self
+    }
+
     /// Validate and apply a batch of received diffs with LWW merge.
     /// Returns Ok(()) if validated and applied, or Err(reason) if rejected.
     pub async fn apply_received_diffs(
@@ -259,6 +272,9 @@ impl PeerMemorySync {
         crate::memory::sync::merge::apply_changes_received(&*self.store, diffs, conflicts)
             .await
             .map_err(|_| "failed to apply changes")?;
+        if let Some(index) = &self.search_index {
+            index::index_applied_changes(&*self.store, index, index.workspace_id(), diffs).await;
+        }
         Ok(())
     }
 

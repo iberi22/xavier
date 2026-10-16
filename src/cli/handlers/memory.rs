@@ -17,6 +17,7 @@ use crate::cli::state::CliState;
 use crate::cli::types::*;
 use xavier::espacio::tokens::SpaceContext;
 use xavier::memory::qmd_memory::MemoryDocument;
+use xavier::memory::sync::index::{embed_if_missing, index_applied_changes};
 use xavier::ports::inbound::MemoryQueryPort;
 use xavier::workspace::WorkspaceContext;
 
@@ -824,13 +825,7 @@ pub async fn add_handler(
                         metadata: mirror_meta,
                         ..Default::default()
                     };
-                    if let Ok(vector) =
-                        xavier::memory::qmd_memory::reader::generate_embedding(&doc.content).await
-                    {
-                        if !vector.is_empty() {
-                            doc.embedding = vector;
-                        }
-                    }
+                    embed_if_missing(&mut doc).await;
                     if let Err(error) = mirror.add(doc).await {
                         tracing::warn!(error = %error, memory_id = %mirror_id, "qmd mirror failed");
                     }
@@ -1374,6 +1369,8 @@ pub async fn export_markdown_handler(
 #[allow(clippy::too_many_arguments)]
 pub async fn memory_push_handler(
     State(state): State<CliState>,
+    space: Option<Extension<SpaceContext>>,
+    workspace: Option<Extension<WorkspaceContext>>,
     requester: Option<Extension<xavier::security::clearance::ClearanceLevel>>,
     caller: Option<
         Extension<xavier::adapters::inbound::http::middleware::rate_limit::MemoryWriteCallerKey>,
@@ -1383,6 +1380,15 @@ pub async fn memory_push_handler(
     client: Option<axum::Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
     Json(diffs): Json<Vec<xavier::memory::sync::ChunkDiff>>,
 ) -> impl axum::response::IntoResponse {
+    // Same scope gate as add_handler, before anything is written.
+    let scoped = match scoped_memory(
+        &state,
+        space.as_ref().map(|e| &e.0),
+        workspace.as_ref().map(|e| &e.0),
+    ) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
     let session = session.as_ref().map(|s| &s.0);
     let caller_key = caller.map(|c| c.0 .0).unwrap_or_else(|| {
         xavier::adapters::inbound::http::middleware::rate_limit::memory_write_caller_key(
@@ -1437,15 +1443,18 @@ pub async fn memory_push_handler(
     match xavier::memory::sync::merge::apply_changes_received(&*state.store, &diffs, &mut conflicts)
         .await
     {
-        Ok(()) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "status": "ok",
-                "conflicts": conflicts,
-                "received": diffs.len()
-            })),
-        )
-            .into_response(),
+        Ok(()) => {
+            index_applied_changes(&*state.store, &scoped.qmd, &scoped.workspace_id, &diffs).await;
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "status": "ok",
+                    "conflicts": conflicts,
+                    "received": diffs.len()
+                })),
+            )
+                .into_response()
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({

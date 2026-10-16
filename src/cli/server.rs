@@ -2003,11 +2003,15 @@ async fn start_http_server_inner(
     let mesh_token = std::env::var("XAVIER_TOKEN")
         .ok()
         .or_else(|| std::env::var("XAVIER_MESH_TOKEN").ok());
-    let sync_service = Arc::new(xavier::memory::sync::PeerMemorySync::with_peer_token(
-        state.store.clone(),
-        node_id,
-        mesh_token,
-    ));
+    // Received records are mirrored into the QMD index that /memory/search reads.
+    let sync_service = Arc::new(
+        xavier::memory::sync::PeerMemorySync::with_peer_token(
+            state.store.clone(),
+            node_id,
+            mesh_token,
+        )
+        .with_search_index(Arc::clone(&state.qmd_memory)),
+    );
     xavier::adapters::inbound::http::handlers::sync::init_memory_sync(Arc::clone(&sync_service));
 
     // ── Background sync loop ──────────────────────────────────────────────
