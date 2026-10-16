@@ -39,6 +39,7 @@ pub mod qmd;
 pub mod qmd_memory;
 pub mod query_engine;
 pub mod repo_memory_store_path;
+pub mod repo_retention;
 pub mod repo_store_registry;
 pub mod sanitizer;
 pub mod schema;
