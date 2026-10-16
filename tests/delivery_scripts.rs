@@ -17,6 +17,12 @@ fn run_delivery_suite(interpreter: &str, script: &str) {
         .env("GIT_CONFIG_KEY_0", "commit.gpgsign")
         .env("GIT_CONFIG_VALUE_0", "false")
         .env("PYTHONDONTWRITEBYTECODE", "1")
+        // A git hook running `cargo test` exports these; the suites must never touch the real repo.
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_WORK_TREE")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .output();
     let output = match result {
         Err(error) if error.kind() == ErrorKind::NotFound => {

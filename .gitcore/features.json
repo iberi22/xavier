@@ -3390,7 +3390,7 @@
         "Review the computed ship/show/ask classification policy; never hand-promote ledger status"
       ],
       "passes": false,
-      "notes": "Registers the autonomous-delivery feature (P01, docs/CI only, no code PR). Spec: docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md; SRS mapping: REQ-085 (planned) in docs/SRS/REQUIREMENTS.md. Design: docs/design/trunk-based/01-DESIGN.md (flow + ship/show/ask), 02-AUTONOMOUS-PIPELINE.md (stages/gates), 03-DONE-PROTOCOL.md (DONE verifier contract); policy: docs/adr/ADR-035-trunk-based-ship-show-ask.md (accepted 2026-09-27). A docs/SRS/** change is Ask class and needs pre-merge panel approval. scripts/done-check.sh implements task/feature/increment verification; the 8-stage driver and JSON bundle producer remain pending. Status changes only on a green scripts/verify-pipeline.sh run after executed tests; never hand-promoted.",
+      "notes": "Registers the autonomous-delivery feature (P01, docs/CI only, no code PR). Spec: docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md; SRS mapping: REQ-085 (planned) in docs/SRS/REQUIREMENTS.md. Design: docs/design/trunk-based/01-DESIGN.md (flow + ship/show/ask), 02-AUTONOMOUS-PIPELINE.md (stages/gates), 03-DONE-PROTOCOL.md (DONE verifier contract); policy: docs/adr/ADR-035-trunk-based-ship-show-ask.md (accepted 2026-09-27). A docs/SRS/** change is Ask class and needs pre-merge panel approval. scripts/done-check.sh is a defined future contract, not yet present. Status changes only on a green scripts/verify-pipeline.sh run after executed tests; never hand-promoted.",
       "tests": [
         "tests/delivery_scripts.rs::delivery_done_check_task_suite",
         "tests/delivery_scripts.rs::delivery_done_check_feature_suite",
