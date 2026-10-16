@@ -386,3 +386,187 @@ async fn admin_still_runs_exec_through_the_gated_router() {
         "positive control: the gate must not block the owner"
     );
 }
+
+/// Admin request through the gated router the daemon merges. Returns the raw
+/// body text so leak checks see exactly what went over the wire.
+async fn admin_request(
+    fx: &Fixture,
+    method: &str,
+    uri: &str,
+    body: serde_json::Value,
+) -> (StatusCode, String) {
+    let app = crate::cli::handlers::secrets::secrets_routes()
+        .layer(Extension(Arc::clone(&fx.vault)))
+        .layer(Extension(crate::cli::http_setup::SessionInfo {
+            is_ephemeral: false,
+            api_token: None,
+            user_id: Some("tester".to_string()),
+            lease: None,
+        }))
+        .with_state(test_state(Arc::clone(&fx.engine)).await);
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("content-type", "application/json")
+        .extension(Claims::new(
+            "tester".to_string(),
+            "tester@example.com".to_string(),
+            UserRole::Admin,
+            chrono::TimeDelta::seconds(60),
+        ))
+        .body(Body::from(body.to_string()))
+        .expect("request");
+    let response = app.oneshot(request).await.expect("oneshot");
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read body");
+    (status, String::from_utf8_lossy(&bytes).into_owned())
+}
+
+#[tokio::test]
+async fn leases_list_contract_exposes_lease_id_and_never_the_token() {
+    let fx = setup().await;
+    let lease = fx
+        .engine
+        .lend(&fx.secret_name, Some("v"), "agent-contract", 3600)
+        .await
+        .expect("lend");
+
+    let (status, raw) = admin_request(&fx, "GET", "/secrets/leases", serde_json::json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!raw.contains(&lease.token), "list leaked a token: {raw}");
+    assert!(!raw.contains("secret_value"), "list carried a value: {raw}");
+
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&raw).expect("json list");
+    assert_eq!(rows.len(), 1);
+    let mut keys: Vec<&str> = rows[0]
+        .as_object()
+        .expect("row object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "agent_id",
+            "created_at",
+            "expires_at",
+            "lease_id",
+            "secret_name"
+        ]
+    );
+    assert_eq!(
+        rows[0]["lease_id"],
+        crate::coordination::secrets::lease_id_for_token(&lease.token)
+    );
+}
+
+#[tokio::test]
+async fn status_and_revoke_work_by_lease_id_and_reject_tokens() {
+    let fx = setup().await;
+    let lease = fx
+        .engine
+        .lend(&fx.secret_name, Some("v"), "agent-ops", 3600)
+        .await
+        .expect("lend");
+    let id = crate::coordination::secrets::lease_id_for_token(&lease.token);
+
+    let (status, raw) = admin_request(
+        &fx,
+        "GET",
+        &format!("/secrets/status/{id}"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!raw.contains(&lease.token), "status leaked a token: {raw}");
+
+    // The raw token is no longer a handle for status or revoke.
+    let (status, _) = admin_request(
+        &fx,
+        "GET",
+        &format!("/secrets/status/{}", lease.token),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = admin_request(
+        &fx,
+        "POST",
+        "/secrets/revoke",
+        serde_json::json!({ "token": lease.token }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(fx.engine.get_lease(&lease.token).await.is_some());
+
+    let (status, _) = admin_request(
+        &fx,
+        "POST",
+        "/secrets/revoke",
+        serde_json::json!({ "lease_id": id }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(fx.engine.get_lease(&lease.token).await.is_none());
+
+    // A second lease, revoked through the path form.
+    let second = fx
+        .engine
+        .lend(&fx.secret_name, Some("w"), "agent-ops-2", 3600)
+        .await
+        .expect("second lend");
+    let second_id = crate::coordination::secrets::lease_id_for_token(&second.token);
+    let (status, _) = admin_request(
+        &fx,
+        "POST",
+        &format!("/secrets/revoke/{second_id}"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(fx.engine.get_lease(&second.token).await.is_none());
+
+    let (status, _) = admin_request(
+        &fx,
+        "POST",
+        &format!("/secrets/revoke/{second_id}"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn history_rows_name_leases_by_id_and_never_carry_the_session_token() {
+    let fx = setup().await;
+    let lease = fx
+        .engine
+        .lend(&fx.secret_name, Some("v"), "agent-history", 3600)
+        .await
+        .expect("lend");
+    let id = crate::coordination::secrets::lease_id_for_token(&lease.token);
+
+    // Audit rows are written by a spawned task, so poll for the LEND row.
+    let mut rows = Vec::new();
+    for _ in 0..100 {
+        rows = crate::cli::handlers::secrets::history_rows(&fx.project_id)
+            .await
+            .expect("history rows");
+        if rows.iter().any(|r| r["event_type"] == "LEND") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    let rendered = serde_json::to_string(&rows).expect("serialise rows");
+    assert!(!rendered.contains(&lease.token), "history leaked a token");
+    assert!(!rendered.contains("session_token"), "history: {rendered}");
+    let lend = rows
+        .iter()
+        .find(|r| r["event_type"] == "LEND")
+        .expect("LEND row");
+    assert_eq!(lend["lease_id"], id);
+}

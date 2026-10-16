@@ -307,7 +307,8 @@ pub struct LendSecretPayload {
 
 #[derive(Debug, Deserialize)]
 pub struct RevokeLeasePayload {
-    pub token: String,
+    /// Opaque lease id from `GET /secrets/leases`. Lease tokens are not accepted.
+    pub lease_id: String,
 }
 
 #[derive(Debug, Deserialize)]

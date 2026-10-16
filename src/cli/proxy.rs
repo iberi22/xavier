@@ -100,28 +100,14 @@ pub async fn chat_batch_proxy(
     (StatusCode::OK, Json(results)).into_response()
 }
 
-/// Revoke lease by path.
+/// Revoke lease by opaque lease id in the path.
 pub async fn revoke_lease_by_path(
     State(state): State<CliState>,
     axum::Extension(_session): axum::Extension<SessionInfo>,
-    axum::extract::Path(token): axum::extract::Path<String>,
+    axum::extract::Path(lease_id): axum::extract::Path<String>,
 ) -> Response {
-    match state
-        .secrets_engine
-        .revoke(&token, "Proxy Auto-Revoke API")
+    crate::cli::handlers::secrets::revoke_by_id_response(&state, &lease_id, "Proxy Auto-Revoke API")
         .await
-    {
-        Ok(_) => (
-            axum::http::StatusCode::OK,
-            Json(serde_json::json!({ "status": "revoked" })),
-        )
-            .into_response(),
-        Err(e) => (
-            axum::http::StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": e.to_string() })),
-        )
-            .into_response(),
-    }
 }
 
 /// Generic proxy.

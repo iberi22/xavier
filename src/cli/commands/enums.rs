@@ -1530,10 +1530,10 @@ pub enum SecretsCommand {
     },
     /// List all active secret leases
     ListLeases,
-    /// Revoke a specific lease
-    Revoke { token: String },
-    /// Check the status of a lease
-    Status { token: String },
+    /// Revoke a specific lease by its opaque lease id (see `list-leases`)
+    Revoke { lease_id: String },
+    /// Check the status of a lease by its opaque lease id (see `list-leases`)
+    Status { lease_id: String },
 }
 
 #[derive(Subcommand, Debug, Clone)]
