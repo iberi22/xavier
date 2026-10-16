@@ -31,3 +31,5 @@ The Data Commons is a decentralized system for sharing technical data between Xa
 ## Status
 
 ⚠️ **PHASE 0–1 — Design + partial types/wallet.** Full multi-app marketplace ongoing. See monorepo SWAL roadmap.
+
+The v1 money model (internal credits, off-chain settlement, fixed license menu) is decided in [ADR-046](https://github.com/iberi22/xavier/blob/main/docs/adr/ADR-046-marketplace-currency-settlement-licensing.md) and supersedes the token design above for v1. Marketplace docs: [docs/SWAL/MARKETPLACE.md](https://github.com/iberi22/xavier/blob/main/docs/SWAL/MARKETPLACE.md).

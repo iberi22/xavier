@@ -131,13 +131,19 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         self.conn_provider
             .with_conn(&project_id, move |conn| {
-                store.put_store(conn, &record_c)?;
-                store.put_index(conn, &record_c)?;
-                store.put_link(conn, &record_c)?;
+                let tx = rusqlite::Transaction::new_unchecked(
+                    conn,
+                    rusqlite::TransactionBehavior::Immediate,
+                )?;
+                store.put_store(&tx, &record_c)?;
+                store.put_index(&tx, &record_c)?;
+                store.put_link(&tx, &record_c)?;
+                tx.commit()?;
                 Ok(())
             })
             .await?;
 
+        // append_timeline_event deliberately runs after the commit, outside the transaction.
         let store_clone = self.clone();
         self.conn_provider
             .with_conn(&self.project_id, move |conn| {
@@ -1731,6 +1737,67 @@ impl VecSqliteMemoryStore {
 mod tests {
     use super::*;
     use rusqlite::Connection;
+
+    xavier::isolate_test_process!();
+
+    #[tokio::test]
+    async fn put_failure_in_index_leaves_no_orphan_record() {
+        use super::super::VecSqliteStoreConfig;
+        use crate::memory::connection_provider::InMemoryProvider;
+        use std::sync::Arc;
+
+        let temp = tempfile::tempdir().unwrap();
+        let store = VecSqliteMemoryStore::new_with_provider(
+            VecSqliteStoreConfig {
+                path: temp.path().join("memory.sqlite3"),
+                embedding_dimensions: 768,
+            },
+            Arc::new(InMemoryProvider::new()),
+        )
+        .await
+        .unwrap();
+        store
+            .conn_provider
+            .with_conn(&store.project_id, |conn| {
+                conn.execute_batch("DROP TABLE memory_fts")?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        let error = store
+            .put(MemoryRecord {
+                id: "index-failure".into(),
+                workspace_id: "test-workspace".into(),
+                path: "test/index-failure".into(),
+                content: "Transactional write fixture".into(),
+                embedding: vec![0.1; 768],
+                ..Default::default()
+            })
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("no such table: memory_fts"),
+            "{error:#}"
+        );
+
+        store
+            .conn_provider
+            .with_conn(&store.project_id, |conn| {
+                let count: i64 =
+                    conn.query_row("SELECT COUNT(*) FROM memory_records", [], |row| row.get(0))?;
+                assert_eq!(count, 0, "failed indexing must roll back the record");
+                let chain_count: i64 =
+                    conn.query_row("SELECT COUNT(*) FROM memory_chain", [], |row| row.get(0))?;
+                assert_eq!(
+                    chain_count, 0,
+                    "failed indexing must roll back the hash chain"
+                );
+                Ok(())
+            })
+            .await
+            .unwrap();
+    }
 
     fn setup_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
