@@ -199,6 +199,9 @@ PY
       tests/mesh_integration.rs)
         echo "--test mesh_integration (mesh)|test --features mesh --test mesh_integration" ;;
       src/*)            echo "xavier --lib|test -p xavier --lib" ;;
+      code-graph/tests/*.rs)
+        local base; base="$(basename "$1" .rs)"
+        echo "code-graph --test $base|test -p code-graph --test $base" ;;
       code-graph/*)     echo "code-graph --lib|test -p code-graph --lib" ;;
       crates/xavier-core-logic/*) echo "xavier-core-logic|test -p xavier-core-logic --lib" ;;
       crates/xavier-wasm/*)       echo "xavier-wasm|test -p xavier-wasm --lib" ;;
@@ -213,6 +216,8 @@ PY
         else
           echo "crate $crate|test -p $crate --lib"
         fi ;;
+      tests/integration/*.rs)
+        echo "--test integration|test -p xavier --features test-utils --test integration" ;;
       tests/e2e/*|tests/*.rs)
         local base; base="$(basename "$1" .rs)"
         echo "--test $base|test -p xavier --features test-utils --test $base" ;;

@@ -3409,7 +3409,21 @@
         "Pin the merged commit in KSM fingerprints.yml",
         "Next (separate change): Xavier MCP tool that loads the KSM bundle and runs the matcher on the indexed project"
       ],
-      "verification": "cargo test -p code-graph --test fingerprint; cargo clippy -p code-graph --all-targets -- -D warnings"
+      "verification": "cargo test -p code-graph --test fingerprint; cargo clippy -p code-graph --all-targets -- -D warnings",
+      "implemented_in": [
+        "code-graph/src/fingerprint.rs",
+        "code-graph/src/main.rs"
+      ],
+      "tests": [
+        "code-graph/tests/fingerprint.rs::c_function_shape",
+        "code-graph/tests/fingerprint.rs::golden_kgram_key_pins_hash_rule",
+        "code-graph/tests/fingerprint.rs::output_is_byte_stable",
+        "code-graph/tests/fingerprint.rs::cli_fingerprint_creates_no_database",
+        "code-graph/tests/fingerprint.rs::c_preprocessor_split_else_if_keeps_function_whole",
+        "fingerprint::tests::kgram_key_uses_unit_separator_join",
+        "fingerprint::tests::last_ident_takes_final_segment",
+        "fingerprint::tests::ranges_parse_and_reject"
+      ]
     },
     "chore-oss-scanner-enrollment": {
       "id": "chore-oss-scanner-enrollment",
