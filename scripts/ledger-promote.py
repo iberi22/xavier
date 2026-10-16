@@ -8,9 +8,72 @@ JSON report is stdout; Markdown is stderr. Dry runs never modify either input.
 import argparse
 import datetime as dt
 import json
+import math
 from pathlib import Path
 import re
 import sys
+
+
+# Word markers avoid substring matches; bracketed markers match even when adjacent.
+# Fail closed: even historical or negated gap wording requires ledger cleanup.
+# Trade-offs: Spanish "todo" ("all") and legitimate security wording such as
+# "never writes plaintext" also block promotion until the notes are reworded.
+STEP_PENDING_MARKERS = (
+    r'pending', r'pendientes?', r'todos?', r'tbd', r'wip', r'not\s+built',
+    r'unbuilt', r'not\s+implemented', r'no\s+implementado', r'deferred',
+    r'stubs?', r'stubbed', r'unimplemented', r'placeholders?', r'not\s+yet',
+    r'no\s+route\s+wired\s+yet',
+)
+OPEN_GAP_MARKERS = (
+    r'downgrade[ds]?', r'revertido', r'reverted', r'honest\s+\d+%',
+    r'still\s+plaintext', r'plaintext', r'stubs?', r'never\s+been\s+exercised',
+    r'not\s+yet', r'pending', r'pendientes?', r'todos?', r'0\s+peers',
+    r'stubbed', r'unimplemented', r'placeholders?',
+    r'zero\s+code', r'dead\s+code',
+) + STEP_PENDING_MARKERS  # every step marker also counts as an open gap in notes
+STEP_PENDING_PATTERN = re.compile(
+    r'(?<!\w)(?:' + '|'.join(STEP_PENDING_MARKERS)
+    + r')(?!\w)|\[\s*\]|\(planned\)', re.I)
+OPEN_GAP_PATTERN = re.compile(
+    r'(?<!\w)(?:' + '|'.join(OPEN_GAP_MARKERS) + r')(?!\w)', re.I)
+
+
+def completeness_reasons(feature):
+    reasons = []
+    progress = feature.get('progress_pct')
+    if isinstance(progress, bool) or not isinstance(progress, (int, float)):
+        reasons.append(f'progress_pct {progress!r} not numeric')
+    elif not math.isfinite(progress):
+        reasons.append(f'progress_pct {progress!r} not finite')
+    elif progress < 100:
+        reasons.append(f'progress_pct {progress} < 100')
+    steps = feature.get('steps', [])
+    if not isinstance(steps, list):
+        reasons.append('steps malformed: expected list')
+        steps = []
+    for step in steps:
+        text = json.dumps(step, ensure_ascii=False) if isinstance(step, dict) else str(step)
+        unfinished = False
+        if isinstance(step, dict):
+            states = [step[key] for key in ('status', 'state') if key in step]
+            unfinished = not states or any(
+                str(state).strip().lower() not in ('done', 'complete', 'completed', 'implemented')
+                for state in states)
+        if unfinished or STEP_PENDING_PATTERN.search(text):
+            reasons.append(f'step pending: {text[:60]}')
+    notes = str(feature.get('notes', ''))
+    markers = {}
+    for match in OPEN_GAP_PATTERN.finditer(notes):
+        markers.setdefault(' '.join(match.group().lower().split()), match.group())
+    if markers:
+        reasons.append('open honesty note: ' + ', '.join(markers.values()))
+    gaps = feature.get('open_gaps', [])
+    if not isinstance(gaps, list):
+        reasons.append('open_gaps malformed: expected list')
+    elif gaps:
+        reasons.append(f'open_gaps: {len(gaps)}')
+    # honesty_reviewed is provenance only; it never overrides an open gap.
+    return reasons
 
 
 def load(path):
@@ -60,6 +123,7 @@ def evaluate(document, evidence, history, root, streak):
         if feature.get('status') != 'beta':
             results[fid] = {'eligible': False, 'reasons': ['status is not beta']}
             continue
+        reasons.extend(completeness_reasons(feature))
         declared = feature.get('tests', [])
         result = evidence.get('per_feature_test_results', {}).get(fid, {})
         if not declared or not isinstance(declared, list):
