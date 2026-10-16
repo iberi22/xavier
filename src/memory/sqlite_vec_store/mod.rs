@@ -11,6 +11,7 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 
+use crate::codebase::connection_manager::PoolProfile;
 use crate::memory::connection_provider::{ConnectionProvider, GlobalConnectionProvider};
 use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
 use crate::memory::sqlite_store::TABLE_MEMORIES;
@@ -119,11 +120,23 @@ impl VecSqliteMemoryStore {
         config: VecSqliteStoreConfig,
         conn_provider: Arc<dyn ConnectionProvider>,
     ) -> Result<Self> {
+        Self::new_with_profile(config, conn_provider, PoolProfile::Default).await
+    }
+
+    /// New with an injectable connection provider and an explicit pool profile.
+    ///
+    /// [`PoolProfile::Default`] is exactly [`VecSqliteMemoryStore::new_with_provider`].
+    /// Per-repo stores pass [`PoolProfile::RepoStore`] (XAV-REPO T7).
+    pub async fn new_with_profile(
+        config: VecSqliteStoreConfig,
+        conn_provider: Arc<dyn ConnectionProvider>,
+        profile: PoolProfile,
+    ) -> Result<Self> {
         db::ensure_dir(&config.path).await?;
         vector::register_sqlite_vec_extension()?;
 
         let project_id = project_id_for_path(&config.path);
-        conn_provider.connect_with_path(&project_id, config.path.clone())?;
+        conn_provider.connect_with_path_profile(&project_id, config.path.clone(), profile)?;
 
         let store = Self {
             project_id,

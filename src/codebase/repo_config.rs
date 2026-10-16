@@ -122,6 +122,34 @@ impl ProjectIdOrigin {
     }
 }
 
+/// Where a repo's memory lives (XAV-REPO T7).
+///
+/// `Global` is the default and today's behaviour: the repo's memories share the
+/// daemon's single store. `Repo` opts the repo into its own physical store at
+/// `<repo>/.xavier/memory.sqlite3`. The daemon still refuses `Repo` unless the
+/// repo also sits under `XAVIER_REPO_STORE_ROOTS` (see
+/// [`crate::memory::repo_store_registry`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryStoreMode {
+    /// Share the daemon's global memory store (default).
+    #[default]
+    Global,
+    /// Opt in to a physical per-repo memory store.
+    Repo,
+}
+
+impl MemoryStoreMode {
+    /// Accepted spellings for `memory_store`, in the order they are documented.
+    fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "global" => Some(MemoryStoreMode::Global),
+            "repo" => Some(MemoryStoreMode::Repo),
+            _ => None,
+        }
+    }
+}
+
 /// Effective per-repo configuration: the file's values on top of safe defaults.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoConfig {
@@ -142,6 +170,10 @@ pub struct RepoConfig {
     pub embedding_dimensions: Option<usize>,
     /// Retention in days for this repo's memories; `None`/`0` = keep forever.
     pub retention_days: Option<u64>,
+    /// Whether this repo's memory is opted in to a physical per-repo store.
+    /// Absent in the file ⇒ [`MemoryStoreMode::Global`].
+    #[serde(default)]
+    pub memory_store: MemoryStoreMode,
     /// Path the config was loaded from, or `None` when no file existed.
     pub source_path: Option<PathBuf>,
 }
@@ -161,6 +193,7 @@ impl RepoConfig {
             sync_codegraph: false,
             embedding_dimensions: None,
             retention_days: None,
+            memory_store: MemoryStoreMode::Global,
             source_path: None,
         }
     }
@@ -235,6 +268,8 @@ struct RepoConfigFile {
     codegraph: Option<CodegraphSection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     memory: Option<MemorySection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    memory_store: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -356,6 +391,15 @@ impl RepoConfigFile {
             }
         }
 
+        if let Some(raw) = self.memory_store {
+            cfg.memory_store =
+                MemoryStoreMode::parse(&raw).ok_or_else(|| RepoConfigError::Invalid {
+                    path: path.to_path_buf(),
+                    field: "memory_store".to_string(),
+                    reason: format!("'{raw}' no es un modo valido (global|repo)"),
+                })?;
+        }
+
         cfg.source_path = Some(path.to_path_buf());
         Ok(cfg)
     }
@@ -386,6 +430,7 @@ pub const SETTABLE_KEYS: &[&str] = &[
     "sync_codegraph",
     "embedding_dimensions",
     "retention_days",
+    "memory_store",
 ];
 
 /// Normalise a user-typed key (`privacy.default_clearance` ⇒ `clearance`).
@@ -443,6 +488,7 @@ pub fn init_config(root: &Path, force: bool) -> Result<PathBuf, RepoConfigError>
             sync_to_repo: Some(cfg.sync_codegraph),
         }),
         memory: None,
+        memory_store: None,
     };
     let body = render(&file);
     std::fs::write(&path, body).map_err(|source| RepoConfigError::Write {
@@ -530,6 +576,16 @@ pub fn set_key(root: &Path, key: &str, value: &str) -> Result<RepoConfig, RepoCo
             })?;
             let memory = file.memory.get_or_insert_with(MemorySection::default);
             memory.retention_days = Some(parsed);
+        }
+        "memory_store" => {
+            if MemoryStoreMode::parse(value).is_none() {
+                return Err(RepoConfigError::Invalid {
+                    path,
+                    field: "memory_store".to_string(),
+                    reason: format!("'{value}' no es un modo valido (global|repo)"),
+                });
+            }
+            file.memory_store = Some(value.trim().to_ascii_lowercase());
         }
         other => {
             return Err(RepoConfigError::Invalid {
@@ -816,6 +872,47 @@ retention_days = 90
         assert_eq!(reloaded.default_clearance, ClearanceLevel::Secret);
         assert!(reloaded.sync_codegraph);
         assert_eq!(reloaded.retention_days, None);
+    }
+
+    // ── memory_store: per-repo store opt-in (XAV-REPO T7) ──────────────────
+
+    #[test]
+    fn repo_config_memory_store_defaults_to_global_and_accepts_repo() {
+        let (_tmp, repo) = repo_with_config("", "store-default");
+        assert_eq!(
+            RepoConfig::load(&repo).unwrap().memory_store,
+            MemoryStoreMode::Global
+        );
+
+        let (_tmp, repo) = repo_with_config("memory_store = \"repo\"\n", "store-repo");
+        assert_eq!(
+            RepoConfig::load(&repo).unwrap().memory_store,
+            MemoryStoreMode::Repo
+        );
+    }
+
+    #[test]
+    fn repo_config_memory_store_rejects_unknown_mode() {
+        let (_tmp, repo) = repo_with_config("memory_store = \"shared\"\n", "store-bad");
+        match RepoConfig::load(&repo) {
+            Err(RepoConfigError::Invalid { field, .. }) => assert_eq!(field, "memory_store"),
+            other => panic!("expected Invalid memory_store, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn repo_config_set_memory_store_round_trips() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = tmp.path().join("set-store");
+        std::fs::create_dir_all(repo.join(".git")).expect("mkdir .git");
+
+        let cfg = set_key(&repo, "memory_store", "Repo").expect("set memory_store");
+        assert_eq!(cfg.memory_store, MemoryStoreMode::Repo);
+        assert_eq!(
+            RepoConfig::load(&repo).unwrap().memory_store,
+            MemoryStoreMode::Repo
+        );
+        assert!(set_key(&repo, "memory_store", "everywhere").is_err());
     }
 
     #[test]

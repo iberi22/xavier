@@ -7,7 +7,7 @@ use std::any::Any;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::codebase::connection_manager::ConnectionManager;
+use crate::codebase::connection_manager::{ConnectionManager, PoolClass, PoolProfile};
 
 /// Abstract connection provider trait to decouple storage implementations from ConnectionManager globals.
 #[async_trait]
@@ -17,6 +17,23 @@ pub trait ConnectionProvider: Send + Sync {
 
     /// Connect to a database with an explicit file path.
     fn connect_with_path(&self, project_id: &str, db_path: PathBuf) -> Result<()>;
+
+    /// Connect to a database file with an explicit pool profile. Per-repo
+    /// memory stores use [`PoolProfile::RepoStore`] so they do not each open
+    /// the daemon-wide 10-connection pool.
+    ///
+    /// The default ignores the profile and falls back to
+    /// [`ConnectionProvider::connect_with_path`]; providers that own a
+    /// [`ConnectionManager`] override it.
+    fn connect_with_path_profile(
+        &self,
+        project_id: &str,
+        db_path: PathBuf,
+        profile: PoolProfile,
+    ) -> Result<()> {
+        let _ = profile;
+        self.connect_with_path(project_id, db_path)
+    }
 
     /// Internal type-erased closure execution on a database connection.
     async fn execute_with_conn(
@@ -65,6 +82,20 @@ impl ConnectionProvider for GlobalConnectionProvider {
         ConnectionManager::global().connect_with_path(project_id, db_path)
     }
 
+    fn connect_with_path_profile(
+        &self,
+        project_id: &str,
+        db_path: PathBuf,
+        profile: PoolProfile,
+    ) -> Result<()> {
+        ConnectionManager::global().connect_with_path_profile(
+            project_id,
+            db_path,
+            profile,
+            PoolClass::Evictable,
+        )
+    }
+
     async fn execute_with_conn(
         &self,
         project_id: &str,
@@ -102,6 +133,16 @@ impl ConnectionProvider for InMemoryProvider {
 
     fn connect_with_path(&self, project_id: &str, db_path: PathBuf) -> Result<()> {
         self.inner.connect_with_path(project_id, db_path)
+    }
+
+    fn connect_with_path_profile(
+        &self,
+        project_id: &str,
+        db_path: PathBuf,
+        profile: PoolProfile,
+    ) -> Result<()> {
+        self.inner
+            .connect_with_path_profile(project_id, db_path, profile, PoolClass::Evictable)
     }
 
     async fn execute_with_conn(
