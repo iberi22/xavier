@@ -1,12 +1,12 @@
 name: E2E Segmented
 
-# Runs the 138 integration-test targets that no other workflow executes, in
+# Runs 141 integration-test targets (some also covered by ci.yml), in
 # 13 independent jobs.
 #
 # Why (Belal, 2026-06-06): as a single job the first failing target hides every
 # target after it, and nobody learns whether the rest is green. One job per
 # segment, and inside each job the loop does not break on failure, so one run
-# reports the state of all 138 targets instead of just the first break.
+# reports the state of all 141 targets instead of just the first break.
 #
 # No job goes red on a failing target, on purpose: visibility first. A separate
 # gate job decides what blocks a release, so one broken segment never hides the
@@ -22,6 +22,8 @@ on:
       - 'tests/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - '.github/workflows/e2e-segmented.yml'
+      - 'scripts/e2e-wave-target.sh'
 
 permissions:
   contents: read
@@ -49,14 +51,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run all 22 targets of wave 01
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
+          source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'agent_lease_hooks_tests'
@@ -85,8 +86,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" 240 ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 01 (resto_a): ${#failed[@]}/${#targets[@]} failed ===="
@@ -117,14 +117,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run all 19 targets of wave 02
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
+          source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'adversarial_challenge_2_stress'
@@ -150,8 +149,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" 240 ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 02 (resto_b): ${#failed[@]}/${#targets[@]} failed ===="
@@ -182,14 +180,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run all 18 targets of wave 03
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
+          source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'benchmark'
@@ -214,8 +211,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" 240 ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 03 (resto_c): ${#failed[@]}/${#targets[@]} failed ===="
@@ -246,14 +242,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run all 19 targets of wave 04
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
+          source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'chronicle_harvest_test'
@@ -281,8 +276,7 @@ jobs:
             echo "=== $t ==="
             target_timeout=240
             if [ "$t" = "integration" ]; then target_timeout=420; fi
-            timeout -k 15 "$target_timeout" cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" "$target_timeout" ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 04 (resto_d): ${#failed[@]}/${#targets[@]} failed ===="
@@ -309,19 +303,24 @@ jobs:
         uses: actions/checkout@v7
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      - name: Install mesh build dependencies
+        # Iroh uses rustls/aws-lc-sys: native C/C++ compilation and CMake.
+        # pkg-config/OpenSSL are also part of Xavier's Linux build environment.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config libssl-dev
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 11 targets of wave 05
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
-          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          source scripts/e2e-wave-target.sh
+          cargo test --package xavier --features ci-safe,mesh --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'mesh_auth_binding_test'
             'mesh_full_simulation_test'
@@ -338,8 +337,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" 240 ci-safe,mesh; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 05 (mesh): ${#failed[@]}/${#targets[@]} failed ===="
@@ -370,14 +368,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run all 8 targets of wave 06
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
+          source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'embedding_fallback_resilience'
@@ -392,8 +389,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" 240 ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 06 (search_embedding): ${#failed[@]}/${#targets[@]} failed ===="
@@ -409,7 +405,7 @@ jobs:
           if-no-files-found: ignore
 
   e2e-07:
-    name: W07 session_sync_panel (11)
+    name: W07 session_sync_panel (12)
     if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
@@ -422,16 +418,15 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Run all 11 targets of wave 07
+      - name: Run all 12 targets of wave 07
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
+          source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'cli_health_stats_parity'
@@ -441,6 +436,7 @@ jobs:
             'kernel_mcp_test'
             'mcp_health_honesty_test'
             'mcp_session_edge_test'
+            'panel_openui_backend'
             'session_integration'
             'session_sync_backoff_test'
             'sync_check_handler_cached_result'
@@ -449,8 +445,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" 240 ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 07 (session_sync_panel): ${#failed[@]}/${#targets[@]} failed ===="
@@ -481,14 +476,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run all 6 targets of wave 08
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
+          source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'http_auth_edge_test'
@@ -501,8 +495,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" 240 ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 08 (security_secrets): ${#failed[@]}/${#targets[@]} failed ===="
@@ -533,14 +526,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run all 9 targets of wave 09
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
+          source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'access_flush_drain'
@@ -556,8 +548,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" 240 ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 09 (memory_sync): ${#failed[@]}/${#targets[@]} failed ===="
@@ -588,14 +579,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run all 4 targets of wave 10
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
+          source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'maloca_data_node_test'
@@ -606,8 +596,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" 240 ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 10 (maloca): ${#failed[@]}/${#targets[@]} failed ===="
@@ -623,7 +612,7 @@ jobs:
           if-no-files-found: ignore
 
   e2e-11:
-    name: W11 telemetry_skill (5)
+    name: W11 telemetry_skill (7)
     if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
@@ -636,20 +625,21 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Run all 5 targets of wave 11
+      - name: Run all 7 targets of wave 11
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
+          source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'airgap_cli_hardening'
             'ledger_skill_entries'
+            'skill_controller_core_adapters'
+            'skill_controller_other_adapters'
             'skill_route_clearance'
             'telemetry_anonymizer_edge_test'
             'telemetry_anonymizer_test'
@@ -657,8 +647,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" 240 ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 11 (telemetry_skill): ${#failed[@]}/${#targets[@]} failed ===="
@@ -689,14 +678,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run all 4 targets of wave 12
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
+          source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'codegraph_installer_e2e'
@@ -707,8 +695,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" 240 ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 12 (codegraph): ${#failed[@]}/${#targets[@]} failed ===="
@@ -739,14 +726,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Run all 2 targets of wave 13
         id: run-wave
-        # No `-e` and no `break`: a red target must not hide the rest of its
-        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
-        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
-        # exit code, so the loop must run every target and reach its summary.
+        # Keep running after a red target; the shared helper checks exit status
+        # and test counts, while the gate consumes the failed-target summary.
         shell: bash
         run: |
           set +e +o pipefail
           set -u
+          source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'storage_isolation'
@@ -755,8 +741,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
-            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+            if run_wave_target "$t" 240 ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
           echo "==== wave 13 (storage): ${#failed[@]}/${#targets[@]} failed ===="
@@ -785,8 +770,12 @@ jobs:
           set -u
           gate_failed=0
           check() {
-            local job="$1" result="$2"
-            if [ -z "$result" ]; then
+            local job="$1" result="$2" status="$3"
+            if [ -z "$result" ] && { [ "$status" = "failure" ] || [ "$status" = "cancelled" ]; }; then
+              # The job died before reporting (e.g. a setup step failed): never read that as a pass.
+              echo "::error::$job ended with status $status before reporting targets"
+              gate_failed=1
+            elif [ -z "$result" ]; then
               echo "$job: skipped"
             elif [ "$result" != "none" ]; then
               echo "::error::$job reported failing targets: $result"
@@ -795,19 +784,19 @@ jobs:
               echo "$job: all targets passed"
             fi
           }
-          check e2e-01 '${{ needs.e2e-01.outputs.failed }}'
-          check e2e-02 '${{ needs.e2e-02.outputs.failed }}'
-          check e2e-03 '${{ needs.e2e-03.outputs.failed }}'
-          check e2e-04 '${{ needs.e2e-04.outputs.failed }}'
-          check e2e-05 '${{ needs.e2e-05.outputs.failed }}'
-          check e2e-06 '${{ needs.e2e-06.outputs.failed }}'
-          check e2e-07 '${{ needs.e2e-07.outputs.failed }}'
-          check e2e-08 '${{ needs.e2e-08.outputs.failed }}'
-          check e2e-09 '${{ needs.e2e-09.outputs.failed }}'
-          check e2e-10 '${{ needs.e2e-10.outputs.failed }}'
-          check e2e-11 '${{ needs.e2e-11.outputs.failed }}'
-          check e2e-12 '${{ needs.e2e-12.outputs.failed }}'
-          check e2e-13 '${{ needs.e2e-13.outputs.failed }}'
+          check e2e-01 '${{ needs.e2e-01.outputs.failed }}' '${{ needs.e2e-01.result }}'
+          check e2e-02 '${{ needs.e2e-02.outputs.failed }}' '${{ needs.e2e-02.result }}'
+          check e2e-03 '${{ needs.e2e-03.outputs.failed }}' '${{ needs.e2e-03.result }}'
+          check e2e-04 '${{ needs.e2e-04.outputs.failed }}' '${{ needs.e2e-04.result }}'
+          check e2e-05 '${{ needs.e2e-05.outputs.failed }}' '${{ needs.e2e-05.result }}'
+          check e2e-06 '${{ needs.e2e-06.outputs.failed }}' '${{ needs.e2e-06.result }}'
+          check e2e-07 '${{ needs.e2e-07.outputs.failed }}' '${{ needs.e2e-07.result }}'
+          check e2e-08 '${{ needs.e2e-08.outputs.failed }}' '${{ needs.e2e-08.result }}'
+          check e2e-09 '${{ needs.e2e-09.outputs.failed }}' '${{ needs.e2e-09.result }}'
+          check e2e-10 '${{ needs.e2e-10.outputs.failed }}' '${{ needs.e2e-10.result }}'
+          check e2e-11 '${{ needs.e2e-11.outputs.failed }}' '${{ needs.e2e-11.result }}'
+          check e2e-12 '${{ needs.e2e-12.outputs.failed }}' '${{ needs.e2e-12.result }}'
+          check e2e-13 '${{ needs.e2e-13.outputs.failed }}' '${{ needs.e2e-13.result }}'
           if [ "$gate_failed" -ne 0 ]; then
             echo "E2E gate FAILED: at least one wave reported failing targets"
             exit 1

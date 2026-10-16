@@ -204,4 +204,62 @@ chmod +x "$TEST_DIR/bin5/cargo"
   echo "PASS: Test Case 5"
 )
 
+echo "=========================================================="
+echo "Test Case 6: Nested integration files use the integration target"
+echo "Test Case 7: Code-graph integration and unit tests use their owning targets"
+mkdir -p "$MOCK_ROOT/tests/integration" "$MOCK_ROOT/code-graph/tests" "$MOCK_ROOT/code-graph/src" "$TEST_DIR/bin6"
+cp "$REAL_ROOT/tests/integration/agents_test.rs" "$MOCK_ROOT/tests/integration/"
+cp "$REAL_ROOT/tests/integration.rs" "$MOCK_ROOT/tests/"
+cp "$REAL_ROOT/code-graph/tests/fingerprint.rs" "$MOCK_ROOT/code-graph/tests/"
+cp "$REAL_ROOT/code-graph/src/fingerprint.rs" "$MOCK_ROOT/code-graph/src/"
+python3 - "$REAL_ROOT" "$MOCK_ROOT" "$TEST_DIR/expected-invocations" << 'PY'
+import json, sys
+from pathlib import Path
+
+real, mock, expected = map(Path, sys.argv[1:])
+feature = json.loads((real / ".gitcore/features.json").read_text())["features"]["feat-code-graph-fingerprint"]
+tests = ["tests/integration/agents_test.rs::test_agent_creation", *feature["tests"]]
+(mock / ".gitcore/features.json").write_text(json.dumps({"features": [{
+    "id": "routing", "status": "in_progress", "tests": tests,
+}]}))
+commands = ["test -p xavier --features test-utils --test integration test_agent_creation"]
+for test in feature["tests"]:
+    if test.startswith("code-graph/tests/fingerprint.rs::"):
+        commands.append("test -p code-graph --test fingerprint " + test.split("::")[-1])
+    else:
+        commands.append("test -p code-graph --lib " + test)
+expected.write_text("\n".join(commands) + "\n")
+PY
+cat << 'BIN' > "$TEST_DIR/bin6/cargo"
+#!/usr/bin/env bash
+if [[ "$*" == *"--no-run"* ]]; then
+  exit 0
+fi
+printf '%s\n' "$*" >> "$INVOCATIONS"
+if ! grep -Fxq -- "$*" "$EXPECTED_INVOCATIONS"; then
+  echo "error: unexpected invocation: $*"
+  exit 1
+fi
+echo "test result: ok. 1 passed; 0 failed"
+BIN
+chmod +x "$TEST_DIR/bin6/cargo"
+(
+  export PATH="$TEST_DIR/bin6:$PATH"
+  export INVOCATIONS="$TEST_DIR/invocations"
+  export EXPECTED_INVOCATIONS="$TEST_DIR/expected-invocations"
+  export XAVIER_VERIFY_PER_ATTEMPT_SECS=1
+  OUT="$(bash "$TEST_DIR/verify-pipeline.sh" 2>&1)" || RC=$?
+  if [ "${RC:-0}" -ne 0 ]; then
+    echo "FAIL: Expected routing cases to succeed, got ${RC:-0}"
+    echo "$OUT"
+    exit 1
+  fi
+  if ! diff -u "$EXPECTED_INVOCATIONS" "$INVOCATIONS"; then
+    echo "FAIL: Expected exact target and filter invocations without fallback sweeps"
+    exit 1
+  fi
+  echo "PASS: Test Case 6"
+  echo "PASS: Test Case 7"
+)
+
 echo "All verify-pipeline tests passed"
