@@ -15693,6 +15693,7 @@ dependencies = [
  "walkdir",
  "x25519-dalek",
  "xavier-core-logic",
+ "xavier-market",
  "xavier-pageindex",
  "xxhash-rust",
  "zeroize",
@@ -15707,6 +15708,18 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "xavier-market"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "uuid",
 ]
 
 [[package]]

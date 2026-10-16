@@ -288,6 +288,10 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
             crate::maloca::nested_router(get_maloca_store()),
         );
 
+    // Marketplace v2 beta: mounted only with the `market-v2` feature and XAVIER_MARKET_V2=beta.
+    #[cfg(feature = "market-v2")]
+    let router = crate::market_v2::mount(router);
+
     // Add enterprise plugin routes if feature is enabled
     #[cfg(feature = "enterprise")]
     let router = router
