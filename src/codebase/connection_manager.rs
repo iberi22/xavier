@@ -49,6 +49,7 @@ pub struct ConnectionManager {
     /// evicted pool is resurrected against the file it actually owns instead
     /// of a guess (see [`ConnectionManager::get_or_reconnect_pool`]).
     known_paths: RwLock<std::collections::HashMap<String, PathBuf>>,
+    known_profiles: RwLock<std::collections::HashMap<String, (PoolProfile, PoolClass)>>,
     active: Arc<tokio::sync::RwLock<Option<String>>>,
     idle_timeout_secs: u64,
     /// Purely observational counters (T3). Nothing reads these to decide
@@ -78,7 +79,7 @@ struct PoolMetrics {
     evicted_idle: AtomicU64,
     evicted_manual: AtomicU64,
     /// Eviction where a connection was available and
-    /// `PRAGMA wal_checkpoint(TRUNCATE)` actually ran.
+    /// `PRAGMA wal_checkpoint(PASSIVE)` actually ran.
     evicted_checkpointed: AtomicU64,
     /// Evictions where no connection was available, so no checkpoint ran.
     evicted_uncheckpointed: AtomicU64,
@@ -99,7 +100,7 @@ pub struct EvictionRecord {
     /// in-process clock, not a wall-clock timestamp: it is only meaningful for
     /// ordering and spacing, never for correlating with logs.
     pub at_ms: u64,
-    /// Whether `PRAGMA wal_checkpoint(TRUNCATE)` ran before removal.
+    /// Whether `PRAGMA wal_checkpoint(PASSIVE)` ran before removal.
     pub checkpointed: bool,
 }
 
@@ -127,7 +128,8 @@ impl EvictionReason {
 
 struct ProjectPool {
     pool: Arc<Pool<SqliteConnectionManager>>,
-    activated_at: Instant,
+    /// Last access in monotonic milliseconds since the manager epoch.
+    activated_at: AtomicU64,
     /// Shape of this pool: `max_size`, `min_idle`, `cache_size`, `mmap_size`.
     profile: PoolProfile,
     /// Whether the LRU / idle branches may evict this pool (T4).
@@ -523,7 +525,7 @@ pub struct SnapshotCounters {
     pub evicted_idle: u64,
     /// Evictions from `disconnect`.
     pub evicted_manual: u64,
-    /// Evictions where `PRAGMA wal_checkpoint(TRUNCATE)` ran.
+    /// Evictions where `PRAGMA wal_checkpoint(PASSIVE)` ran.
     pub evicted_checkpointed: u64,
     /// Evictions where no connection was free, so no checkpoint ran.
     pub evicted_uncheckpointed: u64,
@@ -541,6 +543,7 @@ impl ConnectionManager {
         Self {
             pools: RwLock::new(std::collections::HashMap::new()),
             known_paths: RwLock::new(std::collections::HashMap::new()),
+            known_profiles: RwLock::new(std::collections::HashMap::new()),
             active: Arc::new(tokio::sync::RwLock::new(None)),
             idle_timeout_secs: 300, // 5 minutes
             metrics: PoolMetrics::default(),
@@ -576,8 +579,10 @@ impl ConnectionManager {
             )
         } else {
             // Update last accessed time
-            if let Some(entry) = self.pools.write().get_mut(project_id) {
-                entry.activated_at = Instant::now();
+            if let Some(entry) = self.pools.read().get(project_id) {
+                entry
+                    .activated_at
+                    .fetch_max(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
             }
             Ok(())
         }
@@ -661,14 +666,19 @@ impl ConnectionManager {
                 project_id.to_string(),
                 ProjectPool {
                     pool: Arc::new(pool),
-                    activated_at: Instant::now(),
+                    activated_at: AtomicU64::new(self.elapsed_ms(Instant::now())),
                     profile,
                     class,
                 },
             );
+            self.known_profiles
+                .write()
+                .insert(project_id.to_string(), (profile, class));
             self.metrics.opened_total.fetch_add(1, Ordering::Relaxed);
-        } else if let Some(entry) = self.pools.write().get_mut(project_id) {
-            entry.activated_at = Instant::now();
+        } else if let Some(entry) = self.pools.read().get(project_id) {
+            entry
+                .activated_at
+                .fetch_max(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
         }
         Ok(())
     }
@@ -687,6 +697,9 @@ impl ConnectionManager {
         match pools.get_mut(project_id) {
             Some(entry) => {
                 entry.class = class;
+                if let Some(config) = self.known_profiles.write().get_mut(project_id) {
+                    config.1 = class;
+                }
                 true
             }
             None => false,
@@ -759,9 +772,11 @@ impl ConnectionManager {
         project_id: &str,
     ) -> Result<Arc<Pool<SqliteConnectionManager>>> {
         {
-            let mut pools = self.pools.write();
-            if let Some(entry) = pools.get_mut(project_id) {
-                entry.activated_at = Instant::now();
+            let pools = self.pools.read();
+            if let Some(entry) = pools.get(project_id) {
+                entry
+                    .activated_at
+                    .fetch_max(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
                 return Ok(entry.pool.clone());
             }
         }
@@ -785,7 +800,11 @@ impl ConnectionManager {
             .resurrected_total
             .fetch_add(1, Ordering::Relaxed);
         match known_path {
-            Some(db_path) => self.connect_with_path(project_id, db_path)?,
+            Some(db_path) => {
+                let (profile, class) = self.known_profiles.read().get(project_id).copied()
+                    .unwrap_or((PoolProfile::Default, PoolClass::Evictable));
+                self.connect_with_path_profile(project_id, db_path, profile, class)?;
+            },
             None if is_explicitly_mapped(project_id) => self.connect(project_id, ".")?,
             None => {
                 return Err(anyhow::anyhow!(
@@ -795,11 +814,13 @@ impl ConnectionManager {
             }
         }
 
-        let mut pools = self.pools.write();
-        let entry = pools.get_mut(project_id).ok_or_else(|| {
+        let pools = self.pools.read();
+        let entry = pools.get(project_id).ok_or_else(|| {
             anyhow::anyhow!("pool for {} not found after reconnect attempt", project_id)
         })?;
-        entry.activated_at = Instant::now();
+        entry
+            .activated_at
+            .fetch_max(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
         Ok(entry.pool.clone())
     }
 
@@ -844,7 +865,7 @@ impl ConnectionManager {
     /// reflects connections r2d2 has actually opened (r2d2 0.8 eagerly fills
     /// to `min_idle` when a pool is built, which defaults to `max_size`).
     pub fn snapshot(&self) -> ConnectionSnapshot {
-        let now = Instant::now();
+        let now = self.elapsed_ms(Instant::now());
         let known = self.known_paths.read();
 
         let pools: Vec<PoolSnapshot> = self
@@ -862,7 +883,7 @@ impl ConnectionManager {
                     profile: entry.profile,
                     class: entry.class,
                     min_idle: entry.profile.min_idle(),
-                    idle_for_ms: now.duration_since(entry.activated_at).as_millis() as u64,
+                    idle_for_ms: now.saturating_sub(entry.activated_at.load(Ordering::Relaxed)),
                 }
             })
             .collect();
@@ -934,60 +955,69 @@ impl ConnectionManager {
         ring.push_back(record);
     }
 
-    /// Evict pools that are idle for too long or if we exceed the max capacity.
-    ///
-    /// Only [`PoolClass::Evictable`] pools are candidates (T4): a
-    /// [`PoolClass::Pinned`] pool is daemon infrastructure the process cannot
-    /// do without, so the LRU steps over it instead of dropping it. When every
-    /// registered pool is pinned and `MAX_POOLS` is already exceeded, this
-    /// breaks out and the map is allowed to grow past `MAX_POOLS` — losing
-    /// infrastructure is worse than one extra pool.
-    fn evict_if_needed(&self) {
-        let now = Instant::now();
-        let mut pools = self.pools.write();
+    fn elapsed_ms(&self, now: Instant) -> u64 {
+        now.saturating_duration_since(self.epoch).as_millis() as u64
+    }
 
-        // 1. Remove expired pools (checkpoint WAL before removal)
-        let expired: Vec<String> = pools
-            .iter()
-            .filter(|(_, pool)| {
-                pool.class.is_evictable()
-                    && now.duration_since(pool.activated_at).as_secs() >= self.idle_timeout_secs
-            })
-            .map(|(k, _)| k.clone())
-            .collect();
-        for key in expired {
-            let mut checkpointed = false;
-            if let Some(entry) = pools.get(&key) {
-                if let Ok(conn) = entry.pool.get() {
-                    let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
-                    checkpointed = true;
-                }
-            }
-            pools.remove(&key);
-            self.record_eviction(key, EvictionReason::Idle, checkpointed);
-        }
-
-        // 2. If still too many, remove least recently used (checkpoint WAL before removal)
-        while pools.len() >= MAX_POOLS {
-            let oldest = pools
+    /// Close idle evictable pools using an injectable monotonic clock.
+    pub fn evict_idle_at(&self, now: Instant) {
+        let now_ms = self.elapsed_ms(now);
+        let victims = {
+            let mut pools = self.pools.write();
+            let expired: Vec<_> = pools
                 .iter()
-                .filter(|(_, v)| v.class.is_evictable())
-                .map(|(k, v)| (k.clone(), v.activated_at))
-                .min_by_key(|e| e.1);
+                .filter(|(_, entry)| {
+                    entry.class.is_evictable()
+                        && now_ms.saturating_sub(entry.activated_at.load(Ordering::Relaxed))
+                            >= self.idle_timeout_secs.saturating_mul(1000)
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            expired
+                .into_iter()
+                .filter_map(|id| pools.remove(&id).map(|entry| (id, entry)))
+                .collect::<Vec<_>>()
+        };
+        for (id, entry) in victims {
+            self.finish_eviction(id, entry, EvictionReason::Idle);
+        }
+    }
 
-            if let Some((key, _)) = oldest {
-                let mut checkpointed = false;
-                if let Some(entry) = pools.get(&key) {
-                    if let Ok(conn) = entry.pool.get() {
-                        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
-                        checkpointed = true;
-                    }
+    // The map lock has been released before checkout, checkpoint or pool drop.
+    // PASSIVE never waits on readers: TRUNCATE can block up to busy_timeout
+    // (5 s) behind another connection's read transaction.
+    fn finish_eviction(&self, id: String, entry: ProjectPool, reason: EvictionReason) {
+        let checkpointed = if let Some(conn) = entry.pool.try_get() {
+            conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);")
+                .is_ok()
+        } else {
+            false
+        };
+        self.record_eviction(id, reason, checkpointed);
+    }
+
+    /// Make room for one new pool, choosing only evictable LRU victims.
+    /// Pinned infrastructure may exceed the cap when no victim exists.
+    fn evict_if_needed(&self) {
+        self.evict_idle_at(Instant::now());
+        let victims = {
+            let mut pools = self.pools.write();
+            let mut victims = Vec::new();
+            while pools.len() >= MAX_POOLS {
+                let oldest = pools
+                    .iter()
+                    .filter(|(_, entry)| entry.class.is_evictable())
+                    .min_by_key(|(_, entry)| entry.activated_at.load(Ordering::Relaxed))
+                    .map(|(id, _)| id.clone());
+                let Some(id) = oldest else { break };
+                if let Some(entry) = pools.remove(&id) {
+                    victims.push((id, entry));
                 }
-                pools.remove(&key);
-                self.record_eviction(key, EvictionReason::Lru, checkpointed);
-            } else {
-                break;
             }
+            victims
+        };
+        for (id, entry) in victims {
+            self.finish_eviction(id, entry, EvictionReason::Lru);
         }
     }
 }
@@ -997,6 +1027,259 @@ mod tests {
     use super::*;
     use crate::codebase::conversations_db::ConversationsDb;
     use tempfile::tempdir;
+
+    use crate as xavier;
+    xavier::isolate_test_process!();
+
+    fn open_repo(cm: &ConnectionManager, dir: &std::path::Path, id: &str, class: PoolClass) {
+        cm.connect_with_path_profile(
+            id,
+            dir.join(format!("{id}.db")),
+            PoolProfile::RepoStore,
+            class,
+        )
+        .unwrap();
+    }
+
+    fn assert_global_store_survives_twenty_repo_opens() {
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+        cm.connect_with_path_profile(
+            "vec_store_global",
+            dir.path().join("global.db"),
+            PoolProfile::Default,
+            PoolClass::Pinned,
+        )
+        .unwrap();
+        for i in 0..20 {
+            open_repo(&cm, dir.path(), &format!("repo_{i}"), PoolClass::Evictable);
+        }
+        cm.evict_idle_at(Instant::now() + Duration::from_secs(301));
+        let snapshot = cm.snapshot();
+        assert_eq!(snapshot.pools.len(), 1);
+        assert_eq!(snapshot.pools[0].id, "vec_store_global");
+        assert!(snapshot
+            .evictions
+            .iter()
+            .all(|event| event.id != "vec_store_global"));
+    }
+
+    #[test]
+    fn eviction_does_not_block_when_victim_pool_is_exhausted() {
+        let cm = Arc::new(ConnectionManager::new());
+        let dir = tempdir().unwrap();
+        open_repo(&cm, dir.path(), "victim", PoolClass::Evictable);
+        let pool = cm.get_or_reconnect_pool("victim").unwrap();
+        let held: Vec<_> = (0..4).map(|_| pool.get().unwrap()).collect();
+        for i in 1..MAX_POOLS {
+            open_repo(&cm, dir.path(), &format!("pinned_{i}"), PoolClass::Pinned);
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker_cm = cm.clone();
+        let path = dir.path().join("new.db");
+        let worker = std::thread::spawn(move || {
+            let result = worker_cm.connect_with_path_profile(
+                "new",
+                path,
+                PoolProfile::RepoStore,
+                PoolClass::Evictable,
+            );
+            tx.send(result).unwrap();
+        });
+        let completed = rx.recv_timeout(Duration::from_secs(5));
+        drop(held);
+        worker.join().unwrap();
+        assert!(
+            completed.is_ok(),
+            "eviction blocked on exhausted victim for >= 5 s"
+        );
+        completed.unwrap().unwrap();
+        assert!(cm
+            .snapshot()
+            .evictions
+            .iter()
+            .any(|event| event.id == "victim" && !event.checkpointed));
+    }
+
+    #[test]
+    fn idle_sweep_closes_only_idle_evictable_with_injected_now() {
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+        for (id, class) in [
+            ("idle", PoolClass::Evictable),
+            ("recent", PoolClass::Evictable),
+            ("pinned", PoolClass::Pinned),
+        ] {
+            open_repo(&cm, dir.path(), id, class);
+        }
+        let now = Instant::now() + Duration::from_secs(301);
+        cm.pools.read()["recent"]
+            .activated_at
+            .store(cm.elapsed_ms(now), Ordering::Relaxed);
+        cm.evict_idle_at(now);
+        let snapshot = cm.snapshot();
+        assert_eq!(
+            snapshot
+                .pools
+                .iter()
+                .map(|p| p.id.as_str())
+                .collect::<Vec<_>>(),
+            ["pinned", "recent"]
+        );
+        assert_eq!(snapshot.counters.evicted_idle, 1);
+        assert!(cm.known_paths.read().contains_key("idle"));
+        let pool = cm.get_or_reconnect_pool("idle").unwrap();
+        assert_eq!(
+            pool.max_size(),
+            4,
+            "resurrection must retain the repo profile"
+        );
+        assert_eq!(cm.pool_class("idle"), Some(PoolClass::Evictable));
+    }
+
+    #[test]
+    fn evicted_pool_leaves_no_wal_after_last_conn_drops() {
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+        open_repo(&cm, dir.path(), "wal", PoolClass::Evictable);
+        let pool = cm.get_or_reconnect_pool("wal").unwrap();
+        let conn = pool.get().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE committed(value INTEGER); INSERT INTO committed VALUES (42);",
+        )
+        .unwrap();
+        let wal = dir.path().join("wal.db-wal");
+        assert!(wal.exists());
+        cm.evict_idle_at(Instant::now() + Duration::from_secs(301));
+        assert!(cm.snapshot().pools.is_empty());
+        drop(pool);
+        drop(conn);
+        assert!(
+            !wal.exists(),
+            "SQLite must remove WAL after the final connection closes"
+        );
+        let reopened = Connection::open(dir.path().join("wal.db")).unwrap();
+        assert_eq!(
+            reopened
+                .query_row("SELECT value FROM committed", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            42
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn hot_path_parallel_queries_do_not_serialize() {
+        let cm = Arc::new(ConnectionManager::new());
+        let dir = tempdir().unwrap();
+        for i in 0..4 {
+            open_repo(
+                &cm,
+                dir.path(),
+                &format!("parallel_{i}"),
+                PoolClass::Evictable,
+            );
+        }
+        // A second reader must be able to acquire the hot path while this guard lives.
+        let read_guard = cm.pools.read();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let reader_cm = cm.clone();
+        let reader = std::thread::spawn(move || {
+            tx.send(reader_cm.get_or_reconnect_pool("parallel_0").is_ok())
+                .unwrap();
+        });
+        let shared = rx.recv_timeout(Duration::from_secs(5));
+        drop(read_guard);
+        reader.join().unwrap();
+        assert!(shared.unwrap(), "hot path must use a shared map lock");
+        let mut tasks = tokio::task::JoinSet::new();
+        for task in 0..64 {
+            let cm = cm.clone();
+            tasks.spawn(async move {
+                for pool in 0..4 {
+                    let value = cm
+                        .with_conn(&format!("parallel_{pool}"), move |conn| {
+                            Ok(conn.query_row("SELECT ?1", [task], |row| row.get::<_, i64>(0))?)
+                        })
+                        .await
+                        .unwrap();
+                    assert_eq!(value, task);
+                }
+            });
+        }
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while let Some(result) = tasks.join_next().await {
+                result.unwrap();
+            }
+        })
+        .await
+        .expect("64 tasks across four pools must complete within 5 s");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn repo_store_churn_200_opens_keeps_fd_bounded() {
+        // Serializes concurrent runs of this test; /proc/self/fd is
+        // process-wide so parallel tests would pollute fd readings.
+        static CHURN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = CHURN_LOCK.lock().unwrap();
+        fn fds() -> usize {
+            std::fs::read_dir("/proc/self/fd").unwrap().count()
+        }
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+        let before = fds();
+        #[allow(unsafe_code)]
+        fn sqlite_heap_bytes() -> i64 {
+            // SQLite documents this counter as safe to read from any thread.
+            unsafe { rusqlite::ffi::sqlite3_memory_used() }
+        }
+        let memory_before = sqlite_heap_bytes();
+        let mut peak = before;
+        for i in 0..200 {
+            let id = format!("churn_{i}");
+            open_repo(&cm, dir.path(), &id, PoolClass::Evictable);
+            let pool = cm.get_or_reconnect_pool(&id).unwrap();
+            let conn = pool.get().unwrap();
+            conn.execute_batch(
+                "CREATE TABLE sample(value INTEGER); INSERT INTO sample VALUES (1);",
+            )
+            .unwrap();
+            drop(conn);
+            drop(pool);
+            peak = peak.max(fds());
+            // Per-manager resources stay bounded (fd counts are process-wide
+            // and flaky under parallel tests, so they are observed, not asserted).
+            let snapshot = cm.snapshot();
+            assert!(
+                snapshot.pools.len() <= MAX_POOLS,
+                "live pools must stay bounded during churn"
+            );
+            assert!(
+                snapshot.counters.open_pools <= MAX_POOLS,
+                "open_pools must stay bounded during churn"
+            );
+            assert!(
+                snapshot.counters.total_connections <= MAX_POOLS as u32 * REPO_POOL_MAX_SIZE,
+                "managed connections must stay bounded during churn"
+            );
+        }
+        cm.evict_idle_at(Instant::now() + Duration::from_secs(301));
+        let snapshot = cm.snapshot();
+        assert!(
+            snapshot.pools.is_empty(),
+            "idle sweep must evict every churn pool"
+        );
+        assert_eq!(
+            snapshot.counters.open_pools, 0,
+            "idle sweep must release all managed pools"
+        );
+        assert_eq!(
+            snapshot.counters.total_connections, 0,
+            "idle sweep must release all managed connections"
+        );
+        eprintln!("200 repo opens: fd baseline={before}, peak={peak}, final={}, SQLite heap before={memory_before}, after={}", fds(), sqlite_heap_bytes());
+    }
 
     /// T3: the snapshot must list every live pool with the database file it
     /// actually owns, so pool/file-descriptor pressure can be measured.
@@ -1341,6 +1624,7 @@ mod tests {
     /// its connections is worse than the map growing.
     #[tokio::test]
     async fn eviction_never_evicts_pinned_pools() {
+        assert_global_store_survives_twenty_repo_opens();
         let cm = ConnectionManager::new();
         let dir = tempdir().unwrap();
 
