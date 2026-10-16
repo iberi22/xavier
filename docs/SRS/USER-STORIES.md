@@ -42,7 +42,6 @@
 | US-032 | SWAL node user | feat-decentralized-login | REQ-003 |
 | US-044 | As a user, I want to enter introspection sessions surfaced by Xavier | REQ-049 |
 | US-045 | As a user, I want my training data scrubbed of PII before any export | REQ-050 |
-| US-046 | As an enterprise admin, I want ZDR-verified Colab training jobs | REQ-051 |
 | US-101 | Agent operator | feat-cg-honest-confidence | REQ-053 |
 | US-102 | System auditor | feat-cg-honest-confidence | REQ-053 |
 | US-103 | Language maintainer | feat-cg-language-registry | REQ-054 |
@@ -398,20 +397,7 @@ As a **user**, I can register my VPS as a private SWAL node over SSH, so that **
 
 ---
 
-## US-046: Enterprise ZDR Training Jobs
-
-**As an** enterprise administrator,
-**I want to** run training jobs on external compute providers with cryptographic proof that my data was deleted after training,
-**So that** I can satisfy data protection obligations while still benefiting from specialized model training.
-
-**Acceptance Criteria:**
-- [ ] ~~AC-046.1: Training jobs produce a ZdrAuditEntry with pre/post volume hashes~~ (superseded 2026-10: Local + manual-notebook backends only)
-- [ ] ~~AC-046.2: ZdrAuditEntry::verify() passes before job is marked ZDR-compliant~~ (superseded 2026-10: see AC-046.1)
-- [ ] AC-046.3: ZDR audit log is stored locally with CONFIDENTIAL clearance level
-- [ ] AC-046.4: Enterprise plan users can select RunPod or LambdaLabs as compute provider
-- [ ] AC-046.5: Failed ZDR verification blocks future jobs from that provider until resolved
-
-**Priority:** P2 — Medium | **Effort:** M | **REQ:** REQ-051 | **Wave:** 8
+US-046: retired 2026-10-15.
 
 ---
 
