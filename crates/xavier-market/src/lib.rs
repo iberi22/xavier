@@ -13,6 +13,7 @@ pub mod consent;
 pub mod credential;
 mod error;
 pub mod gossip;
+pub mod ivn;
 pub mod ledger;
 pub mod merkle;
 mod model;
@@ -26,5 +27,9 @@ pub mod terms;
 pub use auth::{Actor, SignedHeaders, SignedRequest, Signer};
 pub use config::{ConfigError, Currency, LegalTextStatus, License, MarketConfig, Settlement};
 pub use error::MarketError;
+pub use ivn::{
+    CastVote, IdentityRequest, NewIdentityRequest, NewValidator, RequestStatus, Validator, Vote,
+    VoteDecision,
+};
 pub use model::{Listing, ListingUpdate, NewListing, NewReceipt, Receipt};
 pub use store::{MarketStore, SCHEMA_VERSION};

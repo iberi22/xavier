@@ -17,7 +17,7 @@ use crate::error::MarketError;
 use crate::model::{Listing, ListingUpdate, NewListing, NewReceipt, Receipt};
 
 /// Version written to `PRAGMA user_version` by this build.
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE IF NOT EXISTS market_listings (
@@ -42,11 +42,50 @@ CREATE INDEX IF NOT EXISTS market_receipts_buyer ON market_receipts (buyer_id);
 /// v2 adds the revocation timestamp. Rows written under v1 read as not revoked.
 const SCHEMA_V2: &str = "ALTER TABLE market_listings ADD COLUMN revoked_at_ms INTEGER;";
 
+/// MKT-17: validator registry, identity requests and signed validator votes.
+/// Votes are append-only: the triggers refuse any update or delete.
+const SCHEMA_V3: &str = "
+CREATE TABLE IF NOT EXISTS ivn_validators (
+    node_id             TEXT PRIMARY KEY,
+    public_key          TEXT NOT NULL,
+    registered_at_ms    INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ivn_requests (
+    id                  TEXT PRIMARY KEY,
+    applicant           TEXT NOT NULL,
+    status              TEXT NOT NULL CHECK (status IN ('pending', 'passed', 'rejected', 'quorum_not_met')),
+    created_at_ms       INTEGER NOT NULL,
+    updated_at_ms       INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ivn_request_validators (
+    request_id          TEXT NOT NULL REFERENCES ivn_requests(id),
+    validator_id        TEXT NOT NULL REFERENCES ivn_validators(node_id),
+    PRIMARY KEY (request_id, validator_id)
+);
+CREATE TABLE IF NOT EXISTS ivn_votes (
+    request_id          TEXT NOT NULL,
+    validator_id        TEXT NOT NULL,
+    decision            TEXT NOT NULL CHECK (decision IN ('check', 'reject', 'abstain')),
+    signature           TEXT NOT NULL,
+    cast_at_ms          INTEGER NOT NULL,
+    PRIMARY KEY (request_id, validator_id),
+    FOREIGN KEY (request_id, validator_id)
+        REFERENCES ivn_request_validators (request_id, validator_id)
+);
+CREATE TRIGGER IF NOT EXISTS ivn_votes_no_update BEFORE UPDATE ON ivn_votes
+BEGIN
+    SELECT RAISE(ABORT, 'ivn votes are append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS ivn_votes_no_delete BEFORE DELETE ON ivn_votes
+BEGIN
+    SELECT RAISE(ABORT, 'ivn votes are append-only');
+END;
+";
+
 /// Migration steps in order. Step `n` (zero-based) brings the schema to `n + 1`.
-const MIGRATIONS: [&str; 2] = [SCHEMA_V1, SCHEMA_V2];
+const MIGRATIONS: [&str; 3] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
 
 const _: () = assert!(MIGRATIONS.len() as i64 == SCHEMA_VERSION);
-
 /// Durable marketplace store. Every write is committed before the call returns,
 /// so a listing survives a process restart when the store is reopened on the
 /// same file.
@@ -93,7 +132,7 @@ impl MarketStore {
         &self.config
     }
 
-    fn conn(&self) -> MutexGuard<'_, Connection> {
+    pub(crate) fn conn(&self) -> MutexGuard<'_, Connection> {
         // A panic while holding the lock leaves SQLite itself consistent, since
         // each write is a single transaction. Recover the guard instead of
         // poisoning every later request.
@@ -403,7 +442,7 @@ impl RawReceipt {
     }
 }
 
-fn non_empty(field: &str, value: &str) -> Result<String, MarketError> {
+pub(crate) fn non_empty(field: &str, value: &str) -> Result<String, MarketError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Err(MarketError::InvalidInput(format!(
@@ -423,7 +462,7 @@ fn check_credits(price: u64) -> Result<(), MarketError> {
     Ok(())
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis() as i64)

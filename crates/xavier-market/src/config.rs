@@ -12,6 +12,14 @@ pub const KEY_SETTLEMENT: &str = "market.settlement";
 pub const KEY_LICENSES: &str = "market.licenses";
 pub const KEY_LEGAL_TEXT_STATUS: &str = "market.legal_text_status";
 pub const KEY_PRICE_FLOOR: &str = "market.price_floor_credits";
+pub const KEY_IVN_QUORUM_RATIO: &str = "market.ivn.quorum_ratio";
+pub const KEY_IVN_VALIDATORS_PER_REQUEST: &str = "market.ivn.validators_per_request";
+
+/// Lowest quorum a request may use. Below half, a bare majority could pass
+/// a request that most assigned validators rejected.
+pub const IVN_QUORUM_MIN_PERMILLE: u32 = 500;
+/// Upper bound on validators assigned to one request.
+pub const IVN_VALIDATORS_MAX: u32 = 25;
 
 /// How listings are paid for. Only internal credits are usable in v1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -159,6 +167,8 @@ pub enum ConfigError {
     SwalTokenNotEnabled,
     #[error("market.currency=usd_polar needs market.legal_text_status=reviewed")]
     UsdRequiresReviewedTerms,
+    #[error("{key} value {value} is outside its allowed range")]
+    OutOfRange { key: &'static str, value: String },
 }
 
 /// Validated marketplace configuration.
@@ -169,11 +179,16 @@ pub struct MarketConfig {
     pub licenses: Vec<License>,
     pub legal_text_status: LegalTextStatus,
     pub price_floor_credits: u64,
+    /// Share of assigned IVN validators whose approval passes a request, in
+    /// thousandths. Default 800 (80%). Stored as an integer so the config stays `Eq`.
+    pub ivn_quorum_permille: u32,
+    /// Validators assigned to each IVN identity request. Default 5.
+    pub ivn_validators_per_request: u32,
 }
 
 impl Default for MarketConfig {
     /// The v1 defaults: internal credits, off-chain, the full license menu,
-    /// placeholder legal text.
+    /// placeholder legal text, IVN quorum 80% over 5 validators.
     fn default() -> Self {
         Self {
             currency: Currency::InternalCredits,
@@ -181,6 +196,8 @@ impl Default for MarketConfig {
             licenses: License::MENU.to_vec(),
             legal_text_status: LegalTextStatus::Placeholder,
             price_floor_credits: 0,
+            ivn_quorum_permille: 800,
+            ivn_validators_per_request: 5,
         }
     }
 }
@@ -220,6 +237,19 @@ impl MarketConfig {
                         value: value.clone(),
                     })?;
         }
+        if let Some(value) = lookup(KEY_IVN_QUORUM_RATIO) {
+            config.ivn_quorum_permille = parse_quorum_ratio(&value)?;
+        }
+        if let Some(value) = lookup(KEY_IVN_VALIDATORS_PER_REQUEST) {
+            config.ivn_validators_per_request =
+                value
+                    .trim()
+                    .parse()
+                    .map_err(|_| ConfigError::UnknownValue {
+                        key: KEY_IVN_VALIDATORS_PER_REQUEST,
+                        value: value.trim().to_string(),
+                    })?;
+        }
         config.validate()?;
         Ok(config)
     }
@@ -244,8 +274,43 @@ impl MarketConfig {
                 return Err(ConfigError::DuplicateLicense(license.as_str()));
             }
         }
+        if !(IVN_QUORUM_MIN_PERMILLE..=1000).contains(&self.ivn_quorum_permille) {
+            return Err(ConfigError::OutOfRange {
+                key: KEY_IVN_QUORUM_RATIO,
+                value: self.ivn_quorum_permille.to_string(),
+            });
+        }
+        if !(1..=IVN_VALIDATORS_MAX).contains(&self.ivn_validators_per_request) {
+            return Err(ConfigError::OutOfRange {
+                key: KEY_IVN_VALIDATORS_PER_REQUEST,
+                value: self.ivn_validators_per_request.to_string(),
+            });
+        }
         Ok(())
     }
+}
+
+/// Parses a ratio such as `0.8` into thousandths. Non-numeric values are
+/// unknown values; a ratio outside `[0.5, 1.0]` is reported with the text the
+/// operator wrote.
+fn parse_quorum_ratio(value: &str) -> Result<u32, ConfigError> {
+    let trimmed = value.trim();
+    let ratio: f64 = trimmed
+        .parse()
+        .ok()
+        .filter(|ratio: &f64| ratio.is_finite())
+        .ok_or_else(|| ConfigError::UnknownValue {
+            key: KEY_IVN_QUORUM_RATIO,
+            value: trimmed.to_string(),
+        })?;
+    let permille = (ratio * 1000.0).round();
+    if !(IVN_QUORUM_MIN_PERMILLE as f64..=1000.0).contains(&permille) {
+        return Err(ConfigError::OutOfRange {
+            key: KEY_IVN_QUORUM_RATIO,
+            value: trimmed.to_string(),
+        });
+    }
+    Ok(permille as u32)
 }
 
 #[cfg(test)]
@@ -352,6 +417,52 @@ mod tests {
         ]))
         .unwrap();
         assert_eq!(config.currency, Currency::UsdPolar);
+    }
+
+    #[test]
+    fn ivn_keys_default_to_80_percent_of_five_and_reject_out_of_range() {
+        let defaults = MarketConfig::from_lookup(|_| None).unwrap();
+        assert_eq!(defaults.ivn_quorum_permille, 800);
+        assert_eq!(defaults.ivn_validators_per_request, 5);
+
+        let tuned = MarketConfig::from_lookup(lookup(&[
+            (KEY_IVN_QUORUM_RATIO, " 0.66 "),
+            (KEY_IVN_VALIDATORS_PER_REQUEST, "7"),
+        ]))
+        .unwrap();
+        assert_eq!(tuned.ivn_quorum_permille, 660);
+        assert_eq!(tuned.ivn_validators_per_request, 7);
+
+        for ratio in ["0.4", "1.2", "-1"] {
+            let config = MarketConfig::from_lookup(|key| {
+                (key == KEY_IVN_QUORUM_RATIO).then(|| ratio.to_string())
+            });
+            assert_eq!(
+                config,
+                Err(ConfigError::OutOfRange {
+                    key: KEY_IVN_QUORUM_RATIO,
+                    value: ratio.to_string(),
+                }),
+                "ratio {ratio}"
+            );
+        }
+        for count in ["0", "26"] {
+            let config = MarketConfig::from_lookup(|key| {
+                (key == KEY_IVN_VALIDATORS_PER_REQUEST).then(|| count.to_string())
+            });
+            assert!(
+                matches!(config, Err(ConfigError::OutOfRange { .. })),
+                "count {count}"
+            );
+        }
+        assert!(matches!(
+            MarketConfig::from_lookup(lookup(&[(KEY_IVN_QUORUM_RATIO, "NaN")])),
+            Err(ConfigError::UnknownValue { .. })
+        ));
+        assert!(matches!(
+            MarketConfig::from_lookup(lookup(&[(KEY_IVN_VALIDATORS_PER_REQUEST, "few")])),
+            Err(ConfigError::UnknownValue { .. })
+        ));
     }
 
     #[test]
