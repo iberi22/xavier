@@ -32,4 +32,8 @@ pub use ivn::{
     VoteDecision,
 };
 pub use model::{Listing, ListingUpdate, NewListing, NewReceipt, Receipt};
+pub use pack::{
+    export_namespace_pack, import_namespace_pack, pack_hash, read_pack, read_pack_info, write_pack,
+    write_pack_with_namespace, NamespacePack, PackEntry, PackError, PACK_MAGIC,
+};
 pub use store::{MarketStore, SCHEMA_VERSION};

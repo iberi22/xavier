@@ -18,6 +18,8 @@ pub enum PackError {
     #[error("pack is empty")] Empty,
     #[error("pack is corrupt: {0}")] Corrupt(String),
     #[error("pack is truncated")] Truncated,
+    #[error("invalid namespace: {0}")] InvalidNamespace(String),
+    #[error("missing entry: {0}")] MissingEntry(String),
 }
 
 #[rustfmt::skip]
@@ -26,9 +28,21 @@ struct ManifestEntry { name: String, sha256: String, len: usize }
 
 #[rustfmt::skip]
 #[derive(Serialize, Deserialize)]
-struct Manifest { version: u32, entries: Vec<ManifestEntry> }
+struct Manifest {
+    version: u32,
+    entries: Vec<ManifestEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    namespace: Option<String>,
+}
 
 pub fn write_pack(entries: &[PackEntry]) -> Result<Vec<u8>, PackError> {
+    write_pack_with_namespace(entries, None)
+}
+
+pub fn write_pack_with_namespace(
+    entries: &[PackEntry],
+    namespace: Option<&str>,
+) -> Result<Vec<u8>, PackError> {
     if entries.is_empty() {
         return Err(PackError::Empty);
     }
@@ -52,6 +66,7 @@ pub fn write_pack(entries: &[PackEntry]) -> Result<Vec<u8>, PackError> {
     let m = Manifest {
         version: 1,
         entries: manifest_entries,
+        namespace: namespace.map(|s| s.to_string()),
     };
     let m_bytes = serde_json::to_vec(&m).map_err(|e| PackError::Corrupt(e.to_string()))?;
 
@@ -66,6 +81,10 @@ pub fn write_pack(entries: &[PackEntry]) -> Result<Vec<u8>, PackError> {
 }
 
 pub fn read_pack(bytes: &[u8]) -> Result<Vec<PackEntry>, PackError> {
+    read_pack_info(bytes).map(|(entries, _)| entries)
+}
+
+pub fn read_pack_info(bytes: &[u8]) -> Result<(Vec<PackEntry>, Option<String>), PackError> {
     if bytes.len() < PACK_MAGIC.len() + 8 {
         return Err(PackError::Truncated);
     }
@@ -114,13 +133,81 @@ pub fn read_pack(bytes: &[u8]) -> Result<Vec<PackEntry>, PackError> {
     if off != bytes.len() {
         return Err(PackError::Corrupt("trailing".into()));
     }
-    Ok(result)
+    Ok((result, m.namespace))
 }
 
 pub fn pack_hash(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
     hex::encode(h.finalize())
+}
+
+/// A structured container for namespace package contents.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamespacePack {
+    pub namespace: String,
+    pub memories_jsonl: Vec<u8>,
+    pub vectors_sqlite: Vec<u8>,
+    pub code_graph_jsonl: Option<Vec<u8>>,
+}
+
+/// Export a namespace package into `.swalpack` format with deterministic content hashing.
+pub fn export_namespace_pack(pack: &NamespacePack) -> Result<Vec<u8>, PackError> {
+    let ns = pack.namespace.trim();
+    if ns.is_empty() {
+        return Err(PackError::InvalidNamespace(
+            "namespace must not be empty".into(),
+        ));
+    }
+    let mut entries = Vec::new();
+    entries.push(PackEntry {
+        name: "memories.jsonl".into(),
+        bytes: pack.memories_jsonl.clone(),
+    });
+    entries.push(PackEntry {
+        name: "vectors.sqlite".into(),
+        bytes: pack.vectors_sqlite.clone(),
+    });
+    if let Some(ref cg) = pack.code_graph_jsonl {
+        entries.push(PackEntry {
+            name: "code_graph.jsonl".into(),
+            bytes: cg.clone(),
+        });
+    }
+    write_pack_with_namespace(&entries, Some(ns))
+}
+
+/// Re-import a namespace package from `.swalpack` bytes.
+pub fn import_namespace_pack(bytes: &[u8]) -> Result<NamespacePack, PackError> {
+    let (entries, namespace_opt) = read_pack_info(bytes)?;
+    let namespace = namespace_opt
+        .map(|ns| ns.trim().to_string())
+        .filter(|ns| !ns.is_empty())
+        .ok_or_else(|| PackError::InvalidNamespace("missing".into()))?;
+    let mut memories_jsonl = None;
+    let mut vectors_sqlite = None;
+    let mut code_graph_jsonl = None;
+
+    for e in entries {
+        match e.name.as_str() {
+            "memories.jsonl" => memories_jsonl = Some(e.bytes),
+            "vectors.sqlite" => vectors_sqlite = Some(e.bytes),
+            "code_graph.jsonl" => code_graph_jsonl = Some(e.bytes),
+            _ => return Err(PackError::UnknownEntry(e.name)),
+        }
+    }
+
+    let memories_jsonl =
+        memories_jsonl.ok_or_else(|| PackError::MissingEntry("memories.jsonl".into()))?;
+    let vectors_sqlite =
+        vectors_sqlite.ok_or_else(|| PackError::MissingEntry("vectors.sqlite".into()))?;
+
+    Ok(NamespacePack {
+        namespace,
+        memories_jsonl,
+        vectors_sqlite,
+        code_graph_jsonl,
+    })
 }
 
 #[cfg(test)]
@@ -197,5 +284,81 @@ mod tests {
         .unwrap();
         p.push(0);
         assert!(matches!(read_pack(&p), Err(PackError::Corrupt(_))));
+    }
+
+    #[test]
+    fn test_namespace_export_reimport_identical_hash() {
+        let original = NamespacePack {
+            namespace: "swal/agent-1/inst-42".into(),
+            memories_jsonl: b"{\"id\":\"m1\",\"content\":\"important knowledge\"}\n".to_vec(),
+            vectors_sqlite: b"SQLite format 3\0test-vector-bytes".to_vec(),
+            code_graph_jsonl: Some(b"{\"symbol\":\"main\"}\n".to_vec()),
+        };
+
+        // Export to swalpack bytes
+        let bytes1 = export_namespace_pack(&original).expect("export succeeds");
+        let hash1 = pack_hash(&bytes1);
+
+        // Re-import from bytes
+        let imported = import_namespace_pack(&bytes1).expect("import succeeds");
+        assert_eq!(imported.namespace, original.namespace);
+        assert_eq!(imported.memories_jsonl, original.memories_jsonl);
+        assert_eq!(imported.vectors_sqlite, original.vectors_sqlite);
+        assert_eq!(imported.code_graph_jsonl, original.code_graph_jsonl);
+
+        // Re-export again
+        let bytes2 = export_namespace_pack(&imported).expect("re-export succeeds");
+        let hash2 = pack_hash(&bytes2);
+
+        // Identical hash rule
+        assert_eq!(bytes1, bytes2);
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_namespace_export_empty_namespace_rejected() {
+        let bad = NamespacePack {
+            namespace: "   ".into(),
+            memories_jsonl: b"{}".to_vec(),
+            vectors_sqlite: b"{}".to_vec(),
+            code_graph_jsonl: None,
+        };
+        assert!(matches!(
+            export_namespace_pack(&bad),
+            Err(PackError::InvalidNamespace(_))
+        ));
+    }
+
+    #[test]
+    fn test_import_missing_required_entry() {
+        let e = vec![PackEntry {
+            name: "memories.jsonl".into(),
+            bytes: b"{}".to_vec(),
+        }];
+        let bytes = write_pack_with_namespace(&e, Some("swal/test/inst")).unwrap();
+        assert!(matches!(
+            import_namespace_pack(&bytes),
+            Err(PackError::MissingEntry(_))
+        ));
+    }
+
+    #[test]
+    fn test_import_missing_namespace_rejected() {
+        let entries = vec![
+            PackEntry {
+                name: "memories.jsonl".into(),
+                bytes: b"{}".to_vec(),
+            },
+            PackEntry {
+                name: "vectors.sqlite".into(),
+                bytes: b"{}".to_vec(),
+            },
+        ];
+        // Plain write_pack does not write manifest.namespace
+        let bytes = write_pack(&entries).unwrap();
+        assert!(matches!(
+            import_namespace_pack(&bytes),
+            Err(PackError::InvalidNamespace(reason)) if reason == "missing"
+        ));
     }
 }
