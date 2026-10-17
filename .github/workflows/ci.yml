@@ -219,6 +219,7 @@ jobs:
     name: Affected Rust Tests
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
+    continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

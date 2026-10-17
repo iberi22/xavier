@@ -21,10 +21,10 @@
 #
 # Concurrency and build locks:
 #   TMPDIR is forced to /tmp. Compile steps (clippy, check, test --no-run) acquire a
-#   build-slot semaphore from $SWAL_BUILD_LOCK_DIR (default: /tmp/swal-cargo-slots) with
-#   SWAL_BUILD_SLOTS (default: 2 slots). If GameMode is active (ClientCount > 0),
-#   SLOTS is reduced to 1 and jobs are capped to 2. Test executions run without holding
-#   the build-slot lock.
+#   build-slot semaphore from $SWAL_BUILD_LOCK_DIR (default: /tmp/orch-1008) with
+#   SWAL_BUILD_SLOTS (default: 1 slot, where slot 0 is cargo.lock). If GameMode is
+#   active (ClientCount > 0), SLOTS is forced to 1 and jobs are capped to 2. Test
+#   executions run without holding the build-slot lock.
 set -uo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -91,18 +91,19 @@ is_gamemode_active() {
 NPROC=$(nproc 2>/dev/null || echo 2)
 [ "$NPROC" -lt 1 ] && NPROC=2
 
+# Default SWAL_BUILD_SLOTS=1, ensure it is a whole number of at least 1
+SLOTS="${SWAL_BUILD_SLOTS:-1}"
+case "$SLOTS" in
+    ""|*[!0-9]*|0) SLOTS=1 ;;
+esac
+
 GAMEMODE_ACTIVE=0
 if is_gamemode_active; then
     GAMEMODE_ACTIVE=1
-fi
-
-if [ "$GAMEMODE_ACTIVE" -eq 1 ]; then
     SLOTS=1
-else
-    SLOTS="${SWAL_BUILD_SLOTS:-2}"
 fi
 
-LOCKDIR="${SWAL_BUILD_LOCK_DIR:-/tmp/swal-cargo-slots}"
+LOCKDIR="${SWAL_BUILD_LOCK_DIR:-/tmp/orch-1008}"
 
 if [ -z "${CARGO_BUILD_JOBS:-}" ]; then
     if [ "$GAMEMODE_ACTIVE" -eq 1 ]; then
@@ -124,6 +125,15 @@ if [ -z "${NEXTEST_TEST_THREADS:-}" ]; then
     fi
 fi
 
+get_slot_file() {
+    local idx="$1"
+    if [ "$idx" -eq 0 ]; then
+        echo "$LOCKDIR/cargo.lock"
+    else
+        echo "$LOCKDIR/cargo.lock.$idx"
+    fi
+}
+
 run_build() {
     local cmd=(env TMPDIR=/tmp cargo "$@")
     if [ "$DRY" -eq 1 ]; then
@@ -143,7 +153,8 @@ run_build() {
 
     # Try non-blocking acquisition across available slots
     for (( i=0; i<SLOTS; i++ )); do
-        local slot_file="$LOCKDIR/slot-$i"
+        local slot_file
+        slot_file="$(get_slot_file "$i")"
         exec {slot_fd}>"$slot_file"
         if flock -n "$slot_fd" 2>/dev/null; then
             acquired=1
@@ -153,9 +164,10 @@ run_build() {
         fi
     done
 
-    # If no slot was immediately free, block on slot-0
+    # If no slot was immediately free, block on slot-0 (cargo.lock)
     if [ "$acquired" -eq 0 ]; then
-        local slot_file="$LOCKDIR/slot-0"
+        local slot_file
+        slot_file="$(get_slot_file 0)"
         exec {slot_fd}>"$slot_file"
         flock "$slot_fd"
     fi
