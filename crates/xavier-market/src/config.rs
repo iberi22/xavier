@@ -11,6 +11,7 @@ pub const KEY_CURRENCY: &str = "market.currency";
 pub const KEY_SETTLEMENT: &str = "market.settlement";
 pub const KEY_LICENSES: &str = "market.licenses";
 pub const KEY_LEGAL_TEXT_STATUS: &str = "market.legal_text_status";
+pub const KEY_PRICE_FLOOR: &str = "market.price_floor_credits";
 
 /// How listings are paid for. Only internal credits are usable in v1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -167,6 +168,7 @@ pub struct MarketConfig {
     pub settlement: Settlement,
     pub licenses: Vec<License>,
     pub legal_text_status: LegalTextStatus,
+    pub price_floor_credits: u64,
 }
 
 impl Default for MarketConfig {
@@ -178,6 +180,7 @@ impl Default for MarketConfig {
             settlement: Settlement::OffChain,
             licenses: License::MENU.to_vec(),
             legal_text_status: LegalTextStatus::Placeholder,
+            price_floor_credits: 0,
         }
     }
 }
@@ -206,6 +209,16 @@ impl MarketConfig {
         }
         if let Some(value) = lookup(KEY_LEGAL_TEXT_STATUS) {
             config.legal_text_status = LegalTextStatus::parse(&value)?;
+        }
+        if let Some(value) = lookup(KEY_PRICE_FLOOR) {
+            config.price_floor_credits =
+                value
+                    .trim()
+                    .parse::<u64>()
+                    .map_err(|_| ConfigError::UnknownValue {
+                        key: KEY_PRICE_FLOOR,
+                        value: value.clone(),
+                    })?;
         }
         config.validate()?;
         Ok(config)
@@ -255,6 +268,7 @@ mod tests {
         assert_eq!(config.currency.as_str(), "internal_credits");
         assert_eq!(config.settlement.as_str(), "off_chain");
         assert_eq!(config.legal_text_status.as_str(), "placeholder");
+        assert_eq!(config.price_floor_credits, 0);
         assert_eq!(
             config.licenses,
             vec![
@@ -346,6 +360,17 @@ mod tests {
             MarketConfig::from_lookup(lookup(&[(KEY_CURRENCY, "bitcoin")])),
             Err(ConfigError::UnknownValue {
                 key: KEY_CURRENCY,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn unparseable_price_floor_is_an_error() {
+        assert!(matches!(
+            MarketConfig::from_lookup(lookup(&[(KEY_PRICE_FLOOR, "abc")])),
+            Err(ConfigError::UnknownValue {
+                key: KEY_PRICE_FLOOR,
                 ..
             })
         ));

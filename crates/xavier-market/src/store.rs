@@ -94,6 +94,13 @@ impl MarketStore {
         }
         check_credits(new.price_credits)?;
 
+        if new.price_credits < self.config.price_floor_credits {
+            return Err(MarketError::InvalidInput(format!(
+                "price_credits {} is below the floor {}",
+                new.price_credits, self.config.price_floor_credits
+            )));
+        }
+
         let listing = Listing {
             id: uuid::Uuid::new_v4().to_string(),
             seller_id,
@@ -440,5 +447,49 @@ mod tests {
             MarketStore::open_in_memory(config),
             Err(MarketError::Config(_))
         ));
+    }
+
+    #[test]
+    fn ask_equal_to_the_floor_is_stored_unchanged() {
+        let config = MarketConfig {
+            price_floor_credits: 50,
+            ..MarketConfig::default()
+        };
+        let store = MarketStore::open_in_memory(config).unwrap();
+        let listing = store.create_listing(new_listing(50)).unwrap();
+        assert_eq!(listing.price_credits, 50);
+        let listed = store.list_listings().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].price_credits, 50);
+    }
+
+    #[test]
+    fn ask_below_the_floor_is_refused() {
+        let config = MarketConfig {
+            price_floor_credits: 50,
+            ..MarketConfig::default()
+        };
+        let store = MarketStore::open_in_memory(config).unwrap();
+        let err = store.create_listing(new_listing(49)).unwrap_err();
+        assert!(matches!(err, MarketError::InvalidInput(_)));
+        assert!(store.list_listings().unwrap().is_empty());
+    }
+
+    #[test]
+    fn new_listing_with_unknown_fields_deserializes() {
+        let json = r#"{
+            "seller_id": "seller-99",
+            "title": "Reputation dataset",
+            "license": "CC-BY-4.0",
+            "price_credits": 100,
+            "reputation": 99
+        }"#;
+        let new: NewListing = serde_json::from_str(json).unwrap();
+        assert_eq!(new.price_credits, 100);
+        assert_eq!(new.seller_id, "seller-99");
+
+        let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
+        let listing = store.create_listing(new).unwrap();
+        assert_eq!(listing.price_credits, 100);
     }
 }
