@@ -19,6 +19,7 @@ use super::usage::{
 };
 use crate::agents::{router::RouteCategory, AgentRuntime, RuntimeConfig};
 use crate::checkpoint::CheckpointManager;
+use crate::codebase::connection_manager::{resolve_cap, STORE_BUDGET_ENV};
 use crate::codebase::conversations_db::ConversationsDb;
 use crate::memory::{
     belief_graph::{BeliefGraph, SharedBeliefGraph},
@@ -1332,14 +1333,23 @@ struct CachedSpaceWorkspace {
 
 /// Default bound of the space workspace cache (LRU).
 const SPACE_CACHE_DEFAULT_MAX: usize = 64;
+/// Ceiling of the space workspace cache. Each entry keeps its stores' pooled
+/// connections open, so the bound must stay finite.
+const SPACE_CACHE_CEILING: usize = 1024;
 
-/// Max cached space workspaces (`XAVIER_SPACE_WORKSPACE_CACHE_MAX`, min 1).
+/// Max cached space workspaces, min 1. `XAVIER_SPACE_WORKSPACE_CACHE_MAX` wins,
+/// then the shared `XAVIER_STORE_BUDGET`, then 64. Accepted values are clamped
+/// to `1..=1024`.
 fn space_cache_max() -> usize {
-    std::env::var("XAVIER_SPACE_WORKSPACE_CACHE_MAX")
-        .ok()
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .filter(|n| *n >= 1)
-        .unwrap_or(SPACE_CACHE_DEFAULT_MAX)
+    resolve_cap(
+        std::env::var("XAVIER_SPACE_WORKSPACE_CACHE_MAX")
+            .ok()
+            .as_deref(),
+        std::env::var(STORE_BUDGET_ENV).ok().as_deref(),
+        SPACE_CACHE_DEFAULT_MAX,
+        1,
+        SPACE_CACHE_CEILING,
+    )
 }
 
 static SPACE_CACHE_TICK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -1854,5 +1864,24 @@ mod space_cache_tests {
         assert_eq!(cfg.storage_limit_bytes, Some(4096));
         assert_eq!(cfg.request_limit, Some(7));
         assert_eq!(cfg.protocol.storage.backend, MemoryBackend::Sqlite);
+    }
+
+    #[test]
+    fn space_cache_cap_defaults_precedence_and_clamp() {
+        let cap = |specific, budget| {
+            resolve_cap(
+                specific,
+                budget,
+                SPACE_CACHE_DEFAULT_MAX,
+                1,
+                SPACE_CACHE_CEILING,
+            )
+        };
+        assert_eq!(cap(None, None), 64);
+        assert_eq!(cap(Some("0"), Some("x")), 64);
+        // The specific var beats the shared budget.
+        assert_eq!(cap(Some("2"), Some("100")), 2);
+        assert_eq!(cap(None, Some("100")), 100);
+        assert_eq!(cap(None, Some("5000")), SPACE_CACHE_CEILING);
     }
 }

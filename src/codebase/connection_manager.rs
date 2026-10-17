@@ -2,6 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::codebase::repo_identity::MAX_EXTRA_ROOTS;
 use crate::domain::cycle_breaks::w30_10::ConnectionTuning;
 use anyhow::{Context, Result};
 use parking_lot::{Mutex, RwLock};
@@ -10,6 +11,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, ErrorCode};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::num::IntErrorKind;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -17,11 +19,67 @@ use std::time::{Duration, Instant};
 
 pub static INSTANCE: std::sync::OnceLock<ConnectionManager> = std::sync::OnceLock::new();
 
-/// Hard cap on concurrently registered pools, enforced by
+/// Default hard cap on concurrently registered pools, enforced by
 /// [`ConnectionManager::evict_if_needed`]. Public so it can be reported by
 /// [`ConnectionManager::snapshot`] instead of being a hardcoded literal at
-/// every call site.
+/// every call site. The effective cap is [`max_pools`].
 pub const MAX_POOLS: usize = 16;
+
+/// Shared store budget. Every store cache cap reads it, and each one clamps
+/// the value to its own range.
+pub const STORE_BUDGET_ENV: &str = "XAVIER_STORE_BUDGET";
+
+/// Floor for the pool cap. The workspace pool and every extra code root
+/// ([`MAX_EXTRA_ROOTS`]) must fit, plus one spare. Below this, extra roots
+/// evict the workspace's own pool.
+pub const MIN_POOLS: usize = MAX_EXTRA_ROOTS + 2;
+
+/// Ceiling for the pool cap. Each pool can hold up to `REPO_POOL_MAX_SIZE`
+/// connections, so an unbounded cap would leave file handles unbounded too.
+pub const MAX_POOLS_CEILING: usize = 64;
+
+const _: () = assert!(MIN_POOLS <= MAX_POOLS && MAX_POOLS <= MAX_POOLS_CEILING);
+
+/// Parses an operator-supplied cap. Only positive integers count: `0`,
+/// negatives and garbage are treated as unset. Values past `usize::MAX`
+/// saturate, so an absurdly large budget still reaches the ceiling.
+pub(crate) fn parse_budget(raw: Option<&str>) -> Option<usize> {
+    let parsed = match raw?.trim().parse::<usize>() {
+        Ok(n) => Some(n),
+        Err(e) if matches!(e.kind(), IntErrorKind::PosOverflow) => Some(usize::MAX),
+        Err(_) => None,
+    };
+    parsed.filter(|n| *n >= 1)
+}
+
+/// Resolves a cache cap. `specific` wins over the shared `budget`, which wins
+/// over `default`. An unset or invalid value falls through to the next source.
+/// The result is clamped to `min..=max`.
+pub(crate) fn resolve_cap(
+    specific: Option<&str>,
+    budget: Option<&str>,
+    default: usize,
+    min: usize,
+    max: usize,
+) -> usize {
+    parse_budget(specific)
+        .or_else(|| parse_budget(budget))
+        .unwrap_or(default)
+        .clamp(min, max)
+}
+
+/// Effective pool cap: [`MAX_POOLS`] unless [`STORE_BUDGET_ENV`] overrides it,
+/// clamped to `MIN_POOLS..=MAX_POOLS_CEILING`.
+pub fn max_pools() -> usize {
+    resolve_cap(
+        None,
+        std::env::var(STORE_BUDGET_ENV).ok().as_deref(),
+        MAX_POOLS,
+        MIN_POOLS,
+        MAX_POOLS_CEILING,
+    )
+}
+
 const WAL_INIT_ATTEMPTS: usize = 10;
 /// `max_size` given to every r2d2 pool. Unchanged from today's value; named so
 /// the snapshot reports the real number instead of a duplicate literal.
@@ -504,7 +562,8 @@ pub struct PoolSnapshot {
 pub struct SnapshotCounters {
     /// Pools currently registered.
     pub open_pools: usize,
-    /// `MAX_POOLS`, the hard cap on registered pools.
+    /// Effective cap on registered pools, from [`max_pools`]: [`MAX_POOLS`]
+    /// by default, or the clamped `XAVIER_STORE_BUDGET` when it is set.
     pub max_pools: usize,
     /// Sum of `connections` across live pools: the lower bound on SQLite
     /// connections this manager holds.
@@ -660,7 +719,7 @@ impl ConnectionManager {
                 .build(manager)
                 .context("failed to build r2d2 SQLite pool")?;
 
-            self.evict_if_needed();
+            self.evict_if_needed(max_pools());
 
             self.pools.write().insert(
                 project_id.to_string(),
@@ -890,7 +949,7 @@ impl ConnectionManager {
 
         let counters = SnapshotCounters {
             open_pools: pools.len(),
-            max_pools: MAX_POOLS,
+            max_pools: max_pools(),
             total_connections: pools.iter().map(|p| p.connections).sum(),
             total_idle_connections: pools.iter().map(|p| p.idle_connections).sum(),
             known_paths: known.len(),
@@ -998,12 +1057,12 @@ impl ConnectionManager {
 
     /// Make room for one new pool, choosing only evictable LRU victims.
     /// Pinned infrastructure may exceed the cap when no victim exists.
-    fn evict_if_needed(&self) {
+    fn evict_if_needed(&self, cap: usize) {
         self.evict_idle_at(Instant::now());
         let victims = {
             let mut pools = self.pools.write();
             let mut victims = Vec::new();
-            while pools.len() >= MAX_POOLS {
+            while pools.len() >= cap {
                 let oldest = pools
                     .iter()
                     .filter(|(_, entry)| entry.class.is_evictable())
@@ -1252,15 +1311,15 @@ mod tests {
             // and flaky under parallel tests, so they are observed, not asserted).
             let snapshot = cm.snapshot();
             assert!(
-                snapshot.pools.len() <= MAX_POOLS,
+                snapshot.pools.len() <= max_pools(),
                 "live pools must stay bounded during churn"
             );
             assert!(
-                snapshot.counters.open_pools <= MAX_POOLS,
+                snapshot.counters.open_pools <= max_pools(),
                 "open_pools must stay bounded during churn"
             );
             assert!(
-                snapshot.counters.total_connections <= MAX_POOLS as u32 * REPO_POOL_MAX_SIZE,
+                snapshot.counters.total_connections <= max_pools() as u32 * REPO_POOL_MAX_SIZE,
                 "managed connections must stay bounded during churn"
             );
         }
@@ -1320,7 +1379,7 @@ mod tests {
         }
 
         assert_eq!(snap.counters.open_pools, 2);
-        assert_eq!(snap.counters.max_pools, MAX_POOLS);
+        assert_eq!(snap.counters.max_pools, max_pools());
         assert_eq!(snap.counters.known_paths, 2);
         assert_eq!(snap.counters.opened_total, 2);
         assert_eq!(snap.counters.evicted_total, 0);
@@ -2176,5 +2235,65 @@ mod tests {
         );
 
         cm.shutdown();
+    }
+
+    #[test]
+    fn budget_parses_positive_integers_only() {
+        assert_eq!(parse_budget(Some(" 42 ")), Some(42));
+        assert_eq!(parse_budget(Some("0")), None);
+        assert_eq!(parse_budget(Some("-1")), None);
+        assert_eq!(parse_budget(Some("foo")), None);
+        assert_eq!(parse_budget(Some("")), None);
+        assert_eq!(parse_budget(None), None);
+        assert_eq!(
+            parse_budget(Some("99999999999999999999999")),
+            Some(usize::MAX)
+        );
+    }
+
+    #[test]
+    fn default_pool_cap_is_16() {
+        assert_eq!(MAX_POOLS, 16);
+        assert_eq!(
+            resolve_cap(None, None, MAX_POOLS, MIN_POOLS, MAX_POOLS_CEILING),
+            MAX_POOLS
+        );
+    }
+
+    #[test]
+    fn unset_or_invalid_budget_uses_the_default() {
+        assert_eq!(resolve_cap(None, None, 64, 1, 1024), 64);
+        assert_eq!(resolve_cap(Some("0"), Some("0"), 64, 1, 1024), 64);
+        assert_eq!(resolve_cap(Some("x"), Some("-3"), 64, 1, 1024), 64);
+    }
+
+    #[test]
+    fn specific_cap_beats_shared_budget() {
+        assert_eq!(resolve_cap(Some("2"), Some("100"), 64, 1, 1024), 2);
+        // An invalid specific value falls through to the shared budget.
+        assert_eq!(resolve_cap(Some("zero"), Some("100"), 64, 1, 1024), 100);
+    }
+
+    #[test]
+    fn pool_cap_is_clamped_to_floor_and_ceiling() {
+        // A budget below the floor cannot evict the workspace pool.
+        assert_eq!(
+            resolve_cap(None, Some("4"), MAX_POOLS, MIN_POOLS, MAX_POOLS_CEILING),
+            MIN_POOLS
+        );
+        assert_eq!(
+            resolve_cap(None, Some("1000"), MAX_POOLS, MIN_POOLS, MAX_POOLS_CEILING),
+            MAX_POOLS_CEILING
+        );
+        assert_eq!(
+            resolve_cap(
+                None,
+                Some("99999999999999999999999"),
+                MAX_POOLS,
+                MIN_POOLS,
+                MAX_POOLS_CEILING
+            ),
+            MAX_POOLS_CEILING
+        );
     }
 }
