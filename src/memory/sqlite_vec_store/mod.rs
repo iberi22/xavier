@@ -139,6 +139,16 @@ impl VecSqliteMemoryStore {
         let project_id = project_id_for_path(&config.path);
         conn_provider.connect_with_path_profile(&project_id, config.path.clone(), profile)?;
 
+        // A repo store lives at <repo>/.xavier/<file>; it links against <repo>'s graph.
+        let repo_root = if profile == PoolProfile::RepoStore {
+            config
+                .path
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.to_path_buf())
+        } else {
+            None
+        };
         let store = Self {
             project_id,
             config,
@@ -148,15 +158,7 @@ impl VecSqliteMemoryStore {
                 crate::settings::types::DedupSettings::default(),
             )),
             crypto: None,
-            repo_root: if profile == PoolProfile::RepoStore {
-                config
-                    .path
-                    .parent()
-                    .and_then(|p| p.parent())
-                    .map(|p| p.to_path_buf())
-            } else {
-                None
-            },
+            repo_root,
         };
 
         // Initialize schema
