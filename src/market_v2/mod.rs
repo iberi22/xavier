@@ -489,15 +489,26 @@ mod tests {
     }
 
     async fn send(router: &Router, request: Request<Body>) -> (StatusCode, Value) {
-        let response = router.clone().oneshot(request).await.expect("route");
-        let status = response.status();
-        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let (status, bytes) = send_raw(router, request).await;
         let body = if bytes.is_empty() {
             Value::Null
         } else {
             serde_json::from_slice(&bytes).unwrap_or(Value::Null)
         };
         (status, body)
+    }
+
+    async fn send_raw(router: &Router, request: Request<Body>) -> (StatusCode, Vec<u8>) {
+        let response = router.clone().oneshot(request).await.expect("route");
+        let status = response.status();
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec();
+        (status, bytes)
     }
 
     fn listing_body() -> Value {
@@ -849,7 +860,7 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
 
         // With namespace -> 200 OK with SWALPACK1 header
-        let (status, body) = send(
+        let (status, raw) = send_raw(
             &router,
             json_request(
                 Method::GET,
@@ -859,8 +870,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        let raw = serde_json::to_vec(&body).unwrap();
         // Pack magic check
-        assert!(raw.len() >= 10);
+        assert!(raw.starts_with(xavier_market::PACK_MAGIC));
     }
 }
