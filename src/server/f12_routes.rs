@@ -371,7 +371,8 @@ pub async fn register_wallet_node(
     State(state): State<F12State>,
     Json(req): Json<RegisterWalletNodeRequest>,
 ) -> impl IntoResponse {
-    if verify_wallet_registration(&req.proof, &req.wallet_id, &req.node_id).is_err() {
+    if let Err(e) = verify_wallet_registration(&req.proof, &req.wallet_id, &req.node_id) {
+        tracing::debug!(error = %e, "wallet registration proof rejected");
         return (StatusCode::UNAUTHORIZED, "wallet ownership proof rejected").into_response();
     }
 
@@ -1397,6 +1398,49 @@ mod tests {
             post_wallet_node(&app, &wallet, "n1", &proof).await,
             StatusCode::UNAUTHORIZED
         );
+    }
+
+    #[tokio::test]
+    async fn test_wallet_node_registration_rejects_takeover_of_owned_node() {
+        let app = router(test_state());
+        let owner = NodeIdentity::generate();
+        let intruder = NodeIdentity::generate();
+        let owner_wallet = derive_wallet_id(&owner.public_key);
+        let intruder_wallet = derive_wallet_id(&intruder.public_key);
+
+        let challenge = fetch_wallet_challenge(&app, &owner_wallet).await;
+        let proof = sign_wallet_registration(&owner, &challenge, "n1");
+        assert_eq!(
+            post_wallet_node(&app, &owner_wallet, "n1", &proof).await,
+            StatusCode::CREATED
+        );
+
+        // The intruder holds a valid proof for their own wallet and claims the same node.
+        let challenge = fetch_wallet_challenge(&app, &intruder_wallet).await;
+        let proof = sign_wallet_registration(&intruder, &challenge, "n1");
+        assert_eq!(
+            post_wallet_node(&app, &intruder_wallet, "n1", &proof).await,
+            StatusCode::CONFLICT
+        );
+
+        // The owner's listing still shows the node.
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/v1/f12/private-mesh/nodes?wallet_id={owner_wallet}"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let nodes: Vec<WalletNode> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].node_id.as_str(), "n1");
+        assert_eq!(nodes[0].wallet_id, owner_wallet);
     }
 
     #[tokio::test]
