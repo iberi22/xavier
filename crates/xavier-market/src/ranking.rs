@@ -33,8 +33,8 @@ pub fn text_score(q: &str, t: &str) -> f32 {
     if q_trim.is_empty() {
         return 0.0;
     }
-    let q_tokens: HashSet<&str> = q_trim
-        .to_ascii_lowercase()
+    let q_lower = q_trim.to_ascii_lowercase();
+    let q_tokens: HashSet<&str> = q_lower
         .split(|c: char| !c.is_alphanumeric())
         .filter(|s| !s.is_empty())
         .collect();
@@ -78,8 +78,14 @@ pub fn rank(q: &str, candidates: &[Candidate], w: Weights) -> Vec<Ranked> {
     let lists = [(t_list, w.text), (v_list, w.vector), (k_list, w.karma)];
 
     for (list, weight) in lists {
-        for (i, (c, _)) in list.into_iter().enumerate() {
-            let rank = i as u32 + 1;
+        // Tied scores share the best rank, so listing_id order never decides a tie.
+        let mut rank = 0;
+        let mut prev: Option<f32> = None;
+        for (i, (c, s)) in list.into_iter().enumerate() {
+            if prev != Some(s) {
+                rank = i as u32 + 1;
+                prev = Some(s);
+            }
             *fused.entry(c.listing_id.clone()).or_insert(0.0) += weight / (RRF_K + rank) as f32;
         }
     }
