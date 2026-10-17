@@ -17,6 +17,12 @@
 //!
 //! The store file is `XAVIER_MARKET_V2_DB_PATH` when set, otherwise
 //! `market-v2.sqlite3` under `XAVIER_DATA_DIR` (or the working directory).
+//!
+//! The IVN routes (`/v2/ivn/*`, MKT-17) live in [`ivn`] and share the store.
+//! Their config keys are `market.ivn.quorum_ratio` and
+//! `market.ivn.validators_per_request`, read from `XAVIER_MARKET_IVN_*`.
+
+pub mod ivn;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -129,6 +135,7 @@ where
             "/v2/marketplace/receipts",
             post(create_receipt_handler).get(list_receipts_handler),
         )
+        .merge(ivn::routes())
         .layer(Extension(store))
 }
 
@@ -317,10 +324,12 @@ fn error_status(status: StatusCode, message: impl Into<String>) -> Response {
 
 fn error_response(err: MarketError) -> Response {
     let status = match &err {
-        MarketError::ListingNotFound(_) => StatusCode::NOT_FOUND,
+        MarketError::ListingNotFound(_) | MarketError::IdentityRequestNotFound(_) => {
+            StatusCode::NOT_FOUND
+        }
         MarketError::Unauthenticated(_) => StatusCode::UNAUTHORIZED,
         MarketError::Forbidden(_) => StatusCode::FORBIDDEN,
-        MarketError::ListingRevoked(_) => StatusCode::CONFLICT,
+        MarketError::ListingRevoked(_) | MarketError::Conflict(_) => StatusCode::CONFLICT,
         MarketError::InvalidInput(_)
         | MarketError::LicenseNotEnabled(_)
         | MarketError::Config(_) => StatusCode::BAD_REQUEST,
@@ -343,7 +352,8 @@ mod tests {
     use http_body_util::BodyExt;
     use serde_json::{json, Value};
     use tower::util::ServiceExt;
-    use xavier_market::{SignedHeaders, Signer};
+    use xavier_market::ivn::{public_key_for_seed, sign_vote};
+    use xavier_market::{NewValidator, SignedHeaders, Signer, VoteDecision};
 
     use super::*;
 
@@ -370,6 +380,8 @@ mod tests {
                 "XAVIER_MARKET_SETTLEMENT",
                 "XAVIER_MARKET_LICENSES",
                 "XAVIER_MARKET_LEGAL_TEXT_STATUS",
+                "XAVIER_MARKET_IVN_QUORUM_RATIO",
+                "XAVIER_MARKET_IVN_VALIDATORS_PER_REQUEST",
             ];
             let saved = names
                 .iter()
@@ -781,6 +793,97 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    fn ivn_seed(index: u8) -> [u8; 32] {
+        [index + 1; 32]
+    }
+
+    #[tokio::test]
+    async fn ivn_routes_are_off_without_the_flag() {
+        let _env = MarketEnv::with_flag(None);
+        let router: Router = mount(Router::new());
+        let (status, _) = send(
+            &router,
+            json_request(
+                Method::POST,
+                "/v2/ivn/requests",
+                Some(json!({"applicant": "applicant-1"})),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn ivn_state_survives_a_restart_and_unsigned_votes_are_refused() {
+        let _env = MarketEnv::with_flag(Some("beta"));
+        {
+            // HTTP cannot register validators, so the registry is filled through
+            // the store that the mount reopens below.
+            let store = open_store_from_env().unwrap();
+            for index in 0..5u8 {
+                store
+                    .register_validator(NewValidator {
+                        node_id: format!("validator-{index}"),
+                        public_key: public_key_for_seed(&ivn_seed(index)),
+                    })
+                    .unwrap();
+            }
+        }
+
+        let router: Router = mount(Router::new());
+        let (status, created) = send(
+            &router,
+            json_request(
+                Method::POST,
+                "/v2/ivn/requests",
+                Some(json!({"applicant": "applicant-1"})),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let request_id = created["id"].as_str().unwrap().to_string();
+        assert_eq!(created["validators"].as_array().unwrap().len(), 5);
+        let request_uri = format!("/v2/ivn/requests/{request_id}");
+        let vote_uri = format!("{request_uri}/votes");
+
+        let unsigned = json!({
+            "validator_id": "validator-0",
+            "decision": "check",
+            "signature": ""
+        });
+        let (status, _) = send(
+            &router,
+            json_request(Method::POST, &vote_uri, Some(unsigned)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let (_, request) = send(&router, json_request(Method::GET, &request_uri, None)).await;
+        assert_eq!(request["votes"], json!([]));
+
+        let signature = sign_vote(
+            &ivn_seed(0),
+            &request_id,
+            "validator-0",
+            VoteDecision::Check,
+        );
+        let signed = json!({
+            "validator_id": "validator-0",
+            "decision": "check",
+            "signature": signature
+        });
+        let (status, _) = send(&router, json_request(Method::POST, &vote_uri, Some(signed))).await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        // A fresh mount reopens the same file, as a daemon restart does.
+        drop(router);
+        let restarted: Router = mount(Router::new());
+        let (status, request) =
+            send(&restarted, json_request(Method::GET, &request_uri, None)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(request["votes"].as_array().unwrap().len(), 1);
+        assert_eq!(request["votes"][0]["validator_id"], json!("validator-0"));
     }
 
     #[tokio::test]
