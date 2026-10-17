@@ -18,6 +18,7 @@
 #   scripts/affected-tests.sh --files a.rs b.rs    # explicit list (Jules bodies, gates)
 #   scripts/affected-tests.sh --dry-run            # print the commands only
 #   scripts/affected-tests.sh --no-clippy          # tests only
+#   scripts/affected-tests.sh --no-integration     # skip integration targets (deferred to pre-push/CI)
 #
 # Concurrency and build locks:
 #   TMPDIR is forced to /tmp. Compile steps (clippy, check, test --no-run) acquire a
@@ -30,14 +31,17 @@ set -uo pipefail
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT" || exit 1
 
-MODE="staged"; BASE=""; DRY=0; CLIPPY=1; QUICK=0; FILES=()
+MODE="staged"; BASE=""; DRY=0; CLIPPY=1; QUICK=0; NO_INTEGRATION=0; FILES=()
+[ "${WI_BATCH_VALIDATE:-0}" = "1" ] && QUICK=1
+
 while [ $# -gt 0 ]; do
     case "$1" in
-        --base)      MODE="base"; BASE="$2"; shift 2 ;;
-        --files)     MODE="files"; shift; while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do FILES+=("$1"); shift; done ;;
-        --dry-run)   DRY=1; shift ;;
-        --no-clippy) CLIPPY=0; shift ;;
-        --quick)     QUICK=1; shift ;;
+        --base)            MODE="base"; BASE="$2"; shift 2 ;;
+        --files)           MODE="files"; shift; while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do FILES+=("$1"); shift; done ;;
+        --dry-run)         DRY=1; shift ;;
+        --no-clippy)       CLIPPY=0; shift ;;
+        --quick)           QUICK=1; shift ;;
+        --no-integration)  NO_INTEGRATION=1; shift ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
@@ -237,9 +241,18 @@ if [ "${#LIB_FILTERS[@]}" -gt 0 ]; then
     mapfile -t SORTED_LIB_FILTERS < <(printf '%s\n' "${!LIB_FILTERS[@]}" | sort)
 fi
 
+ACTIVE_TARGETS=()
+if [ "${#SORTED_TARGETS[@]}" -gt 0 ]; then
+    if [ "$NO_INTEGRATION" -eq 1 ]; then
+        echo "affected-tests: deferred to pre-push/CI: ${SORTED_TARGETS[*]}"
+    else
+        ACTIVE_TARGETS=("${SORTED_TARGETS[@]}")
+    fi
+fi
+
 # Compute the union of required-features across selected integration targets
 declare -A FEAT_SET=( ["ci-safe"]=1 )
-for t in "${SORTED_TARGETS[@]}"; do
+for t in "${ACTIVE_TARGETS[@]}"; do
     rf=$(awk -v t="$t" '/^\[\[/{intest=($0=="[[test]]"); name=""} intest && /^name *=/{n=$0; gsub(/^name *= *"|".*$/,"",n); name=n} intest && name==t && /^required-features/{v=$0; gsub(/^[^[]*\[|\].*$|"| /,"",v); print v; exit}' Cargo.toml)
     if [ -n "$rf" ]; then
         IFS=',' read -ra ADDFEATS <<< "$rf"
@@ -257,7 +270,7 @@ for feat in "${!FEAT_SET[@]}"; do
 done
 
 HAS_TESTS=0
-if [ "${#SORTED_LIB_FILTERS[@]}" -gt 0 ] || [ "${#SORTED_TARGETS[@]}" -gt 0 ]; then
+if [ "${#SORTED_LIB_FILTERS[@]}" -gt 0 ] || [ "${#ACTIVE_TARGETS[@]}" -gt 0 ]; then
     HAS_TESTS=1
 fi
 
@@ -267,7 +280,7 @@ if [ "$HAS_TESTS" -eq 1 ]; then
     if [ "${#SORTED_LIB_FILTERS[@]}" -gt 0 ]; then
         BUILD_ARGS+=("--lib")
     fi
-    for t in "${SORTED_TARGETS[@]}"; do
+    for t in "${ACTIVE_TARGETS[@]}"; do
         BUILD_ARGS+=("--test" "$t")
     done
 
@@ -287,7 +300,7 @@ if [ "$HAS_TESTS" -eq 1 ]; then
                 LIB_EXPR=$(IFS='|'; echo "${LIB_PARTS[*]}")
                 EXPR_PARTS+=("(kind(lib) & (${LIB_EXPR}))")
             fi
-            for t in "${SORTED_TARGETS[@]}"; do
+            for t in "${ACTIVE_TARGETS[@]}"; do
                 EXPR_PARTS+=("binary(=${t})")
             done
             FULL_EXPR=$(IFS='|'; echo "${EXPR_PARTS[*]}")
@@ -298,9 +311,9 @@ if [ "$HAS_TESTS" -eq 1 ]; then
             if [ "${#SORTED_LIB_FILTERS[@]}" -gt 0 ]; then
                 run_test_unlocked cargo test -p xavier --features "$FEATURES" --lib -- --test-threads=1 "${SORTED_LIB_FILTERS[@]}" || RC=1
             fi
-            if [ "${#SORTED_TARGETS[@]}" -gt 0 ]; then
+            if [ "${#ACTIVE_TARGETS[@]}" -gt 0 ]; then
                 FALLBACK_TARGET_ARGS=()
-                for t in "${SORTED_TARGETS[@]}"; do
+                for t in "${ACTIVE_TARGETS[@]}"; do
                     FALLBACK_TARGET_ARGS+=("--test" "$t")
                 done
                 run_test_unlocked cargo test -p xavier --features "$FEATURES" "${FALLBACK_TARGET_ARGS[@]}" -- --test-threads=1 || RC=1
