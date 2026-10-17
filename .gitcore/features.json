@@ -1739,11 +1739,11 @@
     },
     "feat-vault-hardening": {
       "id": "feat-vault-hardening",
-      "name": "Vault hardening anti-exfil + MCP + OpenBao + dashboard",
+      "name": "Vault hardening anti-exfil + MCP + lease dashboard",
       "category": "security",
       "status": "beta",
       "progress_pct": 90,
-      "description": "Post-EP-V (V1-V10) reality: at-rest hardening (0600 files, 0700 dirs, no shadow fallback write while the keyring works, machine-bound wrapping key with backward-compatible legacy reads). AntiExfilDetector IS enforced, at one point only: KeyLendingEngine::lend in src/coordination/secrets.rs runs check_anti_exfil (per-agent 10/min) before any vault read, and is_allowed_ip is a proxy-path helper that gates nothing on its own. MCP secret_lend + secret_exec read the value from the vault through the shared KeyLendingEngine (shared_secret_engine + resolve_tool_secret) and return a lease token / exit code, never the value. Leases persist in the secret_leases table and are restored on restart. OpenBao backend and unused MCP resolution stub removed (2026-10-15). dashboard_leases builds masked VaultDashboardLease entries but no HTTP route consumes it. Values reach the child process env only, never argv, stdout/stderr, logs, audit rows or panics.",
+      "description": "Post-EP-V (V1-V10) reality: at-rest hardening (0600 files, 0700 dirs, no shadow fallback write while the keyring works, machine-bound wrapping key with backward-compatible legacy reads). AntiExfilDetector IS enforced, at one point only: KeyLendingEngine::lend in src/coordination/secrets.rs runs check_anti_exfil (per-agent 10/min) before any vault read, and is_allowed_ip is a proxy-path helper that gates nothing on its own. MCP secret_lend + secret_exec read the value from the vault through the shared KeyLendingEngine (shared_secret_engine + resolve_tool_secret) and return a lease token / exit code, never the value. Leases persist in the secret_leases table and are restored on restart. OpenBao backend and unused MCP resolution stub removed (2026-10-15). The dashboard_leases helper was deleted (#3302); the lease dashboard is served by GET /secrets/leases and GET /secrets/history, both masked and keyed by opaque lease_id (no token, no value). Values reach the child process env only, never argv, stdout/stderr, logs, audit rows or panics.",
       "steps": [
         "AntiExfilDetector per-agent rate limit enforced in the lend path (src/coordination/secrets.rs::lend -> check_anti_exfil)",
         "MCP secret_lend + secret_exec resolve from the vault through the shared KeyLendingEngine",
@@ -1751,7 +1751,7 @@
         "Leases persisted to the secret_leases table and restored on engine start",
         "secrets exec engine + POST /secrets/exec inject the value into the child env only",
         "At-rest 0600/0700 and no shadow fallback write while the keyring works",
-        "dashboard_leases masked lease view (library helper, no route wired yet)"
+        "Lease list and history served masked by opaque lease_id (GET /secrets/leases, GET /secrets/history); dashboard_leases helper deleted"
       ],
       "tests": [
         "test_no_fallback_write_when_keyring_ok",

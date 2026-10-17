@@ -63,7 +63,7 @@ Verified by `test_maloca_http_e2e` (5/5), `test_hc_e2e` (1/1), `maloca-core` uni
 | 3.02 | Clearance 6 levels + redaction middleware | `src/security/clearance.rs` | stable | `test_redact_middleware` |
 | 3.03 | Groups/ACL + audit trail | `src/security/groups.rs` | stable | `audit_trail` |
 | 3.04 | Clavis KeyLeaseManager + on_task_start | `src/clavis/manager.rs` | stable | 4 tests |
-| 3.05 | Vault hardening anti-exfil + MCP + OpenBao + dashboard | `src/secrets/lending.rs` | stable | `AntiExfilDetector` |
+| 3.05 | Vault hardening anti-exfil + MCP + lease dashboard | `src/secrets/lending.rs` | stable | `AntiExfilDetector`, `leases_list_contract_exposes_lease_id_and_never_the_token` |
 | 3.06 | CodeGraph SnippetWriteThrough unified | `src/memory/snippet_writethrough.rs` | stable | 4 tests |
 | 3.07 | RAG hybrid RRF + reranker + HyDE | `src/search/rerank.rs` | stable | `test_rag_*` |
 | 3.08 | Knowledge graph consolidation + belief decay | `src/memory/entity_graph/mod.rs` | stable | `test_knowledge_*` |
