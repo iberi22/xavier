@@ -34,7 +34,7 @@ pub use config::{
 pub use error::MarketError;
 pub use grant::{
     grant_signing_bytes, unwrap_key_as_buyer, wrap_key_for_buyer, AccessGrant, GrantError,
-    NewGrantRequest, ACCESS_GRANT_DOMAIN,
+    ACCESS_GRANT_DOMAIN,
 };
 pub use ivn::{
     CastVote, IdentityRequest, NewIdentityRequest, NewValidator, RequestStatus, Validator, Vote,

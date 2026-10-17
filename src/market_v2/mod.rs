@@ -267,13 +267,14 @@ async fn list_receipts_handler(
 #[derive(Debug, Deserialize)]
 pub struct CreateGrantPayload {
     pub listing_id: String,
-    pub buyer_id: String,
+    #[serde(alias = "buyer_id")]
+    pub buyer_x25519_pubkey_hex: String,
     pub ephemeral_pubkey_hex: String,
     pub wrapped_key_hex: String,
     pub nonce_hex: String,
     pub ttl_seconds: Option<u64>,
-    /// Hex-encoded 32-byte Ed25519 signing key of the seller (or proof).
-    pub seller_signing_key_hex: String,
+    /// Hex-encoded 64-byte Ed25519 signature by the seller over the canonical grant fields.
+    pub signature_hex: String,
 }
 
 async fn create_grant_handler(
@@ -292,30 +293,15 @@ async fn create_grant_handler(
         Err(response) => return response,
     };
 
-    let key_bytes = match crate::crypto::hex_decode(&payload.seller_signing_key_hex) {
-        Ok(b) if b.len() == 32 => {
-            let mut arr = [0u8; 32];
-            arr.copy_from_slice(&b);
-            arr
-        }
-        _ => {
-            return error_status(
-                StatusCode::BAD_REQUEST,
-                "seller_signing_key_hex must be 32-byte hex",
-            )
-        }
-    };
-    let seller_key = ed25519_dalek::SigningKey::from_bytes(&key_bytes);
-
     match store.create_access_grant(
         &actor,
         &payload.listing_id,
-        &payload.buyer_id,
+        &payload.buyer_x25519_pubkey_hex,
         &payload.ephemeral_pubkey_hex,
         &payload.wrapped_key_hex,
         &payload.nonce_hex,
         payload.ttl_seconds,
-        &seller_key,
+        &payload.signature_hex,
     ) {
         Ok(grant) => (StatusCode::CREATED, Json(grant)).into_response(),
         Err(err) => error_response(err),
@@ -327,7 +313,10 @@ async fn get_grant_handler(
     PathParam(id): PathParam<String>,
 ) -> Response {
     match store.get_access_grant(&id) {
-        Ok(Some(grant)) => Json(grant).into_response(),
+        Ok(Some(grant)) => {
+            let sanitized = grant.sanitized_if_inactive(now_ms());
+            Json(sanitized).into_response()
+        }
         Ok(None) => error_status(StatusCode::NOT_FOUND, format!("grant {id} not found")),
         Err(err) => error_response(err),
     }
@@ -343,14 +332,27 @@ async fn list_grants_handler(
     Extension(store): StoreExt,
     Query(query): Query<GrantFilterQuery>,
 ) -> Response {
+    let now = now_ms();
     if let Some(buyer_id) = query.buyer_id.filter(|s| !s.trim().is_empty()) {
         match store.list_grants_for_buyer(buyer_id.trim()) {
-            Ok(grants) => Json(grants).into_response(),
+            Ok(grants) => {
+                let sanitized: Vec<_> = grants
+                    .into_iter()
+                    .map(|g| g.sanitized_if_inactive(now))
+                    .collect();
+                Json(sanitized).into_response()
+            }
             Err(err) => error_response(err),
         }
     } else if let Some(listing_id) = query.listing_id.filter(|s| !s.trim().is_empty()) {
         match store.list_grants_for_listing(listing_id.trim()) {
-            Ok(grants) => Json(grants).into_response(),
+            Ok(grants) => {
+                let sanitized: Vec<_> = grants
+                    .into_iter()
+                    .map(|g| g.sanitized_if_inactive(now))
+                    .collect();
+                Json(sanitized).into_response()
+            }
             Err(err) => error_response(err),
         }
     } else {
@@ -374,7 +376,10 @@ async fn revoke_grant_handler(
         Err(response) => return response,
     };
     match store.revoke_access_grant(&actor, &id) {
-        Ok(grant) => Json(grant).into_response(),
+        Ok(grant) => {
+            let sanitized = grant.sanitized_if_inactive(now_ms());
+            Json(sanitized).into_response()
+        }
         Err(err) => error_response(err),
     }
 }
@@ -448,9 +453,9 @@ fn error_status(status: StatusCode, message: impl Into<String>) -> Response {
 
 fn error_response(err: MarketError) -> Response {
     let status = match &err {
-        MarketError::ListingNotFound(_) | MarketError::IdentityRequestNotFound(_) => {
-            StatusCode::NOT_FOUND
-        }
+        MarketError::ListingNotFound(_)
+        | MarketError::IdentityRequestNotFound(_)
+        | MarketError::AccessGrantNotFound(_) => StatusCode::NOT_FOUND,
         MarketError::Unauthenticated(_) => StatusCode::UNAUTHORIZED,
         MarketError::Forbidden(_) => StatusCode::FORBIDDEN,
         MarketError::ListingRevoked(_) | MarketError::Conflict(_) => StatusCode::CONFLICT,
@@ -473,6 +478,7 @@ mod tests {
         body::Body,
         http::{Method, Request},
     };
+    use ed25519_dalek::Signer as _;
     use http_body_util::BodyExt;
     use serde_json::{json, Value};
     use tower::util::ServiceExt;
@@ -1032,7 +1038,7 @@ mod tests {
 
     #[tokio::test]
     async fn grant_delivery_wrapping_and_revocation_e2e() {
-        use xavier_market::{unwrap_key_as_buyer, wrap_key_for_buyer};
+        use xavier_market::{grant_signing_bytes, unwrap_key_as_buyer, wrap_key_for_buyer};
 
         let _env = MarketEnv::with_flag(Some("beta"));
         let router: Router = mount(Router::new());
@@ -1053,28 +1059,41 @@ mod tests {
         )
         .unwrap();
 
+        let ttl_seconds = 3600u64;
+        let created_at = now_ms();
+        let expires_at = created_at + (ttl_seconds as i64 * 1000);
+
+        // Sign the grant payload with seller (owner) key
+        let owner_signing_key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
+        let signing_bytes = grant_signing_bytes(
+            &listing_id,
+            &buyer_pub_hex,
+            &eph_pub,
+            &wrapped,
+            &nonce_hex,
+            expires_at,
+        );
+        let sig = owner_signing_key.sign(&signing_bytes);
+        let signature_hex = crate::crypto::hex_encode(sig.to_bytes());
+
         let grant_payload = json!({
             "listing_id": listing_id,
-            "buyer_id": buyer_pub_hex,
+            "buyer_x25519_pubkey_hex": buyer_pub_hex,
             "ephemeral_pubkey_hex": eph_pub,
             "wrapped_key_hex": wrapped,
             "nonce_hex": nonce_hex,
-            "ttl_seconds": 3600,
-            "seller_signing_key_hex": crate::crypto::hex_encode(owner().public_key_hex()) // owner signing key
+            "ttl_seconds": ttl_seconds,
+            "signature_hex": signature_hex,
         });
 
         // Signed create grant request by seller
-        let owner_seed_hex = crate::crypto::hex_encode([7u8; 32]);
-        let mut valid_payload = grant_payload.clone();
-        valid_payload["seller_signing_key_hex"] = json!(owner_seed_hex);
-
         let (status, grant_json) = send(
             &router,
             signed_request(
                 &owner(),
                 Method::POST,
                 "/v2/marketplace/grants",
-                Some(valid_payload),
+                Some(grant_payload.clone()),
             ),
         )
         .await;
@@ -1090,7 +1109,7 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
 
-        // Fetch grant
+        // Fetch active grant returns key material intact
         let (status, fetched) = send(
             &router,
             json_request(
@@ -1102,8 +1121,11 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(fetched["id"], grant_id);
+        assert_eq!(fetched["wrapped_key_hex"], wrapped);
+        assert_eq!(fetched["ephemeral_pubkey_hex"], eph_pub);
+        assert_eq!(fetched["nonce_hex"], nonce_hex);
 
-        // Buyer decrypts fetched grant
+        // Buyer decrypts fetched active grant
         let grant_obj: xavier_market::AccessGrant = serde_json::from_value(fetched).unwrap();
         let decrypted =
             unwrap_key_as_buyer(&grant_obj, &[55u8; 32], grant_obj.created_at_ms + 10).unwrap();
@@ -1117,14 +1139,180 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert!(revoked["revoked_at_ms"].is_i64());
+        // Response from revoke must strip key material
+        assert_eq!(revoked["wrapped_key_hex"], "");
+        assert_eq!(revoked["ephemeral_pubkey_hex"], "");
+        assert_eq!(revoked["nonce_hex"], "");
 
-        // Revoked grant cannot be decrypted
-        let revoked_obj: xavier_market::AccessGrant = serde_json::from_value(revoked).unwrap();
-        let unwrap_err =
-            unwrap_key_as_buyer(&revoked_obj, &[55u8; 32], grant_obj.created_at_ms + 20);
-        assert!(matches!(
-            unwrap_err,
-            Err(xavier_market::GrantError::Revoked(_))
-        ));
+        // Router test: GET on revoked grant returns without key material
+        let (status, fetched_revoked) = send(
+            &router,
+            json_request(
+                Method::GET,
+                &format!("/v2/marketplace/grants/{grant_id}"),
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(fetched_revoked["revoked_at_ms"].is_i64());
+        assert_eq!(fetched_revoked["wrapped_key_hex"], "");
+        assert_eq!(fetched_revoked["ephemeral_pubkey_hex"], "");
+        assert_eq!(fetched_revoked["nonce_hex"], "");
+
+        // Revoking non-existent grant returns 404
+        let (status, _) = send(
+            &router,
+            signed_request(
+                &owner(),
+                Method::POST,
+                "/v2/marketplace/grants/grant_nonexistent/revoke",
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn non_seller_creating_grant_gets_forbidden() {
+        use xavier_market::{grant_signing_bytes, wrap_key_for_buyer};
+
+        let _env = MarketEnv::with_flag(Some("beta"));
+        let router: Router = mount(Router::new());
+        let listing_id = create_owned_listing(&router).await;
+
+        let buyer_secret = x25519_dalek::StaticSecret::from([55u8; 32]);
+        let buyer_public = x25519_dalek::PublicKey::from(&buyer_secret);
+        let buyer_pub_hex = crate::crypto::hex_encode(buyer_public.as_bytes());
+
+        let package_key = b"super-secret-content-key-123456";
+        let ephemeral_seed = [77u8; 32];
+        let nonce = [88u8; 12];
+        let (wrapped, eph_pub, nonce_hex) = wrap_key_for_buyer(
+            package_key,
+            buyer_public.as_bytes(),
+            &ephemeral_seed,
+            &nonce,
+        )
+        .unwrap();
+
+        let ttl_seconds = 3600u64;
+        let created_at = now_ms();
+        let expires_at = created_at + (ttl_seconds as i64 * 1000);
+
+        // Stranger tries to sign and create a grant for owner's listing
+        let stranger_signing_key = ed25519_dalek::SigningKey::from_bytes(&[9u8; 32]);
+        let signing_bytes = grant_signing_bytes(
+            &listing_id,
+            &buyer_pub_hex,
+            &eph_pub,
+            &wrapped,
+            &nonce_hex,
+            expires_at,
+        );
+        let sig = stranger_signing_key.sign(&signing_bytes);
+        let signature_hex = crate::crypto::hex_encode(sig.to_bytes());
+
+        let grant_payload = json!({
+            "listing_id": listing_id,
+            "buyer_x25519_pubkey_hex": buyer_pub_hex,
+            "ephemeral_pubkey_hex": eph_pub,
+            "wrapped_key_hex": wrapped,
+            "nonce_hex": nonce_hex,
+            "ttl_seconds": ttl_seconds,
+            "signature_hex": signature_hex,
+        });
+
+        let (status, _) = send(
+            &router,
+            signed_request(
+                &stranger(),
+                Method::POST,
+                "/v2/marketplace/grants",
+                Some(grant_payload),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn router_returns_expired_grant_without_key_material() {
+        use xavier_market::{grant_signing_bytes, wrap_key_for_buyer};
+
+        let _env = MarketEnv::with_flag(Some("beta"));
+        let router: Router = mount(Router::new());
+        let listing_id = create_owned_listing(&router).await;
+
+        let buyer_secret = x25519_dalek::StaticSecret::from([55u8; 32]);
+        let buyer_public = x25519_dalek::PublicKey::from(&buyer_secret);
+        let buyer_pub_hex = crate::crypto::hex_encode(buyer_public.as_bytes());
+
+        let (wrapped, eph_pub, nonce_hex) = wrap_key_for_buyer(
+            b"key-data-16bytes",
+            buyer_public.as_bytes(),
+            &[77u8; 32],
+            &[88u8; 12],
+        )
+        .unwrap();
+
+        // 1 second TTL
+        let ttl_seconds = 1u64;
+        let created_at = now_ms();
+        let expires_at = created_at + 1000;
+
+        let owner_signing_key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
+        let signing_bytes = grant_signing_bytes(
+            &listing_id,
+            &buyer_pub_hex,
+            &eph_pub,
+            &wrapped,
+            &nonce_hex,
+            expires_at,
+        );
+        let sig = owner_signing_key.sign(&signing_bytes);
+        let signature_hex = crate::crypto::hex_encode(sig.to_bytes());
+
+        let grant_payload = json!({
+            "listing_id": listing_id,
+            "buyer_x25519_pubkey_hex": buyer_pub_hex,
+            "ephemeral_pubkey_hex": eph_pub,
+            "wrapped_key_hex": wrapped,
+            "nonce_hex": nonce_hex,
+            "ttl_seconds": ttl_seconds,
+            "signature_hex": signature_hex,
+        });
+
+        let (status, grant_json) = send(
+            &router,
+            signed_request(
+                &owner(),
+                Method::POST,
+                "/v2/marketplace/grants",
+                Some(grant_payload),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let grant_id = grant_json["id"].as_str().unwrap().to_string();
+
+        // Wait for grant to expire (> 1000 ms)
+        tokio::time::sleep(tokio::time::Duration::from_millis(1200)).await;
+
+        // Fetch expired grant from router: key material must be stripped
+        let (status, fetched_expired) = send(
+            &router,
+            json_request(
+                Method::GET,
+                &format!("/v2/marketplace/grants/{grant_id}"),
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(fetched_expired["wrapped_key_hex"], "");
+        assert_eq!(fetched_expired["ephemeral_pubkey_hex"], "");
+        assert_eq!(fetched_expired["nonce_hex"], "");
     }
 }

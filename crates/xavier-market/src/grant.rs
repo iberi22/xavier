@@ -10,7 +10,7 @@
 //! - After revocation, new grants fail and existing grants cannot be used.
 //! - Expired grants cannot be decrypted or used.
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, VerifyingKey};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -81,6 +81,21 @@ impl AccessGrant {
         self.revoked_at_ms.is_none() && now_ms < self.expires_at_ms
     }
 
+    /// Returns a sanitized copy of this grant where key material
+    /// (`wrapped_key_hex`, `ephemeral_pubkey_hex`, `nonce_hex`) is stripped (empty)
+    /// if the grant is revoked or expired at `now_ms`.
+    pub fn sanitized_if_inactive(&self, now_ms: i64) -> Self {
+        if self.is_active_at(now_ms) {
+            self.clone()
+        } else {
+            let mut sanitized = self.clone();
+            sanitized.wrapped_key_hex.clear();
+            sanitized.ephemeral_pubkey_hex.clear();
+            sanitized.nonce_hex.clear();
+            sanitized
+        }
+    }
+
     /// Verifies the seller's signature on this grant.
     pub fn verify_signature(&self) -> Result<(), GrantError> {
         let seller_pk_bytes = hex::decode(&self.seller_id)
@@ -109,45 +124,36 @@ impl AccessGrant {
         let signature = Signature::from_bytes(&sig_arr);
 
         let msg = grant_signing_bytes(
-            &self.id,
             &self.listing_id,
             &self.buyer_id,
-            &self.seller_id,
             &self.ephemeral_pubkey_hex,
             &self.wrapped_key_hex,
             &self.nonce_hex,
-            self.created_at_ms,
             self.expires_at_ms,
         );
 
         verifying_key
-            .verify(&msg, &signature)
+            .verify_strict(&msg, &signature)
             .map_err(|_| GrantError::InvalidSignature("signature verification failed".to_string()))
     }
 }
 
-/// Computes canonical signing bytes for an AccessGrant.
+/// Computes canonical signing bytes for an AccessGrant over fields controlled by the seller:
+/// listing_id, buyer_x25519_pubkey, ephemeral_pubkey, wrapped_key, nonce, expires_at_ms.
 pub fn grant_signing_bytes(
-    id: &str,
     listing_id: &str,
-    buyer_id: &str,
-    seller_id: &str,
+    buyer_x25519_pubkey_hex: &str,
     ephemeral_pubkey_hex: &str,
     wrapped_key_hex: &str,
     nonce_hex: &str,
-    created_at_ms: i64,
     expires_at_ms: i64,
 ) -> Vec<u8> {
     let mut h = Sha256::new();
     h.update(ACCESS_GRANT_DOMAIN.as_bytes());
     h.update(b"\n");
-    h.update(id.as_bytes());
-    h.update(b"\n");
     h.update(listing_id.as_bytes());
     h.update(b"\n");
-    h.update(buyer_id.as_bytes());
-    h.update(b"\n");
-    h.update(seller_id.as_bytes());
+    h.update(buyer_x25519_pubkey_hex.as_bytes());
     h.update(b"\n");
     h.update(ephemeral_pubkey_hex.as_bytes());
     h.update(b"\n");
@@ -155,21 +161,8 @@ pub fn grant_signing_bytes(
     h.update(b"\n");
     h.update(nonce_hex.as_bytes());
     h.update(b"\n");
-    h.update(created_at_ms.to_string().as_bytes());
-    h.update(b"\n");
     h.update(expires_at_ms.to_string().as_bytes());
     h.finalize().to_vec()
-}
-
-/// Request to create a new access grant.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NewGrantRequest {
-    /// The listing id.
-    pub listing_id: String,
-    /// The buyer's public key (32-byte hex).
-    pub buyer_id: String,
-    /// Optional time-to-live in seconds. If None, store's default duration is used.
-    pub ttl_seconds: Option<u64>,
 }
 
 /// In-memory helper to wrap a package key for a buyer using X25519-ECDH + ChaCha20Poly1305.
@@ -299,25 +292,103 @@ impl MarketStore {
     /// Requires that:
     /// - `actor` is the publisher/seller of the listing.
     /// - Listing exists and is not revoked.
-    /// - The wrapped key and metadata are verified and signed.
+    /// - All hex fields are strictly valid and meet required cryptographic lengths.
+    /// - `ttl_seconds` is non-zero and does not exceed `grant_max_ttl_seconds`.
+    /// - The seller's signature over the grant signing bytes verifies against `actor.id()`.
     ///
     /// If the listing was revoked, new grants fail immediately with `ListingRevoked`.
     pub fn create_access_grant(
         &self,
         actor: &Actor,
         listing_id: &str,
-        buyer_id: &str,
+        buyer_x25519_pubkey_hex: &str,
         ephemeral_pubkey_hex: &str,
         wrapped_key_hex: &str,
         nonce_hex: &str,
         ttl_seconds: Option<u64>,
-        seller_key: &SigningKey,
+        signature_hex: &str,
     ) -> Result<AccessGrant, MarketError> {
         let listing_id = non_empty("listing_id", listing_id)?;
-        let buyer_id = non_empty("buyer_id", buyer_id)?;
+        let buyer_pub_hex = non_empty("buyer_x25519_pubkey_hex", buyer_x25519_pubkey_hex)?;
         let ephemeral_pubkey_hex = non_empty("ephemeral_pubkey_hex", ephemeral_pubkey_hex)?;
         let wrapped_key_hex = non_empty("wrapped_key_hex", wrapped_key_hex)?;
         let nonce_hex = non_empty("nonce_hex", nonce_hex)?;
+        let signature_hex = non_empty("signature_hex", signature_hex)?;
+
+        // Validate hex encoding and lengths
+        let buyer_bytes = hex::decode(&buyer_pub_hex).map_err(|e| {
+            MarketError::InvalidInput(format!("buyer_x25519_pubkey_hex is not valid hex: {e}"))
+        })?;
+        if buyer_bytes.len() != 32 {
+            return Err(MarketError::InvalidInput(
+                "buyer_x25519_pubkey_hex must be exactly 32 bytes".to_string(),
+            ));
+        }
+
+        let eph_bytes = hex::decode(&ephemeral_pubkey_hex).map_err(|e| {
+            MarketError::InvalidInput(format!("ephemeral_pubkey_hex is not valid hex: {e}"))
+        })?;
+        if eph_bytes.len() != 32 {
+            return Err(MarketError::InvalidInput(
+                "ephemeral_pubkey_hex must be exactly 32 bytes".to_string(),
+            ));
+        }
+
+        let nonce_bytes = hex::decode(&nonce_hex)
+            .map_err(|e| MarketError::InvalidInput(format!("nonce_hex is not valid hex: {e}")))?;
+        if nonce_bytes.len() != 12 {
+            return Err(MarketError::InvalidInput(
+                "nonce_hex must be exactly 12 bytes".to_string(),
+            ));
+        }
+
+        let wrapped_bytes = hex::decode(&wrapped_key_hex).map_err(|e| {
+            MarketError::InvalidInput(format!("wrapped_key_hex is not valid hex: {e}"))
+        })?;
+        if wrapped_bytes.len() < 16 {
+            return Err(MarketError::InvalidInput(
+                "wrapped_key_hex must contain at least 16 bytes of ciphertext".to_string(),
+            ));
+        }
+
+        let sig_bytes = hex::decode(&signature_hex).map_err(|e| {
+            MarketError::InvalidInput(format!("signature_hex is not valid hex: {e}"))
+        })?;
+        if sig_bytes.len() != 64 {
+            return Err(MarketError::InvalidInput(
+                "signature_hex must be exactly 64 bytes".to_string(),
+            ));
+        }
+        let sig_arr: [u8; 64] = sig_bytes
+            .try_into()
+            .map_err(|_| MarketError::InvalidInput("signature length mismatch".to_string()))?;
+        let signature = Signature::from_bytes(&sig_arr);
+
+        // Validate TTL
+        let max_ttl = self.config().grant_max_ttl_seconds;
+        let default_ttl = self.config().grant_default_ttl_seconds;
+        let ttl_secs = match ttl_seconds {
+            Some(0) => {
+                return Err(MarketError::InvalidInput(
+                    "ttl_seconds must be greater than zero".to_string(),
+                ))
+            }
+            Some(t) if t > max_ttl => {
+                return Err(MarketError::InvalidInput(format!(
+                    "ttl_seconds ({t}) exceeds maximum allowed ({max_ttl})"
+                )))
+            }
+            Some(t) => t,
+            None => default_ttl,
+        };
+
+        let created_at = now_ms();
+        let ttl_ms = (ttl_secs as i64)
+            .checked_mul(1000)
+            .ok_or_else(|| MarketError::InvalidInput("ttl overflow".to_string()))?;
+        let expires_at = created_at
+            .checked_add(ttl_ms)
+            .ok_or_else(|| MarketError::InvalidInput("expires_at overflow".to_string()))?;
 
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -342,32 +413,43 @@ impl MarketStore {
             ));
         }
 
-        let created_at = now_ms();
-        let ttl_secs = ttl_seconds
-            .unwrap_or(self.config().grant_default_ttl_seconds)
-            .min(self.config().grant_max_ttl_seconds);
-        let expires_at = created_at + (ttl_secs as i64 * 1000);
+        // Verify seller public key from actor.id()
+        let seller_pk_bytes = hex::decode(actor.id()).map_err(|e| {
+            MarketError::InvalidInput(format!("seller actor id is not valid hex: {e}"))
+        })?;
+        if seller_pk_bytes.len() != 32 {
+            return Err(MarketError::InvalidInput(
+                "seller actor id must be 32 bytes".to_string(),
+            ));
+        }
+        let seller_pk: [u8; 32] = seller_pk_bytes.try_into().map_err(|_| {
+            MarketError::InvalidInput("seller public key slice mismatch".to_string())
+        })?;
+        let verifying_key = VerifyingKey::from_bytes(&seller_pk).map_err(|e| {
+            MarketError::InvalidInput(format!("invalid ed25519 verifying key: {e}"))
+        })?;
 
+        // Verify signature over canonical grant fields
         let grant_id = format!("grant_{}", Uuid::new_v4());
-
         let signing_bytes = grant_signing_bytes(
-            &grant_id,
             &listing_id,
-            &buyer_id,
-            actor.id(),
+            &buyer_pub_hex,
             &ephemeral_pubkey_hex,
             &wrapped_key_hex,
             &nonce_hex,
-            created_at,
             expires_at,
         );
-        let signature = seller_key.sign(&signing_bytes);
-        let signature_hex = hex::encode(signature.to_bytes());
+
+        verifying_key
+            .verify_strict(&signing_bytes, &signature)
+            .map_err(|_| {
+                MarketError::InvalidInput("grant signature verification failed".to_string())
+            })?;
 
         let grant = AccessGrant {
             id: grant_id,
             listing_id,
-            buyer_id,
+            buyer_id: buyer_pub_hex,
             seller_id: actor.id().to_string(),
             ephemeral_pubkey_hex,
             wrapped_key_hex,
@@ -458,7 +540,7 @@ impl MarketStore {
         let tx = conn.transaction()?;
 
         let mut grant = query_grant(&tx, grant_id)?
-            .ok_or_else(|| MarketError::InvalidInput(format!("grant {grant_id} not found")))?;
+            .ok_or_else(|| MarketError::AccessGrantNotFound(grant_id.to_string()))?;
 
         if !grant.seller_id.eq_ignore_ascii_case(actor.id()) {
             return Err(MarketError::Forbidden(
@@ -515,6 +597,7 @@ mod tests {
     use super::*;
     use crate::config::{License, MarketConfig};
     use crate::model::NewListing;
+    use ed25519_dalek::{Signer as _, SigningKey};
 
     fn test_seller() -> (SigningKey, Actor) {
         let key = SigningKey::from_bytes(&[1u8; 32]);
@@ -677,6 +760,20 @@ mod tests {
         let (wrapped, eph_pub, nonce_hex) =
             wrap_key_for_buyer(package_key, &buyer_pub_bytes, &ephemeral_seed, &nonce).unwrap();
 
+        let ttl_seconds = 3600u64;
+        let created_at = now_ms();
+        let expires_at = created_at + (ttl_seconds as i64 * 1000);
+        let signing_bytes = grant_signing_bytes(
+            &listing.id,
+            &buyer_pub_hex,
+            &eph_pub,
+            &wrapped,
+            &nonce_hex,
+            expires_at,
+        );
+        let sig = seller_key.sign(&signing_bytes);
+        let signature_hex = hex::encode(sig.to_bytes());
+
         // Create grant in store
         let grant = store
             .create_access_grant(
@@ -686,8 +783,8 @@ mod tests {
                 &eph_pub,
                 &wrapped,
                 &nonce_hex,
-                Some(3600),
-                &seller_key,
+                Some(ttl_seconds),
+                &signature_hex,
             )
             .unwrap();
 
@@ -696,6 +793,18 @@ mod tests {
         assert_eq!(grant.seller_id, seller_actor.id());
         assert!(grant.revoked_at_ms.is_none());
         assert!(grant.verify_signature().is_ok());
+
+        // Active grant sanitized is identical
+        let sanitized_active = grant.sanitized_if_inactive(created_at + 10);
+        assert_eq!(sanitized_active.wrapped_key_hex, wrapped);
+        assert_eq!(sanitized_active.ephemeral_pubkey_hex, eph_pub);
+        assert_eq!(sanitized_active.nonce_hex, nonce_hex);
+
+        // Expired grant sanitized has stripped keys
+        let sanitized_expired = grant.sanitized_if_inactive(expires_at + 100);
+        assert!(sanitized_expired.wrapped_key_hex.is_empty());
+        assert!(sanitized_expired.ephemeral_pubkey_hex.is_empty());
+        assert!(sanitized_expired.nonce_hex.is_empty());
 
         // Buyer list grants
         let buyer_grants = store.list_grants_for_buyer(&buyer_pub_hex).unwrap();
@@ -717,6 +826,12 @@ mod tests {
         let revoked_grant = store.revoke_access_grant(&seller_actor, &grant.id).unwrap();
         assert!(revoked_grant.revoked_at_ms.is_some());
 
+        // Revoked grant sanitized has stripped keys
+        let sanitized_revoked = revoked_grant.sanitized_if_inactive(created_at + 20);
+        assert!(sanitized_revoked.wrapped_key_hex.is_empty());
+        assert!(sanitized_revoked.ephemeral_pubkey_hex.is_empty());
+        assert!(sanitized_revoked.nonce_hex.is_empty());
+
         // After revocation, unwrap fails
         let unwrap_res = unwrap_key_as_buyer(
             &revoked_grant,
@@ -724,6 +839,13 @@ mod tests {
             grant.created_at_ms + 200,
         );
         assert!(matches!(unwrap_res, Err(GrantError::Revoked(_))));
+
+        // Revoking non-existent grant returns AccessGrantNotFound
+        let not_found_err = store.revoke_access_grant(&seller_actor, "grant_nonexistent");
+        assert!(matches!(
+            not_found_err,
+            Err(MarketError::AccessGrantNotFound(_))
+        ));
     }
 
     #[test]
@@ -753,6 +875,18 @@ mod tests {
         let (wrapped, eph_pub, nonce_hex) =
             wrap_key_for_buyer(b"key", &buyer_pub_bytes, &ephemeral_seed, &nonce).unwrap();
 
+        let expires_at = now_ms() + 3600 * 1000;
+        let signing_bytes = grant_signing_bytes(
+            &listing.id,
+            &buyer_pub_hex,
+            &eph_pub,
+            &wrapped,
+            &nonce_hex,
+            expires_at,
+        );
+        let sig = seller_key.sign(&signing_bytes);
+        let signature_hex = hex::encode(sig.to_bytes());
+
         let res = store.create_access_grant(
             &seller_actor,
             &listing.id,
@@ -760,10 +894,119 @@ mod tests {
             &eph_pub,
             &wrapped,
             &nonce_hex,
-            None,
-            &seller_key,
+            Some(3600),
+            &signature_hex,
         );
 
         assert!(matches!(res, Err(MarketError::ListingRevoked(_))));
+    }
+
+    #[test]
+    fn test_create_grant_input_validation() {
+        let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
+        let (seller_key, seller_actor) = test_seller();
+        let (_buyer_sec, _buyer_pub_bytes, buyer_pub_hex) = test_buyer();
+
+        let listing = store
+            .create_listing(
+                &seller_actor,
+                NewListing {
+                    seller_id: seller_actor.id().to_string(),
+                    title: "Encrypted dataset 3".to_string(),
+                    license: License::CcBy40,
+                    price_credits: 10,
+                },
+            )
+            .unwrap();
+
+        let valid_eph = "00".repeat(32);
+        let valid_wrapped = "00".repeat(16);
+        let valid_nonce = "00".repeat(12);
+        let valid_sig = "00".repeat(64);
+
+        // ttl == 0 rejected
+        let res_ttl_zero = store.create_access_grant(
+            &seller_actor,
+            &listing.id,
+            &buyer_pub_hex,
+            &valid_eph,
+            &valid_wrapped,
+            &valid_nonce,
+            Some(0),
+            &valid_sig,
+        );
+        assert!(matches!(res_ttl_zero, Err(MarketError::InvalidInput(_))));
+
+        // ttl > max_ttl rejected
+        let res_ttl_huge = store.create_access_grant(
+            &seller_actor,
+            &listing.id,
+            &buyer_pub_hex,
+            &valid_eph,
+            &valid_wrapped,
+            &valid_nonce,
+            Some(999_999_999),
+            &valid_sig,
+        );
+        assert!(matches!(res_ttl_huge, Err(MarketError::InvalidInput(_))));
+
+        // short buyer pubkey rejected
+        let res_short_buyer = store.create_access_grant(
+            &seller_actor,
+            &listing.id,
+            "1234",
+            &valid_eph,
+            &valid_wrapped,
+            &valid_nonce,
+            Some(3600),
+            &valid_sig,
+        );
+        assert!(matches!(res_short_buyer, Err(MarketError::InvalidInput(_))));
+
+        // short nonce rejected
+        let res_short_nonce = store.create_access_grant(
+            &seller_actor,
+            &listing.id,
+            &buyer_pub_hex,
+            &valid_eph,
+            &valid_wrapped,
+            "00".repeat(11).as_str(),
+            Some(3600),
+            &valid_sig,
+        );
+        assert!(matches!(res_short_nonce, Err(MarketError::InvalidInput(_))));
+
+        // short wrapped key rejected (<16 bytes)
+        let res_short_wrapped = store.create_access_grant(
+            &seller_actor,
+            &listing.id,
+            &buyer_pub_hex,
+            &valid_eph,
+            "00".repeat(15).as_str(),
+            &valid_nonce,
+            Some(3600),
+            &valid_sig,
+        );
+        assert!(matches!(
+            res_short_wrapped,
+            Err(MarketError::InvalidInput(_))
+        ));
+
+        // non-seller actor forbidden
+        let (_stranger_key, stranger_actor) = (
+            SigningKey::from_bytes(&[9u8; 32]),
+            Actor::for_test(&hex::encode([9u8; 32])),
+        );
+        let res_non_seller = store.create_access_grant(
+            &stranger_actor,
+            &listing.id,
+            &buyer_pub_hex,
+            &valid_eph,
+            &valid_wrapped,
+            &valid_nonce,
+            Some(3600),
+            &valid_sig,
+        );
+        assert!(matches!(res_non_seller, Err(MarketError::Forbidden(_))));
     }
 }
