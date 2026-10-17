@@ -398,7 +398,26 @@ impl SpaceManager {
     }
 
     /// Retrieve the 32-byte data encryption key (DEK) for a space, if unlocked.
-    pub async fn export_dek(&self, space_id: &str) -> anyhow::Result<[u8; 32]> {
+    #[cfg(any(test, feature = "test-utils"))]
+    pub async fn export_dek(&self, space_id: &str) -> anyhow::Result<zeroize::Zeroizing<[u8; 32]>> {
+        if let Some(ring) = self.key_ring() {
+            let handle = ring
+                .record_handle(space_id)?
+                .ok_or_else(|| anyhow::anyhow!("Space {} is plain or unencrypted", space_id))?;
+            handle
+                .as_32_bytes()
+                .ok_or_else(|| anyhow::anyhow!("Key length is not 32 bytes"))
+        } else {
+            anyhow::bail!("No key ring enabled on this space manager")
+        }
+    }
+
+    /// Retrieve the 32-byte data encryption key (DEK) for a space, if unlocked.
+    #[cfg(not(any(test, feature = "test-utils")))]
+    pub(crate) async fn export_dek(
+        &self,
+        space_id: &str,
+    ) -> anyhow::Result<zeroize::Zeroizing<[u8; 32]>> {
         if let Some(ring) = self.key_ring() {
             let handle = ring
                 .record_handle(space_id)?

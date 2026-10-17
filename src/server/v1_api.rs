@@ -1048,7 +1048,13 @@ pub async fn v1_mesh_espacio_sync(
 
     let receiver_node = match NodeIdentity::load_or_create() {
         Ok(id) => id.node_id.0,
-        Err(_) => "local".to_string(),
+        Err(e) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": format!("node identity unavailable: {e}") })),
+            )
+                .into_response();
+        }
     };
 
     let net_mgr = space_manager.closed_network_manager();
@@ -1093,11 +1099,14 @@ pub async fn v1_mesh_espacio_sync(
             Json(serde_json::json!({ "status": "ok", "applied": count })),
         )
             .into_response(),
-        Err(e) => (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": e })),
-        )
-            .into_response(),
+        Err(e) => {
+            let status = if e.contains("not a member") {
+                StatusCode::FORBIDDEN
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (status, Json(serde_json::json!({ "error": e }))).into_response()
+        }
     }
 }
 

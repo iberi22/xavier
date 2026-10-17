@@ -127,6 +127,10 @@ fn production_app(state: &CliState, manager: Option<Arc<SpaceManager>>) -> Route
         .route("/mcp/tools/call", post(|| async { "reached" }))
         .route("/memory/decay", post(|| async { "reached" }))
         .route("/mcp", post(|| async { "reached" }))
+        .route(
+            "/v1/mesh/espacio/sync",
+            post(xavier::server::v1_api::v1_mesh_espacio_sync),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -609,6 +613,145 @@ async fn espacio_install_keeps_a_single_authoritative_manager() {
     assert!(!Arc::ptr_eq(&get_space_manager().unwrap(), &a));
     let _ = production_app(&state, None);
     assert!(get_space_manager().is_none());
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn espacio_mesh_sync_happy_path_and_error_cases() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::set_var("XAVIER_TOKEN", ROOT);
+    std::env::remove_var("XAVIER_SPACES");
+
+    let tmp = TempDir::new().unwrap();
+    let config_path = tmp.path().join("xavier-config.json");
+    let config_json = serde_json::json!({
+        "license": { "mesh_accepted": true, "license_type": "AGPL-3.0" }
+    });
+    std::fs::write(&config_path, serde_json::to_string(&config_json).unwrap()).unwrap();
+    std::env::set_var("XAVIER_CONFIG_PATH", config_path.as_os_str());
+    std::env::set_var("XAVIER_CONFIG_DIR", tmp.path());
+
+    let state = create_test_cli_state(&tmp).await;
+    let root = tmp.path().join("state");
+    let manager = open_space_manager_with_kek(&root, kek()).expect("manager");
+    let app = production_app(&state, Some(manager.clone()));
+
+    // Create space esp_a via API
+    let (owner_a, _) = create_two(&app).await;
+    assert!(owner_a.starts_with("xsp_esp_a_"));
+
+    // Receiver node identity is whatever NodeIdentity::load_or_create() returns for this process
+    let receiver_identity = xavier::mesh::NodeIdentity::load_or_create().unwrap();
+    let receiver_node_id = receiver_identity.node_id.0.clone();
+
+    // Create closed network on manager
+    let net_mgr = manager.closed_network_manager();
+    let net = net_mgr
+        .create(
+            "esp_a".into(),
+            vec!["sender_node_1".into(), receiver_node_id.clone()],
+        )
+        .await;
+
+    // Post a message on sender side
+    let sender_channels = xavier::espacio::ChannelManager::new();
+    let post_msg = sender_channels
+        .post(
+            "esp_a".into(),
+            "sender_node_1".into(),
+            "mesh sync msg 1".into(),
+        )
+        .await;
+    assert_eq!(post_msg.seq, 0);
+
+    // Space key used for deriving network wire key in test
+    let dek = manager.export_dek("esp_a").await.expect("export_dek");
+
+    // Case 1: 404 when closed network is unknown
+    let fake_env = xavier::espacio::EncryptedEnvelope {
+        network_id: "net_unknown_123".into(),
+        sender: "sender_node_1".into(),
+        ciphertext_hex: "010203".into(),
+    };
+    let (st_404, _) = send(
+        &app,
+        "POST",
+        "/v1/mesh/espacio/sync",
+        Some(ROOT),
+        Some(serde_json::to_value(&fake_env).unwrap()),
+    )
+    .await;
+    assert_eq!(st_404, StatusCode::NOT_FOUND);
+
+    // Case 2: 403 when space is plain or locked
+    let plain_net = net_mgr
+        .create(
+            "esp_plain_nonexistent".into(),
+            vec!["sender_node_1".into(), receiver_node_id.clone()],
+        )
+        .await;
+    let plain_env = xavier::espacio::EncryptedEnvelope {
+        network_id: plain_net.network_id.clone(),
+        sender: "sender_node_1".into(),
+        ciphertext_hex: "010203".into(),
+    };
+    let (st_403, _) = send(
+        &app,
+        "POST",
+        "/v1/mesh/espacio/sync",
+        Some(ROOT),
+        Some(serde_json::to_value(&plain_env).unwrap()),
+    )
+    .await;
+    assert_eq!(st_403, StatusCode::FORBIDDEN);
+
+    // Case 3: Happy path over local TcpListener
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let local_addr = listener.local_addr().unwrap();
+    let server_app = app.clone();
+    tokio::spawn(async move {
+        axum::serve(listener, server_app).await.unwrap();
+    });
+
+    let peer_url = format!("http://{}", local_addr);
+    let sender_net_mgr = xavier::espacio::ClosedNetworkManager::new();
+    let _ = sender_net_mgr
+        .create(
+            "esp_a".into(),
+            vec!["sender_node_1".into(), receiver_node_id.clone()],
+        )
+        .await;
+    // Inject the network with matching net_id
+    sender_net_mgr
+        .add_member(&net.network_id, "sender_node_1".into())
+        .await
+        .ok();
+    sender_net_mgr
+        .add_member(&net.network_id, receiver_node_id.clone())
+        .await
+        .ok();
+
+    // Use sync_channel_to_peer to push to the running server
+    let applied = net_mgr
+        .sync_channel_to_peer(
+            &peer_url,
+            ROOT,
+            &sender_channels,
+            &net.network_id,
+            "sender_node_1",
+            &dek,
+            None,
+        )
+        .await
+        .expect("sync_channel_to_peer");
+    assert_eq!(applied, 1);
+
+    // Verify receiver merged the messages
+    let receiver_channels = xavier::espacio::ChannelManager::with_stores(manager.stores());
+    let received_msgs = receiver_channels.list_all("esp_a").await;
+    assert_eq!(received_msgs.len(), 1);
+    assert_eq!(received_msgs[0].content, "mesh sync msg 1");
+    assert_eq!(received_msgs[0].seq, 0);
 }
 
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
