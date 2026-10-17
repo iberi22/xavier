@@ -1123,6 +1123,18 @@ where
             get(espacio_own_get_handler).delete(espacio_own_delete_handler),
         )
         .route(
+            "/spaces/{id}/members",
+            get(espacio_members_list_handler).post(espacio_member_add_handler),
+        )
+        .route(
+            "/spaces/{id}/members/{node_id}",
+            axum::routing::delete(espacio_member_remove_handler),
+        )
+        .route(
+            "/spaces/{id}/members/{node_id}/token",
+            post(espacio_member_token_handler),
+        )
+        .route(
             "/spaces/{id}/links",
             post(espacio_link_create_handler).get(espacio_link_list_handler),
         )
@@ -1146,6 +1158,13 @@ fn may_manage_links(
     }
 }
 
+/// Body of `POST /spaces/{id}/members`
+#[derive(serde::Deserialize)]
+pub struct AddMemberBody {
+    pub node_id: String,
+    pub role: crate::espacio::SpaceRole,
+}
+
 /// Body of `POST /spaces/{id}/links`: `{id}` grants `target_space` read access
 /// to its memory (one way).
 #[derive(serde::Deserialize)]
@@ -1160,6 +1179,164 @@ pub struct CreateLinkRequest {
 }
 
 /// POST /api/v1/espacio/spaces/{id}/links
+
+/// GET /spaces/{id}/members
+pub async fn espacio_members_list_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    root: Option<axum::extract::Extension<RootCredential>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> axum::response::Response {
+    let allowed = match &auth {
+        Some(a) => {
+            a.0.space_id == id
+                && crate::espacio::permissions::can(a.0.role, crate::espacio::SpaceAction::Read)
+        }
+        None => root.is_some(),
+    };
+    if !allowed {
+        return espacio_forbidden();
+    }
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    match run_blocking(async move { manager.members(&id).await }).await {
+        Some(Ok(members)) => (
+            axum::http::StatusCode::OK,
+            Json(serde_json::json!({"status": "ok", "members": members})),
+        )
+            .into_response(),
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
+    }
+}
+
+/// POST /spaces/{id}/members
+pub async fn espacio_member_add_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    root: Option<axum::extract::Extension<RootCredential>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(req): Json<AddMemberBody>,
+) -> axum::response::Response {
+    let allowed = match &auth {
+        Some(a) => {
+            a.0.space_id == id
+                && crate::espacio::permissions::can(
+                    a.0.role,
+                    crate::espacio::SpaceAction::ManageMembers,
+                )
+        }
+        None => root.is_some(),
+    };
+    if !allowed {
+        return espacio_forbidden();
+    }
+    let is_admin = match &auth {
+        Some(a) => crate::espacio::permissions::can(a.0.role, crate::espacio::SpaceAction::Admin),
+        None => true,
+    };
+    if req.role == crate::espacio::SpaceRole::Admin && !is_admin {
+        return espacio_forbidden();
+    }
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    match run_blocking(async move { manager.add_member(&id, &req.node_id, req.role).await }).await {
+        Some(Ok(membership)) => (
+            axum::http::StatusCode::CREATED,
+            Json(serde_json::json!({"status": "ok", "member": membership})),
+        )
+            .into_response(),
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
+    }
+}
+
+/// DELETE /spaces/{id}/members/{node_id}
+pub async fn espacio_member_remove_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    root: Option<axum::extract::Extension<RootCredential>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path((id, node_id)): axum::extract::Path<(String, String)>,
+) -> axum::response::Response {
+    let allowed = match &auth {
+        Some(a) => {
+            a.0.space_id == id
+                && crate::espacio::permissions::can(
+                    a.0.role,
+                    crate::espacio::SpaceAction::ManageMembers,
+                )
+        }
+        None => root.is_some(),
+    };
+    if !allowed {
+        return espacio_forbidden();
+    }
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    match run_blocking(async move { manager.remove_member(&id, &node_id).await }).await {
+        Some(Ok(true)) => (
+            axum::http::StatusCode::OK,
+            Json(serde_json::json!({"status": "ok"})),
+        )
+            .into_response(),
+        Some(Ok(false)) => (
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"status": "error", "message": "member not found"})),
+        )
+            .into_response(),
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
+    }
+}
+
+/// POST /spaces/{id}/members/{node_id}/token
+pub async fn espacio_member_token_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    root: Option<axum::extract::Extension<RootCredential>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path((id, node_id)): axum::extract::Path<(String, String)>,
+) -> axum::response::Response {
+    let allowed = match &auth {
+        Some(a) => {
+            a.0.space_id == id
+                && crate::espacio::permissions::can(a.0.role, crate::espacio::SpaceAction::Admin)
+        }
+        None => root.is_some(),
+    };
+    if !allowed {
+        return espacio_forbidden();
+    }
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    let work = {
+        let manager = manager.clone();
+        async move {
+            let store = manager.stores().get(&id)?;
+            let member = store.member(&node_id)?.ok_or_else(|| {
+                anyhow::anyhow!(crate::espacio::SpaceError::NotFound(node_id.clone()))
+            })?;
+            store.issue_token(&id, &node_id, member.role, None)
+        }
+    };
+    match run_blocking(work).await {
+        Some(Ok(token)) => (
+            axum::http::StatusCode::CREATED,
+            Json(serde_json::json!({
+                "status": "ok",
+                "message": "Token generated successfully. It will only be shown once.",
+                "token": token.raw,
+            })),
+        )
+            .into_response(),
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
+    }
+}
+
 pub async fn espacio_link_create_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
     root: Option<axum::extract::Extension<RootCredential>>,
@@ -1429,6 +1606,12 @@ fn espacio_error_response(err: anyhow::Error) -> axum::response::Response {
         Some(SpaceError::AlreadyExists(_)) => StatusCode::CONFLICT,
         Some(SpaceError::InvalidId(_) | SpaceError::InvalidProtocol(_)) => StatusCode::BAD_REQUEST,
         Some(SpaceError::NotFound(_)) => StatusCode::NOT_FOUND,
+        _ if err
+            .downcast_ref::<crate::espacio::manager::MembersCapReached>()
+            .is_some() =>
+        {
+            StatusCode::CONFLICT
+        }
         _ => match err.downcast_ref::<crate::espacio::KeysError>() {
             Some(crate::espacio::KeysError::WeakPassword(_)) => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
@@ -3031,6 +3214,206 @@ mod verify_save_route_tests {
             .unwrap_or_default()
             .starts_with("verify round-trip failed"));
         assert!(!body.to_string().contains(TEST_TOKEN));
+    }
+
+    #[tokio::test]
+    async fn members_routes_allow_admin_and_deny_reader() {
+        let f = SpaceFixture::new().await;
+        // Reader is denied on POST
+        assert_eq!(
+            call_json(
+                &f.app,
+                "POST",
+                &format!("{OWN_PATH}/members"),
+                &f.reader,
+                &serde_json::json!({
+                    "node_id": "new_node",
+                    "role": "reader"
+                })
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
+        // Admin is allowed to POST
+        assert_eq!(
+            call_json(
+                &f.app,
+                "POST",
+                &format!("{OWN_PATH}/members"),
+                &f.admin_a,
+                &serde_json::json!({
+                    "node_id": "new_node",
+                    "role": "reader"
+                })
+            )
+            .await,
+            StatusCode::CREATED
+        );
+        // Reader is allowed to GET
+        assert_eq!(
+            call(&f.app, "GET", &format!("{OWN_PATH}/members"), &f.reader).await,
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn moderator_cannot_grant_admin() {
+        let f = SpaceFixture::new().await;
+        // Admin adds moderator
+        assert_eq!(
+            call_json(
+                &f.app,
+                "POST",
+                &format!("{OWN_PATH}/members"),
+                &f.admin_a,
+                &serde_json::json!({
+                    "node_id": "mod_node",
+                    "role": "moderator"
+                })
+            )
+            .await,
+            StatusCode::CREATED
+        );
+
+        let mod_auth = axum::extract::Extension(crate::espacio::SpaceAuth {
+            space_id: OWN.to_string(),
+            member_id: "mod_node".to_string(),
+            role: crate::espacio::SpaceRole::Moderator,
+        });
+
+        // Moderator is allowed to POST a member...
+        assert_eq!(
+            call_json(
+                &f.app,
+                "POST",
+                &format!("{OWN_PATH}/members"),
+                &mod_auth,
+                &serde_json::json!({
+                    "node_id": "mem_node",
+                    "role": "member"
+                })
+            )
+            .await,
+            StatusCode::CREATED
+        );
+
+        // ...but NOT an Admin
+        assert_eq!(
+            call_json(
+                &f.app,
+                "POST",
+                &format!("{OWN_PATH}/members"),
+                &mod_auth,
+                &serde_json::json!({
+                    "node_id": "admin_node",
+                    "role": "admin"
+                })
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn member_cap_returns_409() {
+        let f = SpaceFixture::new().await;
+        // The default cap in SpaceFixture/plain_protocol might be hit or we can mock it.
+        // Actually, let's just make enough members. In tests, the protocol cap is usually very low or we can exceed it.
+        // Wait, the plain_protocol has a cap of 1000. Let's create a space with a cap of 2.
+
+        // Simpler way: we can just call the route, but creating 1000 members is slow.
+        // Let's create a new space via the admin route with cap=2.
+        let proto = crate::espacio::SpaceProtocol {
+            members_cap: 2,
+            ..crate::espacio::SpaceProtocol::default()
+        };
+        let body = serde_json::json!({
+            "id": "cap_space",
+            "name": "Cap Space",
+            "owner_node": "owner",
+            "protocol": proto
+        });
+        assert_eq!(
+            call_json(
+                &f.app,
+                "POST",
+                "/api/v1/espacio/admin/spaces",
+                &f.root,
+                &body
+            )
+            .await,
+            StatusCode::CREATED
+        );
+
+        // Owner token can't be fetched easily, let's just use the root credential for the POST.
+        let add = |node_id: &str| {
+            call_json(
+                &f.app,
+                "POST",
+                "/api/v1/espacio/spaces/cap_space/members",
+                &f.root,
+                &serde_json::json!({
+                    "node_id": node_id,
+                    "role": "reader"
+                }),
+            )
+        };
+
+        // 1st member is owner (already there). Cap is 2.
+        assert_eq!(add("member2").await, StatusCode::CREATED);
+        assert_eq!(add("member3").await, StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn remove_unknown_member_is_404() {
+        let f = SpaceFixture::new().await;
+        assert_eq!(
+            call(
+                &f.app,
+                "DELETE",
+                &format!("{OWN_PATH}/members/unknown_ghost"),
+                &f.admin_a
+            )
+            .await,
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[tokio::test]
+    async fn member_token_is_shown_once_and_admin_only() {
+        let f = SpaceFixture::new().await;
+
+        // Reader trying to issue token gets FORBIDDEN
+        assert_eq!(
+            call(
+                &f.app,
+                "POST",
+                &format!("{OWN_PATH}/members/{}/token", f.reader.0.member_id),
+                &f.reader
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
+
+        // Admin issuing token
+        let res = super::espacio_member_token_handler(
+            Some(axum::extract::Extension(f.manager.clone())),
+            None,
+            Some(f.admin_a.clone()),
+            axum::extract::Path((OWN.to_string(), f.reader.0.member_id.clone())),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let body = crate::adapters::inbound::http::routes::tests::read_body(res).await;
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert!(json.get("token").is_some());
+        assert!(json
+            .get("message")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .contains("shown once"));
     }
 
     #[tokio::test]

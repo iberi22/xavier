@@ -181,7 +181,28 @@ pub(crate) fn space_token_may_access(
             }
             _ => false,
         };
-        return ok && can(role, SpaceAction::Admin);
+        if ok && can(role, SpaceAction::Admin) {
+            return true;
+        }
+
+        if tail == "members" {
+            return match method {
+                &Method::GET => can(role, SpaceAction::Read),
+                &Method::POST => can(role, SpaceAction::ManageMembers),
+                _ => false,
+            };
+        }
+        if let Some(node_tail) = tail.strip_prefix("members/") {
+            if let Some((node, sub)) = node_tail.split_once('/') {
+                if sub == "token" && method == &Method::POST {
+                    return can(role, SpaceAction::Admin);
+                }
+                return false;
+            } else if method == &Method::DELETE {
+                return can(role, SpaceAction::ManageMembers);
+            }
+            return false;
+        }
     }
     // Exact match: no sub-path, no trailing slash, no prefix collision.
     if id != own_space_id {
@@ -2539,8 +2560,50 @@ name = "demo"
     fn allowlist_unit() {
         let g = Method::GET;
         assert!(space_token_may_access(OWN_PATH, OWN, SpaceRole::Reader, &g));
-        // Only the audited memory routes are open, with the role they need.
         let p = Method::POST;
+        assert!(space_token_may_access(
+            &format!("{OWN_PATH}/members"),
+            OWN,
+            SpaceRole::Reader,
+            &g
+        ));
+        assert!(space_token_may_access(
+            &format!("{OWN_PATH}/members"),
+            OWN,
+            SpaceRole::Moderator,
+            &p
+        ));
+        assert!(!space_token_may_access(
+            &format!("{OWN_PATH}/members"),
+            OWN,
+            SpaceRole::Reader,
+            &p
+        ));
+        assert!(space_token_may_access(
+            &format!("{OWN_PATH}/members/node_1"),
+            OWN,
+            SpaceRole::Moderator,
+            &Method::DELETE
+        ));
+        assert!(!space_token_may_access(
+            &format!("{OWN_PATH}/members/node_1"),
+            OWN,
+            SpaceRole::Reader,
+            &Method::DELETE
+        ));
+        assert!(space_token_may_access(
+            &format!("{OWN_PATH}/members/node_1/token"),
+            OWN,
+            SpaceRole::Admin,
+            &p
+        ));
+        assert!(!space_token_may_access(
+            &format!("{OWN_PATH}/members/node_1/token"),
+            OWN,
+            SpaceRole::Moderator,
+            &p
+        ));
+        // Only the audited memory routes are open, with the role they need.
         for (m, path, role, want) in [
             (&p, "/memory/search", SpaceRole::Reader, true),
             (&g, "/memory/get", SpaceRole::Reader, true),
