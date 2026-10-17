@@ -315,6 +315,33 @@ jobs:
       - name: Run E3 (una credencial nunca vuelve en memory_search)
         run: cargo test --package xavier --features ci-safe --test v1_api_ingest_test -- --test-threads=1
 
+  # Job 3a: Marketplace V2 (market-v2 feature, xavier-market crate)
+  #
+  # Own job, not a step of `rust-integration`: the market-v2 feature set is a
+  # separate compile of `xavier` on top of the ~20 test binaries that job
+  # already builds and links, and the combined run hit its 20-minute cap.
+  market-v2-tests:
+    name: Marketplace V2 Integration Tests
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-safe-test
+          save-if: false
+
       - name: Run Marketplace V2 Integrations Tests
         run: |
           cargo test -p xavier-market
@@ -521,6 +548,7 @@ jobs:
       - changes
       - rust-test
       - rust-integration
+      - market-v2-tests
       - espacio-tests
       - secret-scan
       - frontend-build-audit
