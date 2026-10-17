@@ -127,6 +127,39 @@ pub fn derive_package_kek_from_master(master_key: &[u8; 32], project_id: &str) -
     Ok(kek)
 }
 
+/// HKDF `info` prefix for a repo's memory record key (XAV-REPO T8). Distinct
+/// from [`PACKAGE_KEK_INFO_PREFIX`]: the record key wraps the per-row DEKs of
+/// the repo store, the package KEK wraps the committed container's DEK.
+pub const REPO_RECORD_KEY_INFO_PREFIX: &str = "xavier-repo-record-key-v1:";
+
+/// Full HKDF `info` label for a repo's record key.
+pub fn repo_record_key_info(project_id: &str) -> Vec<u8> {
+    format!("{REPO_RECORD_KEY_INFO_PREFIX}{project_id}").into_bytes()
+}
+
+/// Derive the record key of the repo store for `project_id` from the node
+/// master key. Same portability domain as the package KEK, so a committed
+/// `.xavier/memory.sqlite3` opens wherever its package key does.
+pub fn derive_repo_record_key(master_key: &MasterKeyManager, project_id: &str) -> Result<[u8; 32]> {
+    let mut key = [0u8; 32];
+    master_key
+        .derive_key(&repo_record_key_info(project_id), &mut key)
+        .context("HKDF expansion for the repo record key failed")?;
+    Ok(key)
+}
+
+/// [`derive_repo_record_key`] over raw master-key bytes, with no keystore lookup.
+pub fn derive_repo_record_key_from_master(
+    master_key: &[u8; 32],
+    project_id: &str,
+) -> Result<[u8; 32]> {
+    let mut key = [0u8; 32];
+    Hkdf::<Sha256>::new(None, master_key)
+        .expand(&repo_record_key_info(project_id), &mut key)
+        .map_err(|e| anyhow!("HKDF expansion for the repo record key failed: {e}"))?;
+    Ok(key)
+}
+
 /// Path of the encrypted package for a repo root: `<root>/.xavier/<name>.enc`.
 pub fn package_path_for(root: &Path, file_name: &str) -> PathBuf {
     root.join(".xavier")
@@ -696,5 +729,31 @@ mod tests {
         );
         assert_eq!(PACKAGE_ENC_EXTENSION, "enc");
         assert_eq!(PACKAGE_VERSION, 1);
+    }
+
+    /// The record key is a wire contract (rows are unreadable if it changes),
+    /// and it must never equal the package KEK for the same repo: the two
+    /// labels are domain-separated under one master key.
+    #[test]
+    fn repo_record_key_is_domain_separated_from_package_kek() {
+        let master = [0x6C; 32];
+
+        assert_eq!(
+            repo_record_key_info("xavier"),
+            b"xavier-repo-record-key-v1:xavier".to_vec()
+        );
+        let record_a = derive_repo_record_key_from_master(&master, "xavier").unwrap();
+        let record_a_again = derive_repo_record_key_from_master(&master, "xavier").unwrap();
+        let record_b = derive_repo_record_key_from_master(&master, "other-repo").unwrap();
+        let kek_a = derive_package_kek_from_master(&master, "xavier").unwrap();
+
+        assert_eq!(record_a, record_a_again, "derivation must be deterministic");
+        assert_ne!(record_a, record_b, "project id must scope the record key");
+        assert_ne!(record_a, kek_a, "record key must not equal the package KEK");
+        assert_ne!(
+            record_a,
+            derive_repo_record_key_from_master(&[0x6D; 32], "xavier").unwrap(),
+            "master key must scope the record key"
+        );
     }
 }

@@ -56,6 +56,9 @@ pub struct VecSqliteMemoryStore {
     /// Key binding of an encrypted space's store. `None` = default/legacy
     /// store behaviour (node-level at-rest encryption).
     pub(crate) crypto: Option<at_rest::SpaceCrypto>,
+    /// Record key of a per-repo store (XAV-REPO T8), bound before the schema
+    /// is initialised. `None` = node record key (global store behaviour).
+    pub(crate) record_key: Option<[u8; 32]>,
 }
 
 /// ConnectionManager project_id for a vec-store file path.
@@ -105,6 +108,17 @@ impl VecSqliteMemoryStore {
         self.event_tx.as_ref()
     }
 
+    /// Key the read helpers use for rows of this store. A space store opens
+    /// rows with its own key (`None`); a repo store its bound record key; the
+    /// global store resolves the node record key.
+    pub(crate) fn read_record_key(&self) -> Option<[u8; 32]> {
+        if self.crypto.is_some() {
+            None
+        } else {
+            self.record_key.or_else(at_rest::resolve_record_key)
+        }
+    }
+
     /// ConnectionManager pool id for this store instance.
     pub fn connection_project_id(&self) -> &str {
         &self.project_id
@@ -132,6 +146,27 @@ impl VecSqliteMemoryStore {
         conn_provider: Arc<dyn ConnectionProvider>,
         profile: PoolProfile,
     ) -> Result<Self> {
+        Self::new_bound(config, conn_provider, profile, None).await
+    }
+
+    /// Open a per-repo store bound to its record key (XAV-REPO T8). The key is
+    /// set before the schema is initialised, so no background task can read
+    /// the rows with the node key.
+    pub async fn new_with_record_key(
+        config: VecSqliteStoreConfig,
+        conn_provider: Arc<dyn ConnectionProvider>,
+        profile: PoolProfile,
+        record_key: [u8; 32],
+    ) -> Result<Self> {
+        Self::new_bound(config, conn_provider, profile, Some(record_key)).await
+    }
+
+    async fn new_bound(
+        config: VecSqliteStoreConfig,
+        conn_provider: Arc<dyn ConnectionProvider>,
+        profile: PoolProfile,
+        record_key: Option<[u8; 32]>,
+    ) -> Result<Self> {
         db::ensure_dir(&config.path).await?;
         vector::register_sqlite_vec_extension()?;
 
@@ -147,6 +182,7 @@ impl VecSqliteMemoryStore {
                 crate::settings::types::DedupSettings::default(),
             )),
             crypto: None,
+            record_key,
         };
 
         // Initialize schema

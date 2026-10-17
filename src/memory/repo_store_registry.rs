@@ -25,9 +25,16 @@
 //! # What is NOT done here
 //!
 //! - Routing reads and writes per repo (XAV-REPO T10). Nothing calls this yet.
-//! - The record key per repo (T8), federated search (T11), the admin endpoint
-//!   and health section (T13, T14).
+//! - Federated search (T11), the admin endpoint and health section (T13, T14).
 //! - Pool-level fixes such as non-blocking eviction (T5).
+//!
+//! # Record key (T8)
+//!
+//! Every repo store is sealed with its own record key, derived from the node
+//! master key over the repo's project id
+//! ([`derive_repo_record_key`]). The key is derived **before** the store file
+//! is touched: a repo whose key cannot be derived gets no file and no store,
+//! so rows can never fall back to the node record key or to plaintext.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -42,6 +49,9 @@ use tokio::sync::OnceCell;
 
 use crate::codebase::connection_manager::PoolProfile;
 use crate::codebase::repo_config::{MemoryStoreMode, RepoConfig};
+use crate::codebase::repo_identity::derive_repo_identity;
+use crate::codebase::repo_package_crypto::derive_repo_record_key;
+use crate::keystore::MasterKeyManager;
 use crate::memory::connection_provider::{ConnectionProvider, GlobalConnectionProvider};
 use crate::memory::repo_memory_store_path::memory_store_path_for_root;
 use crate::memory::sqlite_vec_store::config::VecSqliteStoreConfig;
@@ -51,6 +61,25 @@ use crate::settings::XavierSettings;
 /// Environment variable listing the roots under which per-repo stores may live.
 /// Entries use the platform `PATH` separator (`:` on Linux).
 pub const REPO_STORE_ROOTS_ENV: &str = "XAVIER_REPO_STORE_ROOTS";
+
+/// Supplies the record key of a repo store (XAV-REPO T8).
+pub trait RepoRecordKeySource: Send + Sync {
+    /// Record key for the repo whose project id is `project_id`.
+    fn record_key(&self, project_id: &str) -> anyhow::Result<[u8; 32]>;
+}
+
+/// Production source: HKDF over the node master key, read from the keyring or
+/// the fallback file without creating one. A node without a master key has no
+/// repo stores.
+pub struct MasterRecordKeySource;
+
+impl RepoRecordKeySource for MasterRecordKeySource {
+    fn record_key(&self, project_id: &str) -> anyhow::Result<[u8; 32]> {
+        let master = MasterKeyManager::load_existing()?
+            .ok_or_else(|| anyhow::anyhow!("the node master key is not initialised"))?;
+        derive_repo_record_key(&master, project_id)
+    }
+}
 
 /// Maximum entries in the root → store resolution cache.
 const RESOLVE_CACHE_CAPACITY: usize = 256;
@@ -70,6 +99,9 @@ pub enum RepoStoreError {
     /// The root does not exist or cannot be canonicalised.
     #[error("repo root {} is not accessible: {reason}", .root.display())]
     RootUnavailable { root: PathBuf, reason: String },
+    /// The record key for the repo could not be derived, so no store was opened.
+    #[error("repo {} has no record key: {reason}", .root.display())]
+    RecordKeyUnavailable { root: PathBuf, reason: String },
     /// The store file exists but SQLite does not accept it as a database.
     #[error("repo memory store {} is corrupt: {reason}", .path.display())]
     StoreCorrupt { path: PathBuf, reason: String },
@@ -126,6 +158,7 @@ struct CachedResolution {
 pub struct RepoStoreRegistry {
     allowed_roots: Vec<PathBuf>,
     provider: Arc<dyn ConnectionProvider>,
+    keys: Arc<dyn RepoRecordKeySource>,
     /// Raw root as given by the caller → resolution. Bounded and TTL-limited.
     resolved: Mutex<ResolveCache>,
     /// Canonical store path → single-flight cell holding the open store.
@@ -179,11 +212,15 @@ impl ResolveCache {
 }
 
 impl RepoStoreRegistry {
-    /// Registry with an explicit allowlist and connection provider.
+    /// Registry with an explicit allowlist, connection provider and record key source.
     ///
     /// Allowlist entries are canonicalised once here. Entries that do not exist
     /// are ignored with a warning, so a typo cannot widen the allowlist.
-    pub fn new(allowed_roots: &[PathBuf], provider: Arc<dyn ConnectionProvider>) -> Self {
+    pub fn new(
+        allowed_roots: &[PathBuf],
+        provider: Arc<dyn ConnectionProvider>,
+        keys: Arc<dyn RepoRecordKeySource>,
+    ) -> Self {
         let allowed_roots = allowed_roots
             .iter()
             .filter_map(|root| match root.canonicalize() {
@@ -201,19 +238,25 @@ impl RepoStoreRegistry {
         Self {
             allowed_roots,
             provider,
+            keys,
             resolved: Mutex::new(ResolveCache::default()),
             stores: Mutex::new(HashMap::new()),
             counters: Counters::default(),
         }
     }
 
-    /// Allowlist from `XAVIER_REPO_STORE_ROOTS`, connections from the process-wide manager.
+    /// Allowlist from `XAVIER_REPO_STORE_ROOTS`, connections from the process-wide
+    /// manager, record keys from the node master key.
     pub fn from_env() -> Self {
         let raw = std::env::var_os(REPO_STORE_ROOTS_ENV).unwrap_or_default();
         let roots: Vec<PathBuf> = std::env::split_paths(&raw)
             .filter(|path| !path.as_os_str().is_empty())
             .collect();
-        Self::new(&roots, Arc::new(GlobalConnectionProvider::new()))
+        Self::new(
+            &roots,
+            Arc::new(GlobalConnectionProvider::new()),
+            Arc::new(MasterRecordKeySource),
+        )
     }
 
     /// Open (or reuse) the per-repo store for `repo_root`.
@@ -327,12 +370,26 @@ impl RepoStoreRegistry {
         &self,
         resolved: &ResolvedRepoStore,
     ) -> Result<Arc<VecSqliteMemoryStore>, RepoStoreError> {
+        // Key first: without it the store file is never created. The project
+        // id is the one the repo's package uses, so both share a key domain.
+        let project_id = derive_repo_identity(&resolved.root).project_id;
+        let record_key = match self.keys.record_key(&project_id) {
+            Ok(key) => key,
+            Err(err) => {
+                self.counters.open_failures.fetch_add(1, Ordering::Relaxed);
+                return Err(RepoStoreError::RecordKeyUnavailable {
+                    root: resolved.root.clone(),
+                    reason: format!("{err:#}"),
+                });
+            }
+        };
         let mut config = VecSqliteStoreConfig::from_env();
         config.path = resolved.store_path.clone();
-        let opened = VecSqliteMemoryStore::new_with_profile(
+        let opened = VecSqliteMemoryStore::new_with_record_key(
             config,
             Arc::clone(&self.provider),
             PoolProfile::RepoStore,
+            record_key,
         )
         .await;
         let store = match opened {
@@ -397,9 +454,38 @@ mod tests {
         root.canonicalize().expect("canonical repo root")
     }
 
+    const TEST_MASTER: [u8; 32] = [0x3C; 32];
+    /// Node record key used by the global store; a repo store must never accept it.
+    const NODE_KEY: [u8; 32] = [0xEF; 32];
+
+    /// Per-repo keys derived from a fixed test master, never from the keyring.
+    struct TestKeys;
+
+    impl RepoRecordKeySource for TestKeys {
+        fn record_key(&self, project_id: &str) -> anyhow::Result<[u8; 32]> {
+            crate::codebase::repo_package_crypto::derive_repo_record_key_from_master(
+                &TEST_MASTER,
+                project_id,
+            )
+        }
+    }
+
+    /// A key source with no master key behind it.
+    struct NoKeys;
+
+    impl RepoRecordKeySource for NoKeys {
+        fn record_key(&self, _project_id: &str) -> anyhow::Result<[u8; 32]> {
+            Err(anyhow::anyhow!("the node master key is not initialised"))
+        }
+    }
+
     fn registry(allowed: &[&Path]) -> RepoStoreRegistry {
         let roots: Vec<PathBuf> = allowed.iter().map(|p| p.to_path_buf()).collect();
-        RepoStoreRegistry::new(&roots, Arc::new(InMemoryProvider::new()))
+        RepoStoreRegistry::new(
+            &roots,
+            Arc::new(InMemoryProvider::new()),
+            Arc::new(TestKeys),
+        )
     }
 
     fn record(id: &str, content: &str) -> MemoryRecord {
@@ -437,6 +523,65 @@ mod tests {
         );
         assert!(a.join(".xavier/memory.sqlite3").exists());
         assert!(b.join(".xavier/memory.sqlite3").exists());
+    }
+
+    #[tokio::test]
+    async fn repo_store_rows_unreadable_with_node_key() {
+        use crate::memory::sqlite_vec_store::at_rest::unwrap_dek;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = make_repo(tmp.path(), "repo-keyed", Some(OPT_IN));
+        let reg = registry(&[tmp.path()]);
+        let store = reg.open(&root).await.expect("open");
+        store
+            .put(record("keyed", "repo-only words"))
+            .await
+            .expect("put");
+
+        let conn = rusqlite::Connection::open(root.join(".xavier/memory.sqlite3"))
+            .expect("raw connection");
+        let wrapped: Vec<u8> = conn
+            .query_row(
+                "SELECT encrypted_dek FROM memory_records WHERE path = ?1",
+                ["notes/keyed"],
+                |row| row.get(0),
+            )
+            .expect("raw row");
+        assert!(
+            unwrap_dek(&wrapped, &NODE_KEY).is_err(),
+            "the node record key must not open a repo row"
+        );
+        let repo_key = TestKeys
+            .record_key(&derive_repo_identity(&root).project_id)
+            .expect("repo key");
+        assert!(unwrap_dek(&wrapped, &repo_key).is_ok());
+        assert_eq!(
+            store
+                .get("ws", "keyed")
+                .await
+                .expect("get")
+                .expect("present")
+                .content,
+            "repo-only words"
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_record_key_fails_closed_and_creates_nothing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = make_repo(tmp.path(), "repo-nokey", Some(OPT_IN));
+        let reg = RepoStoreRegistry::new(
+            &[tmp.path().to_path_buf()],
+            Arc::new(InMemoryProvider::new()),
+            Arc::new(NoKeys),
+        );
+        assert!(matches!(
+            reg.open(&root).await,
+            Err(RepoStoreError::RecordKeyUnavailable { .. })
+        ));
+        assert!(!root.join(".xavier/memory.sqlite3").exists());
+        assert_eq!(reg.stats().open_failures, 1);
+        assert_eq!(reg.stats().open_stores, 0);
     }
 
     #[tokio::test]
