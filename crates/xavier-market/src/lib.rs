@@ -27,4 +27,8 @@ pub use auth::{Actor, SignedHeaders, SignedRequest, Signer};
 pub use config::{ConfigError, Currency, LegalTextStatus, License, MarketConfig, Settlement};
 pub use error::MarketError;
 pub use model::{Listing, ListingUpdate, NewListing, NewReceipt, Receipt};
+pub use pack::{
+    export_namespace_pack, import_namespace_pack, pack_hash, read_pack, read_pack_info, write_pack,
+    write_pack_with_namespace, NamespacePack, PackEntry, PackError,
+};
 pub use store::{MarketStore, SCHEMA_VERSION};

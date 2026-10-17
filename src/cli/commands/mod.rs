@@ -196,6 +196,34 @@ impl Cli {
                 RepoCommand::Pack { args } => repo_pack::run_repo_pack_command(args.clone()),
                 RepoCommand::Unpack { args } => repo_pack::run_repo_unpack_command(args.clone()),
             },
+            Command::Pack { cmd } => match cmd {
+                enums::PackCommand::Export { namespace, out } => {
+                    let out_path = out.clone().unwrap_or_else(|| {
+                        let sanitized = namespace.replace(['/', '\\'], "_");
+                        std::path::PathBuf::from(format!("{sanitized}.swalpack"))
+                    });
+                    #[cfg(feature = "market-v2")]
+                    {
+                        use xavier_market::{export_namespace_pack, NamespacePack};
+                        let pack = NamespacePack {
+                            namespace: namespace.clone(),
+                            memories_jsonl: Vec::new(),
+                            vectors_sqlite: Vec::new(),
+                            code_graph_jsonl: None,
+                        };
+                        let bytes = export_namespace_pack(&pack)
+                            .map_err(|e| anyhow::anyhow!("failed to export namespace pack: {e}"))?;
+                        std::fs::write(&out_path, &bytes)?;
+                        println!("Exported namespace {} to {}", namespace, out_path.display());
+                        Ok(())
+                    }
+                    #[cfg(not(feature = "market-v2"))]
+                    {
+                        let _ = (namespace, out_path);
+                        anyhow::bail!("Marketplace pack commands require the market-v2 feature");
+                    }
+                }
+            },
             Command::Telecom(args) => telecom::execute_telecom_command(args.clone()).await,
             Command::Exec {
                 command,
