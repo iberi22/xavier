@@ -436,6 +436,8 @@ pub async fn list_wallet_nodes(
     Json(mesh.get_nodes_by_wallet(wallet)).into_response()
 }
 
+/// Syncs with a same-wallet target node. The body must carry `proof`, a challenge
+/// signed for action "sync" and scope `target_node` (see `wallet_ownership`).
 pub async fn private_mesh_sync(
     State(state): State<F12State>,
     Json(req): Json<PrivateSyncApiRequest>,
