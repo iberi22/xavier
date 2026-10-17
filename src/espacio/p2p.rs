@@ -48,7 +48,7 @@ fn associated_data(network_id: &str, sender: &str) -> Vec<u8> {
 }
 
 /// Manager for closed networks per Space
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ClosedNetworkManager {
     networks: Arc<RwLock<HashMap<String, ClosedNetwork>>>,
 }
@@ -170,6 +170,83 @@ impl ClosedNetworkManager {
             .filter(|n| n.space_id == space_id)
             .cloned()
             .collect()
+    }
+
+    /// Push an encrypted envelope to a remote peer node using mesh HTTP sync transport.
+    /// Gated behind `espacio-mesh` feature / runtime flag.
+    #[cfg(feature = "espacio-mesh")]
+    pub async fn sync_push_envelope(
+        &self,
+        _transport: &crate::mesh::MeshTransport,
+        peer_url: &str,
+        token: &str,
+        envelope: &EncryptedEnvelope,
+    ) -> anyhow::Result<usize> {
+        let url = format!("{}/v1/mesh/espacio/sync", peer_url.trim_end_matches('/'));
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        let resp = client
+            .post(&url)
+            .header("X-Xavier-Token", token)
+            .json(envelope)
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("Mesh HTTP sync failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            anyhow::bail!("Mesh HTTP sync rejected with status: {}", resp.status());
+        }
+
+        #[derive(serde::Deserialize)]
+        struct SyncResp {
+            applied: usize,
+        }
+
+        let body: SyncResp = resp
+            .json()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to parse sync response: {}", e))?;
+        Ok(body.applied)
+    }
+
+    /// Pack and encrypt local channel messages and send them to a remote peer node.
+    #[cfg(feature = "espacio-mesh")]
+    pub async fn sync_channel_to_peer(
+        &self,
+        transport: &crate::mesh::MeshTransport,
+        peer_url: &str,
+        token: &str,
+        channels: &crate::espacio::channel::ChannelManager,
+        network_id: &str,
+        sender_node: &str,
+        key: &[u8; 32],
+        since_seq: u64,
+    ) -> anyhow::Result<usize> {
+        let network = self
+            .get(network_id)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Network not found"))?;
+
+        if !self.is_member(network_id, sender_node).await {
+            anyhow::bail!("Sender is not a member of network {}", network_id);
+        }
+
+        let messages = channels.list_since(&network.space_id, since_seq).await;
+        if messages.is_empty() {
+            return Ok(0);
+        }
+
+        let plaintext = serde_json::to_vec(&messages)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize messages: {}", e))?;
+        let envelope = self
+            .encrypt(network_id, sender_node, &plaintext, key)
+            .map_err(|e| anyhow::anyhow!("Encryption failed: {}", e))?;
+
+        self.sync_push_envelope(transport, peer_url, token, &envelope)
+            .await
     }
 }
 
@@ -421,6 +498,56 @@ mod tests {
         let res =
             super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &wrong_key)
                 .await;
+        assert!(res.is_err());
+    }
+
+    #[cfg(feature = "espacio-mesh")]
+    #[tokio::test]
+    async fn test_sync_channel_to_peer_empty_messages() {
+        let mgr = ClosedNetworkManager::new();
+        let net = mgr.create("esp_a".into(), vec!["n1".into()]).await;
+        let channels = crate::espacio::channel::ChannelManager::new();
+        let identity = std::sync::Arc::new(crate::mesh::NodeIdentity::generate());
+        let transport = crate::mesh::MeshTransport::new(identity);
+
+        // With no messages in channel, sync_channel_to_peer returns Ok(0) without HTTP network call
+        let count = mgr
+            .sync_channel_to_peer(
+                &transport,
+                "http://127.0.0.1:9",
+                "token",
+                &channels,
+                &net.network_id,
+                "n1",
+                &KEY,
+                0,
+            )
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[cfg(feature = "espacio-mesh")]
+    #[tokio::test]
+    async fn test_sync_channel_to_peer_non_member_rejected() {
+        let mgr = ClosedNetworkManager::new();
+        let net = mgr.create("esp_a".into(), vec!["n1".into()]).await;
+        let channels = crate::espacio::channel::ChannelManager::new();
+        let identity = std::sync::Arc::new(crate::mesh::NodeIdentity::generate());
+        let transport = crate::mesh::MeshTransport::new(identity);
+
+        let res = mgr
+            .sync_channel_to_peer(
+                &transport,
+                "http://127.0.0.1:9",
+                "token",
+                &channels,
+                &net.network_id,
+                "n2", // not a member
+                &KEY,
+                0,
+            )
+            .await;
         assert!(res.is_err());
     }
 }

@@ -253,6 +253,8 @@ pub struct SpaceManager {
     /// The legacy default workspace, recorded by reference (WP-13o). Not a
     /// registered space: root keeps serving it exactly as before.
     legacy: Option<LegacySpace>,
+    /// Closed network manager for secure E2E P2P mesh sharing.
+    closed_networks: Arc<super::p2p::ClosedNetworkManager>,
 }
 
 impl SpaceManager {
@@ -267,6 +269,7 @@ impl SpaceManager {
             base_dir: base_dir.into(),
             stores: SpaceStores::in_memory(),
             legacy: None,
+            closed_networks: Arc::new(super::p2p::ClosedNetworkManager::new()),
         }
     }
 
@@ -333,6 +336,7 @@ impl SpaceManager {
             base_dir,
             stores,
             legacy: legacy_found,
+            closed_networks: Arc::new(super::p2p::ClosedNetworkManager::new()),
         }
     }
 
@@ -386,6 +390,25 @@ impl SpaceManager {
     /// `InviteManager` via their `with_stores` constructors).
     pub fn stores(&self) -> Arc<SpaceStores> {
         self.stores.clone()
+    }
+
+    /// Access the ClosedNetworkManager for this space environment.
+    pub fn closed_network_manager(&self) -> Arc<super::p2p::ClosedNetworkManager> {
+        self.closed_networks.clone()
+    }
+
+    /// Retrieve the 32-byte data encryption key (DEK) for a space, if unlocked.
+    pub async fn export_dek(&self, space_id: &str) -> anyhow::Result<[u8; 32]> {
+        if let Some(ring) = self.key_ring() {
+            let handle = ring
+                .record_handle(space_id)?
+                .ok_or_else(|| anyhow::anyhow!("Space {} is plain or unencrypted", space_id))?;
+            handle
+                .as_32_bytes()
+                .ok_or_else(|| anyhow::anyhow!("Key length is not 32 bytes"))
+        } else {
+            anyhow::bail!("No key ring enabled on this space manager")
+        }
     }
 
     /// Returns the registered spaces, their explicit protocols, the
