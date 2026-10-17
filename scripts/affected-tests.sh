@@ -18,6 +18,7 @@
 #   scripts/affected-tests.sh --files a.rs b.rs    # explicit list (Jules bodies, gates)
 #   scripts/affected-tests.sh --dry-run            # print the commands only
 #   scripts/affected-tests.sh --no-clippy          # tests only
+#   scripts/affected-tests.sh --no-integration     # skip integration targets (deferred to pre-push/CI)
 #
 # TMPDIR is forced to /tmp; cargo runs under the shared build lock
 # (/tmp/orch-1008/cargo.lock) when flock is present, so parallel builds serialize.
@@ -27,12 +28,16 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT" || exit 1
 
 MODE="staged"; BASE=""; DRY=0; CLIPPY=1; FILES=()
+NO_INTEGRATION=0
+[ "${WI_BATCH_VALIDATE:-0}" = "1" ] && NO_INTEGRATION=1
+
 while [ $# -gt 0 ]; do
     case "$1" in
-        --base)      MODE="base"; BASE="$2"; shift 2 ;;
-        --files)     MODE="files"; shift; while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do FILES+=("$1"); shift; done ;;
-        --dry-run)   DRY=1; shift ;;
-        --no-clippy) CLIPPY=0; shift ;;
+        --base)            MODE="base"; BASE="$2"; shift 2 ;;
+        --files)           MODE="files"; shift; while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do FILES+=("$1"); shift; done ;;
+        --dry-run)         DRY=1; shift ;;
+        --no-clippy)       CLIPPY=0; shift ;;
+        --no-integration)  NO_INTEGRATION=1; shift ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
@@ -43,7 +48,8 @@ case "$MODE" in
 esac
 [ "${#FILES[@]}" -eq 0 ] && { echo "affected-tests: no changed files"; exit 0; }
 
-declare -A LIB_FILTERS=() TEST_TARGETS=() RS_CHANGED=()
+declare -A LIB_FILTERS=() TEST_TARGETS=()
+RS_CHANGED=()
 CHECK_ONLY=0
 
 add_targets_for_module() {
@@ -109,16 +115,43 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
     echo "affected-tests: manifest changed → cargo check only"
     run check -p xavier --features ci-safe --all-targets || RC=1
 fi
-for m in "${!LIB_FILTERS[@]}"; do
-    echo "affected-tests: lib filter ${m}"
-    run test -p xavier --features ci-safe --lib -- --test-threads=1 "$m" || RC=1
-done
-for t in "${!TEST_TARGETS[@]}"; do
-    echo "affected-tests: integration target ${t}"
-    # honor [[test]] required-features from Cargo.toml (e.g. market_v2_router_restart needs market-v2)
-    rf=$(awk -v t="$t" '/^\[\[/{intest=($0=="[[test]]"); name=""} intest && /^name *=/{n=$0; gsub(/^name *= *"|".*$/,"",n); name=n} intest && name==t && /^required-features/{v=$0; gsub(/^[^[]*\[|\].*$|"| /,"",v); print v; exit}' Cargo.toml)
-    run test -p xavier --features "ci-safe${rf:+,$rf}" --test "$t" -- --test-threads=1 || RC=1
-done
+
+if [ "${#LIB_FILTERS[@]}" -gt 0 ]; then
+    mapfile -t SORTED_LIB_FILTERS < <(printf '%s\n' "${!LIB_FILTERS[@]}" | sort)
+    echo "affected-tests: lib filters (${#SORTED_LIB_FILTERS[@]}): ${SORTED_LIB_FILTERS[*]}"
+    run test -p xavier --features ci-safe --lib -- --test-threads=1 "${SORTED_LIB_FILTERS[@]}" || RC=1
+fi
+
+if [ "${#TEST_TARGETS[@]}" -gt 0 ]; then
+    mapfile -t SORTED_TARGETS < <(printf '%s\n' "${!TEST_TARGETS[@]}" | sort)
+    if [ "$NO_INTEGRATION" -eq 1 ]; then
+        echo "affected-tests: deferred to pre-push/CI: ${SORTED_TARGETS[*]}"
+    else
+        declare -A FEAT_SET=( ["ci-safe"]=1 )
+        for t in "${SORTED_TARGETS[@]}"; do
+            rf=$(awk -v t="$t" '/^\[\[/{intest=($0=="[[test]]"); name=""} intest && /^name *=/{n=$0; gsub(/^name *= *"|".*$/,"",n); name=n} intest && name==t && /^required-features/{v=$0; gsub(/^[^[]*\[|\].*$|"| /,"",v); print v; exit}' Cargo.toml)
+            if [ -n "$rf" ]; then
+                IFS=',' read -ra ADDFEATS <<< "$rf"
+                for feat in "${ADDFEATS[@]}"; do
+                    [ -n "$feat" ] && FEAT_SET["$feat"]=1
+                done
+            fi
+        done
+        FEATURES="ci-safe"
+        for feat in "${!FEAT_SET[@]}"; do
+            if [ "$feat" != "ci-safe" ]; then
+                FEATURES="${FEATURES},${feat}"
+            fi
+        done
+
+        TARGET_ARGS=()
+        for t in "${SORTED_TARGETS[@]}"; do
+            TARGET_ARGS+=("--test" "$t")
+        done
+        echo "affected-tests: integration targets (${#SORTED_TARGETS[@]}): ${SORTED_TARGETS[*]}"
+        run test -p xavier --features "$FEATURES" "${TARGET_ARGS[@]}" -- --test-threads=1 || RC=1
+    fi
+fi
 
 # 3. Changed production modules with no tests at all: say so (add real tests).
 for f in "${RS_CHANGED[@]}"; do
