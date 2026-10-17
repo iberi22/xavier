@@ -968,6 +968,7 @@ impl MemoryStore for VecSqliteMemoryStore {
     async fn symbols_for_memory(&self, memory_id: &str) -> Result<Vec<String>> {
         let memory_id = memory_id.to_string();
         let crypto = self.crypto.clone();
+        let code_db_path = self.link_code_graph_path();
         self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 // Delete stale links older than 30 days
@@ -1009,7 +1010,8 @@ impl MemoryStore for VecSqliteMemoryStore {
                             // public from private because it is always set here.
                             let _ =
                                 super::at_rest::decrypt_for(crypto.as_ref(), &mut record, None);
-                            symbols = Self::link_memory_on_demand(
+                            symbols = Self::link_memory_on_demand_at(
+                                &code_db_path,
                                 conn,
                                 &memory_id,
                                 &record.content,
@@ -1076,6 +1078,14 @@ impl MemoryStore for VecSqliteMemoryStore {
 }
 
 impl VecSqliteMemoryStore {
+    pub(crate) fn link_code_graph_path(&self) -> std::path::PathBuf {
+        if let Some(root) = &self.repo_root {
+            crate::codebase::codegraph_paths::code_graph_db_path_for(root)
+        } else {
+            crate::codebase::codegraph_paths::code_graph_db_path_for(std::path::Path::new("."))
+        }
+    }
+
     /// Decomposed put step 1: Generate embeddings if missing and align embedding status.
     pub async fn put_embed(&self, mut record: MemoryRecord) -> Result<MemoryRecord> {
         // Auto-generate missing embeddings if a provider is configured
@@ -1645,6 +1655,20 @@ impl VecSqliteMemoryStore {
         content: &str,
         metadata: &serde_json::Value,
     ) -> Result<Vec<String>> {
+        let code_db_path =
+            crate::codebase::codegraph_paths::code_graph_db_path_for(std::path::Path::new("."));
+        Self::link_memory_on_demand_at(&code_db_path, conn, memory_id, content, metadata)
+    }
+
+    /// Same as [`Self::link_memory_on_demand`], against an explicit code graph
+    /// file (a repo store links against its own repo's graph).
+    pub fn link_memory_on_demand_at(
+        code_db_path: &std::path::Path,
+        conn: &rusqlite::Connection,
+        memory_id: &str,
+        content: &str,
+        metadata: &serde_json::Value,
+    ) -> Result<Vec<String>> {
         if content.is_empty() {
             return Ok(Vec::new());
         }
@@ -1665,8 +1689,6 @@ impl VecSqliteMemoryStore {
 
         let mut symbol_links: Vec<(String, f64)> = Vec::new();
 
-        let code_db_path =
-            crate::codebase::codegraph_paths::code_graph_db_path_for(std::path::Path::new("."));
         if code_db_path.exists() {
             if let Ok(code_db) = code_graph::db::CodeGraphDB::new(&code_db_path) {
                 if let Ok(links) = code_db.link_memory_to_symbols(memory_id, content) {
@@ -1946,6 +1968,7 @@ mod tests {
             event_tx: None,
             dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(Default::default())),
             crypto: None,
+            repo_root: None,
         };
 
         store.put_link(&conn, &record).unwrap();
@@ -2219,5 +2242,57 @@ mod tests {
         assert_eq!(matched_paths[0], "a/b/c/d/e/file1.md");
         assert_eq!(matched_paths[1], "a/b/c/d/file2.md");
         assert!(!matched_paths.contains(&"a/b/c/diff/file3.md".to_string()));
+    }
+
+    #[test]
+    fn repo_store_links() {
+        use super::super::VecSqliteStoreConfig;
+        use crate::memory::connection_provider::InMemoryProvider;
+        use std::sync::Arc;
+        let store = VecSqliteMemoryStore {
+            project_id: "test".to_string(),
+            config: VecSqliteStoreConfig {
+                path: std::path::PathBuf::from("/fake/repo/.xavier/memory.sqlite3"),
+                embedding_dimensions: 768,
+            },
+            conn_provider: Arc::new(InMemoryProvider::new()),
+            event_tx: None,
+            dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(
+                crate::settings::types::DedupSettings::default(),
+            )),
+            crypto: None,
+            repo_root: Some(std::path::PathBuf::from("/fake/repo")),
+        };
+        assert_eq!(
+            store.link_code_graph_path(),
+            crate::codebase::codegraph_paths::code_graph_db_path_for(std::path::Path::new(
+                "/fake/repo"
+            ))
+        );
+    }
+
+    #[test]
+    fn global_store_link() {
+        use super::super::VecSqliteStoreConfig;
+        use crate::memory::connection_provider::InMemoryProvider;
+        use std::sync::Arc;
+        let store = VecSqliteMemoryStore {
+            project_id: "test".to_string(),
+            config: VecSqliteStoreConfig {
+                path: std::path::PathBuf::from("/fake/repo/.xavier/memory.sqlite3"),
+                embedding_dimensions: 768,
+            },
+            conn_provider: Arc::new(InMemoryProvider::new()),
+            event_tx: None,
+            dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(
+                crate::settings::types::DedupSettings::default(),
+            )),
+            crypto: None,
+            repo_root: None,
+        };
+        assert_eq!(
+            store.link_code_graph_path(),
+            crate::codebase::codegraph_paths::code_graph_db_path_for(std::path::Path::new("."))
+        );
     }
 }
