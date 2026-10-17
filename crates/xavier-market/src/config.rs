@@ -14,12 +14,19 @@ pub const KEY_LEGAL_TEXT_STATUS: &str = "market.legal_text_status";
 pub const KEY_PRICE_FLOOR: &str = "market.price_floor_credits";
 pub const KEY_IVN_QUORUM_RATIO: &str = "market.ivn.quorum_ratio";
 pub const KEY_IVN_VALIDATORS_PER_REQUEST: &str = "market.ivn.validators_per_request";
+pub const KEY_GRANT_DEFAULT_TTL_SECONDS: &str = "market.grant_default_ttl_seconds";
+pub const KEY_GRANT_MAX_TTL_SECONDS: &str = "market.grant_max_ttl_seconds";
 
 /// Lowest quorum a request may use. Below half, a bare majority could pass
 /// a request that most assigned validators rejected.
 pub const IVN_QUORUM_MIN_PERMILLE: u32 = 500;
 /// Upper bound on validators assigned to one request.
 pub const IVN_VALIDATORS_MAX: u32 = 25;
+
+/// Default grant validity (24 hours in seconds).
+pub const DEFAULT_GRANT_TTL_SECONDS: u64 = 86_400;
+/// Default maximum allowed grant validity (30 days in seconds).
+pub const DEFAULT_GRANT_MAX_TTL_SECONDS: u64 = 30 * 86_400;
 
 /// How listings are paid for. Only internal credits are usable in v1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -184,6 +191,10 @@ pub struct MarketConfig {
     pub ivn_quorum_permille: u32,
     /// Validators assigned to each IVN identity request. Default 5.
     pub ivn_validators_per_request: u32,
+    /// Default time-to-live for access grants, in seconds. Default 86,400 (24h).
+    pub grant_default_ttl_seconds: u64,
+    /// Maximum allowed time-to-live for access grants, in seconds. Default 2,592,000 (30 days).
+    pub grant_max_ttl_seconds: u64,
 }
 
 impl Default for MarketConfig {
@@ -198,6 +209,8 @@ impl Default for MarketConfig {
             price_floor_credits: 0,
             ivn_quorum_permille: 800,
             ivn_validators_per_request: 5,
+            grant_default_ttl_seconds: DEFAULT_GRANT_TTL_SECONDS,
+            grant_max_ttl_seconds: DEFAULT_GRANT_MAX_TTL_SECONDS,
         }
     }
 }
@@ -250,6 +263,26 @@ impl MarketConfig {
                         value: value.trim().to_string(),
                     })?;
         }
+        if let Some(value) = lookup(KEY_GRANT_DEFAULT_TTL_SECONDS) {
+            config.grant_default_ttl_seconds =
+                value
+                    .trim()
+                    .parse::<u64>()
+                    .map_err(|_| ConfigError::UnknownValue {
+                        key: KEY_GRANT_DEFAULT_TTL_SECONDS,
+                        value: value.trim().to_string(),
+                    })?;
+        }
+        if let Some(value) = lookup(KEY_GRANT_MAX_TTL_SECONDS) {
+            config.grant_max_ttl_seconds =
+                value
+                    .trim()
+                    .parse::<u64>()
+                    .map_err(|_| ConfigError::UnknownValue {
+                        key: KEY_GRANT_MAX_TTL_SECONDS,
+                        value: value.trim().to_string(),
+                    })?;
+        }
         config.validate()?;
         Ok(config)
     }
@@ -284,6 +317,20 @@ impl MarketConfig {
             return Err(ConfigError::OutOfRange {
                 key: KEY_IVN_VALIDATORS_PER_REQUEST,
                 value: self.ivn_validators_per_request.to_string(),
+            });
+        }
+        if self.grant_default_ttl_seconds == 0 {
+            return Err(ConfigError::OutOfRange {
+                key: KEY_GRANT_DEFAULT_TTL_SECONDS,
+                value: "0".to_string(),
+            });
+        }
+        if self.grant_max_ttl_seconds == 0
+            || self.grant_max_ttl_seconds < self.grant_default_ttl_seconds
+        {
+            return Err(ConfigError::OutOfRange {
+                key: KEY_GRANT_MAX_TTL_SECONDS,
+                value: self.grant_max_ttl_seconds.to_string(),
             });
         }
         Ok(())
@@ -485,5 +532,38 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn grant_ttl_keys_default_and_validate_range() {
+        let defaults = MarketConfig::from_lookup(|_| None).unwrap();
+        assert_eq!(
+            defaults.grant_default_ttl_seconds,
+            DEFAULT_GRANT_TTL_SECONDS
+        );
+        assert_eq!(
+            defaults.grant_max_ttl_seconds,
+            DEFAULT_GRANT_MAX_TTL_SECONDS
+        );
+
+        let tuned = MarketConfig::from_lookup(lookup(&[
+            (KEY_GRANT_DEFAULT_TTL_SECONDS, " 3600 "),
+            (KEY_GRANT_MAX_TTL_SECONDS, " 7200 "),
+        ]))
+        .unwrap();
+        assert_eq!(tuned.grant_default_ttl_seconds, 3600);
+        assert_eq!(tuned.grant_max_ttl_seconds, 7200);
+
+        // 0 default ttl rejected
+        let zero_default =
+            MarketConfig::from_lookup(lookup(&[(KEY_GRANT_DEFAULT_TTL_SECONDS, "0")]));
+        assert!(matches!(zero_default, Err(ConfigError::OutOfRange { .. })));
+
+        // max ttl less than default ttl rejected
+        let inverted = MarketConfig::from_lookup(lookup(&[
+            (KEY_GRANT_DEFAULT_TTL_SECONDS, "5000"),
+            (KEY_GRANT_MAX_TTL_SECONDS, "2000"),
+        ]));
+        assert!(matches!(inverted, Err(ConfigError::OutOfRange { .. })));
     }
 }

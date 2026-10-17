@@ -13,6 +13,7 @@ pub mod consent;
 pub mod credential;
 mod error;
 pub mod gossip;
+pub mod grant;
 pub mod ivn;
 pub mod ledger;
 pub mod merkle;
@@ -25,8 +26,16 @@ pub mod telemetry_gate;
 pub mod terms;
 
 pub use auth::{Actor, SignedHeaders, SignedRequest, Signer};
-pub use config::{ConfigError, Currency, LegalTextStatus, License, MarketConfig, Settlement};
+pub use config::{
+    ConfigError, Currency, LegalTextStatus, License, MarketConfig, Settlement,
+    DEFAULT_GRANT_MAX_TTL_SECONDS, DEFAULT_GRANT_TTL_SECONDS, KEY_GRANT_DEFAULT_TTL_SECONDS,
+    KEY_GRANT_MAX_TTL_SECONDS,
+};
 pub use error::MarketError;
+pub use grant::{
+    grant_signing_bytes, unwrap_key_as_buyer, wrap_key_for_buyer, AccessGrant, GrantError,
+    NewGrantRequest, ACCESS_GRANT_DOMAIN,
+};
 pub use ivn::{
     CastVote, IdentityRequest, NewIdentityRequest, NewValidator, RequestStatus, Validator, Vote,
     VoteDecision,
