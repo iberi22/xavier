@@ -1,0 +1,21 @@
+[package]
+name = "xavier-market"
+version = "0.1.0"
+authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
+edition = "2021"
+rust-version = "1.94"
+description = "Marketplace v2 domain and SQLite store (listings, receipts, config). Standalone: no dependency on xavier"
+license = "AGPL-3.0"
+
+[dependencies]
+rusqlite = { version = "0.32.0", features = ["bundled"] }
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.18"
+uuid = { version = "1.23", features = ["v4"] }
+serde_json = "1.0.150"
+sha2 = "0.11"
+ed25519-dalek = "2.2.0"
+hex = "0.4"
+
+[dev-dependencies]
+tempfile = "3.27.0"

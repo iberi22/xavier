@@ -59,6 +59,8 @@ pub struct VecSqliteMemoryStore {
     /// Record key of a per-repo store (XAV-REPO T8), bound before the schema
     /// is initialised. `None` = node record key (global store behaviour).
     pub(crate) record_key: Option<[u8; 32]>,
+    /// Repo whose code graph this store links against (repo stores only).
+    pub(crate) repo_root: Option<std::path::PathBuf>,
 }
 
 /// ConnectionManager project_id for a vec-store file path.
@@ -173,6 +175,16 @@ impl VecSqliteMemoryStore {
         let project_id = project_id_for_path(&config.path);
         conn_provider.connect_with_path_profile(&project_id, config.path.clone(), profile)?;
 
+        // A repo store lives at <repo>/.xavier/<file>; it links against <repo>'s graph.
+        let repo_root = if profile == PoolProfile::RepoStore {
+            config
+                .path
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.to_path_buf())
+        } else {
+            None
+        };
         let store = Self {
             project_id,
             config,
@@ -183,6 +195,7 @@ impl VecSqliteMemoryStore {
             )),
             crypto: None,
             record_key,
+            repo_root,
         };
 
         // Initialize schema

@@ -46,6 +46,8 @@ pub mod humanchallenge;
 pub mod kernel;
 pub mod keystore;
 pub mod maloca;
+#[cfg(feature = "market-v2")]
+pub mod market_v2;
 pub mod maturity;
 pub mod memory;
 pub mod mesh;

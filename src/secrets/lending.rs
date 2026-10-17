@@ -224,38 +224,6 @@ impl AntiExfilDetector {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VaultDashboardLease {
-    pub session_token_masked: String,
-    pub agent_id: String,
-    pub expires_in_secs: u64,
-    pub is_expired: bool,
-}
-
-pub fn dashboard_leases<A: AuditLogger>(engine: &KeyLendingEngine<A>) -> Vec<VaultDashboardLease> {
-    engine
-        .leases
-        .values()
-        .map(|l| {
-            let is_expired = SystemTime::now() > l.expires_at;
-            let expires_in_secs = l
-                .expires_at
-                .duration_since(SystemTime::now())
-                .unwrap_or(Duration::from_secs(0))
-                .as_secs();
-            VaultDashboardLease {
-                session_token_masked: format!(
-                    "{}...",
-                    &l.session_token[..4.min(l.session_token.len())]
-                ),
-                agent_id: l.agent_id.clone(),
-                expires_in_secs,
-                is_expired,
-            }
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

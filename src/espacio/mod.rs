@@ -20,6 +20,7 @@ pub mod p2p;
 pub mod pack;
 pub mod permissions;
 pub mod public;
+pub mod retention;
 pub mod search;
 pub mod store;
 pub mod tokens;

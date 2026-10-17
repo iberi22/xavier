@@ -107,6 +107,48 @@ impl SecretLease {
     }
 }
 
+/// Domain separator for [`lease_id_for_token`], so the lease id is never the
+/// bare SHA-256 of the token.
+const LEASE_ID_DOMAIN: &str = "xavier-lease-id:v1:";
+
+/// Opaque, one-way identifier for a lease token.
+///
+/// List, history, status and revoke speak in lease ids, never in tokens. The
+/// id is the SHA-256 of a domain-separated token: it can be shown, logged and
+/// compared, but it cannot be turned back into the token and it does not
+/// authenticate anything on the proxy path.
+pub fn lease_id_for_token(token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(LEASE_ID_DOMAIN.as_bytes());
+    hasher.update(token.as_bytes());
+    crate::crypto::hex_encode(hasher.finalize())
+}
+
+/// Read-only projection of a lease. It carries the opaque lease id and never
+/// the token or any secret material, so it is the only lease shape that
+/// list and status responses serialize.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SecretLeaseView {
+    pub lease_id: String,
+    pub secret_name: String,
+    pub agent_id: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl SecretLeaseView {
+    /// Projects a lease, dropping its token and secret value.
+    pub fn from_lease(lease: &SecretLease) -> Self {
+        Self {
+            lease_id: lease_id_for_token(&lease.token),
+            secret_name: lease.secret_name.clone(),
+            agent_id: lease.agent_id.clone(),
+            expires_at: lease.expires_at,
+            created_at: lease.created_at,
+        }
+    }
+}
+
 use crate::secrets::lending::{AntiExfilDetector, AuditLogger};
 
 pub struct KeyLendingEngine {
@@ -439,6 +481,34 @@ impl KeyLendingEngine {
         leases.get(token).cloned()
     }
 
+    /// Resolves an opaque lease id to the live token it names. The token stays
+    /// inside the engine; callers only ever receive the view.
+    async fn token_for_lease_id(&self, lease_id: &str) -> Option<String> {
+        self.ensure_restored().await;
+        let leases = self.leases.read().await;
+        leases
+            .values()
+            .find(|lease| lease_id_for_token(&lease.token) == lease_id)
+            .map(|lease| lease.token.clone())
+    }
+
+    /// Get a lease view by its opaque lease id.
+    pub async fn get_lease_view(&self, lease_id: &str) -> Option<SecretLeaseView> {
+        let token = self.token_for_lease_id(lease_id).await?;
+        self.get_lease(&token)
+            .await
+            .map(|lease| SecretLeaseView::from_lease(&lease))
+    }
+
+    /// Revoke a lease by its opaque lease id. Unknown ids fail the same way as
+    /// an unknown token, so the response does not reveal more than "not found".
+    pub async fn revoke_by_lease_id(&self, lease_id: &str, reason: &str) -> Result<()> {
+        match self.token_for_lease_id(lease_id).await {
+            Some(token) => self.revoke(&token, reason).await,
+            None => Err(anyhow!("Lease not found")),
+        }
+    }
+
     /// Renew a lease for a specific TTL
     pub async fn renew(&self, token: &str, ttl_secs: u64) -> Result<()> {
         self.ensure_restored().await;
@@ -509,6 +579,15 @@ impl KeyLendingEngine {
         self.ensure_restored().await;
         let leases = self.leases.read().await;
         leases.values().cloned().collect()
+    }
+
+    /// List all active leases as token-free views, the shape the HTTP list uses.
+    pub async fn list_lease_views(&self) -> Vec<SecretLeaseView> {
+        self.list_leases()
+            .await
+            .iter()
+            .map(SecretLeaseView::from_lease)
+            .collect()
     }
 
     /// Log proxy use for a lease token
@@ -970,5 +1049,94 @@ mod tests {
             .await
             .expect("active leases");
         assert!(rows.iter().all(|r| r.token != "dropped-token"));
+    }
+
+    #[test]
+    fn lease_id_is_opaque_and_stable() {
+        let token = Uuid::new_v4().to_string();
+        let id = lease_id_for_token(&token);
+
+        assert_eq!(id.len(), 64);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(!id.contains(&token));
+        assert_eq!(id, lease_id_for_token(&token));
+        assert_ne!(id, lease_id_for_token(&Uuid::new_v4().to_string()));
+    }
+
+    #[test]
+    fn lease_id_handles_non_ascii_tokens() {
+        // Byte-indexed slicing of a multi-byte token used to panic on a char
+        // boundary; hashing has no boundaries to get wrong.
+        let id = lease_id_for_token("tökén-ñandú-密钥");
+        assert_eq!(id.len(), 64);
+    }
+
+    #[test]
+    fn lease_view_serializes_only_opaque_fields() {
+        let now = Utc::now();
+        let lease = SecretLease {
+            token: "raw-token-value".to_string(),
+            secret_name: "db-password".to_string(),
+            secret_value: Some("s3cr3t".to_string()),
+            agent_id: "agent-view".to_string(),
+            expires_at: now,
+            created_at: now,
+        };
+
+        let json = serde_json::to_value(SecretLeaseView::from_lease(&lease)).unwrap();
+        let mut keys: Vec<&str> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "agent_id",
+                "created_at",
+                "expires_at",
+                "lease_id",
+                "secret_name"
+            ]
+        );
+        assert_eq!(json["lease_id"], lease_id_for_token("raw-token-value"));
+        assert!(!json.to_string().contains("raw-token-value"));
+        assert!(!json.to_string().contains("s3cr3t"));
+    }
+
+    #[tokio::test]
+    async fn revoke_and_status_by_lease_id_target_only_the_named_lease() {
+        let (project_id, _dir) = isolated_leases_project("lease-id-ops");
+        let engine =
+            KeyLendingEngine::new(Box::new(MockAuditLogger), None).with_leases_project(project_id);
+
+        let keep = engine
+            .lend("keep-secret", Some("v1"), "agent-keep", 3600)
+            .await
+            .unwrap();
+        let doomed = engine
+            .lend("drop-secret", Some("v2"), "agent-drop", 3600)
+            .await
+            .unwrap();
+        let keep_id = lease_id_for_token(&keep.token);
+        let drop_id = lease_id_for_token(&doomed.token);
+
+        let view = engine.get_lease_view(&drop_id).await.expect("status by id");
+        assert_eq!(view.secret_name, "drop-secret");
+        assert!(engine.get_lease_view("not-a-lease-id").await.is_none());
+
+        engine
+            .revoke_by_lease_id(&drop_id, "manual revoke")
+            .await
+            .unwrap();
+        assert!(engine.get_lease_view(&drop_id).await.is_none());
+        assert!(engine.revoke_by_lease_id(&drop_id, "again").await.is_err());
+        assert!(engine.get_lease_view(&keep_id).await.is_some());
+
+        let views = engine.list_lease_views().await;
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].lease_id, keep_id);
     }
 }

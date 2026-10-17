@@ -73,6 +73,7 @@ pub mod telemetry_collector;
 pub mod tokenomics;
 pub mod transport;
 pub mod visibility;
+pub mod wallet_ownership;
 
 pub use acl::{MeshAcl, NamespaceAclEntry, NodeAclEntry};
 #[cfg(feature = "mesh")]

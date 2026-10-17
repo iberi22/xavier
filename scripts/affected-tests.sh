@@ -115,7 +115,9 @@ for m in "${!LIB_FILTERS[@]}"; do
 done
 for t in "${!TEST_TARGETS[@]}"; do
     echo "affected-tests: integration target ${t}"
-    run test -p xavier --features ci-safe --test "$t" -- --test-threads=1 || RC=1
+    # honor [[test]] required-features from Cargo.toml (e.g. market_v2_router_restart needs market-v2)
+    rf=$(awk -v t="$t" '/^\[\[/{intest=($0=="[[test]]"); name=""} intest && /^name *=/{n=$0; gsub(/^name *= *"|".*$/,"",n); name=n} intest && name==t && /^required-features/{v=$0; gsub(/^[^[]*\[|\].*$|"| /,"",v); print v; exit}' Cargo.toml)
+    run test -p xavier --features "ci-safe${rf:+,$rf}" --test "$t" -- --test-threads=1 || RC=1
 done
 
 # 3. Changed production modules with no tests at all: say so (add real tests).

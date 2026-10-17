@@ -528,6 +528,24 @@ impl SpaceStore {
             .collect()
     }
 
+    pub fn delete_messages_before(&self, cutoff: DateTime<Utc>) -> Result<usize> {
+        let mut conn = self.lock();
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        let max_seq: i64 =
+            tx.query_row("SELECT COALESCE(MAX(seq), -1) FROM messages", [], |r| {
+                r.get(0)
+            })?;
+
+        let deleted = tx.execute(
+            "DELETE FROM messages WHERE created_at < ?1 AND seq < ?2",
+            params![ts(&cutoff), max_seq],
+        )?;
+
+        tx.commit()?;
+        Ok(deleted)
+    }
+
     pub fn message_count(&self) -> Result<usize> {
         let n: i64 = self
             .lock()

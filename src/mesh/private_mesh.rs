@@ -216,8 +216,15 @@ impl PrivateMeshRegistry {
             ));
         }
 
-        // Upsert logic: update if exists, otherwise push
+        // Upsert logic: update if exists, otherwise push. A node already owned by
+        // another wallet is never taken over; the existing record stays untouched.
         if let Some(pos) = self.nodes.iter().position(|n| n.node_id == node.node_id) {
+            if !is_same_wallet(&self.nodes[pos].wallet_id, wallet_id) {
+                return Err(anyhow!(
+                    "Node '{}' is already registered to a different wallet",
+                    node.node_id.as_str()
+                ));
+            }
             self.nodes[pos] = node;
         } else {
             self.nodes.push(node);
@@ -580,6 +587,31 @@ mod tests {
 
         assert_eq!(registry.all_nodes().len(), 1);
         assert_eq!(registry.all_nodes()[0].name, "Node Updated");
+    }
+
+    #[test]
+    fn test_register_rejects_node_owned_by_other_wallet() {
+        let file = NamedTempFile::new().unwrap();
+        let mut registry = PrivateMeshRegistry::load_or_create(file.path().to_path_buf()).unwrap();
+
+        let wallet_a = "wallet_a_owner";
+        let wallet_b = "wallet_b_intruder";
+        let owned = make_test_node("n1", wallet_a, "Owned");
+        registry.register_wallet_node(owned, wallet_a).unwrap();
+
+        let takeover = WalletNode {
+            iroh_addr: "/ip4/10.0.0.9/tcp/9999".to_string(),
+            ..make_test_node("n1", wallet_b, "Takeover")
+        };
+        assert!(registry.register_wallet_node(takeover, wallet_b).is_err());
+
+        // The stored record is unchanged: still A's wallet, name and address.
+        assert_eq!(registry.all_nodes().len(), 1);
+        let stored = &registry.all_nodes()[0];
+        assert_eq!(stored.wallet_id, wallet_a);
+        assert_eq!(stored.name, "Owned");
+        assert_eq!(stored.iroh_addr, "/ip4/127.0.0.1/tcp/1234");
+        assert!(registry.get_nodes_by_wallet(wallet_b).is_empty());
     }
 
     #[test]

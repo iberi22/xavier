@@ -155,7 +155,7 @@ export default function LeaseHistoryPage({ token }: LeaseHistoryPageProps) {
                       <span className="text-white/10 mr-1 uppercase tracking-tighter font-medium">
                         Token:
                       </span>
-                      {entry.session_token.slice(0, 8)}...
+                      {entry.lease_id.slice(0, 8)}...
                     </span>
                   </div>
                   {entry.reason && (
