@@ -227,7 +227,11 @@ impl VecSqliteMemoryStore {
             // encrypting space.
             let sealed = self.crypto.is_some()
                 || record.encrypted_dek.as_ref().is_some_and(|d| !d.is_empty());
-            if let Err(e) = super::at_rest::decrypt_for(self.crypto.as_ref(), &mut record, None) {
+            if let Err(e) = super::at_rest::decrypt_for(
+                self.crypto.as_ref(),
+                &mut record,
+                self.record_key.as_ref(),
+            ) {
                 tracing::warn!(
                     "Failed to decrypt record {} during background reindexing: {}",
                     record.id,
