@@ -173,6 +173,7 @@ impl ClosedNetworkManager {
     }
 }
 
+/// Returns the number of messages in the received batch.
 pub async fn receive_channel_batch(
     net: &ClosedNetworkManager,
     channels: &crate::espacio::channel::ChannelManager,
@@ -182,7 +183,10 @@ pub async fn receive_channel_batch(
     key: &[u8; 32],
 ) -> Result<usize, String> {
     if !net.is_member(network_id, receiver_node).await {
-        return Err("not a member".into());
+        return Err("receiver not a member".into());
+    }
+    if !net.is_member(network_id, &envelope.sender).await {
+        return Err("sender not a member".into());
     }
     let network = net.get(network_id).await.ok_or("network not found")?;
 
@@ -323,9 +327,20 @@ mod tests {
         let mgr = ClosedNetworkManager::new();
         let net = mgr.create("esp_a".into(), vec!["n1".into()]).await;
         let channels = crate::espacio::channel::ChannelManager::new();
-        let env = enc(&mgr, b"[]");
+        let env = mgr.encrypt(&net.network_id, "n1", b"[]", &KEY).unwrap();
         let res =
             super::receive_channel_batch(&mgr, &channels, &net.network_id, "n2", &env, &KEY).await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn envelope_sender_not_a_member_is_rejected() {
+        let mgr = ClosedNetworkManager::new();
+        let net = mgr.create("esp_a".into(), vec!["n1".into()]).await;
+        let channels = crate::espacio::channel::ChannelManager::new();
+        let env = mgr.encrypt(&net.network_id, "n2", b"[]", &KEY).unwrap();
+        let res =
+            super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &KEY).await;
         assert!(res.is_err());
     }
 
@@ -346,6 +361,8 @@ mod tests {
         let res =
             super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &KEY).await;
         assert!(res.is_err());
+        assert_eq!(channels.len("esp_a").await, 0);
+        assert_eq!(channels.len("esp_b").await, 0);
     }
 
     #[tokio::test]
@@ -365,6 +382,10 @@ mod tests {
         let res =
             super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &KEY).await;
         assert_eq!(res.unwrap(), 1);
+        let msgs = channels.list_all("esp_a").await;
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].seq, 1);
+        assert_eq!(msgs[0].content, "hello");
     }
 
     #[tokio::test]
@@ -387,6 +408,7 @@ mod tests {
         let res2 =
             super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &KEY).await;
         assert_eq!(res2.unwrap(), 1);
+        assert_eq!(channels.len("esp_a").await, 1);
     }
 
     #[tokio::test]
@@ -394,7 +416,7 @@ mod tests {
         let mgr = ClosedNetworkManager::new();
         let net = mgr.create("esp_a".into(), vec!["n1".into()]).await;
         let channels = crate::espacio::channel::ChannelManager::new();
-        let env = enc(&mgr, b"[]");
+        let env = mgr.encrypt(&net.network_id, "n1", b"[]", &KEY).unwrap();
         let wrong_key = [8u8; 32];
         let res =
             super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &wrong_key)
