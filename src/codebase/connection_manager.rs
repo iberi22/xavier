@@ -2212,8 +2212,9 @@ mod tests {
             .unwrap();
         cm.connect_with_path("pool3", dir.path().join("pool3.db"))
             .unwrap();
-        // Force eviction with a small cap
+        // `evict_if_needed` runs before an insert: it frees room for one more
+        // pool, so a cap of 2 leaves 1 open pool and the next open makes 2.
         cm.evict_if_needed(2);
-        assert_eq!(cm.snapshot().pools.len(), 2);
+        assert_eq!(cm.snapshot().pools.len(), 1);
     }
 }
