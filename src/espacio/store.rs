@@ -554,12 +554,12 @@ impl SpaceStore {
     }
 
     /// Merge remote messages: append only those with `seq` above the running
-    /// maximum (0 for an empty log). Rows are stamped with this space's id.
+    /// maximum (-1 for an empty log). Rows are stamped with this space's id.
     pub fn merge_messages(&self, space_id: &str, remote: &[ChannelMessage]) -> Result<()> {
         let mut conn = self.lock();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut max_seq: i64 =
-            tx.query_row("SELECT COALESCE(MAX(seq), 0) FROM messages", [], |r| {
+            tx.query_row("SELECT COALESCE(MAX(seq), -1) FROM messages", [], |r| {
                 r.get(0)
             })?;
         for m in remote {

@@ -12,10 +12,13 @@ use aes_gcm::{
     aead::{Aead, KeyInit, Payload},
     Aes256Gcm, Nonce,
 };
+use hkdf::Hkdf;
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use zeroize::Zeroizing;
 
 /// Closed network for a Space (E2E, only members)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,7 +51,7 @@ fn associated_data(network_id: &str, sender: &str) -> Vec<u8> {
 }
 
 /// Manager for closed networks per Space
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ClosedNetworkManager {
     networks: Arc<RwLock<HashMap<String, ClosedNetwork>>>,
 }
@@ -171,6 +174,109 @@ impl ClosedNetworkManager {
             .cloned()
             .collect()
     }
+
+    /// Derive a per-network wire encryption key with HKDF-SHA256 from the space DEK
+    /// plus domain label "xavier-espacio-net-v1" and the network_id.
+    pub fn derive_network_key(
+        space_key: &[u8; 32],
+        network_id: &str,
+    ) -> Result<Zeroizing<[u8; 32]>, String> {
+        let hkdf = Hkdf::<Sha256>::new(None, space_key);
+        let mut info = Vec::with_capacity(b"xavier-espacio-net-v1".len() + network_id.len());
+        info.extend_from_slice(b"xavier-espacio-net-v1");
+        info.extend_from_slice(network_id.as_bytes());
+        let mut okm = Zeroizing::new([0u8; 32]);
+        hkdf.expand(&info, okm.as_mut())
+            .map_err(|_| "HKDF key derivation failed".to_string())?;
+        Ok(okm)
+    }
+
+    /// Push an encrypted envelope to a remote peer node using mesh HTTP sync transport.
+    /// Gated behind `espacio-mesh` feature / runtime flag.
+    #[cfg(feature = "espacio-mesh")]
+    pub async fn sync_push_envelope(
+        &self,
+        peer_url: &str,
+        token: &str,
+        envelope: &EncryptedEnvelope,
+    ) -> anyhow::Result<usize> {
+        let url = format!("{}/v1/mesh/espacio/sync", peer_url.trim_end_matches('/'));
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        let resp = client
+            .post(&url)
+            .header("X-Xavier-Token", token)
+            .json(envelope)
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("Mesh HTTP sync failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let err_body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Mesh HTTP sync rejected with status: {} - {}",
+                status,
+                err_body
+            );
+        }
+
+        #[derive(serde::Deserialize)]
+        struct SyncResp {
+            applied: usize,
+        }
+
+        let body: SyncResp = resp
+            .json()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to parse sync response: {}", e))?;
+        Ok(body.applied)
+    }
+
+    /// Pack and encrypt local channel messages and send them to a remote peer node.
+    #[cfg(feature = "espacio-mesh")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn sync_channel_to_peer(
+        &self,
+        peer_url: &str,
+        token: &str,
+        channels: &crate::espacio::channel::ChannelManager,
+        network_id: &str,
+        sender_node: &str,
+        space_key: &[u8; 32],
+        since_seq: Option<u64>,
+    ) -> anyhow::Result<usize> {
+        let network = self
+            .get(network_id)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Network not found"))?;
+
+        if !self.is_member(network_id, sender_node).await {
+            anyhow::bail!("Sender is not a member of network {}", network_id);
+        }
+
+        let messages = match since_seq {
+            Some(seq) => channels.list_since(&network.space_id, seq).await,
+            None => channels.list_all(&network.space_id).await,
+        };
+        if messages.is_empty() {
+            return Ok(0);
+        }
+
+        let wire_key =
+            Self::derive_network_key(space_key, network_id).map_err(|e| anyhow::anyhow!(e))?;
+
+        let plaintext = serde_json::to_vec(&messages)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize messages: {}", e))?;
+        let envelope = self
+            .encrypt(network_id, sender_node, &plaintext, &wire_key)
+            .map_err(|e| anyhow::anyhow!("Encryption failed: {}", e))?;
+
+        self.sync_push_envelope(peer_url, token, &envelope).await
+    }
 }
 
 /// Returns the number of messages in the received batch.
@@ -180,7 +286,7 @@ pub async fn receive_channel_batch(
     network_id: &str,
     receiver_node: &str,
     envelope: &EncryptedEnvelope,
-    key: &[u8; 32],
+    space_key: &[u8; 32],
 ) -> Result<usize, String> {
     if !net.is_member(network_id, receiver_node).await {
         return Err("receiver not a member".into());
@@ -190,7 +296,9 @@ pub async fn receive_channel_batch(
     }
     let network = net.get(network_id).await.ok_or("network not found")?;
 
-    let plaintext = net.decrypt(envelope, network_id, key)?;
+    let wire_key = ClosedNetworkManager::derive_network_key(space_key, network_id)?;
+
+    let plaintext = net.decrypt(envelope, network_id, &wire_key)?;
 
     let messages: Vec<crate::espacio::channel::ChannelMessage> =
         serde_json::from_slice(&plaintext).map_err(|e| e.to_string())?;
@@ -378,7 +486,8 @@ mod tests {
             created_at: chrono::Utc::now(),
         };
         let pt = serde_json::to_vec(&vec![msg]).unwrap();
-        let env = mgr.encrypt(&net.network_id, "n1", &pt, &KEY).unwrap();
+        let wire_key = ClosedNetworkManager::derive_network_key(&KEY, &net.network_id).unwrap();
+        let env = mgr.encrypt(&net.network_id, "n1", &pt, &wire_key).unwrap();
         let res =
             super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &KEY).await;
         assert_eq!(res.unwrap(), 1);
@@ -401,7 +510,8 @@ mod tests {
             created_at: chrono::Utc::now(),
         };
         let pt = serde_json::to_vec(&vec![msg]).unwrap();
-        let env = mgr.encrypt(&net.network_id, "n1", &pt, &KEY).unwrap();
+        let wire_key = ClosedNetworkManager::derive_network_key(&KEY, &net.network_id).unwrap();
+        let env = mgr.encrypt(&net.network_id, "n1", &pt, &wire_key).unwrap();
         let res1 =
             super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &KEY).await;
         assert_eq!(res1.unwrap(), 1);
@@ -421,6 +531,50 @@ mod tests {
         let res =
             super::receive_channel_batch(&mgr, &channels, &net.network_id, "n1", &env, &wrong_key)
                 .await;
+        assert!(res.is_err());
+    }
+
+    #[cfg(feature = "espacio-mesh")]
+    #[tokio::test]
+    async fn test_sync_channel_to_peer_empty_messages() {
+        let mgr = ClosedNetworkManager::new();
+        let net = mgr.create("esp_a".into(), vec!["n1".into()]).await;
+        let channels = crate::espacio::channel::ChannelManager::new();
+
+        // With no messages in channel, sync_channel_to_peer returns Ok(0) without HTTP network call
+        let count = mgr
+            .sync_channel_to_peer(
+                "http://127.0.0.1:9",
+                "token",
+                &channels,
+                &net.network_id,
+                "n1",
+                &KEY,
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[cfg(feature = "espacio-mesh")]
+    #[tokio::test]
+    async fn test_sync_channel_to_peer_non_member_rejected() {
+        let mgr = ClosedNetworkManager::new();
+        let net = mgr.create("esp_a".into(), vec!["n1".into()]).await;
+        let channels = crate::espacio::channel::ChannelManager::new();
+
+        let res = mgr
+            .sync_channel_to_peer(
+                "http://127.0.0.1:9",
+                "token",
+                &channels,
+                &net.network_id,
+                "n2", // not a member
+                &KEY,
+                None,
+            )
+            .await;
         assert!(res.is_err());
     }
 }
