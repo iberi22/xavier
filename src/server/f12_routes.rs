@@ -33,6 +33,9 @@ use crate::mesh::public_directory::PublicDirectory;
 use crate::mesh::public_rag::{search_public, PublicRagResult};
 use crate::mesh::service_network::{ServiceKind, ServiceRegistry, TelemetrySample};
 use crate::mesh::visibility::Visibility;
+use crate::mesh::wallet_ownership::{
+    issue_wallet_challenge, verify_wallet_registration, WalletRegistrationProof,
+};
 use crate::security::groups::GroupRegistry;
 
 /// Shared F12 state: data dir paths + in-memory registries (lazy loaded).
@@ -159,6 +162,8 @@ pub struct RegisterWalletNodeRequest {
     pub wallet_id: String,
     pub name: String,
     pub iroh_addr: Option<String>,
+    /// Signed challenge response proving ownership of `wallet_id`.
+    pub proof: WalletRegistrationProof,
 }
 
 #[derive(Debug, Deserialize)]
@@ -348,10 +353,29 @@ pub async fn register_node(
     }
 }
 
+/// Issues a one-shot challenge that the wallet key must sign before a node can be
+/// registered under `wallet_id`.
+pub async fn wallet_registration_challenge(
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let Some(wallet) = params.get("wallet_id").filter(|id| !id.trim().is_empty()) else {
+        return (StatusCode::BAD_REQUEST, "wallet_id is required").into_response();
+    };
+    match issue_wallet_challenge(wallet) {
+        Ok(challenge) => Json(challenge).into_response(),
+        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "challenge unavailable").into_response(),
+    }
+}
+
 pub async fn register_wallet_node(
     State(state): State<F12State>,
     Json(req): Json<RegisterWalletNodeRequest>,
 ) -> impl IntoResponse {
+    if let Err(e) = verify_wallet_registration(&req.proof, &req.wallet_id, &req.node_id) {
+        tracing::debug!(error = %e, "wallet registration proof rejected");
+        return (StatusCode::UNAUTHORIZED, "wallet ownership proof rejected").into_response();
+    }
+
     let mut reg = state.private_mesh_mut();
     let mesh = reg.private_mesh.as_mut().expect("mesh");
     let node = WalletNode {
@@ -991,6 +1015,10 @@ pub fn router(state: F12State) -> Router {
         .route("/v1/f12/directory/nodes", post(register_node))
         .route("/v1/f12/private-mesh/nodes", post(register_wallet_node))
         .route("/v1/f12/private-mesh/nodes", get(list_wallet_nodes))
+        .route(
+            "/v1/f12/private-mesh/challenge",
+            get(wallet_registration_challenge),
+        )
         .route("/v1/f12/private-mesh/sync", post(private_mesh_sync))
         .route("/v1/f12/redact", post(redact_document))
         .route("/v1/f12/curation", post(submit_curation))
@@ -1034,6 +1062,9 @@ pub fn router(state: F12State) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mesh::node::NodeIdentity;
+    use crate::mesh::private_mesh::derive_wallet_id;
+    use crate::mesh::wallet_ownership::{sign_wallet_registration, WalletChallenge};
     use axum::{
         body::Body,
         http::{Request, StatusCode},
@@ -1257,8 +1288,67 @@ mod tests {
         assert_eq!(pending_after.as_array().unwrap().len(), 0);
     }
 
+    async fn fetch_wallet_challenge(app: &Router, wallet_id: &str) -> WalletChallenge {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/v1/f12/private-mesh/challenge?wallet_id={wallet_id}"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    async fn post_wallet_node(
+        app: &Router,
+        wallet_id: &str,
+        node_id: &str,
+        proof: &WalletRegistrationProof,
+    ) -> StatusCode {
+        let body = serde_json::json!({
+            "node_id": node_id,
+            "wallet_id": wallet_id,
+            "name": "phone",
+            "iroh_addr": "addr1",
+            "proof": proof,
+        });
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/private-mesh/nodes")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+    }
+
     #[tokio::test]
     async fn test_wallet_node_registration() {
+        let app = router(test_state());
+        let key = NodeIdentity::generate();
+        let wallet = derive_wallet_id(&key.public_key);
+        let challenge = fetch_wallet_challenge(&app, &wallet).await;
+        let proof = sign_wallet_registration(&key, &challenge, "n1");
+
+        assert_eq!(
+            post_wallet_node(&app, &wallet, "n1", &proof).await,
+            StatusCode::CREATED
+        );
+    }
+
+    #[tokio::test]
+    async fn test_wallet_node_registration_requires_proof() {
         let app = router(test_state());
         let resp = app
             .oneshot(
@@ -1273,7 +1363,100 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::CREATED);
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn test_wallet_node_registration_rejects_unowned_wallet() {
+        let app = router(test_state());
+        let owner = NodeIdentity::generate();
+        let attacker = NodeIdentity::generate();
+        let wallet = derive_wallet_id(&owner.public_key);
+        let challenge = fetch_wallet_challenge(&app, &wallet).await;
+        // attacker signs the owner's challenge with their own key
+        let proof = sign_wallet_registration(&attacker, &challenge, "n1");
+
+        assert_eq!(
+            post_wallet_node(&app, &wallet, "n1", &proof).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn test_wallet_node_registration_rejects_replay() {
+        let app = router(test_state());
+        let key = NodeIdentity::generate();
+        let wallet = derive_wallet_id(&key.public_key);
+        let challenge = fetch_wallet_challenge(&app, &wallet).await;
+        let proof = sign_wallet_registration(&key, &challenge, "n1");
+
+        assert_eq!(
+            post_wallet_node(&app, &wallet, "n1", &proof).await,
+            StatusCode::CREATED
+        );
+        assert_eq!(
+            post_wallet_node(&app, &wallet, "n1", &proof).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn test_wallet_node_registration_rejects_takeover_of_owned_node() {
+        let app = router(test_state());
+        let owner = NodeIdentity::generate();
+        let intruder = NodeIdentity::generate();
+        let owner_wallet = derive_wallet_id(&owner.public_key);
+        let intruder_wallet = derive_wallet_id(&intruder.public_key);
+
+        let challenge = fetch_wallet_challenge(&app, &owner_wallet).await;
+        let proof = sign_wallet_registration(&owner, &challenge, "n1");
+        assert_eq!(
+            post_wallet_node(&app, &owner_wallet, "n1", &proof).await,
+            StatusCode::CREATED
+        );
+
+        // The intruder holds a valid proof for their own wallet and claims the same node.
+        let challenge = fetch_wallet_challenge(&app, &intruder_wallet).await;
+        let proof = sign_wallet_registration(&intruder, &challenge, "n1");
+        assert_eq!(
+            post_wallet_node(&app, &intruder_wallet, "n1", &proof).await,
+            StatusCode::CONFLICT
+        );
+
+        // The owner's listing still shows the node.
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/v1/f12/private-mesh/nodes?wallet_id={owner_wallet}"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let nodes: Vec<WalletNode> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].node_id.as_str(), "n1");
+        assert_eq!(nodes[0].wallet_id, owner_wallet);
+    }
+
+    #[tokio::test]
+    async fn test_wallet_challenge_requires_wallet_id() {
+        let app = router(test_state());
+        for uri in [
+            "/v1/f12/private-mesh/challenge",
+            "/v1/f12/private-mesh/challenge?wallet_id=%20",
+        ] {
+            let resp = app
+                .clone()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{uri}");
+        }
     }
 
     fn wallet_node_listing_app() -> Router {
@@ -1525,23 +1708,16 @@ mod tests {
     #[tokio::test]
     async fn test_private_mesh_sync_endpoint_success() {
         let app = router(test_state());
-        let register_req =
-            r#"{"node_id": "xv1-b", "wallet_id": "w1", "name": "node-b", "iroh_addr": "addr-b"}"#;
-        let resp = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/v1/f12/private-mesh/nodes")
-                    .header("content-type", "application/json")
-                    .body(Body::from(register_req))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::CREATED);
+        let key = NodeIdentity::generate();
+        let wallet = derive_wallet_id(&key.public_key);
+        let challenge = fetch_wallet_challenge(&app, &wallet).await;
+        let proof = sign_wallet_registration(&key, &challenge, "xv1-b");
+        assert_eq!(
+            post_wallet_node(&app, &wallet, "xv1-b", &proof).await,
+            StatusCode::CREATED
+        );
 
-        let sync_req = r#"{"wallet_id": "w1", "target_node": "xv1-b"}"#;
+        let sync_req = format!(r#"{{"wallet_id": "{wallet}", "target_node": "xv1-b"}}"#);
         let resp = app
             .oneshot(
                 Request::builder()
@@ -1581,23 +1757,18 @@ mod tests {
     #[tokio::test]
     async fn test_private_mesh_sync_endpoint_cross_wallet_forbidden() {
         let app = router(test_state());
-        let register_req =
-            r#"{"node_id": "xv1-b", "wallet_id": "w2", "name": "node-b", "iroh_addr": "addr-b"}"#;
-        let resp = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/v1/f12/private-mesh/nodes")
-                    .header("content-type", "application/json")
-                    .body(Body::from(register_req))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::CREATED);
+        let owner = NodeIdentity::generate();
+        let owner_wallet = derive_wallet_id(&owner.public_key);
+        let challenge = fetch_wallet_challenge(&app, &owner_wallet).await;
+        let proof = sign_wallet_registration(&owner, &challenge, "xv1-b");
+        assert_eq!(
+            post_wallet_node(&app, &owner_wallet, "xv1-b", &proof).await,
+            StatusCode::CREATED
+        );
 
-        let sync_req = r#"{"wallet_id": "w1", "target_node": "xv1-b"}"#;
+        let other = NodeIdentity::generate();
+        let other_wallet = derive_wallet_id(&other.public_key);
+        let sync_req = format!(r#"{{"wallet_id": "{other_wallet}", "target_node": "xv1-b"}}"#);
         let resp = app
             .oneshot(
                 Request::builder()
