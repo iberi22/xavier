@@ -217,6 +217,13 @@ impl SpaceDescriptor {
 
 /// Errors for Space operations
 #[derive(Debug, thiserror::Error)]
+#[error("space {space_id} reached members_cap {cap}")]
+pub struct MembersCapReached {
+    pub space_id: String,
+    pub cap: u32,
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum SpaceError {
     #[error("Space {0} already exists")]
     AlreadyExists(String),
@@ -508,7 +515,19 @@ impl SpaceManager {
         role: SpaceRole,
     ) -> Result<SpaceMembership> {
         self.ensure_available(space_id).await?;
-        self.stores.get(space_id)?.add_member(node_id, role)
+        let store = self.stores.get(space_id)?;
+        let is_member = store.member(node_id)?.is_some();
+        if !is_member {
+            let protocol = self.protocol(space_id).await;
+            let count = store.members()?.len();
+            if count >= protocol.members_cap as usize {
+                return Err(anyhow!(MembersCapReached {
+                    space_id: space_id.to_string(),
+                    cap: protocol.members_cap,
+                }));
+            }
+        }
+        store.add_member(node_id, role)
     }
 
     /// Remove a member. Returns whether it existed.
@@ -1661,5 +1680,87 @@ mod persistence_tests {
         let ring = mgr.key_ring().unwrap();
         assert!(ring.quarantine_orphan_keystore("esp_o").unwrap().is_none());
         assert!(dir.join("keystore.json").exists());
+    }
+
+    // ---- members_cap tests ----
+
+    #[tokio::test]
+    async fn add_member_enforces_cap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = SpaceManager::open(tmp.path());
+
+        let mut p = plain_protocol();
+        p.members_cap = 2; // cap is 2
+
+        mgr.create_with_keys(
+            "esp_cap".into(),
+            "n".into(),
+            "".into(),
+            "owner".into(), // owner counts as member 1
+            false,
+            with_protocol(p),
+        )
+        .await
+        .unwrap();
+
+        // add second member (reaches cap)
+        mgr.add_member("esp_cap", "member2", SpaceRole::Member)
+            .await
+            .unwrap();
+
+        // add third member (exceeds cap)
+        let err = mgr
+            .add_member("esp_cap", "member3", SpaceRole::Member)
+            .await
+            .unwrap_err();
+
+        let cap_err = err.downcast_ref::<MembersCapReached>().unwrap();
+        assert_eq!(cap_err.space_id, "esp_cap");
+        assert_eq!(cap_err.cap, 2);
+    }
+
+    #[tokio::test]
+    async fn add_member_allows_role_change_at_cap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = SpaceManager::open(tmp.path());
+
+        let mut p = plain_protocol();
+        p.members_cap = 1; // cap is 1
+
+        mgr.create_with_keys(
+            "esp_cap".into(),
+            "n".into(),
+            "".into(),
+            "owner".into(), // owner counts as member 1
+            false,
+            with_protocol(p),
+        )
+        .await
+        .unwrap();
+
+        // change role of existing member (allowed)
+        mgr.add_member("esp_cap", "owner", SpaceRole::Admin)
+            .await
+            .unwrap();
+
+        let members = mgr.members("esp_cap").await.unwrap();
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].role, SpaceRole::Admin);
+    }
+
+    #[tokio::test]
+    async fn add_member_default_cap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = SpaceManager::open(tmp.path());
+
+        mk(&mgr, "esp_def").await;
+
+        // it should allow adding a member as long as under default cap
+        mgr.add_member("esp_def", "member2", SpaceRole::Member)
+            .await
+            .unwrap();
+
+        let members = mgr.members("esp_def").await.unwrap();
+        assert_eq!(members.len(), 2); // owner + member2
     }
 }
