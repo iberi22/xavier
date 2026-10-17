@@ -194,22 +194,24 @@ export interface PairingCodeResponse {
   secret: string;
 }
 
+/** Token-free lease view from `GET /secrets/leases`. `lease_id` is opaque. */
 export interface SecretLease {
-  token: string;
+  lease_id: string;
   secret_name: string;
   agent_id: string;
   created_at: string;
   expires_at: string;
 }
 
+/** Audit row from `GET /secrets/history`; names its lease by `lease_id` only. */
 export interface SecretAuditLog {
-  id: string;
+  id: number | string;
   event_type: "LEND" | "REVOKE" | string;
   timestamp: string;
   agent_id: string;
-  secret_id?: string;
-  session_token: string;
-  reason?: string;
+  lease_id: string;
+  secret_id?: string | null;
+  reason?: string | null;
 }
 
 export type OperationMode = "local" | "cloud" | "degraded";

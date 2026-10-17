@@ -36,10 +36,10 @@ export default function LeasesPage({ token }: LeasesPageProps) {
     return () => clearInterval(interval);
   }, [fetchLeases]);
 
-  const handleRevoke = async (leaseToken: string) => {
+  const handleRevoke = async (leaseId: string) => {
     try {
-      await apiClient.revokeLease(leaseToken);
-      setLeases((prev) => prev.filter((l) => l.token !== leaseToken));
+      await apiClient.revokeLease(leaseId);
+      setLeases((prev) => prev.filter((l) => l.lease_id !== leaseId));
     } catch (err) {
       console.error("Failed to revoke lease:", err);
     }
@@ -95,7 +95,7 @@ export default function LeasesPage({ token }: LeasesPageProps) {
           <AnimatePresence mode="popLayout">
             {leases.map((lease) => (
               <motion.div
-                key={lease.token}
+                key={lease.lease_id}
                 layout
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
