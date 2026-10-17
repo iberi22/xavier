@@ -4,6 +4,12 @@
 //! A fresh router built over the same SQLite file stands in for a restarted
 //! daemon. This file is its own test binary, so the env vars it sets cannot
 //! leak into the rest of the suite.
+//!
+//! The file is compiled only with the `market-v2` feature. Without it the
+//! target is an empty binary, so feature-less runs (pre-commit, ci-safe) still
+//! build it.
+
+#![cfg(feature = "market-v2")]
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -27,6 +33,7 @@ use xavier::codebase::conversations_db::ConversationsDb;
 use xavier::coordination::KeyLendingEngine;
 use xavier::coordination::SimpleAgentRegistry;
 use xavier::embedding::NoopEmbedder;
+use xavier::market_v2;
 use xavier::memory::agent_indexer::AgentIndexer;
 use xavier::memory::file_indexer::{FileIndexer, FileIndexerConfig};
 use xavier::memory::qmd_memory::QmdMemory;
@@ -35,6 +42,7 @@ use xavier::ports::inbound::AgentLifecyclePort;
 use xavier::secrets::audit::QmdAuditLogger;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::workspace::{WorkspaceContext, WorkspaceState};
+use xavier_market::Signer;
 
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
 xavier::isolate_test_process!();
@@ -167,13 +175,55 @@ async fn send(
     (status, value)
 }
 
+/// The publisher key that owns the listings in this test.
+fn owner() -> Signer {
+    Signer::from_seed([7; 32])
+}
+
 fn listing_body() -> Value {
     json!({
-        "seller_id": "seller-1",
+        "seller_id": owner().public_key_hex(),
         "title": "Weather station logs",
         "license": "CC-BY-4.0",
         "price_credits": 25
     })
+}
+
+/// Like [`send`], but the request is also signed by `signer` over `uri`'s path
+/// and the body, as the publisher-bound mutation routes require.
+async fn send_signed(
+    router: &Router,
+    signer: &Signer,
+    method: Method,
+    uri: &str,
+    body: Value,
+    token: &str,
+) -> (StatusCode, Value) {
+    let bytes = body.to_string();
+    let path = uri.split('?').next().unwrap_or(uri);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let signed = signer.sign(method.as_str(), path, now_ms, bytes.as_bytes());
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("X-Xavier-Token", token)
+        .header(market_v2::ACTOR_KEY_HEADER, signed.public_key_hex)
+        .header(
+            market_v2::ACTOR_TIMESTAMP_HEADER,
+            signed.timestamp_ms.to_string(),
+        )
+        .header(market_v2::ACTOR_SIGNATURE_HEADER, signed.signature_hex)
+        .header("content-type", "application/json")
+        .body(Body::from(bytes))
+        .expect("build request");
+    let response = router.clone().oneshot(request).await.expect("route");
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, value)
 }
 
 #[tokio::test]
@@ -220,12 +270,13 @@ async fn listing_and_receipt_survive_a_daemon_restart() {
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-    let (status, listing) = send(
+    let (status, listing) = send_signed(
         &before,
+        &owner(),
         Method::POST,
         "/v2/marketplace/listings",
-        Some(listing_body()),
-        Some(expected_root_token),
+        listing_body(),
+        expected_root_token,
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);

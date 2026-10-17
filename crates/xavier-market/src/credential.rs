@@ -129,7 +129,7 @@ pub fn verify(vc: &ListingCredential, listing: &Listing) -> Result<(), Credentia
 #[rustfmt::skip]
 mod tests {
     use super::*; use crate::config::License;
-    fn get_listing() -> Listing { Listing { id: "l-1".into(), seller_id: "s-1".into(), title: "T".into(), license: License::SwalDataLicenseV0, price_credits: 100, created_at_ms: 1000 } }
+    fn get_listing() -> Listing { Listing { id: "l-1".into(), seller_id: "s-1".into(), title: "T".into(), license: License::SwalDataLicenseV0, price_credits: 100, created_at_ms: 1000, revoked_at_ms: None } }
     #[test] fn test_issue_verify() {
         let l = get_listing(); let k = SigningKey::from_bytes(&[7; 32]);
         assert!(verify(&issue(&l, &k, "2024-01-01T00:00:00Z"), &l).is_ok());

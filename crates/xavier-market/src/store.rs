@@ -1,4 +1,9 @@
 //! SQLite persistence for listings and receipts.
+//!
+//! Every mutating method takes the [`Actor`] that signed the request. Create,
+//! update and revoke only succeed for the listing's own publisher. The check
+//! runs inside the same transaction as the write, so no request can change a
+//! listing it does not own.
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -6,12 +11,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
+use crate::auth::Actor;
 use crate::config::{Currency, License, MarketConfig};
 use crate::error::MarketError;
-use crate::model::{Listing, NewListing, NewReceipt, Receipt};
+use crate::model::{Listing, ListingUpdate, NewListing, NewReceipt, Receipt};
 
 /// Version written to `PRAGMA user_version` by this build.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE IF NOT EXISTS market_listings (
@@ -32,6 +38,14 @@ CREATE TABLE IF NOT EXISTS market_receipts (
 );
 CREATE INDEX IF NOT EXISTS market_receipts_buyer ON market_receipts (buyer_id);
 ";
+
+/// v2 adds the revocation timestamp. Rows written under v1 read as not revoked.
+const SCHEMA_V2: &str = "ALTER TABLE market_listings ADD COLUMN revoked_at_ms INTEGER;";
+
+/// Migration steps in order. Step `n` (zero-based) brings the schema to `n + 1`.
+const MIGRATIONS: [&str; 2] = [SCHEMA_V1, SCHEMA_V2];
+
+const _: () = assert!(MIGRATIONS.len() as i64 == SCHEMA_VERSION);
 
 /// Durable marketplace store. Every write is committed before the call returns,
 /// so a listing survives a process restart when the store is reopened on the
@@ -61,9 +75,12 @@ impl MarketStore {
         if version > SCHEMA_VERSION {
             return Err(MarketError::SchemaTooNew(version));
         }
-        if version < SCHEMA_VERSION {
+        let applied = usize::try_from(version)
+            .map_err(|_| MarketError::Corrupt(format!("negative schema version {version}")))?;
+        for (index, sql) in MIGRATIONS.iter().enumerate().skip(applied) {
             conn.execute_batch(&format!(
-                "BEGIN; {SCHEMA_V1} PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;"
+                "BEGIN; {sql} PRAGMA user_version = {}; COMMIT;",
+                index + 1
             ))?;
         }
         Ok(Self {
@@ -83,15 +100,24 @@ impl MarketStore {
         self.conn.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Creates a listing. The license must be enabled in `market.licenses`.
-    pub fn create_listing(&self, new: NewListing) -> Result<Listing, MarketError> {
-        let seller_id = non_empty("seller_id", &new.seller_id)?;
-        let title = non_empty("title", &new.title)?;
-        if !self.config.licenses.contains(&new.license) {
-            return Err(MarketError::LicenseNotEnabled(
-                new.license.as_str().to_string(),
+    fn ensure_license_enabled(&self, license: License) -> Result<(), MarketError> {
+        if self.config.licenses.contains(&license) {
+            Ok(())
+        } else {
+            Err(MarketError::LicenseNotEnabled(license.as_str().to_string()))
+        }
+    }
+
+    /// Creates a listing owned by `actor`. `new.seller_id` must be the actor's
+    /// own id. The license must be enabled in `market.licenses`.
+    pub fn create_listing(&self, actor: &Actor, new: NewListing) -> Result<Listing, MarketError> {
+        if !new.seller_id.trim().eq_ignore_ascii_case(actor.id()) {
+            return Err(MarketError::Forbidden(
+                "seller_id must be the id of the key that signed the request".to_string(),
             ));
         }
+        let title = non_empty("title", &new.title)?;
+        self.ensure_license_enabled(new.license)?;
         check_credits(new.price_credits)?;
 
         if new.price_credits < self.config.price_floor_credits {
@@ -103,11 +129,12 @@ impl MarketStore {
 
         let listing = Listing {
             id: uuid::Uuid::new_v4().to_string(),
-            seller_id,
+            seller_id: actor.id().to_string(),
             title,
             license: new.license,
             price_credits: new.price_credits,
             created_at_ms: now_ms(),
+            revoked_at_ms: None,
         };
         self.conn().execute(
             "INSERT INTO market_listings (id, seller_id, title, license, price_credits, created_at_ms)
@@ -124,24 +151,87 @@ impl MarketStore {
         Ok(listing)
     }
 
-    pub fn get_listing(&self, id: &str) -> Result<Option<Listing>, MarketError> {
-        let conn = self.conn();
-        let row = conn
-            .query_row(
-                "SELECT id, seller_id, title, license, price_credits, created_at_ms
-                 FROM market_listings WHERE id = ?1",
-                params![id],
-                raw_listing,
-            )
-            .optional()?;
-        row.map(RawListing::into_listing).transpose()
+    /// Changes the fields present in `update`. Only the listing's publisher may
+    /// do this, and only while the listing is not revoked.
+    pub fn update_listing(
+        &self,
+        actor: &Actor,
+        id: &str,
+        update: ListingUpdate,
+    ) -> Result<Listing, MarketError> {
+        if update == ListingUpdate::default() {
+            return Err(MarketError::InvalidInput(
+                "update must change at least one field".to_string(),
+            ));
+        }
+        let title = update
+            .title
+            .as_deref()
+            .map(|title| non_empty("title", title))
+            .transpose()?;
+        if let Some(license) = update.license {
+            self.ensure_license_enabled(license)?;
+        }
+        if let Some(price) = update.price_credits {
+            check_credits(price)?;
+        }
+
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let mut listing = owned_listing(&tx, id, actor)?;
+        if listing.revoked_at_ms.is_some() {
+            return Err(MarketError::ListingRevoked(id.to_string()));
+        }
+        if let Some(title) = title {
+            listing.title = title;
+        }
+        if let Some(license) = update.license {
+            listing.license = license;
+        }
+        if let Some(price) = update.price_credits {
+            listing.price_credits = price;
+        }
+        tx.execute(
+            "UPDATE market_listings SET title = ?2, license = ?3, price_credits = ?4 WHERE id = ?1",
+            params![
+                listing.id,
+                listing.title,
+                listing.license.as_str(),
+                listing.price_credits as i64,
+            ],
+        )?;
+        tx.commit()?;
+        Ok(listing)
     }
 
-    /// All listings, oldest first.
+    /// Revokes a listing the actor owns. Revoking again returns the listing
+    /// unchanged, keeping the first revocation time.
+    pub fn revoke_listing(&self, actor: &Actor, id: &str) -> Result<Listing, MarketError> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let mut listing = owned_listing(&tx, id, actor)?;
+        if listing.revoked_at_ms.is_none() {
+            let revoked_at = now_ms();
+            tx.execute(
+                "UPDATE market_listings SET revoked_at_ms = ?2 WHERE id = ?1",
+                params![listing.id, revoked_at],
+            )?;
+            listing.revoked_at_ms = Some(revoked_at);
+        }
+        tx.commit()?;
+        Ok(listing)
+    }
+
+    pub fn get_listing(&self, id: &str) -> Result<Option<Listing>, MarketError> {
+        query_listing(&self.conn(), id)
+    }
+
+    /// All listings, oldest first. Revoked listings are included with their
+    /// `revoked_at_ms` set, so buyers can see why a listing is gone.
     pub fn list_listings(&self) -> Result<Vec<Listing>, MarketError> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id, seller_id, title, license, price_credits, created_at_ms
+            "SELECT id, seller_id, title, license, price_credits, created_at_ms, revoked_at_ms
              FROM market_listings ORDER BY created_at_ms, rowid",
         )?;
         let rows = stmt
@@ -151,19 +241,23 @@ impl MarketStore {
     }
 
     /// Records a purchase. The amount is the listing price at this moment and
-    /// the currency is the one the store was opened with.
+    /// the currency is the one the store was opened with. Revoked listings
+    /// cannot be bought.
     pub fn record_receipt(&self, new: NewReceipt) -> Result<Receipt, MarketError> {
         let buyer_id = non_empty("buyer_id", &new.buyer_id)?;
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        let price: i64 = tx
+        let (price, revoked_at): (i64, Option<i64>) = tx
             .query_row(
-                "SELECT price_credits FROM market_listings WHERE id = ?1",
+                "SELECT price_credits, revoked_at_ms FROM market_listings WHERE id = ?1",
                 params![new.listing_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?
             .ok_or_else(|| MarketError::ListingNotFound(new.listing_id.clone()))?;
+        if revoked_at.is_some() {
+            return Err(MarketError::ListingRevoked(new.listing_id));
+        }
         let receipt = Receipt {
             id: uuid::Uuid::new_v4().to_string(),
             listing_id: new.listing_id,
@@ -202,6 +296,30 @@ impl MarketStore {
     }
 }
 
+fn query_listing(conn: &Connection, id: &str) -> Result<Option<Listing>, MarketError> {
+    let row = conn
+        .query_row(
+            "SELECT id, seller_id, title, license, price_credits, created_at_ms, revoked_at_ms
+             FROM market_listings WHERE id = ?1",
+            params![id],
+            raw_listing,
+        )
+        .optional()?;
+    row.map(RawListing::into_listing).transpose()
+}
+
+/// Loads a listing for a mutation and checks that `actor` owns it.
+fn owned_listing(conn: &Connection, id: &str, actor: &Actor) -> Result<Listing, MarketError> {
+    let listing =
+        query_listing(conn, id)?.ok_or_else(|| MarketError::ListingNotFound(id.to_string()))?;
+    if listing.seller_id != actor.id() {
+        return Err(MarketError::Forbidden(format!(
+            "listing {id} belongs to another publisher"
+        )));
+    }
+    Ok(listing)
+}
+
 /// Row values before the enum fields are parsed back from text.
 struct RawListing {
     id: String,
@@ -210,6 +328,7 @@ struct RawListing {
     license: String,
     price_credits: i64,
     created_at_ms: i64,
+    revoked_at_ms: Option<i64>,
 }
 
 fn raw_listing(row: &Row<'_>) -> rusqlite::Result<RawListing> {
@@ -220,6 +339,7 @@ fn raw_listing(row: &Row<'_>) -> rusqlite::Result<RawListing> {
         license: row.get(3)?,
         price_credits: row.get(4)?,
         created_at_ms: row.get(5)?,
+        revoked_at_ms: row.get(6)?,
     })
 }
 
@@ -234,6 +354,7 @@ impl RawListing {
             license,
             price_credits: self.price_credits as u64,
             created_at_ms: self.created_at_ms,
+            revoked_at_ms: self.revoked_at_ms,
         })
     }
 }
@@ -313,12 +434,31 @@ fn now_ms() -> i64 {
 mod tests {
     use super::*;
 
+    fn owner_id() -> String {
+        "ab".repeat(32)
+    }
+
+    fn owner() -> Actor {
+        Actor::for_test(&owner_id())
+    }
+
+    fn other_identity() -> Actor {
+        Actor::for_test(&"cd".repeat(32))
+    }
+
     fn new_listing(price: u64) -> NewListing {
         NewListing {
-            seller_id: "seller-1".to_string(),
+            seller_id: owner_id(),
             title: "Weather station logs".to_string(),
             license: License::CcBy40,
             price_credits: price,
+        }
+    }
+
+    fn update_price(price: u64) -> ListingUpdate {
+        ListingUpdate {
+            price_credits: Some(price),
+            ..ListingUpdate::default()
         }
     }
 
@@ -329,7 +469,7 @@ mod tests {
 
         let created = {
             let store = MarketStore::open(&path, MarketConfig::default()).unwrap();
-            store.create_listing(new_listing(25)).unwrap()
+            store.create_listing(&owner(), new_listing(25)).unwrap()
         };
 
         let reopened = MarketStore::open(&path, MarketConfig::default()).unwrap();
@@ -346,7 +486,7 @@ mod tests {
         let path = dir.path().join("market.sqlite3");
         let listing_id = {
             let store = MarketStore::open(&path, MarketConfig::default()).unwrap();
-            let listing = store.create_listing(new_listing(40)).unwrap();
+            let listing = store.create_listing(&owner(), new_listing(40)).unwrap();
             store
                 .record_receipt(NewReceipt {
                     listing_id: listing.id.clone(),
@@ -381,33 +521,183 @@ mod tests {
             ..MarketConfig::default()
         };
         let store = MarketStore::open_in_memory(config).unwrap();
-        let err = store.create_listing(new_listing(1)).unwrap_err();
+        let err = store.create_listing(&owner(), new_listing(1)).unwrap_err();
         assert!(matches!(err, MarketError::LicenseNotEnabled(ref l) if l == "CC-BY-4.0"));
         assert!(store.list_listings().unwrap().is_empty());
     }
 
     #[test]
-    fn blank_seller_title_and_oversized_price_are_refused() {
+    fn blank_title_and_oversized_price_are_refused() {
         let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
-        let blank_seller = NewListing {
-            seller_id: "  ".to_string(),
-            ..new_listing(1)
-        };
-        assert!(matches!(
-            store.create_listing(blank_seller),
-            Err(MarketError::InvalidInput(_))
-        ));
         let blank_title = NewListing {
             title: String::new(),
             ..new_listing(1)
         };
         assert!(matches!(
-            store.create_listing(blank_title),
+            store.create_listing(&owner(), blank_title),
             Err(MarketError::InvalidInput(_))
         ));
         assert!(matches!(
-            store.create_listing(new_listing(u64::MAX)),
+            store.create_listing(&owner(), new_listing(u64::MAX)),
             Err(MarketError::InvalidInput(_))
+        ));
+        assert!(store.list_listings().unwrap().is_empty());
+    }
+
+    #[test]
+    fn create_refuses_a_seller_id_that_is_not_the_signer() {
+        let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
+        let impersonation = NewListing {
+            seller_id: "seller-1".to_string(),
+            ..new_listing(1)
+        };
+        assert!(matches!(
+            store.create_listing(&other_identity(), impersonation),
+            Err(MarketError::Forbidden(_))
+        ));
+        let other_key = NewListing {
+            seller_id: owner_id(),
+            ..new_listing(1)
+        };
+        assert!(matches!(
+            store.create_listing(&other_identity(), other_key),
+            Err(MarketError::Forbidden(_))
+        ));
+        assert!(store.list_listings().unwrap().is_empty());
+    }
+
+    #[test]
+    fn create_accepts_the_signers_own_id_in_any_case() {
+        let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
+        let upper = NewListing {
+            seller_id: owner_id().to_uppercase(),
+            ..new_listing(1)
+        };
+        let listing = store.create_listing(&owner(), upper).unwrap();
+        assert_eq!(listing.seller_id, owner_id());
+    }
+
+    #[test]
+    fn another_identity_cannot_update_or_revoke_a_listing() {
+        let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
+        let created = store.create_listing(&owner(), new_listing(10)).unwrap();
+
+        let err = store
+            .update_listing(&other_identity(), &created.id, update_price(1))
+            .unwrap_err();
+        assert!(matches!(err, MarketError::Forbidden(_)));
+        let err = store
+            .revoke_listing(&other_identity(), &created.id)
+            .unwrap_err();
+        assert!(matches!(err, MarketError::Forbidden(_)));
+
+        // Neither failed call changed the stored listing.
+        assert_eq!(store.get_listing(&created.id).unwrap(), Some(created));
+    }
+
+    #[test]
+    fn the_owner_can_update_and_revoke_its_listing() {
+        let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
+        let created = store.create_listing(&owner(), new_listing(10)).unwrap();
+
+        let updated = store
+            .update_listing(&owner(), &created.id, update_price(20))
+            .unwrap();
+        assert_eq!(updated.price_credits, 20);
+        assert_eq!(updated.title, created.title);
+        assert_eq!(updated.revoked_at_ms, None);
+
+        let revoked = store.revoke_listing(&owner(), &created.id).unwrap();
+        let first_revocation = revoked.revoked_at_ms;
+        assert!(first_revocation.is_some());
+        let again = store.revoke_listing(&owner(), &created.id).unwrap();
+        assert_eq!(again.revoked_at_ms, first_revocation);
+        assert_eq!(store.get_listing(&created.id).unwrap(), Some(again));
+    }
+
+    #[test]
+    fn a_revoked_listing_cannot_change_or_be_bought() {
+        let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
+        let created = store.create_listing(&owner(), new_listing(10)).unwrap();
+        store.revoke_listing(&owner(), &created.id).unwrap();
+
+        assert!(matches!(
+            store.update_listing(&owner(), &created.id, update_price(5)),
+            Err(MarketError::ListingRevoked(_))
+        ));
+        let err = store
+            .record_receipt(NewReceipt {
+                listing_id: created.id.clone(),
+                buyer_id: "buyer-1".to_string(),
+            })
+            .unwrap_err();
+        assert!(matches!(err, MarketError::ListingRevoked(_)));
+        assert!(store.receipts_for_buyer("buyer-1").unwrap().is_empty());
+        // Revoked listings stay visible, marked as revoked.
+        let listed = store.list_listings().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert!(listed[0].revoked_at_ms.is_some());
+    }
+
+    #[test]
+    fn update_changes_only_the_fields_present() {
+        let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
+        let created = store.create_listing(&owner(), new_listing(10)).unwrap();
+        let retitled = store
+            .update_listing(
+                &owner(),
+                &created.id,
+                ListingUpdate {
+                    title: Some("  Renamed  ".to_string()),
+                    ..ListingUpdate::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(retitled.title, "Renamed");
+        assert_eq!(retitled.price_credits, 10);
+        assert_eq!(retitled.license, License::CcBy40);
+    }
+
+    #[test]
+    fn empty_update_and_disabled_license_are_refused() {
+        let config = MarketConfig {
+            licenses: vec![License::CcByNc40],
+            ..MarketConfig::default()
+        };
+        let store = MarketStore::open_in_memory(config).unwrap();
+        let created = store
+            .create_listing(
+                &owner(),
+                NewListing {
+                    license: License::CcByNc40,
+                    ..new_listing(10)
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            store.update_listing(&owner(), &created.id, ListingUpdate::default()),
+            Err(MarketError::InvalidInput(_))
+        ));
+        let relicensed = ListingUpdate {
+            license: Some(License::CcBy40),
+            ..ListingUpdate::default()
+        };
+        assert!(matches!(
+            store.update_listing(&owner(), &created.id, relicensed),
+            Err(MarketError::LicenseNotEnabled(_))
+        ));
+    }
+
+    #[test]
+    fn mutating_an_unknown_listing_is_not_found_for_everyone() {
+        let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
+        assert!(matches!(
+            store.update_listing(&owner(), "missing", update_price(1)),
+            Err(MarketError::ListingNotFound(_))
+        ));
+        assert!(matches!(
+            store.revoke_listing(&other_identity(), "missing"),
+            Err(MarketError::ListingNotFound(_))
         ));
     }
 
@@ -438,6 +728,40 @@ mod tests {
     }
 
     #[test]
+    fn a_v1_store_migrates_in_place_and_keeps_its_listings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("market.sqlite3");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(&format!(
+                "{SCHEMA_V1}
+                 INSERT INTO market_listings (id, seller_id, title, license, price_credits, created_at_ms)
+                 VALUES ('legacy', '{}', 'Old listing', 'CC-BY-4.0', 7, 1);
+                 PRAGMA user_version = 1;",
+                owner_id()
+            ))
+            .unwrap();
+        }
+
+        let store = MarketStore::open(&path, MarketConfig::default()).unwrap();
+        let legacy = store.get_listing("legacy").unwrap().unwrap();
+        assert_eq!(legacy.price_credits, 7);
+        assert_eq!(legacy.revoked_at_ms, None);
+        assert!(store
+            .revoke_listing(&owner(), "legacy")
+            .unwrap()
+            .revoked_at_ms
+            .is_some());
+        drop(store);
+
+        let conn = Connection::open(&path).unwrap();
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+    }
+
+    #[test]
     fn invalid_config_never_opens_a_store() {
         let config = MarketConfig {
             settlement: crate::config::Settlement::OnChain,
@@ -456,7 +780,7 @@ mod tests {
             ..MarketConfig::default()
         };
         let store = MarketStore::open_in_memory(config).unwrap();
-        let listing = store.create_listing(new_listing(50)).unwrap();
+        let listing = store.create_listing(&owner(), new_listing(50)).unwrap();
         assert_eq!(listing.price_credits, 50);
         let listed = store.list_listings().unwrap();
         assert_eq!(listed.len(), 1);
@@ -470,26 +794,29 @@ mod tests {
             ..MarketConfig::default()
         };
         let store = MarketStore::open_in_memory(config).unwrap();
-        let err = store.create_listing(new_listing(49)).unwrap_err();
+        let err = store.create_listing(&owner(), new_listing(49)).unwrap_err();
         assert!(matches!(err, MarketError::InvalidInput(_)));
         assert!(store.list_listings().unwrap().is_empty());
     }
 
     #[test]
     fn new_listing_with_unknown_fields_deserializes() {
-        let json = r#"{
-            "seller_id": "seller-99",
+        let json = format!(
+            r#"{{
+            "seller_id": "{}",
             "title": "Reputation dataset",
             "license": "CC-BY-4.0",
             "price_credits": 100,
             "reputation": 99
-        }"#;
-        let new: NewListing = serde_json::from_str(json).unwrap();
+        }}"#,
+            owner_id()
+        );
+        let new: NewListing = serde_json::from_str(&json).unwrap();
         assert_eq!(new.price_credits, 100);
-        assert_eq!(new.seller_id, "seller-99");
+        assert_eq!(new.seller_id, owner_id());
 
         let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
-        let listing = store.create_listing(new).unwrap();
+        let listing = store.create_listing(&owner(), new).unwrap();
         assert_eq!(listing.price_credits, 100);
     }
 }

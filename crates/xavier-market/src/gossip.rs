@@ -101,6 +101,7 @@ mod tests {
             license: License::CcBy40,
             price_credits: price,
             created_at_ms: time,
+            revoked_at_ms: None,
         }
     }
 
