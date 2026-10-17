@@ -409,10 +409,10 @@ export class ApiClient {
     return this.fetch<SecretLease[]>("/secrets/leases");
   }
 
-  async revokeLease(token: string) {
+  async revokeLease(leaseId: string) {
     return this.fetch<{ status: string }>("/secrets/revoke", {
       method: "POST",
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ lease_id: leaseId }),
     });
   }
 

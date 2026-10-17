@@ -3,7 +3,7 @@ import type { SecretLease } from "../types";
 
 interface LeaseCardProps {
   lease: SecretLease;
-  onRevoke: (token: string) => void;
+  onRevoke: (leaseId: string) => void;
 }
 
 export default function LeaseCard({ lease, onRevoke }: LeaseCardProps) {
@@ -46,15 +46,15 @@ export default function LeaseCard({ lease, onRevoke }: LeaseCardProps) {
               <span className="text-white/20">|</span>
               <code
                 className="text-[10px] font-mono text-white/30 truncate max-w-[120px]"
-                title={lease.token}
+                title={lease.lease_id}
               >
-                {lease.token.slice(0, 8)}...
+                {lease.lease_id.slice(0, 8)}...
               </code>
             </div>
           </div>
         </div>
         <button
-          onClick={() => onRevoke(lease.token)}
+          onClick={() => onRevoke(lease.lease_id)}
           className="p-2 text-white/20 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
           title="Revoke Lease"
         >
