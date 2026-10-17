@@ -32,8 +32,8 @@ use axum::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use xavier_market::{
-    export_namespace_pack, Actor, ListingUpdate, MarketConfig, MarketError, MarketStore,
-    NamespacePack, NewListing, NewReceipt, SignedRequest,
+    Actor, ListingUpdate, MarketConfig, MarketError, MarketStore, NewListing, NewReceipt,
+    SignedRequest,
 };
 
 /// Runtime flag. Only the exact value `beta` enables the routes.
@@ -129,7 +129,6 @@ where
             "/v2/marketplace/receipts",
             post(create_receipt_handler).get(list_receipts_handler),
         )
-        .route("/v2/marketplace/pack/export", get(export_pack_handler))
         .layer(Extension(store))
 }
 
@@ -246,37 +245,6 @@ async fn list_receipts_handler(
     match store.receipts_for_buyer(&buyer_id) {
         Ok(receipts) => Json(receipts).into_response(),
         Err(err) => error_response(err),
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PackExportQuery {
-    pub namespace: Option<String>,
-}
-
-async fn export_pack_handler(
-    Extension(_store): StoreExt,
-    Query(query): Query<PackExportQuery>,
-) -> Response {
-    let Some(namespace) = query.namespace.filter(|ns| !ns.trim().is_empty()) else {
-        return error_status(StatusCode::BAD_REQUEST, "namespace parameter is required");
-    };
-
-    let pack = NamespacePack {
-        namespace: namespace.trim().to_string(),
-        memories_jsonl: Vec::new(),
-        vectors_sqlite: Vec::new(),
-        code_graph_jsonl: None,
-    };
-
-    match export_namespace_pack(&pack) {
-        Ok(bytes) => (
-            StatusCode::OK,
-            [("content-type", "application/octet-stream")],
-            bytes,
-        )
-            .into_response(),
-        Err(err) => error_status(StatusCode::BAD_REQUEST, err.to_string()),
     }
 }
 
@@ -489,26 +457,15 @@ mod tests {
     }
 
     async fn send(router: &Router, request: Request<Body>) -> (StatusCode, Value) {
-        let (status, bytes) = send_raw(router, request).await;
+        let response = router.clone().oneshot(request).await.expect("route");
+        let status = response.status();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let body = if bytes.is_empty() {
             Value::Null
         } else {
             serde_json::from_slice(&bytes).unwrap_or(Value::Null)
         };
         (status, body)
-    }
-
-    async fn send_raw(router: &Router, request: Request<Body>) -> (StatusCode, Vec<u8>) {
-        let response = router.clone().oneshot(request).await.expect("route");
-        let status = response.status();
-        let bytes = response
-            .into_body()
-            .collect()
-            .await
-            .unwrap()
-            .to_bytes()
-            .to_vec();
-        (status, bytes)
     }
 
     fn listing_body() -> Value {
@@ -844,33 +801,5 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn pack_export_route_requires_namespace_and_returns_swalpack() {
-        let _env = MarketEnv::with_flag(Some("beta"));
-        let router: Router = mount(Router::new());
-
-        // Without namespace -> 400 Bad Request
-        let (status, _) = send(
-            &router,
-            json_request(Method::GET, "/v2/marketplace/pack/export", None),
-        )
-        .await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-
-        // With namespace -> 200 OK with SWALPACK1 header
-        let (status, raw) = send_raw(
-            &router,
-            json_request(
-                Method::GET,
-                "/v2/marketplace/pack/export?namespace=swal%2Fapp1%2Finst1",
-                None,
-            ),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        // Pack magic check
-        assert!(raw.starts_with(xavier_market::PACK_MAGIC));
     }
 }

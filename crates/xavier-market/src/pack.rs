@@ -180,7 +180,10 @@ pub fn export_namespace_pack(pack: &NamespacePack) -> Result<Vec<u8>, PackError>
 /// Re-import a namespace package from `.swalpack` bytes.
 pub fn import_namespace_pack(bytes: &[u8]) -> Result<NamespacePack, PackError> {
     let (entries, namespace_opt) = read_pack_info(bytes)?;
-    let namespace = namespace_opt.unwrap_or_else(|| "default".into());
+    let namespace = namespace_opt
+        .map(|ns| ns.trim().to_string())
+        .filter(|ns| !ns.is_empty())
+        .ok_or_else(|| PackError::InvalidNamespace("missing".into()))?;
     let mut memories_jsonl = None;
     let mut vectors_sqlite = None;
     let mut code_graph_jsonl = None;
@@ -332,10 +335,30 @@ mod tests {
             name: "memories.jsonl".into(),
             bytes: b"{}".to_vec(),
         }];
-        let bytes = write_pack(&e).unwrap();
+        let bytes = write_pack_with_namespace(&e, Some("swal/test/inst")).unwrap();
         assert!(matches!(
             import_namespace_pack(&bytes),
             Err(PackError::MissingEntry(_))
+        ));
+    }
+
+    #[test]
+    fn test_import_missing_namespace_rejected() {
+        let entries = vec![
+            PackEntry {
+                name: "memories.jsonl".into(),
+                bytes: b"{}".to_vec(),
+            },
+            PackEntry {
+                name: "vectors.sqlite".into(),
+                bytes: b"{}".to_vec(),
+            },
+        ];
+        // Plain write_pack does not write manifest.namespace
+        let bytes = write_pack(&entries).unwrap();
+        assert!(matches!(
+            import_namespace_pack(&bytes),
+            Err(PackError::InvalidNamespace(reason)) if reason == "missing"
         ));
     }
 }

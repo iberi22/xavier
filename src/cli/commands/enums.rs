@@ -504,26 +504,6 @@ pub enum Command {
         #[command(subcommand)]
         cmd: SkillsCommand,
     },
-    /// Manage .swalpack containers for namespaces and models
-    #[command(name = "pack")]
-    Pack {
-        #[command(subcommand)]
-        cmd: PackCommand,
-    },
-}
-
-/// Subcommands for `xavier pack …` (.swalpack containers).
-#[derive(Subcommand, Debug, Clone)]
-pub enum PackCommand {
-    /// Export memories and vectors for a namespace into a .swalpack container
-    Export {
-        /// Namespace to export (e.g. swal/{appId}/{instanceId})
-        #[arg(long)]
-        namespace: String,
-        /// Output path for the .swalpack file (defaults to <namespace>.swalpack)
-        #[arg(short, long)]
-        out: Option<PathBuf>,
-    },
 }
 
 /// Per-repo memory package subcommands (`xavier repo …`).
