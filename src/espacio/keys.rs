@@ -143,6 +143,31 @@ impl KeyHandle {
     fn same_key(&self, other: &KeyHandle) -> bool {
         self.bytes().ct_eq(other.bytes()).into()
     }
+    /// Return the raw 32-byte DEK key slice as a fixed array, if length matches.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn as_32_bytes(&self) -> Option<zeroize::Zeroizing<[u8; 32]>> {
+        let b = self.bytes();
+        if b.len() == 32 {
+            let mut arr = zeroize::Zeroizing::new([0u8; 32]);
+            arr.copy_from_slice(b);
+            Some(arr)
+        } else {
+            None
+        }
+    }
+
+    /// Return the raw 32-byte DEK key slice as a fixed array, if length matches.
+    #[cfg(not(any(test, feature = "test-utils")))]
+    pub(crate) fn as_32_bytes(&self) -> Option<zeroize::Zeroizing<[u8; 32]>> {
+        let b = self.bytes();
+        if b.len() == 32 {
+            let mut arr = zeroize::Zeroizing::new([0u8; 32]);
+            arr.copy_from_slice(b);
+            Some(arr)
+        } else {
+            None
+        }
+    }
 }
 
 /// Space id of the default workspace keystore (`spaces/default/keystore.json`).

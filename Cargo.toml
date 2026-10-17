@@ -70,7 +70,7 @@ data-commons = ["post-quantum"]
 post-quantum = ["oqs"]
 cli-interactive = ["ratatui", "crossterm"]
 # All features that are safe to run on host CI (no GUI/Winit issues)
-ci-safe = ["self-manage", "pageindex", "test-utils"]
+ci-safe = ["self-manage", "pageindex", "test-utils", "espacio-mesh"]
 # Tree retrieval (standalone crate); pure Rust, no native libs.
 pageindex = ["dep:xavier-pageindex"]
 pageindex-pdf = ["pageindex", "xavier-pageindex/pdf-outline"]
@@ -94,6 +94,7 @@ enterprise = []
 mesh = ["dep:iroh"]
 libp2p = []
 dao-evm = ["dep:alloy"]
+espacio-mesh = []
 
 [[test]]
 name = "auth_register_test"

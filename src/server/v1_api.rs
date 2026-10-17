@@ -1023,6 +1023,93 @@ pub async fn v1_mesh_chunks_push(
     Json(synced_hashes).into_response()
 }
 
+/// V1 mesh sync endpoint for espacio encrypted envelopes (T-07 / #3205).
+/// Wires `ClosedNetworkManager` to Xavier's mesh HTTP sync transport.
+#[cfg(feature = "espacio-mesh")]
+pub async fn v1_mesh_espacio_sync(
+    Json(envelope): Json<crate::espacio::EncryptedEnvelope>,
+) -> impl IntoResponse {
+    let settings = crate::settings::XavierSettings::current();
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
+    let Some(space_manager) = crate::adapters::inbound::http::routes::get_space_manager() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "espacio is disabled on this node" })),
+        )
+            .into_response();
+    };
+
+    let receiver_node = match NodeIdentity::load_or_create() {
+        Ok(id) => id.node_id.0,
+        Err(e) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": format!("node identity unavailable: {e}") })),
+            )
+                .into_response();
+        }
+    };
+
+    let net_mgr = space_manager.closed_network_manager();
+    let channel_mgr = crate::espacio::ChannelManager::with_stores(space_manager.stores());
+
+    // Recover or query key for network
+    let network = match net_mgr.get(&envelope.network_id).await {
+        Some(n) => n,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "closed network not found" })),
+            )
+                .into_response();
+        }
+    };
+
+    // Obtain the vault data key (DEK) for the space
+    let dek = match space_manager.export_dek(&network.space_id).await {
+        Ok(k) => k,
+        Err(e) => {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({ "error": format!("cannot access space key: {e}") })),
+            )
+                .into_response();
+        }
+    };
+
+    match crate::espacio::p2p::receive_channel_batch(
+        net_mgr.as_ref(),
+        &channel_mgr,
+        &envelope.network_id,
+        &receiver_node,
+        &envelope,
+        &dek,
+    )
+    .await
+    {
+        Ok(count) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "status": "ok", "applied": count })),
+        )
+            .into_response(),
+        Err(e) => {
+            let status = if e.contains("not a member") {
+                StatusCode::FORBIDDEN
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (status, Json(serde_json::json!({ "error": e }))).into_response()
+        }
+    }
+}
+
 // ── Session Sharing API ───────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
