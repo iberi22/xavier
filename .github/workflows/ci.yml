@@ -319,6 +319,7 @@ jobs:
         run: |
           cargo test -p xavier-market
           cargo test -p xavier --features ci-safe,market-v2 --test market_v2_router_restart -- --test-threads=1
+          cargo test -p xavier --features ci-safe,market-v2 --lib market_v2 -- --test-threads=1
 
   # Job 3b: Espacios (per-space keys, stores, tokens, links, routing)
   #

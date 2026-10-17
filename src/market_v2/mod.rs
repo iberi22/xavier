@@ -216,8 +216,6 @@ mod tests {
     use serde_json::{json, Value};
     use tower::util::ServiceExt;
 
-    use crate::adapters::inbound::http::routes::create_router;
-
     use super::*;
 
     /// Serialises tests that set process env vars.
@@ -309,7 +307,7 @@ mod tests {
     #[tokio::test]
     async fn flag_off_by_default_mounts_no_routes() {
         let _env = MarketEnv::with_flag(None);
-        let router = create_router();
+        let router: Router = mount(Router::new());
         let (status, _) = send(
             &router,
             json_request(
@@ -326,7 +324,7 @@ mod tests {
     async fn only_the_exact_beta_value_enables_the_routes() {
         for value in ["on", "true", "BETA-1", ""] {
             let _env = MarketEnv::with_flag(Some(value));
-            let router = create_router();
+            let router: Router = mount(Router::new());
             let (status, _) = send(
                 &router,
                 json_request(Method::GET, "/v2/marketplace/listings", None),
@@ -334,12 +332,22 @@ mod tests {
             .await;
             assert_eq!(status, StatusCode::NOT_FOUND, "flag value {value:?}");
         }
+        // Positive control: the exact value mounts the routes, so dropping the
+        // `is_enabled` guard turns the loop above red.
+        let _env = MarketEnv::with_flag(Some("beta"));
+        let router: Router = mount(Router::new());
+        let (status, _) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/listings", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
     }
 
     #[tokio::test]
     async fn client_errors_map_to_4xx() {
         let _env = MarketEnv::with_flag(Some("beta"));
-        let router = create_router();
+        let router: Router = mount(Router::new());
 
         let mut free_text = listing_body();
         free_text["license"] = json!("MIT");
@@ -374,7 +382,7 @@ mod tests {
     async fn bad_config_leaves_routes_unmounted_instead_of_crashing() {
         let _env = MarketEnv::with_flag(Some("beta"));
         std::env::set_var("XAVIER_MARKET_SETTLEMENT", "on_chain");
-        let router = create_router();
+        let router: Router = mount(Router::new());
         let (status, _) = send(
             &router,
             json_request(Method::GET, "/v2/marketplace/listings", None),
@@ -387,7 +395,7 @@ mod tests {
     async fn config_keys_map_to_env_vars_and_limit_licenses() {
         let _env = MarketEnv::with_flag(Some("beta"));
         std::env::set_var("XAVIER_MARKET_LICENSES", "CC-BY-NC-4.0");
-        let router = create_router();
+        let router: Router = mount(Router::new());
 
         // CC-BY-4.0 is not in the configured subset, so the create is refused.
         let (status, _) = send(

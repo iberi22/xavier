@@ -267,3 +267,69 @@ async fn listing_and_receipt_survive_a_daemon_restart() {
 
     std::env::remove_var("XAVIER_TOKEN");
 }
+
+/// Builds the production router (`build_app`) over a fresh fixture state.
+async fn production_app(dir: &TempDir) -> Router {
+    let state = create_test_cli_state(dir).await;
+    let workspace_state = Arc::new(
+        WorkspaceState::new_minimal(
+            state.workspace_id.clone(),
+            state.workspace_dir.clone(),
+            Arc::clone(&state.qmd_memory),
+            Arc::clone(&state.store),
+        )
+        .await,
+    );
+    let deps = AppDeps {
+        workspace_ctx: WorkspaceContext {
+            workspace_id: state.workspace_id.clone(),
+            workspace: workspace_state,
+        },
+        space_manager: None,
+        maloca_router: Router::new(),
+        event_bus_for_ws: xavier::coordination::XavierEventBus::new(10),
+        no_ui: true,
+    };
+    build_app(state, deps)
+}
+
+/// MKT-02 "default off": with the flag unset, any value other than the exact
+/// `beta`, or a bad beta config, the production router serves no `/v2/*`
+/// marketplace route even to a valid root token. `beta` is the control.
+#[tokio::test]
+async fn flag_off_or_bad_config_mounts_nothing_on_the_production_router() {
+    let env = BetaEnv::new();
+    let token = "market-v2-flag-root-token-9999";
+    std::env::set_var("XAVIER_TOKEN", token);
+
+    let cases: [(Option<&str>, Option<&str>, StatusCode); 5] = [
+        (None, None, StatusCode::NOT_FOUND),
+        (Some("on"), None, StatusCode::NOT_FOUND),
+        (Some(""), None, StatusCode::NOT_FOUND),
+        (Some("beta"), Some("on_chain"), StatusCode::NOT_FOUND),
+        (Some("beta"), None, StatusCode::OK),
+    ];
+    for (flag, settlement, expected) in cases {
+        match flag {
+            Some(v) => std::env::set_var("XAVIER_MARKET_V2", v),
+            None => std::env::remove_var("XAVIER_MARKET_V2"),
+        }
+        match settlement {
+            Some(v) => std::env::set_var("XAVIER_MARKET_SETTLEMENT", v),
+            None => std::env::remove_var("XAVIER_MARKET_SETTLEMENT"),
+        }
+        let app = production_app(&env._dir).await;
+        let (status, _) = send(
+            &app,
+            Method::GET,
+            "/v2/marketplace/listings",
+            None,
+            Some(token),
+        )
+        .await;
+        assert_eq!(status, expected, "flag {flag:?} settlement {settlement:?}");
+    }
+
+    std::env::remove_var("XAVIER_MARKET_SETTLEMENT");
+    std::env::remove_var("XAVIER_TOKEN");
+}
