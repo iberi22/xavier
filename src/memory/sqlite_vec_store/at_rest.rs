@@ -1093,15 +1093,34 @@ pub fn decrypt_for(
     }
 }
 
-/// Write-side dispatch.
+/// Write-side dispatch. A space store seals with its own key, a repo store
+/// (XAV-REPO T8) with its record key, and the default store keeps
+/// [`encrypt_for_write`].
 pub fn encrypt_for(
     crypto: Option<&SpaceCrypto>,
+    record_key: Option<&[u8; 32]>,
     record: &mut crate::memory::store::MemoryRecord,
 ) -> Result<bool> {
-    match crypto {
-        Some(c) => c.encrypt_for_write(record),
-        None => encrypt_for_write(record),
+    match (crypto, record_key) {
+        (Some(c), _) => c.encrypt_for_write(record),
+        (None, Some(key)) => encrypt_for_record_key(record, key),
+        (None, None) => encrypt_for_write(record),
     }
+}
+
+/// Write under a bound record key (XAV-REPO T8): every row of the store is
+/// sealed `XRK1` with that key, public or private. It never takes the
+/// default-space path (`XDK2`) and never falls back to the node record key.
+pub fn encrypt_for_record_key(
+    record: &mut crate::memory::store::MemoryRecord,
+    record_key: &[u8; 32],
+) -> Result<bool> {
+    record.clearance = crate::security::clearance::ClearanceLevel::from(clearance_level_for(
+        &record.metadata,
+        &record.path,
+    ) as u8);
+    encrypt_columns_for_write_with_key(record, record_key)?;
+    Ok(true)
 }
 
 /// Classification-aware write encryption. Private records use the
@@ -3055,6 +3074,49 @@ mod tests {
         match saved_dir {
             Some(v) => std::env::set_var(DATA_DIR_ENV, v),
             None => std::env::remove_var(DATA_DIR_ENV),
+        }
+    }
+
+    /// A bound record key seals the row; the node key cannot open it. Without
+    /// a binding the global store keeps wrapping with the node record key.
+    #[test]
+    #[serial_test::serial]
+    fn encrypt_for_dispatch_binds_repo_key_and_keeps_node_key_for_global() {
+        let node_key = [0xEFu8; 32];
+        let repo_key = [0x11u8; 32];
+        let saved = std::env::var(RECORD_KEY_ENV).ok();
+        std::env::set_var(RECORD_KEY_ENV, "ef".repeat(32));
+
+        // Public, so the default-space (XDK2) path is not taken either way.
+        let public_record = || MemoryRecord {
+            id: "rec_pub".to_string(),
+            workspace_id: "ws1".to_string(),
+            path: "notes/pub.md".to_string(),
+            content: "hello".to_string(),
+            metadata: serde_json::json!({"clearance": "PUBLIC"}),
+            ..Default::default()
+        };
+
+        let mut repo_rec = public_record();
+        assert!(encrypt_for(None, Some(&repo_key), &mut repo_rec).unwrap());
+        let wrapped = repo_rec.encrypted_dek.clone().unwrap();
+        assert!(unwrap_dek(&wrapped, &repo_key).is_ok());
+        assert!(
+            unwrap_dek(&wrapped, &node_key).is_err(),
+            "a repo row must not open with the node record key"
+        );
+
+        let mut global_rec = public_record();
+        encrypt_for(None, None, &mut global_rec).unwrap();
+        let wrapped = global_rec.encrypted_dek.clone().unwrap();
+        assert!(
+            unwrap_dek(&wrapped, &node_key).is_ok(),
+            "the global store keeps the node record key"
+        );
+
+        match saved {
+            Some(v) => std::env::set_var(RECORD_KEY_ENV, v),
+            None => std::env::remove_var(RECORD_KEY_ENV),
         }
     }
 

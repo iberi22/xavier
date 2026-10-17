@@ -64,11 +64,7 @@ impl VecSqliteMemoryStore {
         let filters_c = filters.cloned();
         let trimmed_query_c = trimmed_query.clone();
         // Resolved once per query: decrypts rows inside the SQL closure.
-        let node_key = if self.crypto.is_some() {
-            None
-        } else {
-            super::at_rest::resolve_record_key()
-        };
+        let node_key = self.read_record_key();
         let crypto = self.crypto.clone();
 
         let scored = self.conn_provider.with_conn(&self.project_id, move |conn| {
@@ -290,6 +286,7 @@ impl VecSqliteMemoryStore {
         let query_c = query.to_string();
         let source_c = source.clone();
         let crypto = self.crypto.clone();
+        let record_key = self.record_key;
 
         let paths = self.conn_provider.with_conn(&self.project_id, move |conn| {
             let seed_ids = graph::resolve_graph_seed_entities(conn, &workspace_id_c, &source_c, &query_c)?;
@@ -368,7 +365,7 @@ impl VecSqliteMemoryStore {
                 while let Some(hit_row) = hit_rows.next()? {
                     if let Ok(mut record) = Self::deserialize_record(hit_row) {
                         // Best effort: hits stay listed even if the node key is missing.
-                        let _ = super::at_rest::decrypt_for(crypto.as_ref(), &mut record, None);
+                        let _ = super::at_rest::decrypt_for(crypto.as_ref(), &mut record, record_key.as_ref());
                         if record.id != source_c.id {
                             memory_hits.push(record);
                         }

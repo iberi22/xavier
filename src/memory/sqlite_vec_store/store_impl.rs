@@ -194,7 +194,11 @@ impl MemoryStore for VecSqliteMemoryStore {
         }).await?;
 
         if let Some(mut record) = record {
-            super::at_rest::decrypt_for(self.crypto.as_ref(), &mut record, None)?;
+            super::at_rest::decrypt_for(
+                self.crypto.as_ref(),
+                &mut record,
+                self.record_key.as_ref(),
+            )?;
             Ok(Some(record))
         } else {
             Ok(None)
@@ -327,7 +331,11 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         let mut results = Vec::with_capacity(records.len());
         for mut record in records {
-            let _ = super::at_rest::decrypt_for(self.crypto.as_ref(), &mut record, None);
+            let _ = super::at_rest::decrypt_for(
+                self.crypto.as_ref(),
+                &mut record,
+                self.record_key.as_ref(),
+            );
             results.push(record);
         }
         Ok(results)
@@ -395,6 +403,7 @@ impl MemoryStore for VecSqliteMemoryStore {
             let filters_owned = filters.clone();
             let workspace_owned = workspace_id.to_string();
             let crypto = self.crypto.clone();
+            let record_key = self.record_key;
             let records = self
                 .conn_provider
                 .with_conn(&self.project_id, move |conn| {
@@ -403,7 +412,11 @@ impl MemoryStore for VecSqliteMemoryStore {
                     let mut out: Vec<MemoryRecord> = Vec::new();
                     while let Some(row) = rows.next()? {
                         let mut record = VecSqliteMemoryStore::deserialize_record(row)?;
-                        let _ = super::at_rest::decrypt_for(crypto.as_ref(), &mut record, None);
+                        let _ = super::at_rest::decrypt_for(
+                            crypto.as_ref(),
+                            &mut record,
+                            record_key.as_ref(),
+                        );
                         if crate::memory::store::record_matches_filters(
                             &record,
                             &workspace_owned,
@@ -436,7 +449,11 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         let mut results = Vec::with_capacity(records.len());
         for mut record in records {
-            let _ = super::at_rest::decrypt_for(self.crypto.as_ref(), &mut record, None);
+            let _ = super::at_rest::decrypt_for(
+                self.crypto.as_ref(),
+                &mut record,
+                self.record_key.as_ref(),
+            );
             results.push(record);
         }
 
@@ -480,7 +497,11 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         let mut results = Vec::with_capacity(records.len());
         for mut record in records {
-            let _ = super::at_rest::decrypt_for(self.crypto.as_ref(), &mut record, None);
+            let _ = super::at_rest::decrypt_for(
+                self.crypto.as_ref(),
+                &mut record,
+                self.record_key.as_ref(),
+            );
             results.push(record);
         }
 
@@ -968,6 +989,7 @@ impl MemoryStore for VecSqliteMemoryStore {
     async fn symbols_for_memory(&self, memory_id: &str) -> Result<Vec<String>> {
         let memory_id = memory_id.to_string();
         let crypto = self.crypto.clone();
+        let record_key = self.record_key;
         let code_db_path = self.link_code_graph_path();
         self.conn_provider
             .with_conn(&self.project_id, move |conn| {
@@ -1008,8 +1030,11 @@ impl MemoryStore for VecSqliteMemoryStore {
                             // be read. The PUBLIC gate lives in
                             // `link_memory_on_demand`: `encrypted_dek` cannot tell
                             // public from private because it is always set here.
-                            let _ =
-                                super::at_rest::decrypt_for(crypto.as_ref(), &mut record, None);
+                            let _ = super::at_rest::decrypt_for(
+                                crypto.as_ref(),
+                                &mut record,
+                                record_key.as_ref(),
+                            );
                             symbols = Self::link_memory_on_demand_at(
                                 &code_db_path,
                                 conn,
@@ -1206,6 +1231,7 @@ impl VecSqliteMemoryStore {
             let project_id_c = self.project_id.clone();
             let dedup_settings_c = dedup_settings.clone();
             let crypto_c = self.crypto.clone();
+            let record_key_c = self.record_key;
 
             let record_ns = match crate::memory::schema::resolve_metadata(
                 &record_c.path,
@@ -1306,7 +1332,7 @@ impl VecSqliteMemoryStore {
                         Ok(mut stmt) => {
                             match stmt.query(rusqlite::params_from_iter(&query_params)) {
                                 Ok(mut rows) => {
-                                    let node_key = if crypto_c.is_some() { None } else { super::at_rest::resolve_record_key() };
+                                    let node_key = if crypto_c.is_some() { None } else { record_key_c.or_else(super::at_rest::resolve_record_key) };
                                     while let Ok(Some(row)) = rows.next() {
                                         let distance = match row.get::<_, rusqlite::types::Value>(18) {
                                             Ok(rusqlite::types::Value::Real(v)) => v as f32,
@@ -1389,7 +1415,7 @@ impl VecSqliteMemoryStore {
                                     let mut best_sim = -1.0f32;
                                     let mut best_rec = None;
                                     // Resolve once: lets namespace matching work on encrypted rows.
-                                    let node_key = if crypto_c.is_some() { None } else { super::at_rest::resolve_record_key() };
+                                    let node_key = if crypto_c.is_some() { None } else { record_key_c.or_else(super::at_rest::resolve_record_key) };
                                     while let Ok(Some(row)) = rows.next() {
                                         match Self::deserialize_record(row) {
                                             Ok(mut rec) => {
@@ -1497,7 +1523,7 @@ impl VecSqliteMemoryStore {
         // Legacy `encryption_at_rest_enabled` KEK path is retired for this
         // store: the node record key (XAVIER_RECORD_KEY / node/record.key)
         // replaces it. Reads still understand legacy KEK rows.
-        super::at_rest::encrypt_for(self.crypto.as_ref(), &mut record)?;
+        super::at_rest::encrypt_for(self.crypto.as_ref(), self.record_key.as_ref(), &mut record)?;
 
         Ok(record)
     }
@@ -1968,6 +1994,7 @@ mod tests {
             event_tx: None,
             dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(Default::default())),
             crypto: None,
+            record_key: None,
             repo_root: None,
         };
 
@@ -2261,6 +2288,7 @@ mod tests {
                 crate::settings::types::DedupSettings::default(),
             )),
             crypto: None,
+            record_key: None,
             repo_root: Some(std::path::PathBuf::from("/fake/repo")),
         };
         assert_eq!(
@@ -2288,6 +2316,7 @@ mod tests {
                 crate::settings::types::DedupSettings::default(),
             )),
             crypto: None,
+            record_key: None,
             repo_root: None,
         };
         assert_eq!(
