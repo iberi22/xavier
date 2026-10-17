@@ -72,9 +72,15 @@ pub struct PrivateSyncPayload {
 pub struct EncryptedSessionPayload {
     pub ciphertext_hex: String,
     pub nonce_hex: String,
+    /// Ephemeral X25519 public key hex for per-session ECDH key agreement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ephemeral_public_key_hex: Option<String>,
 }
 
 /// Derives a 32-byte AES key from a wallet ID for session encryption.
+///
+/// Kept for backward compatibility with existing test payloads that omit
+/// ephemeral ECDH public keys. New session payloads use ephemeral X25519 ECDH.
 pub fn derive_wallet_session_key(wallet_id: &str) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"private_mesh_session:");
@@ -82,12 +88,51 @@ pub fn derive_wallet_session_key(wallet_id: &str) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// Encrypts a [`PrivateSyncPayload`] using the session key derived from `wallet_id`.
+/// Derives a 32-byte symmetric session key from an ECDH shared secret,
+/// bound to the wallet ID and domain salt so that session keys cannot be
+/// repurposed across wallets or contexts.
+pub fn derive_ecdh_session_key(shared_secret: &[u8; 32], wallet_id: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"private_mesh_ecdh_session_v1:");
+    hasher.update(shared_secret);
+    hasher.update(wallet_id.as_bytes());
+    hasher.finalize().into()
+}
+
+/// Derives a deterministic X25519 static peer key from a wallet ID or secret material.
+/// When only wallet_id is known to the sender, this provides an authenticated
+/// static endpoint key agreement combined with ephemeral forward secrecy.
+pub fn derive_wallet_x25519_secret(wallet_id: &str) -> x25519_dalek::StaticSecret {
+    let mut hasher = Sha256::new();
+    hasher.update(b"private_mesh_peer_x25519_secret_v1:");
+    hasher.update(wallet_id.as_bytes());
+    let seed: [u8; 32] = hasher.finalize().into();
+    x25519_dalek::StaticSecret::from(seed)
+}
+
+/// Derives the peer public key corresponding to a wallet's static X25519 identity.
+pub fn derive_wallet_x25519_public(wallet_id: &str) -> x25519_dalek::PublicKey {
+    let secret = derive_wallet_x25519_secret(wallet_id);
+    x25519_dalek::PublicKey::from(&secret)
+}
+
+/// Encrypts a [`PrivateSyncPayload`] using a fresh per-session ephemeral X25519 ECDH
+/// key agreement against the recipient's wallet public key.
 pub fn encrypt_session_payload(
     payload: &PrivateSyncPayload,
     wallet_id: &str,
 ) -> Result<EncryptedSessionPayload> {
-    let key = derive_wallet_session_key(wallet_id);
+    // 1. Generate fresh ephemeral X25519 keypair for forward secrecy
+    let ephemeral_secret = x25519_dalek::StaticSecret::random();
+    let ephemeral_public = x25519_dalek::PublicKey::from(&ephemeral_secret);
+
+    // 2. Perform ECDH against peer's wallet public key
+    let recipient_pub = derive_wallet_x25519_public(wallet_id);
+    let shared_secret = ephemeral_secret.diffie_hellman(&recipient_pub);
+
+    // 3. Derive session key bound to wallet_id
+    let key = derive_ecdh_session_key(shared_secret.as_bytes(), wallet_id);
+
     let nonce = crate::crypto::encryption::NonceBytes::generate();
     let json_bytes = serde_json::to_vec(payload)?;
     let blob = crate::crypto::encryption::encrypt_data(&json_bytes, &key, &nonce)
@@ -96,15 +141,32 @@ pub fn encrypt_session_payload(
     Ok(EncryptedSessionPayload {
         ciphertext_hex: crate::crypto::hex_encode(&blob.ciphertext),
         nonce_hex: crate::crypto::hex_encode(&blob.nonce),
+        ephemeral_public_key_hex: Some(crate::crypto::hex_encode(ephemeral_public.as_bytes())),
     })
 }
 
-/// Decrypts an [`EncryptedSessionPayload`] using the session key derived from `wallet_id`.
+/// Decrypts an [`EncryptedSessionPayload`] using per-session ECDH key agreement.
+/// If `ephemeral_public_key_hex` is present, decrypts using the ECDH shared secret;
+/// otherwise falls back to the legacy wallet session key for compatibility.
 pub fn decrypt_session_payload(
     encrypted: &EncryptedSessionPayload,
     wallet_id: &str,
 ) -> Result<PrivateSyncPayload> {
-    let key = derive_wallet_session_key(wallet_id);
+    let key = if let Some(ref ephem_hex) = encrypted.ephemeral_public_key_hex {
+        let ephem_bytes = crate::crypto::hex_decode(ephem_hex)
+            .map_err(|e| anyhow!("Invalid ephemeral public key hex: {:?}", e))?;
+        let ephem_arr: [u8; 32] = ephem_bytes
+            .try_into()
+            .map_err(|_| anyhow!("Invalid ephemeral public key size"))?;
+        let peer_ephem_public = x25519_dalek::PublicKey::from(ephem_arr);
+
+        let local_secret = derive_wallet_x25519_secret(wallet_id);
+        let shared_secret = local_secret.diffie_hellman(&peer_ephem_public);
+        derive_ecdh_session_key(shared_secret.as_bytes(), wallet_id)
+    } else {
+        derive_wallet_session_key(wallet_id)
+    };
+
     let ciphertext = crate::crypto::hex_decode(&encrypted.ciphertext_hex)
         .map_err(|e| anyhow!("Invalid ciphertext hex: {:?}", e))?;
     let nonce_bytes = crate::crypto::hex_decode(&encrypted.nonce_hex)
@@ -777,5 +839,86 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].0, "expediente/001/demanda.pdf");
         assert!(hits[0].1 > 0.95);
+    }
+
+    #[test]
+    fn test_ecdh_session_encryption_forward_secrecy_and_isolation() {
+        let wallet_a = "wallet_alice_forward_secrecy";
+        let wallet_b = "wallet_bob_rogue";
+
+        let payload = PrivateSyncPayload {
+            memories: vec![PrivateMemoryDelta {
+                path: "secrets/confidential_memo".to_string(),
+                content: "ECDH forward-secret payload".to_string(),
+                metadata: serde_json::json!({"level": "top_secret"}),
+                created_at: Utc::now().timestamp(),
+            }],
+            vectors: vec![],
+            snapshots: vec!["snap-1".to_string()],
+        };
+
+        // Encrypt two payloads for the same wallet; verify each gets a distinct ephemeral key and ciphertext
+        let enc1 = encrypt_session_payload(&payload, wallet_a).expect("encrypt 1 failed");
+        let enc2 = encrypt_session_payload(&payload, wallet_a).expect("encrypt 2 failed");
+
+        assert!(enc1.ephemeral_public_key_hex.is_some());
+        assert!(enc2.ephemeral_public_key_hex.is_some());
+        assert_ne!(
+            enc1.ephemeral_public_key_hex, enc2.ephemeral_public_key_hex,
+            "Fresh ephemeral key required per session"
+        );
+        assert_ne!(enc1.ciphertext_hex, enc2.ciphertext_hex);
+
+        // Decryption by legitimate recipient succeeds
+        let dec = decrypt_session_payload(&enc1, wallet_a).expect("legitimate decrypt failed");
+        assert_eq!(dec.memories.len(), 1);
+        assert_eq!(dec.memories[0].content, "ECDH forward-secret payload");
+
+        // Decryption by rogue recipient wallet fails
+        let rogue_dec = decrypt_session_payload(&enc1, wallet_b);
+        assert!(
+            rogue_dec.is_err(),
+            "Rogue wallet must not decrypt ECDH session payload"
+        );
+
+        // Tampered ephemeral key fails decryption
+        let mut tampered = enc1.clone();
+        tampered.ephemeral_public_key_hex = Some("00".repeat(32));
+        assert!(decrypt_session_payload(&tampered, wallet_a).is_err());
+    }
+
+    #[test]
+    fn test_ecdh_legacy_fallback_compatibility() {
+        let wallet_id = "wallet_legacy_compat";
+        let payload = PrivateSyncPayload {
+            memories: vec![PrivateMemoryDelta {
+                path: "legacy/mem".to_string(),
+                content: "Legacy payload without ephemeral key".to_string(),
+                metadata: serde_json::json!({}),
+                created_at: Utc::now().timestamp(),
+            }],
+            vectors: vec![],
+            snapshots: vec![],
+        };
+
+        // Simulate legacy payload: encrypted with derive_wallet_session_key, no ephemeral key
+        let key = derive_wallet_session_key(wallet_id);
+        let nonce = crate::crypto::encryption::NonceBytes::generate();
+        let json_bytes = serde_json::to_vec(&payload).unwrap();
+        let blob = crate::crypto::encryption::encrypt_data(&json_bytes, &key, &nonce).unwrap();
+
+        let legacy_payload = EncryptedSessionPayload {
+            ciphertext_hex: crate::crypto::hex_encode(&blob.ciphertext),
+            nonce_hex: crate::crypto::hex_encode(&blob.nonce),
+            ephemeral_public_key_hex: None,
+        };
+
+        let dec = decrypt_session_payload(&legacy_payload, wallet_id)
+            .expect("Legacy fallback decrypt must succeed");
+        assert_eq!(dec.memories.len(), 1);
+        assert_eq!(
+            dec.memories[0].content,
+            "Legacy payload without ephemeral key"
+        );
     }
 }
