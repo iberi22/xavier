@@ -133,8 +133,8 @@ if has '\.rs$'; then
     if [ "${SWAL_SKIP_AFFECTED:-0}" = "1" ]; then
         skip "clippy/tests afectados omitidos (SWAL_SKIP_AFFECTED=1)"
     elif [ -x "scripts/affected-tests.sh" ]; then
-        note "🧪  [SWAL] clippy + tests de lo staged"
-        scripts/affected-tests.sh || fail "clippy o tests afectados fallaron (ver arriba)"
+        note "🧪  [SWAL] clippy de lo staged (tests: pre-push/CI en lote)"
+        scripts/affected-tests.sh --quick || fail "clippy o tests afectados fallaron (ver arriba)"
     fi
 fi
 

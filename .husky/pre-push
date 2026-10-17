@@ -223,8 +223,13 @@ fi
 if [ "${SWAL_SKIP_AFFECTED:-0}" = "1" ]; then
     skip "tests afectados omitidos (SWAL_SKIP_AFFECTED=1)"
 elif [ -x "$ROOT/scripts/affected-tests.sh" ] && git rev-parse --verify -q origin/main >/dev/null 2>&1; then
-    note "🧪  [SWAL] tests afectados vs origin/main"
-    "$ROOT/scripts/affected-tests.sh" --base origin/main || fail "tests afectados fallaron"
+    if [ "${SWAL_PUSH_TESTS:-1}" = "0" ]; then
+        note "🧪  [SWAL] clippy de cambios vs origin/main (tests pospuestos al lote / CI)"
+        "$ROOT/scripts/affected-tests.sh" --quick --base origin/main || fail "clippy de cambios falló"
+    else
+        note "🧪  [SWAL] tests afectados vs origin/main"
+        "$ROOT/scripts/affected-tests.sh" --base origin/main || fail "tests afectados fallaron"
+    fi
 fi
 
 # ── 5. Force-push to a shared branch ──────────────────────────────────────────

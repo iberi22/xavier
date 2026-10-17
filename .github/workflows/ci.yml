@@ -214,6 +214,54 @@ jobs:
         # See commit message for full rationale and reproduction log.
         run: cargo nextest run -p xavier --features ci-safe --lib --profile ci
 
+  # Job 3b: Affected Rust Tests Validation (informational batch validation)
+  rust-affected:
+    name: Affected Rust Tests
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
+      - name: Configure Swap Space
+        run: |
+          if ! swapon --show | grep -q "/swapfile"; then
+            sudo swapoff /swapfile 2>/dev/null || true
+            sudo rm -f /swapfile
+            sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+          fi
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-safe-test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Run Affected Tests
+        env:
+          SWAL_BUILD_SLOTS: "1"
+        run: |
+          git fetch origin ${{ github.base_ref }} --depth=200 || true
+          scripts/affected-tests.sh --base origin/${{ github.base_ref }} --no-clippy
+
   # Job: Test-write tripwire
   # `scripts/check-test-writes.sh` is the guard that keeps the suite from
   # polluting the live `~/.xavier` store: it asserts every integration-test /
