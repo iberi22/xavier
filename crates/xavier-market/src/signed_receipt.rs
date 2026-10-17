@@ -98,7 +98,7 @@ mod tests {
             listing_id: "lst_456".to_string(),
             buyer_id: "buy_789".to_string(),
             amount_credits: 50,
-            currency: Currency::Credits,
+            currency: Currency::InternalCredits,
             created_at_ms: 1234567890,
         }
     }
