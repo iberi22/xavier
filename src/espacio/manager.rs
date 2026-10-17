@@ -1755,8 +1755,6 @@ mod persistence_tests {
 
         mk(&mgr, "esp_def").await;
 
-        let def_cap = SpaceProtocol::default().members_cap;
-
         // it should allow adding a member as long as under default cap
         mgr.add_member("esp_def", "member2", SpaceRole::Member)
             .await
