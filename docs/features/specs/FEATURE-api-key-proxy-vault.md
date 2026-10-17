@@ -65,9 +65,9 @@ Xavier actúa como **proxy de confianza** para API keys de terceros (LLM provide
 |---|---|:---|
 | KeyLeaseManager (wrapper agente) | 0% | Capa que intercepta `ModelProviderClient.generate_text()` → solicita lease |
 | Agent lifecycle hooks | 0% | `on_task_start()` → lend, `on_task_complete()` → revoke |
-| Anti-exfiltración detector | 0% | Detecta si una API key se usa fuera del proxy |
-| Dashboard UI leases | 0% | Panel admin con leases activos, revoke button, histórico |
-| MCP tool secret resolution | 0% | MCP tools no usan el sistema de leases |
+| ~~Anti-exfiltración detector~~ | Hecho | `AntiExfilDetector` aplicado en `KeyLendingEngine::lend` (10/min por agente). `is_allowed_ip` no bloquea nada por sí solo. |
+| ~~Dashboard UI leases~~ | Hecho | Settings → Security → Leases (panel-ui) usa `GET /secrets/leases` y `GET /secrets/history`, enmascarados por `lease_id`. El helper `dashboard_leases` se eliminó (#3302). |
+| ~~MCP tool secret resolution~~ | Hecho | `secret_lend` y `secret_exec` resuelven desde el vault por el `KeyLendingEngine` compartido. |
 
 ## Sub-features Requeridas (Para Jules)
 

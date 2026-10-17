@@ -693,22 +693,25 @@ Information groups with ACL read/write/audit enforced on ALL reads, audited. `Gr
 
 ---
 
-## REQ-035: Vault hardening anti-exfil + MCP + OpenBao + dashboard (WAVE-3.05)
+## REQ-035: Vault hardening anti-exfil + MCP + lease dashboard (WAVE-3.05)
 
 - **Category:** Security
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Features:** `feat-encryption-at-rest`
-- **Files:** `src/secrets/lending.rs`
-- **Docs:** Docs — Vault anti-exfiltration + MCP + OpenBao + dashboard leases
+- **Files:** `src/secrets/lending.rs`, `src/coordination/secrets.rs`, `src/cli/handlers/secrets.rs`
+- **Docs:** Docs — Vault anti-exfiltration + MCP + lease list/history contract
 
 ### Description
-`AntiExfilDetector` blocks bulk lends (>10/min per agent) and external IPs (allow 127/10/192.168 only). Deprecated MCP resolution and OpenBao stubs removed (2026-10-15); dashboard view `VaultDashboardLease` via `dashboard_leases` (masked tokens, expiry).
+`AntiExfilDetector` is enforced in `KeyLendingEngine::lend` and blocks bulk lends (>10/min per agent). `is_allowed_ip` is a proxy-path helper that gates nothing on its own. The deprecated OpenBao backend and the MCP resolution stub were removed (2026-10-15). The lease dashboard (panel-ui Settings → Security → Leases) is served by `GET /secrets/leases` and `GET /secrets/history`. Both return only masked `SecretLeaseView` rows keyed by an opaque `lease_id`: no token and no secret value. Status and revoke take the same `lease_id`. The former `dashboard_leases` helper was deleted in #3302, and the route is the only served surface.
 
 ### Acceptance criteria
-- [x] `AntiExfilDetector::check_and_record` enforces rate limit + `is_allowed_ip`
-- [x] Deprecated MCP resolution and OpenBao stubs removed (2026-10-15)
-- [x] `dashboard_leases` returns `VaultDashboardLease` list
+- [x] `AntiExfilDetector::check_and_record` enforces the per-agent rate limit in the lend path
+- [x] Deprecated MCP resolution and OpenBao backend removed (2026-10-15)
+- [x] `GET /secrets/leases` returns `lease_id`, `secret_name`, `agent_id`, `created_at`, `expires_at` and never a token (`leases_list_contract_exposes_lease_id_and_never_the_token`)
+- [x] `GET /secrets/history` names leases by `lease_id` and never carries the session token (`history_rows_name_leases_by_id_and_never_carry_the_session_token`)
+- [x] `GET /secrets/status/{lease_id}` and `POST /secrets/revoke` work by opaque lease id and reject tokens (`status_and_revoke_work_by_lease_id_and_reject_tokens`)
+- [x] `dashboard_leases` deleted; panel-ui `LeasesPage` and `LeaseHistoryPage` consume the routes (tests in `panel-ui/tests/`)
 - [x] Grep `Vault` in `src/secrets/lending.rs` >=1
 
 ---
