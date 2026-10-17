@@ -170,7 +170,8 @@ mod tests {
 
     #[test]
     fn test_chain_survives_reopening() {
-        let path = tempfile::tempdir().unwrap().path().join("a.db");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.db");
         AuditChain::open(&path).unwrap().append("grant", &json!(1)).unwrap();
         assert_eq!(AuditChain::open(&path).unwrap().verify().unwrap(), 1);
     }
