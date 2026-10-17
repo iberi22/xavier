@@ -87,7 +87,10 @@ pub fn read_pack(bytes: &[u8]) -> Result<Vec<PackEntry>, PackError> {
     let mut result = Vec::new();
     let mut names = std::collections::HashSet::new();
     for me in m.entries {
-        if off.checked_add(me.len).map_or(true, |end| bytes.len() < end) {
+        if off
+            .checked_add(me.len)
+            .map_or(true, |end| bytes.len() < end)
+        {
             return Err(PackError::Truncated);
         }
         let e_bytes = &bytes[off..off + me.len];
