@@ -471,12 +471,26 @@ async fn test_e2e_cross_wallet_rejected_live() {
     let reg_b = register_wallet_node_live(&client, &url, &key_b, "node-b", "addr-b").await;
     assert_eq!(reg_b, reqwest::StatusCode::CREATED);
 
-    // Attempt sync targeting node B using wallet-a -> 403 Forbidden
+    // Attempt sync targeting node B, proving wallet-a's key -> 403 Forbidden
+    let challenge: xavier::mesh::wallet_ownership::WalletChallenge = client
+        .get(format!(
+            "{}/v1/f12/private-mesh/challenge?wallet_id={}",
+            url, wallet_a
+        ))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let proof =
+        xavier::mesh::wallet_ownership::sign_wallet_action(&key_a, &challenge, "sync", "node-b");
     let sync_res = client
         .post(format!("{}/v1/f12/private-mesh/sync", url))
         .json(&serde_json::json!({
             "wallet_id": wallet_a,
-            "target_node": "node-b"
+            "target_node": "node-b",
+            "proof": proof,
         }))
         .send()
         .await

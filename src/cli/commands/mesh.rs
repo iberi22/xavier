@@ -5,6 +5,8 @@ use crate::cli::config::resolve_http_token;
 use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
+use xavier::mesh::private_mesh::derive_wallet_id;
+use xavier::mesh::wallet_ownership::{sign_wallet_action, WalletChallenge};
 use xavier::mesh::{
     pairing_registry::PairingSecretRegistry, MeshTransport, NodeId, NodeIdentity, PeerInfo,
     PeerRegistry,
@@ -331,14 +333,26 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 wallet_id, target_node
             );
 
+            let identity = NodeIdentity::load_or_create()?;
+            ensure_wallet_owner(&identity, &wallet_id)?;
+
             let client = &crate::cli::commands::enums::CLI_HTTP_CLIENT;
             let port = settings.server.port;
-            let url = format!("http://127.0.0.1:{}/v1/f12/private-mesh/sync", port);
 
-            let body = serde_json::json!({
-                "wallet_id": wallet_id,
-                "target_node": target_node,
-            });
+            let challenge_url = format!(
+                "http://127.0.0.1:{}/v1/f12/private-mesh/challenge?wallet_id={}",
+                port,
+                urlencoding::encode(&wallet_id)
+            );
+            let challenge_resp = client.get(&challenge_url).send().await?;
+            if !challenge_resp.status().is_success() {
+                let err_text = challenge_resp.text().await?;
+                bail!("❌ Could not get a wallet challenge: {}", err_text);
+            }
+            let challenge: WalletChallenge = challenge_resp.json().await?;
+
+            let url = format!("http://127.0.0.1:{}/v1/f12/private-mesh/sync", port);
+            let body = private_sync_body(&identity, &wallet_id, &target_node, &challenge)?;
 
             let resp = client.post(&url).json(&body).send().await?;
 
@@ -437,10 +451,85 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
     Ok(())
 }
 
+/// Fails unless the local node key is the owner of `wallet_id`.
+fn ensure_wallet_owner(identity: &NodeIdentity, wallet_id: &str) -> Result<()> {
+    if derive_wallet_id(&identity.public_key) != wallet_id {
+        bail!(
+            "❌ The local node key does not own wallet '{}'. Run private-sync from the node that owns this wallet.",
+            wallet_id
+        );
+    }
+    Ok(())
+}
+
+/// Builds the `/private-mesh/sync` body, with the challenge signed for this target.
+fn private_sync_body(
+    identity: &NodeIdentity,
+    wallet_id: &str,
+    target_node: &str,
+    challenge: &WalletChallenge,
+) -> Result<serde_json::Value> {
+    if challenge.wallet_id != wallet_id {
+        bail!("❌ Wallet challenge was issued for a different wallet");
+    }
+    let proof = sign_wallet_action(identity, challenge, "sync", target_node);
+    Ok(serde_json::json!({
+        "wallet_id": wallet_id,
+        "target_node": target_node,
+        "proof": proof,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
+    use xavier::mesh::wallet_ownership::{wallet_action_payload, WalletRegistrationProof};
+
+    fn challenge_for(wallet_id: &str) -> WalletChallenge {
+        WalletChallenge {
+            challenge_id: "challenge-1".to_string(),
+            wallet_id: wallet_id.to_string(),
+            nonce_hex: "00".repeat(32),
+            expires_at: 1_900_000_000,
+        }
+    }
+
+    #[test]
+    fn private_sync_body_carries_proof_for_target() {
+        let key = NodeIdentity::generate();
+        let wallet = derive_wallet_id(&key.public_key);
+        let challenge = challenge_for(&wallet);
+
+        let body = private_sync_body(&key, &wallet, "node-b", &challenge).unwrap();
+        assert_eq!(body["wallet_id"], wallet.as_str());
+        assert_eq!(body["target_node"], "node-b");
+
+        let proof: WalletRegistrationProof = serde_json::from_value(body["proof"].clone()).unwrap();
+        assert_eq!(proof.challenge_id, challenge.challenge_id);
+        let signature = xavier::crypto::hex_decode(&proof.signature_hex).unwrap();
+        let payload = wallet_action_payload(&challenge, "sync", "node-b");
+        assert!(NodeIdentity::verify(&key.public_key, &payload, &signature));
+        // the same signature does not cover a different target
+        let other = wallet_action_payload(&challenge, "sync", "node-c");
+        assert!(!NodeIdentity::verify(&key.public_key, &other, &signature));
+    }
+
+    #[test]
+    fn private_sync_rejects_wallet_not_owned_by_local_key() {
+        let key = NodeIdentity::generate();
+        let own_wallet = derive_wallet_id(&key.public_key);
+        let other = NodeIdentity::generate();
+        let other_wallet = derive_wallet_id(&other.public_key);
+
+        assert!(ensure_wallet_owner(&key, &own_wallet).is_ok());
+        let err = ensure_wallet_owner(&key, &other_wallet).unwrap_err();
+        assert!(err.to_string().contains("does not own wallet"));
+
+        // a challenge issued for another wallet is refused before signing
+        let challenge = challenge_for(&other_wallet);
+        assert!(private_sync_body(&key, &own_wallet, "node-b", &challenge).is_err());
+    }
 
     #[tokio::test]
     async fn test_mesh_ping_failure_returns_err() {

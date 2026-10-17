@@ -19,6 +19,7 @@ use crate::mesh::private_mesh::derive_wallet_id;
 const CHALLENGE_TTL_SECS: u64 = 60;
 const MAX_PENDING_CHALLENGES: usize = 1024;
 const SIGN_DOMAIN: &str = "swal-private-mesh-wallet-register-v1";
+const ACTION_DOMAIN: &str = "swal-private-mesh-wallet-action-v1";
 
 /// Challenge issued for a single wallet registration attempt.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -111,6 +112,73 @@ pub fn verify_wallet_registration(
     wallet_id: &str,
     node_id: &str,
 ) -> Result<()> {
+    let (challenge, public_key) = consume_challenge(proof, wallet_id)?;
+    let signature = crate::crypto::hex_decode(&proof.signature_hex)?;
+    let payload = wallet_registration_payload(&challenge, node_id);
+    if !NodeIdentity::verify(&public_key, &payload, &signature) {
+        bail!("invalid registration signature");
+    }
+    Ok(())
+}
+
+/// Canonical bytes signed for a wallet-owner action: domain, challenge, wallet,
+/// the action name and its scope (for example the target node of a sync).
+pub fn wallet_action_payload(challenge: &WalletChallenge, action: &str, scope: &str) -> Vec<u8> {
+    format!(
+        "{}|{}|{}|{}|{}|{}|{}",
+        ACTION_DOMAIN,
+        challenge.challenge_id,
+        challenge.nonce_hex,
+        challenge.wallet_id,
+        action,
+        scope,
+        challenge.expires_at
+    )
+    .into_bytes()
+}
+
+/// Sign a challenge for a wallet-owner action with the wallet's Ed25519 identity.
+pub fn sign_wallet_action(
+    wallet_key: &NodeIdentity,
+    challenge: &WalletChallenge,
+    action: &str,
+    scope: &str,
+) -> WalletRegistrationProof {
+    let payload = wallet_action_payload(challenge, action, scope);
+    WalletRegistrationProof {
+        challenge_id: challenge.challenge_id.clone(),
+        public_key_hex: crate::crypto::hex_encode(&wallet_key.public_key),
+        signature_hex: crate::crypto::hex_encode(wallet_key.sign(&payload)),
+    }
+}
+
+/// Verify that the caller holds the key of `wallet_id` for one `action` on `scope`.
+///
+/// Uses the same one-shot challenge as registration, under a separate signing
+/// domain, so a registration signature cannot be replayed as an action.
+pub fn verify_wallet_action(
+    proof: &WalletRegistrationProof,
+    wallet_id: &str,
+    action: &str,
+    scope: &str,
+) -> Result<()> {
+    let (challenge, public_key) = consume_challenge(proof, wallet_id)?;
+    let signature = crate::crypto::hex_decode(&proof.signature_hex)?;
+    let payload = wallet_action_payload(&challenge, action, scope);
+    if !NodeIdentity::verify(&public_key, &payload, &signature) {
+        bail!("invalid action signature");
+    }
+    Ok(())
+}
+
+/// Consume the challenge named by `proof` and check it against `wallet_id`.
+///
+/// Returns the challenge and the public key, which has already been checked to
+/// hash to `wallet_id`. The challenge is removed before any other check.
+fn consume_challenge(
+    proof: &WalletRegistrationProof,
+    wallet_id: &str,
+) -> Result<(WalletChallenge, Vec<u8>)> {
     let challenge = {
         let mut map = pending()
             .lock()
@@ -130,13 +198,7 @@ pub fn verify_wallet_registration(
     if derive_wallet_id(&public_key) != wallet_id {
         bail!("public key does not match wallet id");
     }
-
-    let signature = crate::crypto::hex_decode(&proof.signature_hex)?;
-    let payload = wallet_registration_payload(&challenge, node_id);
-    if !NodeIdentity::verify(&public_key, &payload, &signature) {
-        bail!("invalid registration signature");
-    }
-    Ok(())
+    Ok((challenge, public_key))
 }
 
 #[cfg(test)]
@@ -221,5 +283,52 @@ mod tests {
         let proof = sign_wallet_registration(&key, &challenge, "node-1");
 
         assert!(verify_wallet_registration(&proof, &wallet, "node-1").is_err());
+    }
+
+    #[test]
+    fn action_proof_roundtrip_and_one_shot() {
+        let key = NodeIdentity::generate();
+        let wallet = wallet_of(&key);
+        let challenge = issue_wallet_challenge(&wallet).unwrap();
+        let proof = sign_wallet_action(&key, &challenge, "sync", "node-1");
+
+        verify_wallet_action(&proof, &wallet, "sync", "node-1").unwrap();
+        assert!(verify_wallet_action(&proof, &wallet, "sync", "node-1").is_err());
+    }
+
+    #[test]
+    fn action_proof_bound_to_action_and_scope() {
+        let key = NodeIdentity::generate();
+        let wallet = wallet_of(&key);
+
+        let challenge = issue_wallet_challenge(&wallet).unwrap();
+        let proof = sign_wallet_action(&key, &challenge, "sync", "node-a");
+        assert!(verify_wallet_action(&proof, &wallet, "list", "node-a").is_err());
+
+        let challenge = issue_wallet_challenge(&wallet).unwrap();
+        let proof = sign_wallet_action(&key, &challenge, "sync", "node-a");
+        assert!(verify_wallet_action(&proof, &wallet, "sync", "node-b").is_err());
+    }
+
+    #[test]
+    fn registration_signature_not_accepted_as_action() {
+        let key = NodeIdentity::generate();
+        let wallet = wallet_of(&key);
+        let challenge = issue_wallet_challenge(&wallet).unwrap();
+        // A registration signature over the same challenge must not authorize an action.
+        let proof = sign_wallet_registration(&key, &challenge, "list");
+
+        assert!(verify_wallet_action(&proof, &wallet, "list", "").is_err());
+    }
+
+    #[test]
+    fn action_claimed_wallet_without_its_key_rejected() {
+        let owner = NodeIdentity::generate();
+        let attacker = NodeIdentity::generate();
+        let wallet = wallet_of(&owner);
+        let challenge = issue_wallet_challenge(&wallet).unwrap();
+        let proof = sign_wallet_action(&attacker, &challenge, "list", "");
+
+        assert!(verify_wallet_action(&proof, &wallet, "list", "").is_err());
     }
 }
