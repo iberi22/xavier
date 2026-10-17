@@ -23,9 +23,13 @@ fn node_hash(left: &str, right: &str) -> String {
 }
 
 pub fn merkle_root(leaves: &[String]) -> Option<String> {
-    if leaves.is_empty() { return None; }
+    if leaves.is_empty() {
+        return None;
+    }
     let mut current_level: Vec<String> = leaves.iter().filter_map(|l| leaf_hash_hex(l)).collect();
-    if current_level.len() != leaves.len() { return None; }
+    if current_level.len() != leaves.len() {
+        return None;
+    }
     while current_level.len() > 1 {
         let mut next_level = Vec::with_capacity(current_level.len().div_ceil(2));
         for chunk in current_level.chunks(2) {
@@ -44,15 +48,23 @@ pub struct ProofStep {
 }
 
 pub fn proof(leaves: &[String], index: usize) -> Option<Vec<ProofStep>> {
-    if index >= leaves.len() || leaves.is_empty() { return None; }
+    if index >= leaves.len() || leaves.is_empty() {
+        return None;
+    }
     let mut current_level: Vec<String> = leaves.iter().filter_map(|l| leaf_hash_hex(l)).collect();
-    if current_level.len() != leaves.len() { return None; }
+    if current_level.len() != leaves.len() {
+        return None;
+    }
     let mut steps = Vec::new();
     let mut current_index = index;
     while current_level.len() > 1 {
         let is_left = current_index.is_multiple_of(2);
         let sibling_index = if is_left {
-            if current_index + 1 < current_level.len() { current_index + 1 } else { current_index }
+            if current_index + 1 < current_level.len() {
+                current_index + 1
+            } else {
+                current_index
+            }
         } else {
             current_index - 1
         };
@@ -112,7 +124,10 @@ mod tests {
     #[test]
     fn test_single_leaf_root() {
         let leaf = "deadbeef";
-        assert_eq!(merkle_root(&[leaf.to_string()]).unwrap(), leaf_hash_hex(leaf).unwrap());
+        assert_eq!(
+            merkle_root(&[leaf.to_string()]).unwrap(),
+            leaf_hash_hex(leaf).unwrap()
+        );
     }
 
     #[test]
