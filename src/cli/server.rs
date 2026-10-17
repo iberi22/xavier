@@ -1047,7 +1047,15 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         .route(
             "/v1/mesh/chunks/push",
             post(xavier::server::v1_api::v1_mesh_chunks_push),
-        )
+        );
+
+    #[cfg(feature = "espacio-mesh")]
+    let protected_routes = protected_routes.route(
+        "/v1/mesh/espacio/sync",
+        post(xavier::server::v1_api::v1_mesh_espacio_sync),
+    );
+
+    let protected_routes = protected_routes
         .route(
             "/v1/sessions/{session_id}/export",
             get(xavier::server::v1_api::v1_session_export),
