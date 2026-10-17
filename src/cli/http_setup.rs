@@ -172,12 +172,31 @@ pub(crate) fn space_token_may_access(
             return false;
         }
         let ok = match (method, tail.split_once('/')) {
-            (&Method::GET | &Method::POST, None) => tail == "links",
+            (&Method::GET | &Method::POST, None) => {
+                if tail == "members" {
+                    return match *method {
+                        Method::GET => can(role, SpaceAction::Read),
+                        Method::POST => can(role, SpaceAction::ManageMembers),
+                        _ => false,
+                    };
+                }
+                tail == "links"
+            }
             (&Method::DELETE, Some(("links", lid))) => {
                 !lid.is_empty()
                     && lid
                         .chars()
                         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+            }
+            (&Method::DELETE, Some(("members", mid))) => {
+                let valid_mid = !mid.is_empty()
+                    && mid
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'));
+                if valid_mid {
+                    return can(role, SpaceAction::ManageMembers);
+                }
+                false
             }
             _ => false,
         };
