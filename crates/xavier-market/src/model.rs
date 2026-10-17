@@ -13,15 +13,32 @@ pub struct Listing {
     pub license: License,
     pub price_credits: u64,
     pub created_at_ms: i64,
+    /// Set once the publisher revokes the listing. Revoked listings cannot be
+    /// changed or bought, but their receipts stay.
+    pub revoked_at_ms: Option<i64>,
 }
 
 /// Input for [`crate::MarketStore::create_listing`].
+///
+/// `seller_id` must be the publisher's own id, the hex public key that signed
+/// the request. The store refuses any other value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewListing {
     pub seller_id: String,
     pub title: String,
     pub license: License,
     pub price_credits: u64,
+}
+
+/// Input for [`crate::MarketStore::update_listing`]. Absent fields are kept.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListingUpdate {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub license: Option<License>,
+    #[serde(default)]
+    pub price_credits: Option<u64>,
 }
 
 /// Proof that a buyer bought a listing. The amount is copied from the listing

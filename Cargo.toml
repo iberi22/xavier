@@ -102,7 +102,6 @@ path = "tests/integration/auth_register_test.rs"
 [[test]]
 name = "market_v2_router_restart"
 path = "tests/market_v2_router_restart.rs"
-required-features = ["market-v2"]
 
 [[bench]]
 name = "embedding_benchmark"

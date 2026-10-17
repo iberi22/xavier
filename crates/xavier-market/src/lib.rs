@@ -7,6 +7,7 @@
 
 pub mod admission;
 pub mod audit_chain;
+pub mod auth;
 pub mod config;
 pub mod consent;
 pub mod credential;
@@ -22,7 +23,8 @@ mod store;
 pub mod telemetry_gate;
 pub mod terms;
 
+pub use auth::{Actor, SignedHeaders, SignedRequest, Signer};
 pub use config::{ConfigError, Currency, LegalTextStatus, License, MarketConfig, Settlement};
 pub use error::MarketError;
-pub use model::{Listing, NewListing, NewReceipt, Receipt};
+pub use model::{Listing, ListingUpdate, NewListing, NewReceipt, Receipt};
 pub use store::{MarketStore, SCHEMA_VERSION};
