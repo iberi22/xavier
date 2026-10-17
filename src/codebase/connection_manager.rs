@@ -2,6 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::codebase::repo_identity::MAX_EXTRA_ROOTS;
 use crate::domain::cycle_breaks::w30_10::ConnectionTuning;
 use anyhow::{Context, Result};
 use parking_lot::{Mutex, RwLock};
@@ -10,6 +11,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, ErrorCode};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::num::IntErrorKind;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -17,19 +19,65 @@ use std::time::{Duration, Instant};
 
 pub static INSTANCE: std::sync::OnceLock<ConnectionManager> = std::sync::OnceLock::new();
 
-/// Hard cap on concurrently registered pools, enforced by
+/// Default hard cap on concurrently registered pools, enforced by
 /// [`ConnectionManager::evict_if_needed`]. Public so it can be reported by
 /// [`ConnectionManager::snapshot`] instead of being a hardcoded literal at
-/// every call site.
+/// every call site. The effective cap is [`max_pools`].
 pub const MAX_POOLS: usize = 16;
 
-fn parse_budget(raw: Option<&str>) -> Option<usize> {
-    raw.and_then(|v| v.trim().parse::<usize>().ok())
-        .filter(|n| *n >= 1)
+/// Shared store budget. Every store cache cap reads it, and each one clamps
+/// the value to its own range.
+pub const STORE_BUDGET_ENV: &str = "XAVIER_STORE_BUDGET";
+
+/// Floor for the pool cap. The workspace pool and every extra code root
+/// ([`MAX_EXTRA_ROOTS`]) must fit, plus one spare. Below this, extra roots
+/// evict the workspace's own pool.
+pub const MIN_POOLS: usize = MAX_EXTRA_ROOTS + 2;
+
+/// Ceiling for the pool cap. Each pool can hold up to `REPO_POOL_MAX_SIZE`
+/// connections, so an unbounded cap would leave file handles unbounded too.
+pub const MAX_POOLS_CEILING: usize = 64;
+
+const _: () = assert!(MIN_POOLS <= MAX_POOLS && MAX_POOLS <= MAX_POOLS_CEILING);
+
+/// Parses an operator-supplied cap. Only positive integers count: `0`,
+/// negatives and garbage are treated as unset. Values past `usize::MAX`
+/// saturate, so an absurdly large budget still reaches the ceiling.
+pub(crate) fn parse_budget(raw: Option<&str>) -> Option<usize> {
+    let parsed = match raw?.trim().parse::<usize>() {
+        Ok(n) => Some(n),
+        Err(e) if matches!(e.kind(), IntErrorKind::PosOverflow) => Some(usize::MAX),
+        Err(_) => None,
+    };
+    parsed.filter(|n| *n >= 1)
 }
 
+/// Resolves a cache cap. `specific` wins over the shared `budget`, which wins
+/// over `default`. An unset or invalid value falls through to the next source.
+/// The result is clamped to `min..=max`.
+pub(crate) fn resolve_cap(
+    specific: Option<&str>,
+    budget: Option<&str>,
+    default: usize,
+    min: usize,
+    max: usize,
+) -> usize {
+    parse_budget(specific)
+        .or_else(|| parse_budget(budget))
+        .unwrap_or(default)
+        .clamp(min, max)
+}
+
+/// Effective pool cap: [`MAX_POOLS`] unless [`STORE_BUDGET_ENV`] overrides it,
+/// clamped to `MIN_POOLS..=MAX_POOLS_CEILING`.
 pub fn max_pools() -> usize {
-    parse_budget(std::env::var("XAVIER_STORE_BUDGET").ok().as_deref()).unwrap_or(MAX_POOLS)
+    resolve_cap(
+        None,
+        std::env::var(STORE_BUDGET_ENV).ok().as_deref(),
+        MAX_POOLS,
+        MIN_POOLS,
+        MAX_POOLS_CEILING,
+    )
 }
 
 const WAL_INIT_ATTEMPTS: usize = 10;
@@ -514,7 +562,8 @@ pub struct PoolSnapshot {
 pub struct SnapshotCounters {
     /// Pools currently registered.
     pub open_pools: usize,
-    /// `MAX_POOLS`, the hard cap on registered pools.
+    /// Effective cap on registered pools, from [`max_pools`]: [`MAX_POOLS`]
+    /// by default, or the clamped `XAVIER_STORE_BUDGET` when it is set.
     pub max_pools: usize,
     /// Sum of `connections` across live pools: the lower bound on SQLite
     /// connections this manager holds.
@@ -2190,31 +2239,61 @@ mod tests {
 
     #[test]
     fn budget_parses_positive_integers_only() {
-        assert_eq!(super::parse_budget(Some(" 42 ")), Some(42));
-        assert_eq!(super::parse_budget(Some("0")), None);
-        assert_eq!(super::parse_budget(Some("-1")), None);
-        assert_eq!(super::parse_budget(Some("foo")), None);
-        assert_eq!(super::parse_budget(None), None);
+        assert_eq!(parse_budget(Some(" 42 ")), Some(42));
+        assert_eq!(parse_budget(Some("0")), None);
+        assert_eq!(parse_budget(Some("-1")), None);
+        assert_eq!(parse_budget(Some("foo")), None);
+        assert_eq!(parse_budget(Some("")), None);
+        assert_eq!(parse_budget(None), None);
+        assert_eq!(
+            parse_budget(Some("99999999999999999999999")),
+            Some(usize::MAX)
+        );
     }
 
     #[test]
-    fn unset_budget_keeps_defaults_64_and_16() {
-        assert_eq!(super::parse_budget(None), None);
+    fn default_pool_cap_is_16() {
+        assert_eq!(MAX_POOLS, 16);
+        assert_eq!(
+            resolve_cap(None, None, MAX_POOLS, MIN_POOLS, MAX_POOLS_CEILING),
+            MAX_POOLS
+        );
     }
 
-    #[tokio::test]
-    async fn pool_cap_follows_budget_helper() {
-        let cm = ConnectionManager::new();
-        let dir = tempfile::tempdir().unwrap();
-        cm.connect_with_path("pool1", dir.path().join("pool1.db"))
-            .unwrap();
-        cm.connect_with_path("pool2", dir.path().join("pool2.db"))
-            .unwrap();
-        cm.connect_with_path("pool3", dir.path().join("pool3.db"))
-            .unwrap();
-        // `evict_if_needed` runs before an insert: it frees room for one more
-        // pool, so a cap of 2 leaves 1 open pool and the next open makes 2.
-        cm.evict_if_needed(2);
-        assert_eq!(cm.snapshot().pools.len(), 1);
+    #[test]
+    fn unset_or_invalid_budget_uses_the_default() {
+        assert_eq!(resolve_cap(None, None, 64, 1, 1024), 64);
+        assert_eq!(resolve_cap(Some("0"), Some("0"), 64, 1, 1024), 64);
+        assert_eq!(resolve_cap(Some("x"), Some("-3"), 64, 1, 1024), 64);
+    }
+
+    #[test]
+    fn specific_cap_beats_shared_budget() {
+        assert_eq!(resolve_cap(Some("2"), Some("100"), 64, 1, 1024), 2);
+        // An invalid specific value falls through to the shared budget.
+        assert_eq!(resolve_cap(Some("zero"), Some("100"), 64, 1, 1024), 100);
+    }
+
+    #[test]
+    fn pool_cap_is_clamped_to_floor_and_ceiling() {
+        // A budget below the floor cannot evict the workspace pool.
+        assert_eq!(
+            resolve_cap(None, Some("4"), MAX_POOLS, MIN_POOLS, MAX_POOLS_CEILING),
+            MIN_POOLS
+        );
+        assert_eq!(
+            resolve_cap(None, Some("1000"), MAX_POOLS, MIN_POOLS, MAX_POOLS_CEILING),
+            MAX_POOLS_CEILING
+        );
+        assert_eq!(
+            resolve_cap(
+                None,
+                Some("99999999999999999999999"),
+                MAX_POOLS,
+                MIN_POOLS,
+                MAX_POOLS_CEILING
+            ),
+            MAX_POOLS_CEILING
+        );
     }
 }

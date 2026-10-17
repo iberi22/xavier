@@ -29,7 +29,8 @@ directory to trash, and the cached handle is dropped first.
 
 Open stores are cached per space (`SpaceStores`). Opening a store creates its directory and database
 on first use. Spaces opened as workspaces are cached separately in `src/workspace/state.rs`, bounded
-by `XAVIER_SPACE_WORKSPACE_CACHE_MAX` (default 64).
+by `XAVIER_SPACE_WORKSPACE_CACHE_MAX` (default 64, clamped to 1..=1024). When that variable is unset,
+the shared `XAVIER_STORE_BUDGET` applies instead.
 
 ## Keys and unlock modes
 
