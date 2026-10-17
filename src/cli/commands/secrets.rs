@@ -418,8 +418,8 @@ pub async fn handle_secrets_command(cmd: SecretsCommand) -> Result<()> {
             .await
         }
         SecretsCommand::ListLeases => list_leases().await,
-        SecretsCommand::Revoke { token } => revoke_lease(&token).await,
-        SecretsCommand::Status { token } => check_lease_status(&token).await,
+        SecretsCommand::Revoke { lease_id } => revoke_lease(&lease_id).await,
+        SecretsCommand::Status { lease_id } => check_lease_status(&lease_id).await,
     }
 }
 
@@ -443,6 +443,7 @@ async fn lend_secret(name: &str, agent: &str, ttl: u64) -> Result<()> {
         let body: serde_json::Value = response.json().await?;
         println!("Secret lent successfully!");
         println!("Lease Token: {}", body["token"]);
+        println!("Lease ID: {}", body["lease_id"]);
         println!("Expires: {}", body["expires_at"]);
         Ok(())
     } else {
@@ -464,20 +465,16 @@ async fn list_leases() -> Result<()> {
     if response.status().is_success() {
         let leases: Vec<serde_json::Value> = response.json().await?;
         println!(
-            "{:<20} {:<20} {:<20} {:<10}",
-            "Agent", "Secret", "Expires", "Status"
+            "{:<66} {:<20} {:<20} {:<20}",
+            "Lease ID", "Agent", "Secret", "Expires"
         );
         for lease in leases {
             println!(
-                "{:<20} {:<20} {:<20} {:<10}",
+                "{:<66} {:<20} {:<20} {:<20}",
+                lease["lease_id"].as_str().unwrap_or("?"),
                 lease["agent_id"].as_str().unwrap_or("?"),
                 lease["secret_name"].as_str().unwrap_or("?"),
                 lease["expires_at"].as_str().unwrap_or("?"),
-                if lease["revoked"].as_bool().unwrap_or(false) {
-                    "Revoked"
-                } else {
-                    "Active"
-                }
             );
         }
         Ok(())
@@ -486,7 +483,7 @@ async fn list_leases() -> Result<()> {
     }
 }
 
-async fn revoke_lease(token_str: &str) -> Result<()> {
+async fn revoke_lease(lease_id: &str) -> Result<()> {
     let token = xavier_token();
     let url = format!("{}/secrets/revoke", resolve_base_url());
     let client = CLI_HTTP_CLIENT.clone();
@@ -494,7 +491,7 @@ async fn revoke_lease(token_str: &str) -> Result<()> {
     let response = client
         .post(&url)
         .header("X-Xavier-Token", &token)
-        .json(&serde_json::json!({ "token": token_str }))
+        .json(&serde_json::json!({ "lease_id": lease_id }))
         .send()
         .await?;
 
@@ -506,9 +503,9 @@ async fn revoke_lease(token_str: &str) -> Result<()> {
     }
 }
 
-async fn check_lease_status(token_str: &str) -> Result<()> {
+async fn check_lease_status(lease_id: &str) -> Result<()> {
     let token = xavier_token();
-    let url = format!("{}/secrets/status/{}", resolve_base_url(), token_str);
+    let url = format!("{}/secrets/status/{}", resolve_base_url(), lease_id);
     let client = CLI_HTTP_CLIENT.clone();
 
     let response = client

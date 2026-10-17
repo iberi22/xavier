@@ -12,6 +12,7 @@ use axum::{
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
+use xavier::coordination::secrets::lease_id_for_token;
 use xavier::coordination::KeyLendingEngine;
 use xavier::secrets::exec::{run_with_secret, ExecSecretError, SecretExecSpec};
 use xavier::secrets::vault::HardwareVault;
@@ -205,10 +206,11 @@ pub async fn lend_handler(
         Ok(mut lease) => {
             // F2 - Redact secret_value from response (key never leaves Xavier)
             lease.secret_value = None;
-            json_response(
-                StatusCode::OK,
-                serde_json::to_value(lease).unwrap_or_default(),
-            )
+            // The token is returned once, as the agent's bearer credential. The
+            // opaque lease id is what the caller uses for status and revoke.
+            let mut body = serde_json::to_value(&lease).unwrap_or_default();
+            body["lease_id"] = serde_json::Value::String(lease_id_for_token(&lease.token));
+            json_response(StatusCode::OK, body)
         }
         Err(e) => json_response(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -219,36 +221,7 @@ pub async fn lend_handler(
 
 /// History handler.
 pub async fn history_handler() -> Response {
-    use xavier::codebase::connection_manager::ConnectionManager;
-    let result = ConnectionManager::global()
-        .with_conn("metrics", |conn: &rusqlite::Connection| {
-            let mut stmt = conn.prepare(
-                "SELECT id, timestamp, event_type, agent_id, session_token, secret_id, reason
-                 FROM secret_audit_logs
-                 ORDER BY timestamp DESC
-                 LIMIT 100",
-            )?;
-            let rows = stmt.query_map([], |row: &rusqlite::Row| {
-                Ok(serde_json::json!({
-                    "id": row.get::<_, i64>(0)?,
-                    "timestamp": row.get::<_, String>(1)?,
-                    "event_type": row.get::<_, String>(2)?,
-                    "agent_id": row.get::<_, String>(3)?,
-                    "session_token": row.get::<_, String>(4)?,
-                    "secret_id": row.get::<_, Option<String>>(5)?,
-                    "reason": row.get::<_, Option<String>>(6)?,
-                }))
-            })?;
-
-            let mut logs = Vec::new();
-            for row in rows {
-                logs.push(row?);
-            }
-            Ok::<Vec<serde_json::Value>, anyhow::Error>(logs)
-        })
-        .await;
-
-    match result {
+    match history_rows("metrics").await {
         Ok(logs) => json_response(
             StatusCode::OK,
             serde_json::to_value(logs).unwrap_or_default(),
@@ -260,27 +233,68 @@ pub async fn history_handler() -> Response {
     }
 }
 
-/// Leases handler.
+/// Newest audit rows of `project_id`. Each row names its lease by the same
+/// opaque lease id the list uses; the raw session token column never leaves
+/// the node.
+pub(crate) async fn history_rows(project_id: &str) -> anyhow::Result<Vec<serde_json::Value>> {
+    use xavier::codebase::connection_manager::ConnectionManager;
+    ConnectionManager::global()
+        .with_conn(project_id, |conn: &rusqlite::Connection| {
+            let mut stmt = conn.prepare(
+                "SELECT id, timestamp, event_type, agent_id, session_token, secret_id, reason
+                 FROM secret_audit_logs
+                 ORDER BY timestamp DESC
+                 LIMIT 100",
+            )?;
+            let rows = stmt.query_map([], |row: &rusqlite::Row| {
+                let session_token: String = row.get(4)?;
+                Ok(serde_json::json!({
+                    "id": row.get::<_, i64>(0)?,
+                    "timestamp": row.get::<_, String>(1)?,
+                    "event_type": row.get::<_, String>(2)?,
+                    "agent_id": row.get::<_, String>(3)?,
+                    "lease_id": lease_id_for_token(&session_token),
+                    "secret_id": row.get::<_, Option<String>>(5)?,
+                    "reason": row.get::<_, Option<String>>(6)?,
+                }))
+            })?;
+
+            let mut logs = Vec::new();
+            for row in rows {
+                logs.push(row?);
+            }
+            Ok::<Vec<serde_json::Value>, anyhow::Error>(logs)
+        })
+        .await
+}
+
+/// Leases handler. Lists token-free views: opaque lease ids, never tokens.
 pub async fn leases_handler(State(state): State<CliState>) -> Response {
-    let mut leases = state.secrets_engine.list_leases().await;
-    // Always redact secret_value for security
-    for lease in &mut leases {
-        lease.secret_value = None;
-    }
+    let leases = state.secrets_engine.list_lease_views().await;
     json_response(
         StatusCode::OK,
         serde_json::to_value(leases).unwrap_or_default(),
     )
 }
 
-/// Revoke handler.
+/// Revoke handler. Targets a lease by its opaque lease id.
 pub async fn revoke_handler(
     State(state): State<CliState>,
     Json(payload): Json<RevokeLeasePayload>,
 ) -> Response {
+    revoke_by_id_response(&state, &payload.lease_id, "Manual API Call").await
+}
+
+/// Shared by `POST /secrets/revoke` (id in the body) and the proxy's
+/// `POST /secrets/revoke/{lease_id}` (id in the path). Errors never echo the id.
+pub(crate) async fn revoke_by_id_response(
+    state: &CliState,
+    lease_id: &str,
+    reason: &str,
+) -> Response {
     match state
         .secrets_engine
-        .revoke(&payload.token, "Manual API Call")
+        .revoke_by_lease_id(lease_id, reason)
         .await
     {
         Ok(_) => json_response(StatusCode::OK, serde_json::json!({ "status": "revoked" })),
@@ -291,20 +305,16 @@ pub async fn revoke_handler(
     }
 }
 
-/// Status handler.
+/// Status handler. Returns the token-free view of the lease with this id.
 pub async fn status_handler(
     State(state): State<CliState>,
-    AxumPath(token): AxumPath<String>,
+    AxumPath(lease_id): AxumPath<String>,
 ) -> Response {
-    match state.secrets_engine.get_lease(&token).await {
-        Some(mut status) => {
-            // F2 - Redact secret_value from response
-            status.secret_value = None;
-            json_response(
-                StatusCode::OK,
-                serde_json::to_value(status).unwrap_or_default(),
-            )
-        }
+    match state.secrets_engine.get_lease_view(&lease_id).await {
+        Some(status) => json_response(
+            StatusCode::OK,
+            serde_json::to_value(status).unwrap_or_default(),
+        ),
         None => json_response(
             StatusCode::NOT_FOUND,
             serde_json::json!({ "error": "Lease not found" }),
@@ -342,10 +352,10 @@ pub(crate) fn secrets_routes() -> axum::Router<CliState> {
         .route("/secrets/revoke", post(revoke_handler))
         .route("/secrets/history", get(history_handler))
         .route(
-            "/secrets/revoke/{token}",
+            "/secrets/revoke/{lease_id}",
             post(crate::cli::proxy::revoke_lease_by_path),
         )
-        .route("/secrets/status/{token}", get(status_handler))
+        .route("/secrets/status/{lease_id}", get(status_handler))
         .route_layer(middleware::from_fn(require_permission(
             secrets_permission_check,
         )))
