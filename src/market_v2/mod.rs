@@ -38,8 +38,8 @@ use axum::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use xavier_market::{
-    Actor, ListingUpdate, MarketConfig, MarketError, MarketStore, NewListing, NewReceipt,
-    SignedRequest,
+    Actor, ConsentError, ConsentRecord, ConsentState, ConsentStore, ListingUpdate, MarketConfig,
+    MarketError, MarketStore, NewListing, NewReceipt, SignedRequest,
 };
 
 /// Runtime flag. Only the exact value `beta` enables the routes.
@@ -143,6 +143,10 @@ where
         .route(
             "/v2/marketplace/grants/{id}/revoke",
             post(revoke_grant_handler),
+        )
+        .route(
+            "/v2/marketplace/consent",
+            post(set_consent_handler).get(get_consent_handler),
         )
         .merge(ivn::routes())
         .layer(Extension(store))
@@ -382,6 +386,79 @@ async fn revoke_grant_handler(
             Json(sanitized).into_response()
         }
         Err(err) => error_response(err),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetConsentPayload {
+    pub node_id: String,
+    pub state: String,
+    pub terms_version: String,
+    pub consent_version: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConsentQuery {
+    pub node_id: Option<String>,
+}
+
+fn open_consent_store() -> Result<ConsentStore, ConsentError> {
+    let path = db_path_from_env();
+    ConsentStore::open(&path)
+}
+
+async fn set_consent_handler(body: Bytes) -> Response {
+    let payload: SetConsentPayload = match parse_body(&body) {
+        Ok(payload) => payload,
+        Err(response) => return response,
+    };
+    let state = match ConsentState::parse(&payload.state) {
+        Ok(state) => state,
+        Err(err) => return error_status(StatusCode::BAD_REQUEST, err.to_string()),
+    };
+    let record = ConsentRecord {
+        node_id: payload.node_id,
+        state,
+        terms_version: payload.terms_version,
+        consent_version: payload.consent_version,
+        updated_at_ms: now_ms(),
+    };
+    let store = match open_consent_store() {
+        Ok(store) => store,
+        Err(err) => return error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    };
+    match store.set(record.clone()) {
+        Ok(()) => (StatusCode::OK, Json(record)).into_response(),
+        Err(ConsentError::MissingVersion) => {
+            error_status(StatusCode::BAD_REQUEST, "Missing consent or terms version")
+        }
+        Err(err) => error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    }
+}
+
+async fn get_consent_handler(Query(query): Query<ConsentQuery>) -> Response {
+    let store = match open_consent_store() {
+        Ok(store) => store,
+        Err(err) => return error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    };
+    if let Some(node_id) = query.node_id.filter(|s| !s.trim().is_empty()) {
+        match store.get(node_id.trim()) {
+            Ok(Some(record)) => Json(record).into_response(),
+            Ok(None) => Json(ConsentRecord {
+                node_id: node_id.trim().to_string(),
+                state: ConsentState::Off,
+                terms_version: String::new(),
+                consent_version: String::new(),
+                updated_at_ms: 0,
+            })
+            .into_response(),
+            Err(err) => error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+        }
+    } else {
+        match store.list() {
+            Ok(records) => Json(records).into_response(),
+            Err(err) => error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+        }
     }
 }
 
@@ -1391,5 +1468,85 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn consent_flow_and_query_tests() {
+        let dir = TempDir::new().unwrap();
+        let db_file = dir.path().join("market-test.sqlite3");
+        let _guard = EnvGuard::set(
+            &[
+                (FLAG_ENV, FLAG_VALUE),
+                (DB_PATH_ENV, db_file.to_str().unwrap()),
+            ],
+            &[],
+        );
+
+        let router = mount(Router::new());
+
+        // Initial consent state for unknown node is 'off'
+        let (status, body) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/consent?node_id=node_x", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["state"], "off");
+
+        // Opt in requires terms and consent versions
+        let (status, _) = send(
+            &router,
+            json_request(
+                Method::POST,
+                "/v2/marketplace/consent",
+                Some(json!({
+                    "node_id": "node_x",
+                    "state": "shared",
+                    "terms_version": "",
+                    "consent_version": "v1"
+                })),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // Valid consent update
+        let (status, body) = send(
+            &router,
+            json_request(
+                Method::POST,
+                "/v2/marketplace/consent",
+                Some(json!({
+                    "node_id": "node_x",
+                    "state": "shared",
+                    "terms_version": "v1.0",
+                    "consent_version": "v1.0"
+                })),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["state"], "shared");
+
+        // Query node_x again
+        let (status, body) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/consent?node_id=node_x", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["state"], "shared");
+        assert_eq!(body["terms_version"], "v1.0");
+
+        // Query all consent records
+        let (status, body) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/consent", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let list = body.as_array().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0]["node_id"], "node_x");
     }
 }

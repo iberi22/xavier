@@ -1,8 +1,9 @@
-import { LayoutDashboard, Globe, ListTodo, Landmark, MessageSquare, Brain } from "lucide-react";
+import { LayoutDashboard, Globe, ListTodo, Landmark, MessageSquare, Brain, ShoppingBag } from "lucide-react";
 import React from "react";
 
 export type MalocaTabId =
   | "overview"
+  | "marketplace"
   | "registry"
   | "governance"
   | "support"
@@ -24,6 +25,12 @@ export const TABS: TabConfig[] = [
     label: "Hub Overview",
     icon: LayoutDashboard,
     description: "Maloca ops workspace host & primary node status.",
+  },
+  {
+    id: "marketplace",
+    label: "Marketplace",
+    icon: ShoppingBag,
+    description: "Data catalogue, seller console, receipts and node consent.",
   },
   {
     id: "registry",

@@ -48,6 +48,64 @@ export interface RewardReceipt {
   recorded_at: string;
 }
 
+// --- Marketplace v2 Domain Types ---
+
+export interface MarketListing {
+  id: string;
+  seller_id: string;
+  title: string;
+  description: string;
+  price_credits: number;
+  license: string;
+  terms_version: string;
+  created_at_ms: number;
+  revoked_at_ms?: number | null;
+}
+
+export interface CreateListingBody {
+  seller_id: string;
+  title: string;
+  description?: string;
+  price_credits: number;
+  license?: string;
+  terms_version?: string;
+}
+
+export interface UpdateListingBody {
+  title?: string;
+  license?: string;
+  price_credits?: number;
+}
+
+export interface MarketReceipt {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  amount_credits: number;
+  currency: string;
+  created_at_ms: number;
+}
+
+export interface RecordReceiptBody {
+  listing_id: string;
+  buyer_id: string;
+}
+
+export interface MarketConsentRecord {
+  node_id: string;
+  state: "off" | "local" | "shared" | "shared_sensitive";
+  terms_version: string;
+  consent_version: string;
+  updated_at_ms: number;
+}
+
+export interface SetConsentBody {
+  node_id: string;
+  state: "off" | "local" | "shared" | "shared_sensitive";
+  terms_version: string;
+  consent_version: string;
+}
+
 export interface MalocaPack {
   generated_at: string;
   codegraph_indexed_at?: string;
@@ -393,5 +451,72 @@ export const malocaApi = {
       `/introspection/${encodeURIComponent(sessionId)}`,
       undefined,
       MALOCA_V1_PREFIX,
+    ),
+
+  // --- Marketplace v2 (v2 tree) ---
+  getMarketplaceListings: () =>
+    fetchMaloca<MarketListing[]>("/listings", undefined, "/v2/marketplace"),
+  getMarketplaceListing: (id: string) =>
+    fetchMaloca<MarketListing>(`/listings/${encodeURIComponent(id)}`, undefined, "/v2/marketplace"),
+  createMarketplaceListing: (body: CreateListingBody, headers?: Record<string, string>) =>
+    fetchMaloca<MarketListing>(
+      "/listings",
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers,
+      },
+      "/v2/marketplace",
+    ),
+  updateMarketplaceListing: (id: string, body: UpdateListingBody, headers?: Record<string, string>) =>
+    fetchMaloca<MarketListing>(
+      `/listings/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        headers,
+      },
+      "/v2/marketplace",
+    ),
+  revokeMarketplaceListing: (id: string, headers?: Record<string, string>) =>
+    fetchMaloca<MarketListing>(
+      `/listings/${encodeURIComponent(id)}/revoke`,
+      {
+        method: "POST",
+        headers,
+      },
+      "/v2/marketplace",
+    ),
+  buyMarketplaceListing: (body: RecordReceiptBody) =>
+    fetchMaloca<MarketReceipt>(
+      "/receipts",
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+      "/v2/marketplace",
+    ),
+  getMarketplaceReceipts: (buyerId: string) =>
+    fetchMaloca<MarketReceipt[]>(
+      `/receipts?buyer_id=${encodeURIComponent(buyerId)}`,
+      undefined,
+      "/v2/marketplace",
+    ),
+  getMarketplaceConsent: (nodeId?: string) => {
+    const query = nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : "";
+    return fetchMaloca<MarketConsentRecord | MarketConsentRecord[]>(
+      `/consent${query}`,
+      undefined,
+      "/v2/marketplace",
+    );
+  },
+  setMarketplaceConsent: (body: SetConsentBody) =>
+    fetchMaloca<MarketConsentRecord>(
+      "/consent",
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+      "/v2/marketplace",
     ),
 };

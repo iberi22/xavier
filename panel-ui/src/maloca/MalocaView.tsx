@@ -6,6 +6,7 @@ import { GovernanceTab } from "./components/GovernanceTab";
 import { SupportTab } from "./components/SupportTab";
 import { BacklogTab } from "./components/BacklogTab";
 import { IntrospectionTab } from "./components/IntrospectionTab";
+import { MarketplaceView } from "./components/MarketplaceView";
 import { MalocaAuthPrompt } from "./components/MalocaAuthPrompt";
 import { TABS, TabConfig } from "./tabs";
 import { useMalocaView } from "./useMalocaView";
@@ -27,6 +28,7 @@ export default function MalocaView({ onClose }: Props) {
   const renderActiveTab = () => {
     switch (activeTab) {
       case "overview": return <OverviewTab />;
+      case "marketplace": return <MarketplaceView />;
       case "registry": return <RegistryTab />;
       case "governance": return <GovernanceTab />;
       case "support": return <SupportTab />;

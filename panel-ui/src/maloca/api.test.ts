@@ -70,4 +70,72 @@ describe("malocaApi prefixes and introspection contract", () => {
     mockFetch({ error: "Introspection session not found" }, 404);
     await expect(malocaApi.getIntrospection("nope")).rejects.toThrow("Introspection session not found");
   });
+
+  it("interacts with /v2/marketplace listings, buy, receipts and consent endpoints", async () => {
+    const fn = mockFetch([
+      {
+        id: "list_1",
+        seller_id: "seller_node",
+        title: "Test Biology",
+        description: "Test bio data",
+        price_credits: 10,
+        license: "cc-by-4.0",
+        terms_version: "v1.0",
+        created_at_ms: 1000,
+        revoked_at_ms: null,
+      },
+    ]);
+
+    const listings = await malocaApi.getMarketplaceListings();
+    expect(fn.mock.calls[0][0]).toBe("/v2/marketplace/listings");
+    expect(listings.length).toBe(1);
+    expect(listings[0].title).toBe("Test Biology");
+
+    // Buy listing
+    mockFetch({
+      id: "rcpt_1",
+      listing_id: "list_1",
+      buyer_id: "buyer_node",
+      amount_credits: 10,
+      currency: "internal_credits",
+      created_at_ms: 2000,
+    }, 201);
+    const receipt = await malocaApi.buyMarketplaceListing({
+      listing_id: "list_1",
+      buyer_id: "buyer_node",
+    });
+    expect(receipt.id).toBe("rcpt_1");
+    expect(receipt.amount_credits).toBe(10);
+
+    // Get receipts
+    mockFetch([{ id: "rcpt_1", listing_id: "list_1", buyer_id: "buyer_node", amount_credits: 10, currency: "internal_credits", created_at_ms: 2000 }]);
+    const myReceipts = await malocaApi.getMarketplaceReceipts("buyer_node");
+    expect(myReceipts.length).toBe(1);
+
+    // Set and get consent
+    mockFetch({
+      node_id: "node_1",
+      state: "shared",
+      terms_version: "v1.0",
+      consent_version: "v1.0",
+      updated_at_ms: 3000,
+    });
+    const consent = await malocaApi.setMarketplaceConsent({
+      node_id: "node_1",
+      state: "shared",
+      terms_version: "v1.0",
+      consent_version: "v1.0",
+    });
+    expect(consent.state).toBe("shared");
+
+    mockFetch({
+      node_id: "node_1",
+      state: "shared",
+      terms_version: "v1.0",
+      consent_version: "v1.0",
+      updated_at_ms: 3000,
+    });
+    const retrievedConsent = await malocaApi.getMarketplaceConsent("node_1");
+    expect((retrievedConsent as any).state).toBe("shared");
+  });
 });
