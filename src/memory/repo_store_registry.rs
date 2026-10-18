@@ -211,6 +211,42 @@ impl ResolveCache {
     }
 }
 
+static REPO_STORES: std::sync::OnceLock<RepoStoreRegistry> = std::sync::OnceLock::new();
+
+/// The process-wide repo store registry, built lazily from the environment.
+pub fn repo_stores() -> &'static RepoStoreRegistry {
+    REPO_STORES.get_or_init(RepoStoreRegistry::from_env)
+}
+
+/// Open the per-repo store using the process-wide registry.
+pub async fn open_repo_store(root: &Path) -> Result<Arc<VecSqliteMemoryStore>, RepoStoreError> {
+    open_with(repo_stores(), root).await
+}
+
+/// Helper to open a store with a specific registry instance (useful for tests).
+pub async fn open_with(
+    registry: &RepoStoreRegistry,
+    root: &Path,
+) -> Result<Arc<VecSqliteMemoryStore>, RepoStoreError> {
+    registry.open(root).await
+}
+
+/// Resolves the store path for MCP callers, strictly returning it only if the file already exists.
+pub fn existing_repo_store_path(
+    registry: &RepoStoreRegistry,
+    root: &Path,
+) -> Result<PathBuf, RepoStoreError> {
+    let resolved = registry.resolve(root)?;
+    if resolved.store_path.exists() {
+        Ok(resolved.store_path)
+    } else {
+        Err(RepoStoreError::Open {
+            path: resolved.store_path,
+            reason: "file does not exist (MCP is read-only for new stores)".to_string(),
+        })
+    }
+}
+
 impl RepoStoreRegistry {
     /// Registry with an explicit allowlist, connection provider and record key source.
     ///
@@ -749,6 +785,45 @@ mod tests {
         );
         assert_eq!(reg.stats().open_failures, 1);
         assert_eq!(reg.stats().open_stores, 1);
+    }
+
+    #[tokio::test]
+    async fn open_with_refuses_root_outside_allowlist() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = make_repo(tmp.path(), "repo-outside", Some(OPT_IN));
+        // Registry with empty allowlist behaves like the default `repo_stores` when the env var is unset
+        let reg = registry(&[]);
+        assert!(matches!(
+            super::open_with(&reg, &root).await,
+            Err(super::RepoStoreError::OutsideAllowlist { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn existing_path_refuses_missing_store_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = make_repo(tmp.path(), "repo-missing", Some(OPT_IN));
+        let reg = registry(&[tmp.path()]);
+
+        match super::existing_repo_store_path(&reg, &root) {
+            Err(super::RepoStoreError::Open { reason, .. }) => {
+                assert!(reason.contains("file does not exist"));
+            }
+            other => panic!("expected Open error for missing file, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn existing_path_returns_file_when_present() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = make_repo(tmp.path(), "repo-present", Some(OPT_IN));
+        let reg = registry(&[tmp.path()]);
+
+        // Open it to create the file
+        let _store = reg.open(&root).await.expect("open creates the file");
+
+        let path = super::existing_repo_store_path(&reg, &root).expect("path must exist");
+        assert!(path.exists());
     }
 
     #[test]
