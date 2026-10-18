@@ -33,6 +33,7 @@ pub mod secrets;
 pub mod security;
 pub mod setup;
 pub mod skills;
+pub mod stores_admin;
 pub mod sync;
 pub mod system;
 pub mod system_scan;
