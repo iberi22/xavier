@@ -234,7 +234,7 @@ impl PrivateMeshRegistry {
         }
     }
 
-    /// Save the registry to the JSON file.
+    /// Save the registry to the JSON file with restrictive permissions (0600).
     pub fn save(&self) -> Result<()> {
         if let Some(parent) = self.file_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -244,7 +244,25 @@ impl PrivateMeshRegistry {
             networks: self.networks.clone(),
         };
         let data = serde_json::to_string_pretty(&persisted)?;
-        std::fs::write(&self.file_path, data)?;
+
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        use std::io::Write;
+        let mut file = opts.open(&self.file_path)?;
+        file.write_all(data.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&self.file_path, std::fs::Permissions::from_mode(0o600))?;
+        }
         Ok(())
     }
 
@@ -941,5 +959,25 @@ mod tests {
             decrypt_session_payload(&encrypted, &attacker_secret_from_pub).is_err(),
             "Attacker possessing only public key hash must fail decryption"
         );
+    }
+
+    #[test]
+    fn test_private_mesh_registry_file_permissions_mode_0600() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("private_mesh.json");
+        let mut registry = PrivateMeshRegistry::load_or_create(path.clone()).unwrap();
+        let node = make_test_node("xv1-node-sec", "wallet-sec", "Sec Node");
+        registry.register_wallet_node(node, "wallet-sec").unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let meta = std::fs::metadata(&path).unwrap();
+            let mode = meta.permissions().mode() & 0o777;
+            assert_eq!(
+                mode, 0o600,
+                "private mesh registry file should be mode 0600"
+            );
+        }
     }
 }
