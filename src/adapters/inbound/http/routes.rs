@@ -1234,17 +1234,33 @@ pub async fn espacio_members_add_handler(
     if !may_manage_members(&root, &auth, &id) {
         return espacio_forbidden();
     }
+    let is_admin = root.is_some()
+        || auth
+            .as_ref()
+            .is_some_and(|a| a.0.role == crate::espacio::SpaceRole::Admin);
     // Only Admin can grant Admin role
-    if req.role == crate::espacio::SpaceRole::Admin {
-        let is_admin =
-            root.is_some() || auth.is_some_and(|a| a.0.role == crate::espacio::SpaceRole::Admin);
-        if !is_admin {
-            return espacio_forbidden();
-        }
+    if req.role == crate::espacio::SpaceRole::Admin && !is_admin {
+        return espacio_forbidden();
     }
     let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
         return espacio_disabled();
     };
+    if !is_admin {
+        let sid = id.clone();
+        let target_node = req.node_id.clone();
+        let mgr = manager.clone();
+        let existing = run_blocking(async move {
+            mgr.members(&sid)
+                .await
+                .map(|m| m.into_iter().find(|x| x.node_id == target_node))
+        })
+        .await;
+        if let Some(Ok(Some(m))) = existing {
+            if m.role == crate::espacio::SpaceRole::Admin {
+                return espacio_forbidden();
+            }
+        }
+    }
     match run_blocking(async move { manager.add_member(&id, &req.node_id, req.role).await }).await {
         Some(Ok(membership)) => (
             axum::http::StatusCode::CREATED,
@@ -1269,6 +1285,26 @@ pub async fn espacio_members_remove_handler(
     let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
         return espacio_disabled();
     };
+    let is_admin = root.is_some()
+        || auth
+            .as_ref()
+            .is_some_and(|a| a.0.role == crate::espacio::SpaceRole::Admin);
+    if !is_admin {
+        let sid = id.clone();
+        let target_node = node_id.clone();
+        let mgr = manager.clone();
+        let existing = run_blocking(async move {
+            mgr.members(&sid)
+                .await
+                .map(|m| m.into_iter().find(|x| x.node_id == target_node))
+        })
+        .await;
+        if let Some(Ok(Some(m))) = existing {
+            if m.role == crate::espacio::SpaceRole::Admin {
+                return espacio_forbidden();
+            }
+        }
+    }
     match run_blocking(async move { manager.remove_member(&id, &node_id).await }).await {
         Some(Ok(true)) => Json(serde_json::json!({"status":"ok"})).into_response(),
         Some(Ok(false)) => (
@@ -3177,28 +3213,71 @@ mod verify_save_route_tests {
         assert_eq!(res.status(), StatusCode::FORBIDDEN);
     }
 
+    async fn setup_test_space(
+        cap: Option<u32>,
+    ) -> (
+        tempfile::TempDir,
+        std::sync::Arc<crate::espacio::SpaceManager>,
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = std::sync::Arc::new(crate::espacio::SpaceManager::open(tmp.path()));
+        let mut protocol = crate::workspace::protocol::SpaceProtocol {
+            storage: crate::workspace::protocol::StorageProtocol {
+                backend: crate::memory::MemoryBackend::Sqlite,
+                encrypt_records: false,
+            },
+            ..Default::default()
+        };
+        if let Some(c) = cap {
+            protocol.members_cap = c;
+        }
+        mgr.create_with_keys(
+            "space-1".to_string(),
+            "t".to_string(),
+            "".to_string(),
+            "n1".to_string(),
+            false,
+            crate::espacio::KeyOptions {
+                mode: crate::espacio::UnlockMode::NodeUnlock,
+                password: None,
+                encrypt_records: false,
+                protocol: Some(protocol),
+            },
+        )
+        .await
+        .unwrap();
+        (tmp, mgr)
+    }
+
     #[tokio::test]
     async fn members_routes_allow_admin_and_deny_reader() {
-        let auth_reader = axum::extract::Extension(crate::espacio::SpaceAuth {
-            space_id: "space-123".to_string(),
-            member_id: "member-1".to_string(),
+        let (_tmp, mgr) = setup_test_space(None).await;
+        let ext = Some(axum::extract::Extension(mgr.clone()));
+        let auth_reader = Some(axum::extract::Extension(crate::espacio::SpaceAuth {
+            space_id: "space-1".to_string(),
+            member_id: "reader".to_string(),
             role: crate::espacio::SpaceRole::Reader,
-        });
+        }));
+        let auth_admin = Some(axum::extract::Extension(crate::espacio::SpaceAuth {
+            space_id: "space-1".to_string(),
+            member_id: "n1".to_string(),
+            role: crate::espacio::SpaceRole::Admin,
+        }));
 
         let res_list = super::espacio_members_list_handler(
+            ext.clone(),
             None,
-            None,
-            Some(auth_reader.clone()),
-            axum::extract::Path("space-123".to_string()),
+            auth_reader.clone(),
+            axum::extract::Path("space-1".to_string()),
         )
         .await;
-        assert_eq!(res_list.status(), StatusCode::SERVICE_UNAVAILABLE); // Passes role check, fails to find manager
+        assert_eq!(res_list.status(), StatusCode::OK);
 
         let res_add = super::espacio_members_add_handler(
+            ext.clone(),
             None,
-            None,
-            Some(auth_reader.clone()),
-            axum::extract::Path("space-123".to_string()),
+            auth_reader.clone(),
+            axum::extract::Path("space-1".to_string()),
             Json(super::AddMemberBody {
                 node_id: "n2".into(),
                 role: crate::espacio::SpaceRole::Member,
@@ -3208,31 +3287,26 @@ mod verify_save_route_tests {
         assert_eq!(res_add.status(), StatusCode::FORBIDDEN);
 
         let res_rem = super::espacio_members_remove_handler(
+            ext.clone(),
             None,
-            None,
-            Some(auth_reader.clone()),
-            axum::extract::Path(("space-123".to_string(), "n2".to_string())),
+            auth_reader,
+            axum::extract::Path(("space-1".to_string(), "n2".to_string())),
         )
         .await;
         assert_eq!(res_rem.status(), StatusCode::FORBIDDEN);
 
-        let auth_admin = axum::extract::Extension(crate::espacio::SpaceAuth {
-            space_id: "space-123".to_string(),
-            member_id: "member-1".to_string(),
-            role: crate::espacio::SpaceRole::Admin,
-        });
         let res_add_admin = super::espacio_members_add_handler(
+            ext,
             None,
-            None,
-            Some(auth_admin.clone()),
-            axum::extract::Path("space-123".to_string()),
+            auth_admin,
+            axum::extract::Path("space-1".to_string()),
             Json(super::AddMemberBody {
                 node_id: "n2".into(),
                 role: crate::espacio::SpaceRole::Member,
             }),
         )
         .await;
-        assert_eq!(res_add_admin.status(), StatusCode::SERVICE_UNAVAILABLE); // Passes role check
+        assert_eq!(res_add_admin.status(), StatusCode::CREATED);
     }
 
     #[tokio::test]
@@ -3246,7 +3320,7 @@ mod verify_save_route_tests {
         let res_add = super::espacio_members_add_handler(
             None,
             None,
-            Some(auth_mod.clone()),
+            Some(auth_mod),
             axum::extract::Path("space-123".to_string()),
             Json(super::AddMemberBody {
                 node_id: "n2".into(),
@@ -3258,32 +3332,45 @@ mod verify_save_route_tests {
     }
 
     #[tokio::test]
-    async fn member_cap_returns_409() {
-        let tmp = tempfile::tempdir().unwrap();
-        let mgr = std::sync::Arc::new(crate::espacio::SpaceManager::open(tmp.path()));
-        mgr.create_with_keys(
-            "space-1".to_string(),
-            "t".to_string(),
-            "".to_string(),
-            "n1".to_string(),
-            false,
-            crate::espacio::KeyOptions {
-                mode: crate::espacio::UnlockMode::NodeUnlock,
-                password: None,
-                encrypt_records: false,
-                protocol: Some(crate::workspace::protocol::SpaceProtocol {
-                    storage: crate::workspace::protocol::StorageProtocol {
-                        backend: crate::memory::MemoryBackend::Sqlite,
-                        encrypt_records: false,
-                    },
-                    members_cap: 1,
-                    ..Default::default()
-                }),
-            },
-        )
-        .await
-        .unwrap();
+    async fn moderator_cannot_demote_or_remove_admin() {
+        let (_tmp, mgr) = setup_test_space(None).await;
+        let ext = Some(axum::extract::Extension(mgr.clone()));
+        let auth_mod = Some(axum::extract::Extension(crate::espacio::SpaceAuth {
+            space_id: "space-1".to_string(),
+            member_id: "mod1".to_string(),
+            role: crate::espacio::SpaceRole::Moderator,
+        }));
 
+        let res_demote = super::espacio_members_add_handler(
+            ext.clone(),
+            None,
+            auth_mod.clone(),
+            axum::extract::Path("space-1".to_string()),
+            Json(super::AddMemberBody {
+                node_id: "n1".into(),
+                role: crate::espacio::SpaceRole::Reader,
+            }),
+        )
+        .await;
+        assert_eq!(res_demote.status(), StatusCode::FORBIDDEN);
+
+        let res_rem = super::espacio_members_remove_handler(
+            ext,
+            None,
+            auth_mod,
+            axum::extract::Path(("space-1".to_string(), "n1".to_string())),
+        )
+        .await;
+        assert_eq!(res_rem.status(), StatusCode::FORBIDDEN);
+
+        let members = mgr.members("space-1").await.unwrap();
+        let n1 = members.iter().find(|m| m.node_id == "n1").unwrap();
+        assert_eq!(n1.role, crate::espacio::SpaceRole::Admin);
+    }
+
+    #[tokio::test]
+    async fn member_cap_returns_409() {
+        let (_tmp, mgr) = setup_test_space(Some(1)).await;
         let auth_admin = axum::extract::Extension(crate::espacio::SpaceAuth {
             space_id: "space-1".to_string(),
             member_id: "n1".to_string(),
@@ -3291,9 +3378,9 @@ mod verify_save_route_tests {
         });
 
         let res_add = super::espacio_members_add_handler(
-            Some(axum::extract::Extension(mgr.clone())),
+            Some(axum::extract::Extension(mgr)),
             None,
-            Some(auth_admin.clone()),
+            Some(auth_admin),
             axum::extract::Path("space-1".to_string()),
             Json(super::AddMemberBody {
                 node_id: "n2".into(),
@@ -3306,24 +3393,7 @@ mod verify_save_route_tests {
 
     #[tokio::test]
     async fn remove_unknown_member_is_404() {
-        let tmp = tempfile::tempdir().unwrap();
-        let mgr = std::sync::Arc::new(crate::espacio::SpaceManager::open(tmp.path()));
-        mgr.create_with_keys(
-            "space-1".to_string(),
-            "t".to_string(),
-            "".to_string(),
-            "n1".to_string(),
-            false,
-            crate::espacio::KeyOptions {
-                mode: crate::espacio::UnlockMode::NodeUnlock,
-                password: None,
-                encrypt_records: false,
-                protocol: Default::default(),
-            },
-        )
-        .await
-        .unwrap();
-
+        let (_tmp, mgr) = setup_test_space(None).await;
         let auth_admin = axum::extract::Extension(crate::espacio::SpaceAuth {
             space_id: "space-1".to_string(),
             member_id: "n1".to_string(),
@@ -3331,9 +3401,9 @@ mod verify_save_route_tests {
         });
 
         let res_rem = super::espacio_members_remove_handler(
-            Some(axum::extract::Extension(mgr.clone())),
+            Some(axum::extract::Extension(mgr)),
             None,
-            Some(auth_admin.clone()),
+            Some(auth_admin),
             axum::extract::Path(("space-1".to_string(), "n2".to_string())),
         )
         .await;
