@@ -1472,15 +1472,7 @@ mod tests {
 
     #[tokio::test]
     async fn consent_flow_and_query_tests() {
-        let dir = TempDir::new().unwrap();
-        let db_file = dir.path().join("market-test.sqlite3");
-        let _guard = EnvGuard::set(
-            &[
-                (FLAG_ENV, FLAG_VALUE),
-                (DB_PATH_ENV, db_file.to_str().unwrap()),
-            ],
-            &[],
-        );
+        let _env = MarketEnv::with_flag(Some(FLAG_VALUE));
 
         let router = mount(Router::new());
 
