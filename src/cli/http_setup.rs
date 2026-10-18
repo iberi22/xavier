@@ -172,12 +172,31 @@ pub(crate) fn space_token_may_access(
             return false;
         }
         let ok = match (method, tail.split_once('/')) {
-            (&Method::GET | &Method::POST, None) => tail == "links",
+            (&Method::GET | &Method::POST, None) => {
+                if tail == "members" {
+                    return match *method {
+                        Method::GET => can(role, SpaceAction::Read),
+                        Method::POST => can(role, SpaceAction::ManageMembers),
+                        _ => false,
+                    };
+                }
+                tail == "links"
+            }
             (&Method::DELETE, Some(("links", lid))) => {
                 !lid.is_empty()
                     && lid
                         .chars()
                         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+            }
+            (&Method::DELETE, Some(("members", mid))) => {
+                let valid_mid = !mid.is_empty()
+                    && mid
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'));
+                if valid_mid {
+                    return can(role, SpaceAction::ManageMembers);
+                }
+                false
             }
             _ => false,
         };
@@ -2358,7 +2377,6 @@ name = "demo"
             ("GET", "/api/v1/espacio/spaces/esp_ab"),
             // Unknown sub-paths under the OWN space are denied too.
             ("GET", "/api/v1/espacio/spaces/esp_a/"),
-            ("GET", "/api/v1/espacio/spaces/esp_a/members"),
             ("GET", "/api/v1/espacio/spaces/esp_a/tokens"),
             ("GET", "/api/v1/espacio/spaces/esp_a/keys"),
             ("POST", "/api/v1/espacio/spaces/esp_a/messages"),
@@ -2562,6 +2580,36 @@ name = "demo"
             (&g, "/mcp", SpaceRole::Admin, false),
             (&p, "/mcp", SpaceRole::Admin, false),
             (&p, "/mcp/tools/call", SpaceRole::Reader, true),
+            (
+                &g,
+                "/api/v1/espacio/spaces/esp_a/members",
+                SpaceRole::Reader,
+                true,
+            ),
+            (
+                &p,
+                "/api/v1/espacio/spaces/esp_a/members",
+                SpaceRole::Reader,
+                false,
+            ),
+            (
+                &p,
+                "/api/v1/espacio/spaces/esp_a/members",
+                SpaceRole::Member,
+                false,
+            ),
+            (
+                &p,
+                "/api/v1/espacio/spaces/esp_a/members",
+                SpaceRole::Moderator,
+                true,
+            ),
+            (
+                &p,
+                "/api/v1/espacio/spaces/esp_a/members",
+                SpaceRole::Admin,
+                true,
+            ),
         ] {
             assert_eq!(
                 space_token_may_access(path, OWN, role, m),
@@ -2577,12 +2625,6 @@ name = "demo"
         ));
         assert!(!space_token_may_access(
             "memory/search",
-            OWN,
-            SpaceRole::Admin,
-            &g
-        ));
-        assert!(!space_token_may_access(
-            "/api/v1/espacio/spaces/esp_a/members",
             OWN,
             SpaceRole::Admin,
             &g
