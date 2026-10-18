@@ -16,6 +16,8 @@ pub enum MarketError {
     ListingRevoked(String),
     #[error("identity request {0} not found")]
     IdentityRequestNotFound(String),
+    #[error("access grant {0} not found")]
+    AccessGrantNotFound(String),
     #[error("request is not authenticated: {0}")]
     Unauthenticated(String),
     #[error("{0}")]
