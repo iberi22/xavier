@@ -293,7 +293,7 @@ impl MarketStore {
     /// - `actor` is the publisher/seller of the listing.
     /// - Listing exists and is not revoked.
     /// - All hex fields are strictly valid and meet required cryptographic lengths.
-    /// - `ttl_seconds` is non-zero and does not exceed `grant_max_ttl_seconds`.
+    /// - `expires_at_ms` is in the future and no more than `grant_max_ttl_seconds` from server now; reused (buyer, ephemeral key, nonce) is rejected.
     /// - The seller's signature over the grant signing bytes verifies against `actor.id()`.
     ///
     /// If the listing was revoked, new grants fail immediately with `ListingRevoked`.
@@ -305,7 +305,7 @@ impl MarketStore {
         ephemeral_pubkey_hex: &str,
         wrapped_key_hex: &str,
         nonce_hex: &str,
-        ttl_seconds: Option<u64>,
+        expires_at_ms: i64,
         signature_hex: &str,
     ) -> Result<AccessGrant, MarketError> {
         let listing_id = non_empty("listing_id", listing_id)?;
@@ -364,31 +364,26 @@ impl MarketStore {
             .map_err(|_| MarketError::InvalidInput("signature length mismatch".to_string()))?;
         let signature = Signature::from_bytes(&sig_arr);
 
-        // Validate TTL
-        let max_ttl = self.config().grant_max_ttl_seconds;
-        let default_ttl = self.config().grant_default_ttl_seconds;
-        let ttl_secs = match ttl_seconds {
-            Some(0) => {
-                return Err(MarketError::InvalidInput(
-                    "ttl_seconds must be greater than zero".to_string(),
-                ))
-            }
-            Some(t) if t > max_ttl => {
-                return Err(MarketError::InvalidInput(format!(
-                    "ttl_seconds ({t}) exceeds maximum allowed ({max_ttl})"
-                )))
-            }
-            Some(t) => t,
-            None => default_ttl,
-        };
-
+        // Validate expiry against server time
         let created_at = now_ms();
-        let ttl_ms = (ttl_secs as i64)
+        if expires_at_ms <= created_at {
+            return Err(MarketError::InvalidInput(
+                "expires_at_ms must be in the future".to_string(),
+            ));
+        }
+        let max_ttl = self.config().grant_max_ttl_seconds;
+        let max_ms = (max_ttl as i64)
             .checked_mul(1000)
-            .ok_or_else(|| MarketError::InvalidInput("ttl overflow".to_string()))?;
-        let expires_at = created_at
-            .checked_add(ttl_ms)
+            .ok_or_else(|| MarketError::InvalidInput("grant_max_ttl overflow".to_string()))?;
+        let latest = created_at
+            .checked_add(max_ms)
             .ok_or_else(|| MarketError::InvalidInput("expires_at overflow".to_string()))?;
+        if expires_at_ms > latest {
+            return Err(MarketError::InvalidInput(format!(
+                "expires_at_ms exceeds grant_max_ttl_seconds ({max_ttl})"
+            )));
+        }
+        let expires_at = expires_at_ms;
 
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -410,6 +405,20 @@ impl MarketStore {
         if !seller_id.eq_ignore_ascii_case(actor.id()) {
             return Err(MarketError::Forbidden(
                 "only the listing seller can issue access grants".to_string(),
+            ));
+        }
+
+        let duplicate: Option<i64> = tx
+            .query_row(
+                "SELECT 1 FROM market_access_grants
+                 WHERE listing_id = ?1 AND buyer_id = ?2 AND ephemeral_pubkey = ?3 AND nonce = ?4",
+                params![listing_id, buyer_pub_hex, ephemeral_pubkey_hex, nonce_hex],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if duplicate.is_some() {
+            return Err(MarketError::Conflict(
+                "grant with this ephemeral key and nonce already exists".to_string(),
             ));
         }
 
@@ -760,9 +769,8 @@ mod tests {
         let (wrapped, eph_pub, nonce_hex) =
             wrap_key_for_buyer(package_key, &buyer_pub_bytes, &ephemeral_seed, &nonce).unwrap();
 
-        let ttl_seconds = 3600u64;
         let created_at = now_ms();
-        let expires_at = created_at + (ttl_seconds as i64 * 1000);
+        let expires_at = created_at + 3_600_000;
         let signing_bytes = grant_signing_bytes(
             &listing.id,
             &buyer_pub_hex,
@@ -783,7 +791,7 @@ mod tests {
                 &eph_pub,
                 &wrapped,
                 &nonce_hex,
-                Some(ttl_seconds),
+                expires_at,
                 &signature_hex,
             )
             .unwrap();
@@ -793,6 +801,20 @@ mod tests {
         assert_eq!(grant.seller_id, seller_actor.id());
         assert!(grant.revoked_at_ms.is_none());
         assert!(grant.verify_signature().is_ok());
+        assert_eq!(grant.expires_at_ms, expires_at);
+
+        // Same (buyer, ephemeral key, nonce) cannot be granted twice
+        let duplicate = store.create_access_grant(
+            &seller_actor,
+            &listing.id,
+            &buyer_pub_hex,
+            &eph_pub,
+            &wrapped,
+            &nonce_hex,
+            expires_at,
+            &signature_hex,
+        );
+        assert!(matches!(duplicate, Err(MarketError::Conflict(_))));
 
         // Active grant sanitized is identical
         let sanitized_active = grant.sanitized_if_inactive(created_at + 10);
@@ -825,6 +847,19 @@ mod tests {
         // Revoke grant
         let revoked_grant = store.revoke_access_grant(&seller_actor, &grant.id).unwrap();
         assert!(revoked_grant.revoked_at_ms.is_some());
+
+        // Revoked grants still reserve their (buyer, ephemeral key, nonce)
+        let resubmit = store.create_access_grant(
+            &seller_actor,
+            &listing.id,
+            &buyer_pub_hex,
+            &eph_pub,
+            &wrapped,
+            &nonce_hex,
+            expires_at,
+            &signature_hex,
+        );
+        assert!(matches!(resubmit, Err(MarketError::Conflict(_))));
 
         // Revoked grant sanitized has stripped keys
         let sanitized_revoked = revoked_grant.sanitized_if_inactive(created_at + 20);
@@ -894,7 +929,7 @@ mod tests {
             &eph_pub,
             &wrapped,
             &nonce_hex,
-            Some(3600),
+            expires_at,
             &signature_hex,
         );
 
@@ -932,7 +967,7 @@ mod tests {
             &valid_eph,
             &valid_wrapped,
             &valid_nonce,
-            Some(0),
+            now_ms(),
             &valid_sig,
         );
         assert!(matches!(res_ttl_zero, Err(MarketError::InvalidInput(_))));
@@ -945,7 +980,7 @@ mod tests {
             &valid_eph,
             &valid_wrapped,
             &valid_nonce,
-            Some(999_999_999),
+            now_ms() + 999_999_999_000,
             &valid_sig,
         );
         assert!(matches!(res_ttl_huge, Err(MarketError::InvalidInput(_))));
@@ -958,7 +993,7 @@ mod tests {
             &valid_eph,
             &valid_wrapped,
             &valid_nonce,
-            Some(3600),
+            now_ms() + 3_600_000,
             &valid_sig,
         );
         assert!(matches!(res_short_buyer, Err(MarketError::InvalidInput(_))));
@@ -971,7 +1006,7 @@ mod tests {
             &valid_eph,
             &valid_wrapped,
             "00".repeat(11).as_str(),
-            Some(3600),
+            now_ms() + 3_600_000,
             &valid_sig,
         );
         assert!(matches!(res_short_nonce, Err(MarketError::InvalidInput(_))));
@@ -984,7 +1019,7 @@ mod tests {
             &valid_eph,
             "00".repeat(15).as_str(),
             &valid_nonce,
-            Some(3600),
+            now_ms() + 3_600_000,
             &valid_sig,
         );
         assert!(matches!(
@@ -1004,7 +1039,7 @@ mod tests {
             &valid_eph,
             &valid_wrapped,
             &valid_nonce,
-            Some(3600),
+            now_ms() + 3_600_000,
             &valid_sig,
         );
         assert!(matches!(res_non_seller, Err(MarketError::Forbidden(_))));

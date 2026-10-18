@@ -272,7 +272,8 @@ pub struct CreateGrantPayload {
     pub ephemeral_pubkey_hex: String,
     pub wrapped_key_hex: String,
     pub nonce_hex: String,
-    pub ttl_seconds: Option<u64>,
+    /// Grant expiry in unix ms, signed by the seller; the server bounds it.
+    pub expires_at_ms: i64,
     /// Hex-encoded 64-byte Ed25519 signature by the seller over the canonical grant fields.
     pub signature_hex: String,
 }
@@ -300,7 +301,7 @@ async fn create_grant_handler(
         &payload.ephemeral_pubkey_hex,
         &payload.wrapped_key_hex,
         &payload.nonce_hex,
-        payload.ttl_seconds,
+        payload.expires_at_ms,
         &payload.signature_hex,
     ) {
         Ok(grant) => (StatusCode::CREATED, Json(grant)).into_response(),
@@ -1059,9 +1060,7 @@ mod tests {
         )
         .unwrap();
 
-        let ttl_seconds = 3600u64;
-        let created_at = now_ms();
-        let expires_at = created_at + (ttl_seconds as i64 * 1000);
+        let expires_at = now_ms() + 3_600_000;
 
         // Sign the grant payload with seller (owner) key
         let owner_signing_key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
@@ -1082,7 +1081,7 @@ mod tests {
             "ephemeral_pubkey_hex": eph_pub,
             "wrapped_key_hex": wrapped,
             "nonce_hex": nonce_hex,
-            "ttl_seconds": ttl_seconds,
+            "expires_at_ms": expires_at,
             "signature_hex": signature_hex,
         });
 
@@ -1197,9 +1196,7 @@ mod tests {
         )
         .unwrap();
 
-        let ttl_seconds = 3600u64;
-        let created_at = now_ms();
-        let expires_at = created_at + (ttl_seconds as i64 * 1000);
+        let expires_at = now_ms() + 3_600_000;
 
         // Stranger tries to sign and create a grant for owner's listing
         let stranger_signing_key = ed25519_dalek::SigningKey::from_bytes(&[9u8; 32]);
@@ -1220,7 +1217,7 @@ mod tests {
             "ephemeral_pubkey_hex": eph_pub,
             "wrapped_key_hex": wrapped,
             "nonce_hex": nonce_hex,
-            "ttl_seconds": ttl_seconds,
+            "expires_at_ms": expires_at,
             "signature_hex": signature_hex,
         });
 
@@ -1257,10 +1254,8 @@ mod tests {
         )
         .unwrap();
 
-        // 1 second TTL
-        let ttl_seconds = 1u64;
-        let created_at = now_ms();
-        let expires_at = created_at + 1000;
+        // Expires 1.5 seconds from now
+        let expires_at = now_ms() + 1500;
 
         let owner_signing_key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
         let signing_bytes = grant_signing_bytes(
@@ -1280,7 +1275,7 @@ mod tests {
             "ephemeral_pubkey_hex": eph_pub,
             "wrapped_key_hex": wrapped,
             "nonce_hex": nonce_hex,
-            "ttl_seconds": ttl_seconds,
+            "expires_at_ms": expires_at,
             "signature_hex": signature_hex,
         });
 
@@ -1297,8 +1292,8 @@ mod tests {
         assert_eq!(status, StatusCode::CREATED);
         let grant_id = grant_json["id"].as_str().unwrap().to_string();
 
-        // Wait for grant to expire (> 1000 ms)
-        tokio::time::sleep(tokio::time::Duration::from_millis(1200)).await;
+        // Wait for grant to expire (> 1500 ms)
+        tokio::time::sleep(tokio::time::Duration::from_millis(1800)).await;
 
         // Fetch expired grant from router: key material must be stripped
         let (status, fetched_expired) = send(
@@ -1314,5 +1309,87 @@ mod tests {
         assert_eq!(fetched_expired["wrapped_key_hex"], "");
         assert_eq!(fetched_expired["ephemeral_pubkey_hex"], "");
         assert_eq!(fetched_expired["nonce_hex"], "");
+    }
+
+    #[tokio::test]
+    async fn router_rejects_past_and_replayed_grants() {
+        use xavier_market::{grant_signing_bytes, wrap_key_for_buyer};
+
+        let _env = MarketEnv::with_flag(Some("beta"));
+        let router: Router = mount(Router::new());
+        let listing_id = create_owned_listing(&router).await;
+
+        let buyer_secret = x25519_dalek::StaticSecret::from([55u8; 32]);
+        let buyer_public = x25519_dalek::PublicKey::from(&buyer_secret);
+        let buyer_pub_hex = crate::crypto::hex_encode(buyer_public.as_bytes());
+        let (wrapped, eph_pub, nonce_hex) = wrap_key_for_buyer(
+            b"key-data-16bytes",
+            buyer_public.as_bytes(),
+            &[77u8; 32],
+            &[88u8; 12],
+        )
+        .unwrap();
+
+        let owner_signing_key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
+        let grant_payload = |expires_at: i64| {
+            let signing_bytes = grant_signing_bytes(
+                &listing_id,
+                &buyer_pub_hex,
+                &eph_pub,
+                &wrapped,
+                &nonce_hex,
+                expires_at,
+            );
+            let sig = owner_signing_key.sign(&signing_bytes);
+            let signature_hex = crate::crypto::hex_encode(sig.to_bytes());
+            json!({
+                "listing_id": listing_id,
+                "buyer_x25519_pubkey_hex": buyer_pub_hex,
+                "ephemeral_pubkey_hex": eph_pub,
+                "wrapped_key_hex": wrapped,
+                "nonce_hex": nonce_hex,
+                "expires_at_ms": expires_at,
+                "signature_hex": signature_hex,
+            })
+        };
+
+        // Expiry in the past is rejected
+        let (status, _) = send(
+            &router,
+            signed_request(
+                &owner(),
+                Method::POST,
+                "/v2/marketplace/grants",
+                Some(grant_payload(now_ms() - 1000)),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // Identical (buyer, ephemeral key, nonce) replay is a conflict
+        let payload = grant_payload(now_ms() + 3_600_000);
+        let (status, _) = send(
+            &router,
+            signed_request(
+                &owner(),
+                Method::POST,
+                "/v2/marketplace/grants",
+                Some(payload.clone()),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        let (status, _) = send(
+            &router,
+            signed_request(
+                &owner(),
+                Method::POST,
+                "/v2/marketplace/grants",
+                Some(payload),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
     }
 }
