@@ -932,7 +932,7 @@ mod tests {
 
         // Attacker attempting with SHA-256 of public key
         let mut hasher_pub = Sha256::new();
-        hasher_pub.update(&alice_pubkey);
+        hasher_pub.update(alice_pubkey);
         attacker_seed.copy_from_slice(&hasher_pub.finalize());
         let attacker_secret_from_pub = StaticSecret::from(attacker_seed);
         assert!(
