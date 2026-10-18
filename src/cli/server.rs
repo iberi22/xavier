@@ -640,6 +640,10 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
                 r.can_manage_users()
             }))),
         )
+        .route(
+            "/v1/admin/stores",
+            get(crate::cli::handlers::stores_admin::admin_stores_handler),
+        )
         // Memory Knowledge Graph (EntityGraph)
         .route("/memory/graph/entities", get(memory_graph_list_entities))
         .route(
