@@ -5,6 +5,8 @@ rust-version = "1.94"
 authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
 autobins = false
+# Test targets are listed explicitly (suite_*.rs group roots + standalone); see U7.
+autotests = false
 default-run = "xavier"
 description = "Xavier - Cognitive Memory Runtime for AI Agents (AGPL v3 + Commercial)"
 license = "AGPL-3.0"
@@ -96,14 +98,6 @@ libp2p = []
 dao-evm = ["dep:alloy"]
 espacio-mesh = []
 
-[[test]]
-name = "auth_register_test"
-path = "tests/integration/auth_register_test.rs"
-
-[[test]]
-name = "market_v2_router_restart"
-path = "tests/market_v2_router_restart.rs"
-
 [[bench]]
 name = "embedding_benchmark"
 path = "benches/embedding_benchmark.rs"
@@ -153,118 +147,6 @@ harness = false
 name = "vector_search"
 path = "benches/vector_search.rs"
 harness = false
-
-[[test]]
-name = "auth_full_flow_test"
-path = "tests/integration/auth_full_flow_test.rs"
-
-[[test]]
-name = "rbac_e2e"
-path = "tests/e2e/rbac_e2e.rs"
-
-[[test]]
-name = "crypto_e2e"
-path = "tests/e2e/crypto_e2e.rs"
-
-[[test]]
-name = "telegram_bot_e2e"
-path = "tests/e2e/telegram_bot_e2e.rs"
-
-[[test]]
-name = "mcp_e2e"
-path = "tests/e2e/mcp_e2e.rs"
-
-[[test]]
-name = "notification_e2e"
-path = "tests/e2e/notification_e2e.rs"
-
-[[test]]
-name = "notification_emitters"
-path = "tests/notification_emitters.rs"
-
-[[test]]
-name = "hormer_navigation_e2e"
-path = "tests/e2e/hormer_navigation_e2e.rs"
-
-[[test]]
-name = "governance_e2e"
-path = "tests/e2e/governance_e2e.rs"
-
-[[test]]
-name = "decentralized_login_e2e"
-path = "tests/e2e/decentralized_login_e2e.rs"
-
-[[test]]
-name = "shamir_cloud_sync_e2e"
-path = "tests/e2e/shamir_cloud_sync_e2e.rs"
-
-[[test]]
-name = "polygon_merkle_rollup_e2e"
-path = "tests/e2e/polygon_merkle_rollup_e2e.rs"
-
-[[test]]
-name = "multimodal_rag_pipeline_e2e"
-path = "tests/e2e/multimodal_rag_pipeline_e2e.rs"
-
-[[test]]
-name = "context_regen_e2e"
-path = "tests/e2e/context_regen_e2e.rs"
-
-[[test]]
-name = "multi_node_sync"
-path = "tests/e2e/multi_node_sync.rs"
-
-[[test]]
-name = "memory_push_index"
-path = "tests/e2e/memory_push_index.rs"
-
-[[test]]
-name = "clearance_access_audit"
-path = "tests/e2e/clearance_access_audit.rs"
-
-[[test]]
-name = "xavier_repair_verify_wave20"
-path = "tests/e2e/xavier_repair_verify_wave20.rs"
-
-[[test]]
-name = "xtsp"
-path = "tests/xtsp/mod.rs"
-
-[[test]]
-name = "ci_version_gate"
-path = "tests/ci_version_gate.test.rs"
-
-[[test]]
-name = "embedding_fallback_resilience"
-path = "tests/embedding_fallback_resilience_test.rs"
-
-[[test]]
-name = "kernel_proxy_test"
-path = "tests/kernel_proxy_test.rs"
-
-[[test]]
-name = "kernel_mcp_test"
-path = "tests/kernel_mcp_test.rs"
-
-[[test]]
-name = "messaging_status"
-path = "tests/messaging_status.rs"
-
-[[test]]
-name = "segment_space"
-path = "tests/segment_space.rs"
-
-[[test]]
-name = "clearance_audit_sqlite"
-path = "tests/clearance_audit_sqlite.rs"
-
-[[test]]
-name = "telecom_simulation_test"
-path = "tests/telecom_simulation_test.rs"
-
-[[test]]
-name = "access_flush_drain"
-path = "tests/access_flush_drain.rs"
 
 [dependencies]
 xavier-core-logic = { path = "crates/xavier-core-logic" }
@@ -454,3 +336,67 @@ opt-level = 3
 lto = false
 codegen-units = 16
 strip = "debuginfo"
+
+[[test]]
+name = "suite_01"
+path = "tests/suite_01.rs"
+
+[[test]]
+name = "suite_02"
+path = "tests/suite_02.rs"
+
+[[test]]
+name = "suite_03"
+path = "tests/suite_03.rs"
+
+[[test]]
+name = "suite_04"
+path = "tests/suite_04.rs"
+
+[[test]]
+name = "suite_05"
+path = "tests/suite_05.rs"
+
+[[test]]
+name = "suite_06"
+path = "tests/suite_06.rs"
+
+[[test]]
+name = "suite_07"
+path = "tests/suite_07.rs"
+
+[[test]]
+name = "suite_08"
+path = "tests/suite_08.rs"
+
+[[test]]
+name = "suite_09"
+path = "tests/suite_09.rs"
+
+[[test]]
+name = "suite_10"
+path = "tests/suite_10.rs"
+
+[[test]]
+name = "suite_11"
+path = "tests/suite_11.rs"
+
+[[test]]
+name = "suite_12"
+path = "tests/suite_12.rs"
+
+[[test]]
+name = "suite_13"
+path = "tests/suite_13.rs"
+
+[[test]]
+name = "mcp_session_edge_test"
+path = "tests/mcp_session_edge_test.rs"
+
+[[test]]
+name = "memory_prune_test"
+path = "tests/memory_prune_test.rs"
+
+[[test]]
+name = "mesh_full_simulation_test"
+path = "tests/mesh_full_simulation_test.rs"

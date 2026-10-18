@@ -11,6 +11,10 @@ mkdir -p "$MOCK_ROOT/.gitcore"
 mkdir -p "$MOCK_ROOT/crates"
 mkdir -p "$MOCK_ROOT/src"
 mkdir -p "$MOCK_ROOT/code-graph"
+# The resolver finds the repo root via git: give the mock its own root so /tmp/.git is not used.
+git -C "$MOCK_ROOT" init -q
+mkdir -p "$MOCK_ROOT/scripts"
+cp "$REAL_ROOT/scripts/xavier-test-target.sh" "$MOCK_ROOT/scripts/"
 cat << 'TOML' > "$MOCK_ROOT/Cargo.toml"
 [[test]]
 name = "dummy"
@@ -212,6 +216,9 @@ cp "$REAL_ROOT/tests/integration/agents_test.rs" "$MOCK_ROOT/tests/integration/"
 cp "$REAL_ROOT/tests/integration.rs" "$MOCK_ROOT/tests/"
 cp "$REAL_ROOT/code-graph/tests/fingerprint.rs" "$MOCK_ROOT/code-graph/tests/"
 cp "$REAL_ROOT/code-graph/src/fingerprint.rs" "$MOCK_ROOT/code-graph/src/"
+# Suite roots and manifest: the resolver maps `integration` to its suite from these.
+cp "$REAL_ROOT/Cargo.toml" "$MOCK_ROOT/Cargo.toml"
+cp "$REAL_ROOT"/tests/suite_[0-9][0-9].rs "$MOCK_ROOT/tests/"
 python3 - "$REAL_ROOT" "$MOCK_ROOT" "$TEST_DIR/expected-invocations" << 'PY'
 import json, sys
 from pathlib import Path
@@ -222,7 +229,7 @@ tests = ["tests/integration/agents_test.rs::test_agent_creation", *feature["test
 (mock / ".gitcore/features.json").write_text(json.dumps({"features": [{
     "id": "routing", "status": "in_progress", "tests": tests,
 }]}))
-commands = ["test -p xavier --features test-utils --test integration test_agent_creation"]
+commands = ["test -p xavier --features ci-safe --test suite_05 -- --test-threads=1 --exact integration::agents_test::test_agent_creation"]
 for test in feature["tests"]:
     if test.startswith("code-graph/tests/fingerprint.rs::"):
         commands.append("test -p code-graph --test fingerprint " + test.split("::")[-1])
@@ -233,6 +240,14 @@ PY
 cat << 'BIN' > "$TEST_DIR/bin6/cargo"
 #!/usr/bin/env bash
 if [[ "$*" == *"--no-run"* ]]; then
+  exit 0
+fi
+if [[ "$*" == *"--list"* ]]; then
+  echo "integration::agents_test::test_agent_creation: test"
+  echo "integration::agents_test::test_agent_other: test"
+  echo "integration::other_test::test_agent_creation_extra: test"
+  echo ""
+  echo "3 tests, 0 benchmarks"
   exit 0
 fi
 printf '%s\n' "$*" >> "$INVOCATIONS"

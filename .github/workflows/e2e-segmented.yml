@@ -49,6 +49,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 22 targets of wave 01
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
@@ -115,6 +118,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 19 targets of wave 02
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
@@ -178,6 +184,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 18 targets of wave 03
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
@@ -240,6 +249,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 19 targets of wave 04
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
@@ -311,6 +323,9 @@ jobs:
           sudo apt-get install -y build-essential cmake pkg-config libssl-dev
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 11 targets of wave 05
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
@@ -366,6 +381,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 8 targets of wave 06
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
@@ -418,6 +436,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 12 targets of wave 07
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
@@ -474,6 +495,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 6 targets of wave 08
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
@@ -524,6 +548,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 9 targets of wave 09
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
@@ -577,6 +604,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 4 targets of wave 10
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
@@ -625,6 +655,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 7 targets of wave 11
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
@@ -676,6 +709,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 4 targets of wave 12
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
@@ -724,6 +760,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-ci-safe
+          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
       - name: Run all 2 targets of wave 13
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status

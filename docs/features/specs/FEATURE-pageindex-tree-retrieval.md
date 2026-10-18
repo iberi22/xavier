@@ -263,7 +263,7 @@ optional `PAGEINDEX_OSS_BENCHMARK_DIR` JSONL (never downloaded in CI).
 
 ### Eval results (PAGEINDEX.14, measured)
 
-Command: `cargo test -p xavier --features ci-safe --test pageindex_eval -- --nocapture`.
+Command: `cargo nextest run -p xavier --features ci-safe -E 'test(/^pageindex_eval::/)' --no-capture`.
 Data: 3 committed fixtures in `tests/fixtures/pageindex/` (`manual.md` 13 pages, `contract.txt` 11 pages,
 `handbook.txt` 11 pages; 8 lines per virtual page) and 36 questions in `gold.jsonl`, each with a gold page
 range and an `evidence` phrase that a test checks lies inside that range. No LLM, no network.
@@ -304,7 +304,7 @@ small documents, differences of one or two questions (0.028 each) are noise.
 
 Optional modes (never in CI, both `#[ignore]`d):
 - `test_eval_llm_navigator_optional` gives the outline to the LLM of `LlmAdapter::from_env()`
-  (`DOCBOT_LLM_*`) and scores its chosen node: `cargo test -p xavier --features ci-safe --test pageindex_eval -- --ignored --nocapture llm`.
+  (`DOCBOT_LLM_*`) and scores its chosen node: `cargo nextest run -p xavier --features ci-safe --run-ignored ignored-only -E 'test(/^pageindex_eval::.*llm/)' --no-capture`.
 - `PAGEINDEX_OSS_BENCHMARK_DIR` (read by the test only, not by the crate or `.env.example`) points to a local
   checkout of VectifyAI/PageIndex-OSS-Benchmark converted to `<dir>/questions.jsonl` (fields `doc`, `query`|`question`,
   `start_page`|`start`, `end_page`|`end`) with `.md`/`.txt` sources in `<dir>/documents/`. The real repo ships

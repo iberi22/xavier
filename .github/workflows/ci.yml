@@ -7,6 +7,14 @@ on:
     branches: [main, 'sprint/**']
   workflow_dispatch:
 
+# Pull requests: one group per PR, so a newer push cancels the superseded run.
+# Pushes to main and manual runs: one group per commit SHA and never cancelled.
+# A shared group (e.g. ci-refs/heads/main) would make GitHub drop the queued
+# main run whenever a newer main push arrives, so every push gets its own group.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-{0}', github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_TARGET_DIR: target
@@ -303,6 +311,9 @@ jobs:
           fi
           echo "OK: all test/bench crate roots are sandboxed"
 
+      - name: Check test suite grouping
+        run: bash scripts/check-test-suites.sh
+
       - name: Check no test writes to the real home
         continue-on-error: true
         run: bash scripts/check-test-writes.sh
@@ -339,30 +350,39 @@ jobs:
       - name: Run Observability Contract Tests
         # 1 thread, same reason as `rust-test`: several suites mutate global ENV
         # and cannot be parallelised across processes (see the comment above).
-        run: cargo test --package xavier --features ci-safe --test observability_contract -- --test-threads=1
+        run: |
+          source scripts/xavier-test-target.sh
+          xavier_cargo_test ci-safe observability_contract
 
       - name: Run Clavis HTTP, Keygen & Vault E2E Tests
         run: |
-          cargo test --package xavier --features ci-safe --test clavis_http_e2e -- --test-threads=1
-          cargo test --package xavier --features ci-safe --test keygen_e2e -- --test-threads=1
-          cargo test --package xavier --features ci-safe --test clavis_namespace_e2e -- --test-threads=1
-          cargo test --package xavier --features ci-safe --test clavis_vault_smoke_e2e -- --test-threads=1
-          cargo test --package xavier --features ci-safe --test clavis_auth_pipeline_e2e -- --test-threads=1
-          cargo test --package xavier --features ci-safe --test production_router_smoke -- --test-threads=1
-          for t in tests/router_*_auth.rs; do [ -e "$t" ] || continue; cargo test --package xavier --features ci-safe --test "$(basename "$t" .rs)" -- --test-threads=1; done
-          cargo test --package xavier --features ci-safe --test skill_controller_core_adapters -- --test-threads=1
-          cargo test --package xavier --features ci-safe --test skill_controller_other_adapters -- --test-threads=1
+          source scripts/xavier-test-target.sh
+          router_auth_targets=()
+          for t in tests/router_*_auth.rs; do
+            [ -e "$t" ] || continue
+            router_auth_targets+=("$(basename "$t" .rs)")
+          done
+          xavier_cargo_test ci-safe \
+            clavis_http_e2e keygen_e2e clavis_namespace_e2e clavis_vault_smoke_e2e \
+            clavis_auth_pipeline_e2e production_router_smoke
+          if [ "${#router_auth_targets[@]}" -gt 0 ]; then
+            xavier_cargo_test ci-safe "${router_auth_targets[@]}"
+          fi
+          xavier_cargo_test ci-safe skill_controller_core_adapters skill_controller_other_adapters
 
       - name: Run Recovery E2E (seal -> perder record.key -> unseal -> restore)
         # Sin TTY y hermético: HOME, XAVIER_DATA_DIR y XAVIER_RECOVERY_DIR temporales,
         # keyring inalcanzable. El script recorre el binario real (target/debug/xavier).
         run: |
-          cargo test --package xavier --features ci-safe --test recovery_unseal_e2e --test recovery_cli_e2e -- --test-threads=1
+          source scripts/xavier-test-target.sh
+          xavier_cargo_test ci-safe recovery_unseal_e2e recovery_cli_e2e
           cargo build --package xavier --features ci-safe --bin xavier
           bash scripts/test-recovery-e2e.sh --bin target/debug/xavier
 
       - name: Run E3 (una credencial nunca vuelve en memory_search)
-        run: cargo test --package xavier --features ci-safe --test v1_api_ingest_test -- --test-threads=1
+        run: |
+          source scripts/xavier-test-target.sh
+          xavier_cargo_test ci-safe v1_api_ingest_test
 
   # Job 3a: Marketplace V2 (market-v2 feature, xavier-market crate)
   #
@@ -394,7 +414,8 @@ jobs:
       - name: Run Marketplace V2 Integrations Tests
         run: |
           cargo test -p xavier-market
-          cargo test -p xavier --features ci-safe,market-v2 --test market_v2_router_restart -- --test-threads=1
+          source scripts/xavier-test-target.sh
+          xavier_cargo_test ci-safe,market-v2 market_v2_router_restart
           cargo test -p xavier --features ci-safe,market-v2 --lib market_v2 -- --test-threads=1
 
   # Job 3b: Espacios (per-space keys, stores, tokens, links, routing)
@@ -428,13 +449,11 @@ jobs:
       - name: Run Espacios isolation, encryption, links and auth-gate tests
         # 1 thread: these suites mutate global ENV (see `rust-test`).
         run: |
-          cargo test --package xavier --features ci-safe --test espacio_memory_encryption -- --test-threads=1
-          cargo test --package xavier --features ci-safe --test espacio_isolation_memory -- --test-threads=1
-          cargo test --package xavier --features ci-safe --test espacio_links -- --test-threads=1
-          cargo test --package xavier --features ci-safe --test espacio_space_paths -- --test-threads=1
-          cargo test --package xavier --features ci-safe --test espacio_production_router -- --test-threads=1
-          cargo test --package xavier --features ci-safe --test espacio_isolation_e2e -- --test-threads=1
-          cargo test --package xavier --features ci-safe --test test_maloca_auth_gate -- --test-threads=1
+          source scripts/xavier-test-target.sh
+          xavier_cargo_test ci-safe \
+            espacio_memory_encryption espacio_isolation_memory espacio_links \
+            espacio_space_paths espacio_production_router espacio_isolation_e2e \
+            test_maloca_auth_gate
 
   # Job 4: Secret Scan
   secret-scan:

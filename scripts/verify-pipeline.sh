@@ -163,8 +163,21 @@ PY
     fi
     rm -f "$WARMUP_OUT"
   done
-  # Declared [[test]] target names (for path/:: filters pointing at integration targets).
-  TEST_TARGETS="$(grep -A1 '^\[\[test\]\]' "$ROOT/Cargo.toml" | grep 'name =' | sed -E 's/.*name = "([^"]+)".*/\1/' | tr '\n' ' ')"
+  # Old target names (modules of tests/suite_NN.rs + standalone [[test]] names) that the
+  # resolver maps to a cargo target. Used for path/:: filters pointing at test targets.
+  # shellcheck source=xavier-test-target.sh
+  source "$ROOT/scripts/xavier-test-target.sh"
+  TEST_TARGETS=""
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    if resolved="$(xavier_test_suite "$name" 2>/dev/null)"; then
+      TEST_TARGETS="$TEST_TARGETS $name"
+    fi
+  done < <( { grep -hE '^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+[A-Za-z0-9_]+[[:space:]]*;' "$ROOT"/tests/suite_[0-9][0-9].rs 2>/dev/null \
+                | sed -E 's/^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+([A-Za-z0-9_]+).*/\2/';
+              grep -A1 '^\[\[test\]\]' "$ROOT/Cargo.toml" | grep 'name =' | sed -E 's/.*name = "([^"]+)".*/\1/'; } || true )
+  TEST_TARGETS=" $TEST_TARGETS "
+  LIST_CACHE_DIR="$(mktemp -d)"
   SEEN_ERRORS_FILE="$(mktemp)"
   # try_cargo: run one cargo invocation, set OUT/RC/PASSED. Echoes the label on success.
   try_cargo() {
@@ -189,49 +202,120 @@ PY
     FAIL_OUT="${FAIL_OUT:-}${FAIL_OUT:+$'\n'}--- $TRY_LABEL (rc=$RC) ---"$'\n'"$(printf '%s' "$OUT" | tail -12)"
     return 1
   }
-  # file_to_invocation: map a defining source file to "label|cargo args".
+  # target_features <old_name>: cargo features the xavier test target is built with.
+  target_features() {
+    case "$1" in
+      mesh_integration) echo "ci-safe,mesh" ;;
+      *)                echo "ci-safe" ;;
+    esac
+  }
+  # list_suite_tests <suite> <features>: libtest names of a suite, one "name: test" per line.
+  # Cached per suite+features in LIST_CACHE_DIR (a listing must use the same features as the run).
+  list_suite_tests() {
+    local suite="$1" features="$2" cache
+    cache="$LIST_CACHE_DIR/$suite-${features//,/_}"
+    if [ ! -f "$cache" ]; then
+      # shellcheck disable=SC2086: $TIMEOUT_BIN is an optional "timeout N" prefix
+      if (cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_DIR" $TIMEOUT_BIN cargo test -p xavier --features "$features" --test "$suite" -- --list --format terse) > "$cache.tmp"; then
+        mv "$cache.tmp" "$cache"
+      else
+        rm -f "$cache.tmp"
+        echo "    ⚠ cannot list tests of $suite (features: $features)" >&2
+        return 1
+      fi
+    fi
+    cat "$cache"
+  }
+  # suite_fn_args <features> <old_name> <fn>: sets CARGO_ARGS to run the tests of <old_name>
+  # named <fn> at any module depth (empty <fn> = every test of the target), selected from the
+  # suite listing and passed by exact name. Returns 1 when nothing matches.
+  suite_fn_args() {
+    local features="$1" base="$2" fn="$3" suite prefix pat names n
+    suite="$(xavier_test_suite "$base" 2>/dev/null)" || return 1
+    prefix="$(xavier_test_filter "$base" 2>/dev/null)" || return 1
+    if [ -n "$fn" ]; then
+      pat="^${prefix}(.*::)?${fn}: test\$"
+    else
+      pat="^${prefix}.*: test\$"
+    fi
+    names="$(list_suite_tests "$suite" "$features" | grep -E -- "$pat" | sed 's/: test$//' || true)"
+    [ -n "$names" ] || return 1
+    CARGO_ARGS=(test -p xavier --features "$features" --test "$suite" -- --test-threads=1 --exact)
+    while IFS= read -r n; do CARGO_ARGS+=("$n"); done <<< "$names"
+  }
+  # file_to_invocation <file>: sets INV_LABEL (the "--test <old_name>" label printed for the
+  # test; empty when the file is not compiled as a test target), INV_BASE (old target name
+  # for targets selected by function filter, else empty), INV_FEATURES, INV_ARGS (cargo args
+  # for targets that are not suite-grouped).
   file_to_invocation() {
+    INV_LABEL=""; INV_BASE=""; INV_FEATURES=""; INV_ARGS=()
     # NOTE: specific prefixes first — bash case takes the first match,
     # so src/telegram/* must precede the generic src/* (same for mesh).
     case "$1" in
       src/telegram/*)
-        echo "xavier telegram|test -p xavier --features telegram --lib" ;;
+        INV_LABEL="xavier telegram"; INV_ARGS=(test -p xavier --features telegram --lib) ;;
       tests/mesh_integration.rs)
-        echo "--test mesh_integration (mesh)|test --features mesh --test mesh_integration" ;;
-      src/*)            echo "xavier --lib|test -p xavier --lib" ;;
+        INV_LABEL="--test mesh_integration (mesh)"; INV_BASE="mesh_integration"
+        INV_FEATURES="$(target_features mesh_integration)" ;;
+      src/*)
+        INV_LABEL="xavier --lib"; INV_ARGS=(test -p xavier --lib) ;;
       code-graph/tests/*.rs)
         local base; base="$(basename "$1" .rs)"
-        echo "code-graph --test $base|test -p code-graph --test $base" ;;
-      code-graph/*)     echo "code-graph --lib|test -p code-graph --lib" ;;
-      crates/xavier-core-logic/*) echo "xavier-core-logic|test -p xavier-core-logic --lib" ;;
-      crates/xavier-wasm/*)       echo "xavier-wasm|test -p xavier-wasm --lib" ;;
+        INV_LABEL="code-graph --test $base"; INV_ARGS=(test -p code-graph --test "$base") ;;
+      code-graph/*)
+        INV_LABEL="code-graph --lib"; INV_ARGS=(test -p code-graph --lib) ;;
+      crates/xavier-core-logic/*)
+        INV_LABEL="xavier-core-logic"; INV_ARGS=(test -p xavier-core-logic --lib) ;;
+      crates/xavier-wasm/*)
+        INV_LABEL="xavier-wasm"; INV_ARGS=(test -p xavier-wasm --lib) ;;
       crates/*/tests/*.rs)
         local crate base; crate="$(echo "$1" | cut -d/ -f2)"; base="$(basename "$1" .rs)"
-        echo "crate $crate --test $base|test -p $crate --all-features --test $base" ;;
+        INV_LABEL="crate $crate --test $base"; INV_ARGS=(test -p "$crate" --all-features --test "$base") ;;
       crates/*)
         local crate; crate="$(echo "$1" | cut -d/ -f2)"
         # Crates with cargo features run with all of them so gated tests execute.
         if [ -f "$ROOT/crates/$crate/Cargo.toml" ] && grep -q '^\[features\]' "$ROOT/crates/$crate/Cargo.toml"; then
-          echo "crate $crate (all features)|test -p $crate --all-features --lib"
+          INV_LABEL="crate $crate (all features)"; INV_ARGS=(test -p "$crate" --all-features --lib)
         else
-          echo "crate $crate|test -p $crate --lib"
+          INV_LABEL="crate $crate"; INV_ARGS=(test -p "$crate" --lib)
         fi ;;
       tests/integration/*.rs)
-        # Modules of tests/integration.rs run in the `integration` target; files that are
-        # their own [[test]] target run as such; anything else is not compiled at all.
+        # Modules of tests/integration.rs run in the `integration` suite (function filter
+        # `integration::`); files that are their own [[test]] target run as such; anything
+        # else is not compiled at all.
         local base; base="$(basename "$1" .rs)"
         if grep -qF "#[path = \"integration/$base.rs\"]" "$ROOT/tests/integration.rs" 2>/dev/null; then
-          echo "--test integration|test -p xavier --features test-utils --test integration"
+          INV_LABEL="--test integration"; INV_BASE="integration"; INV_FEATURES="$(target_features integration)"
         elif [[ " $TEST_TARGETS " == *" $base "* ]]; then
-          echo "--test $base|test -p xavier --features test-utils --test $base"
-        else
-          echo ""
+          INV_LABEL="--test $base"; INV_BASE="$base"; INV_FEATURES="$(target_features "$base")"
         fi ;;
       tests/e2e/*|tests/*.rs)
         local base; base="$(basename "$1" .rs)"
-        echo "--test $base|test -p xavier --features test-utils --test $base" ;;
-      *)                echo "" ;;
+        if [[ " $TEST_TARGETS " == *" $base "* ]]; then
+          INV_LABEL="--test $base"; INV_BASE="$base"; INV_FEATURES="$(target_features "$base")"
+        fi ;;
+      *) ;;
     esac
+    return 0
+  }
+  # invocation_args <testname> <fnname>: sets CARGO_ARGS for one test under the current INV_*
+  # target. Returns 1 when a suite-grouped target has no test with that name.
+  invocation_args() {
+    if [ -n "$INV_BASE" ]; then
+      if ! suite_fn_args "$INV_FEATURES" "$INV_BASE" "$2"; then
+        echo "    … no test '$2' listed under $INV_LABEL" >&2
+        return 1
+      fi
+      return 0
+    fi
+    CARGO_ARGS=("${INV_ARGS[@]}")
+    case " ${INV_ARGS[*]} " in
+      # --test targets match on the bare fn name: a full `a::b::fn`
+      # path never substrings-matches the flat integration test name.
+      *" --test "*) CARGO_ARGS+=("$2") ;;
+      *)            CARGO_ARGS+=("$1") ;;
+    esac
+    return 0
   }
   # run_filter: locate `fn <name>` definitions with grep (no compile), run the
   # owning target(s); fall back to lib sweeps for macro-generated tests.
@@ -239,7 +323,7 @@ PY
   # On failure, the last cargo output is kept under ./target-verify-failures/
   # (git-ignored scratch) for diagnosis instead of being swallowed.
   run_filter() {
-    local testname="$1" fnname files f inv filter_arg
+    local testname="$1" fnname files f
     FAIL_OUT=""
     case "$testname" in
       *\ *)
@@ -250,29 +334,24 @@ PY
     files="$(cd "$ROOT" && grep -rl --include='*.rs' -e "fn $fnname" src code-graph crates tests 2>/dev/null | head -5)"
     if [ -n "$files" ]; then
       for f in $files; do
-        inv="$(file_to_invocation "$f")"
-        [ -z "$inv" ] && continue
-        TRY_LABEL="${inv%%|*}"
-        # --test targets match on the bare fn name: a full `a::b::fn`
-        # path never substrings-matches the flat integration test name.
-        case "$inv" in
-          *"--test "*) filter_arg="$fnname" ;;
-          *) filter_arg="$testname" ;;
-        esac
-        # shellcheck disable=SC2086: intentional word-splitting of cargo args
-        try_cargo ${inv#*|} "$filter_arg" && return 0
+        file_to_invocation "$f"
+        [ -n "$INV_LABEL" ] || continue
+        TRY_LABEL="$INV_LABEL"
+        invocation_args "$testname" "$fnname" || continue
+        try_cargo "${CARGO_ARGS[@]}" && return 0
       done
     fi
     # Fallback sweeps (macro-generated or oddly located tests).
     TRY_LABEL="xavier --lib";        try_cargo test -p xavier --lib "$testname" && return 0
     TRY_LABEL="code-graph --lib";    try_cargo test -p code-graph --lib "$testname" && return 0
     TRY_LABEL="xavier-core-logic";   try_cargo test -p xavier-core-logic --lib "$testname" && return 0
-    TRY_LABEL="--test $testname";    try_cargo test -p xavier --features test-utils --test "$testname" && return 0
-    case "$testname" in
-      */*.rs)
-        local base; base="$(basename "$testname" .rs)"
-        TRY_LABEL="--test $base (path)"; try_cargo test --test "$base" && return 0 ;;
-    esac
+    # Whole-target names (or paths to one): every test of that target, by exact name.
+    local tgt="$testname"
+    case "$testname" in */*.rs) tgt="$(basename "$testname" .rs)" ;; esac
+    if [[ " $TEST_TARGETS " == *" $tgt "* ]] && suite_fn_args "$(target_features "$tgt")" "$tgt" ""; then
+      TRY_LABEL="--test $tgt"
+      try_cargo "${CARGO_ARGS[@]}" && return 0
+    fi
     return 1
   }
   while IFS= read -r testname; do
@@ -310,7 +389,7 @@ PY
   # run_candidate_once: exactly ONE cargo invocation for the test (no
   # fallback sweeps/retries), under the candidate per-test timeout.
   run_candidate_once() {
-    local testname="$1" fnname files f inv filter_arg
+    local testname="$1" fnname files f
     FAIL_OUT=""
     case "$testname" in
       *\ *)
@@ -321,15 +400,11 @@ PY
     files="$(cd "$ROOT" && grep -rl --include='*.rs' -e "fn $fnname" src code-graph crates tests 2>/dev/null | head -1)"
     if [ -n "$files" ]; then
       for f in $files; do
-        inv="$(file_to_invocation "$f")"
-        [ -z "$inv" ] && continue
-        TRY_LABEL="${inv%%|*} (candidate)"
-        case "$inv" in
-          *"--test "*) filter_arg="$fnname" ;;
-          *) filter_arg="$testname" ;;
-        esac
-        # shellcheck disable=SC2086: intentional word-splitting of cargo args
-        OUT="$(cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_DIR" $CAND_TIMEOUT_BIN cargo ${inv#*|} "$filter_arg" 2>&1)"
+        file_to_invocation "$f"
+        [ -n "$INV_LABEL" ] || continue
+        TRY_LABEL="${INV_LABEL} (candidate)"
+        invocation_args "$testname" "$fnname" || return 1
+        OUT="$(cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_DIR" $CAND_TIMEOUT_BIN cargo "${CARGO_ARGS[@]}" 2>&1)"
         RC=$?
         PASSED="$(printf '%s' "$OUT" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | head -1)"
         PASSED="${PASSED:-0}"
@@ -395,6 +470,7 @@ PY
   fi
   rm -f "$TEST_LIST"
   rm -f "$SEEN_ERRORS_FILE"
+  rm -rf "$LIST_CACHE_DIR"
   if [ "$FAILED" -ne 0 ]; then
     echo "  ❌ declared tests failed (zero-match=$ZERO_MATCH) — failing pipeline"
     exit 1
