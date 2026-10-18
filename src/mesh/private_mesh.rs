@@ -105,7 +105,6 @@ pub fn encrypt_session_payload(
     payload: &PrivateSyncPayload,
     recipient_pubkey: &[u8; 32],
 ) -> Result<EncryptedSessionPayload> {
-    let _wallet_id = derive_wallet_id(recipient_pubkey);
     let recipient_x25519_pub = ed25519_pubkey_to_x25519_public(recipient_pubkey)?;
 
     let ephemeral_secret = StaticSecret::random();
@@ -144,6 +143,9 @@ pub fn decrypt_session_payload(
     let peer_ephem_public = X25519PublicKey::from(ephem_arr);
 
     let shared_secret = local_secret.diffie_hellman(&peer_ephem_public);
+    if !shared_secret.was_contributory() {
+        return Err(anyhow!("Non-contributory ECDH shared secret"));
+    }
     let key = derive_ecdh_session_key(shared_secret.as_bytes());
 
     let ciphertext = crate::crypto::hex_decode(&encrypted.ciphertext_hex)
