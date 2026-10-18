@@ -18,6 +18,7 @@ use tempfile::tempdir;
 use tokio::net::TcpListener;
 use ulid::Ulid;
 
+use ed25519_dalek::SigningKey;
 use xavier::agents::RuntimeConfig;
 use xavier::coordination::secrets::KeyLendingEngine;
 use xavier::enterprise::rbac::Role;
@@ -31,7 +32,7 @@ use xavier::mesh::p2p::nat_traversal::{
 };
 use xavier::mesh::private_mesh::{
     decrypt_session_payload, derive_wallet_id, encrypt_session_payload, is_same_wallet,
-    PrivateMemoryDelta, PrivateSyncPayload, WalletNode,
+    signing_key_to_x25519_secret, PrivateMemoryDelta, PrivateSyncPayload, WalletNode,
 };
 use xavier::mesh::{MeshAcl, MeshTransport, NodeAclEntry, NodeIdentity, PeerInfo};
 use xavier::secrets::lending::DefaultAuditLogger;
@@ -346,8 +347,13 @@ async fn test_multi_node_mesh_convergence_3_nodes() {
 // ============================================================================
 #[test]
 fn test_private_mesh_wallet_isolation_and_session_encryption() {
-    let pubkey_wallet_a = [42u8; 32];
-    let pubkey_wallet_b = [99u8; 32];
+    let sk_a = SigningKey::from_bytes(&[42u8; 32]);
+    let pubkey_wallet_a = sk_a.verifying_key().to_bytes();
+    let secret_wallet_a = signing_key_to_x25519_secret(&sk_a);
+
+    let sk_b = SigningKey::from_bytes(&[99u8; 32]);
+    let pubkey_wallet_b = sk_b.verifying_key().to_bytes();
+    let secret_wallet_b = signing_key_to_x25519_secret(&sk_b);
 
     let wallet_id_a = derive_wallet_id(&pubkey_wallet_a);
     let wallet_id_b = derive_wallet_id(&pubkey_wallet_b);
@@ -387,15 +393,15 @@ fn test_private_mesh_wallet_isolation_and_session_encryption() {
         snapshots: vec!["snapshot-block-109".to_string()],
     };
 
-    // Encrypt payload with Wallet A session key
+    // Encrypt payload with Wallet A recipient public key
     let encrypted =
-        encrypt_session_payload(&private_payload, &wallet_id_a).expect("Encryption failed");
+        encrypt_session_payload(&private_payload, &pubkey_wallet_a).expect("Encryption failed");
     assert!(!encrypted.ciphertext_hex.is_empty());
     assert!(!encrypted.nonce_hex.is_empty());
 
-    // Legitimate peer with Wallet A decrypts successfully
-    let decrypted_a =
-        decrypt_session_payload(&encrypted, &wallet_id_a).expect("Decryption by Wallet A failed");
+    // Legitimate peer with Wallet A secret decrypts successfully
+    let decrypted_a = decrypt_session_payload(&encrypted, &secret_wallet_a)
+        .expect("Decryption by Wallet A failed");
     assert_eq!(decrypted_a.memories.len(), 1);
     assert_eq!(decrypted_a.memories[0].path, "finances/q3-budget");
     assert_eq!(
@@ -403,8 +409,8 @@ fn test_private_mesh_wallet_isolation_and_session_encryption() {
         "Confidential Q3 budget allocations"
     );
 
-    // Rogue node with Wallet B fails decryption
-    let decrypt_attempt_b = decrypt_session_payload(&encrypted, &wallet_id_b);
+    // Rogue node with Wallet B secret fails decryption
+    let decrypt_attempt_b = decrypt_session_payload(&encrypted, &secret_wallet_b);
     assert!(
         decrypt_attempt_b.is_err(),
         "Rogue wallet must not decrypt private mesh payload"

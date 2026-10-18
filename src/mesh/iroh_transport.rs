@@ -571,6 +571,7 @@ mod tests {
             encrypted: EncryptedSessionPayload {
                 ciphertext_hex: "aabb".into(),
                 nonce_hex: "1122".into(),
+                ephemeral_public_key_hex: None,
             },
         };
         let json = serde_json::to_string(&req).unwrap();
@@ -929,6 +930,7 @@ mod tests {
         let enc = crate::mesh::private_mesh::EncryptedSessionPayload {
             ciphertext_hex: "aabb".into(),
             nonce_hex: "1122".into(),
+            ephemeral_public_key_hex: None,
         };
         let req = MeshRequest::PrivateSync {
             wallet_id: "w1".into(),

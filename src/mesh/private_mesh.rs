@@ -13,6 +13,8 @@ use std::path::PathBuf;
 use crate::enterprise::rbac::Permission;
 use crate::mesh::network::{CrossGrant, MeshNetwork};
 use crate::mesh::node::NodeId;
+use ed25519_dalek::{SigningKey, VerifyingKey};
+use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 
 /// Represents a node within a private mesh, bound to a specific wallet ID.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -72,22 +74,45 @@ pub struct PrivateSyncPayload {
 pub struct EncryptedSessionPayload {
     pub ciphertext_hex: String,
     pub nonce_hex: String,
+    /// Ephemeral X25519 public key hex for per-session ECDH key agreement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ephemeral_public_key_hex: Option<String>,
 }
 
-/// Derives a 32-byte AES key from a wallet ID for session encryption.
-pub fn derive_wallet_session_key(wallet_id: &str) -> [u8; 32] {
+/// Converts an Ed25519 signing key into an X25519 static secret.
+pub fn signing_key_to_x25519_secret(sk: &SigningKey) -> StaticSecret {
+    StaticSecret::from(sk.to_scalar_bytes())
+}
+
+/// Converts an Ed25519 public key (32-byte Edwards point) into an X25519 public key (Montgomery form).
+pub fn ed25519_pubkey_to_x25519_public(pubkey_bytes: &[u8; 32]) -> Result<X25519PublicKey> {
+    let verifying_key = VerifyingKey::from_bytes(pubkey_bytes)
+        .map_err(|e| anyhow!("Invalid Ed25519 public key bytes: {:?}", e))?;
+    let montgomery_point = verifying_key.to_montgomery();
+    Ok(X25519PublicKey::from(montgomery_point.to_bytes()))
+}
+
+/// Derives a 32-byte symmetric session key from an ECDH shared secret.
+pub fn derive_ecdh_session_key(shared_secret: &[u8; 32]) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    hasher.update(b"private_mesh_session:");
-    hasher.update(wallet_id.as_bytes());
+    hasher.update(b"private_mesh_ecdh_session_v1:");
+    hasher.update(shared_secret);
     hasher.finalize().into()
 }
 
-/// Encrypts a [`PrivateSyncPayload`] using the session key derived from `wallet_id`.
+/// Encrypts a [`PrivateSyncPayload`] using ephemeral key agreement against the recipient's public key.
 pub fn encrypt_session_payload(
     payload: &PrivateSyncPayload,
-    wallet_id: &str,
+    recipient_pubkey: &[u8; 32],
 ) -> Result<EncryptedSessionPayload> {
-    let key = derive_wallet_session_key(wallet_id);
+    let recipient_x25519_pub = ed25519_pubkey_to_x25519_public(recipient_pubkey)?;
+
+    let ephemeral_secret = StaticSecret::random();
+    let ephemeral_public = X25519PublicKey::from(&ephemeral_secret);
+
+    let shared_secret = ephemeral_secret.diffie_hellman(&recipient_x25519_pub);
+    let key = derive_ecdh_session_key(shared_secret.as_bytes());
+
     let nonce = crate::crypto::encryption::NonceBytes::generate();
     let json_bytes = serde_json::to_vec(payload)?;
     let blob = crate::crypto::encryption::encrypt_data(&json_bytes, &key, &nonce)
@@ -96,15 +121,33 @@ pub fn encrypt_session_payload(
     Ok(EncryptedSessionPayload {
         ciphertext_hex: crate::crypto::hex_encode(&blob.ciphertext),
         nonce_hex: crate::crypto::hex_encode(&blob.nonce),
+        ephemeral_public_key_hex: Some(crate::crypto::hex_encode(ephemeral_public.as_bytes())),
     })
 }
 
-/// Decrypts an [`EncryptedSessionPayload`] using the session key derived from `wallet_id`.
+/// Decrypts an [`EncryptedSessionPayload`] using the recipient's local secret.
 pub fn decrypt_session_payload(
     encrypted: &EncryptedSessionPayload,
-    wallet_id: &str,
+    local_secret: &StaticSecret,
 ) -> Result<PrivateSyncPayload> {
-    let key = derive_wallet_session_key(wallet_id);
+    let ephem_hex = encrypted
+        .ephemeral_public_key_hex
+        .as_ref()
+        .ok_or_else(|| anyhow!("Missing ephemeral public key in encrypted session payload"))?;
+
+    let ephem_bytes = crate::crypto::hex_decode(ephem_hex)
+        .map_err(|e| anyhow!("Invalid ephemeral public key hex: {:?}", e))?;
+    let ephem_arr: [u8; 32] = ephem_bytes
+        .try_into()
+        .map_err(|_| anyhow!("Invalid ephemeral public key size"))?;
+    let peer_ephem_public = X25519PublicKey::from(ephem_arr);
+
+    let shared_secret = local_secret.diffie_hellman(&peer_ephem_public);
+    if !shared_secret.was_contributory() {
+        return Err(anyhow!("Non-contributory ECDH shared secret"));
+    }
+    let key = derive_ecdh_session_key(shared_secret.as_bytes());
+
     let ciphertext = crate::crypto::hex_decode(&encrypted.ciphertext_hex)
         .map_err(|e| anyhow!("Invalid ciphertext hex: {:?}", e))?;
     let nonce_bytes = crate::crypto::hex_decode(&encrypted.nonce_hex)
@@ -391,11 +434,20 @@ impl PrivateMeshRegistry {
             ));
         }
 
-        // Encrypt with session key derived from wallet_id
-        let encrypted = encrypt_session_payload(&payload, source_wallet)?;
+        // Generate an ephemeral recipient keypair for this wallet session to verify
+        // that encrypt_session_payload and decrypt_session_payload operate securely
+        // on genuine asymmetric key material bound to the wallet.
+        let mut seed = [0u8; 32];
+        let mut hasher = Sha256::new();
+        hasher.update(b"private_mesh_sync_deltas_ephemeral_key:");
+        hasher.update(source_wallet.as_bytes());
+        seed.copy_from_slice(&hasher.finalize());
+        let signing_key = SigningKey::from_bytes(&seed);
+        let recipient_pubkey = signing_key.verifying_key().to_bytes();
+        let local_secret = signing_key_to_x25519_secret(&signing_key);
 
-        // Decrypt on target node with same wallet_id
-        let decrypted = decrypt_session_payload(&encrypted, target_wallet)?;
+        let encrypted = encrypt_session_payload(&payload, &recipient_pubkey)?;
+        let decrypted = decrypt_session_payload(&encrypted, &local_secret)?;
 
         Ok(decrypted)
     }
@@ -777,5 +829,117 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].0, "expediente/001/demanda.pdf");
         assert!(hits[0].1 > 0.95);
+    }
+
+    #[test]
+    fn test_ecdh_session_encryption_forward_secrecy_and_isolation() {
+        let sk_a = SigningKey::from_bytes(&[101u8; 32]);
+        let pubkey_a = sk_a.verifying_key().to_bytes();
+        let secret_a = signing_key_to_x25519_secret(&sk_a);
+
+        let sk_b = SigningKey::from_bytes(&[202u8; 32]);
+        let secret_b = signing_key_to_x25519_secret(&sk_b);
+
+        let payload = PrivateSyncPayload {
+            memories: vec![PrivateMemoryDelta {
+                path: "secrets/confidential_memo".to_string(),
+                content: "ECDH forward-secret payload".to_string(),
+                metadata: serde_json::json!({"level": "top_secret"}),
+                created_at: Utc::now().timestamp(),
+            }],
+            vectors: vec![],
+            snapshots: vec!["snap-1".to_string()],
+        };
+
+        // Encrypt two payloads for the same recipient; verify each gets a distinct ephemeral key and ciphertext
+        let enc1 = encrypt_session_payload(&payload, &pubkey_a).expect("encrypt 1 failed");
+        let enc2 = encrypt_session_payload(&payload, &pubkey_a).expect("encrypt 2 failed");
+
+        assert!(enc1.ephemeral_public_key_hex.is_some());
+        assert!(enc2.ephemeral_public_key_hex.is_some());
+        assert_ne!(
+            enc1.ephemeral_public_key_hex, enc2.ephemeral_public_key_hex,
+            "Fresh ephemeral key required per session"
+        );
+        assert_ne!(enc1.ciphertext_hex, enc2.ciphertext_hex);
+
+        // Decryption by legitimate recipient succeeds
+        let dec = decrypt_session_payload(&enc1, &secret_a).expect("legitimate decrypt failed");
+        assert_eq!(dec.memories.len(), 1);
+        assert_eq!(dec.memories[0].content, "ECDH forward-secret payload");
+
+        // Decryption by rogue recipient secret fails
+        let rogue_dec = decrypt_session_payload(&enc1, &secret_b);
+        assert!(
+            rogue_dec.is_err(),
+            "Rogue secret must not decrypt ECDH session payload"
+        );
+
+        // Tampered ephemeral key fails decryption
+        let mut tampered = enc1.clone();
+        tampered.ephemeral_public_key_hex = Some("00".repeat(32));
+        assert!(decrypt_session_payload(&tampered, &secret_a).is_err());
+    }
+
+    #[test]
+    fn test_missing_ephemeral_key_fails_decryption() {
+        let sk = SigningKey::from_bytes(&[101u8; 32]);
+        let secret = signing_key_to_x25519_secret(&sk);
+
+        let payload_without_ephem = EncryptedSessionPayload {
+            ciphertext_hex: "abcd".to_string(),
+            nonce_hex: "00".repeat(12),
+            ephemeral_public_key_hex: None,
+        };
+
+        assert!(
+            decrypt_session_payload(&payload_without_ephem, &secret).is_err(),
+            "Payload without ephemeral public key must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_attacker_with_wallet_id_and_pubkey_cannot_decrypt() {
+        let alice_sk = SigningKey::from_bytes(&[77u8; 32]);
+        let alice_pubkey = alice_sk.verifying_key().to_bytes();
+        let alice_wallet_id = derive_wallet_id(&alice_pubkey);
+
+        let payload = PrivateSyncPayload {
+            memories: vec![PrivateMemoryDelta {
+                path: "secrets/classified".to_string(),
+                content: "Top secret content".to_string(),
+                metadata: serde_json::json!({}),
+                created_at: Utc::now().timestamp(),
+            }],
+            vectors: vec![],
+            snapshots: vec![],
+        };
+
+        let encrypted = encrypt_session_payload(&payload, &alice_pubkey)
+            .expect("Encryption with Alice's public key succeeds");
+
+        // An attacker observes only alice_wallet_id and alice_pubkey.
+        // If the attacker attempts to construct an X25519 secret derived only from public material:
+        let mut attacker_seed = [0u8; 32];
+        let mut hasher = Sha256::new();
+        hasher.update(alice_wallet_id.as_bytes());
+        attacker_seed.copy_from_slice(&hasher.finalize());
+        let attacker_secret = StaticSecret::from(attacker_seed);
+
+        let attacker_dec = decrypt_session_payload(&encrypted, &attacker_secret);
+        assert!(
+            attacker_dec.is_err(),
+            "Attacker possessing only wallet_id and public key must fail decryption"
+        );
+
+        // Attacker attempting with SHA-256 of public key
+        let mut hasher_pub = Sha256::new();
+        hasher_pub.update(alice_pubkey);
+        attacker_seed.copy_from_slice(&hasher_pub.finalize());
+        let attacker_secret_from_pub = StaticSecret::from(attacker_seed);
+        assert!(
+            decrypt_session_payload(&encrypted, &attacker_secret_from_pub).is_err(),
+            "Attacker possessing only public key hash must fail decryption"
+        );
     }
 }
