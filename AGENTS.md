@@ -131,7 +131,9 @@ cargo test --features ci-safe > /tmp/check.log 2>&1
 
 - `PKG_CONFIG_PATH=$HOME/.nix-profile/lib/pkgconfig` is needed on NixOS.
 - Fast inner loop: `cargo test --package xavier --lib --features ci-safe`.
-  Use `--test <name>` for a single integration test. Never `--release`.
+  Single integration target: `source scripts/xavier-test-target.sh; xavier_cargo_test ci-safe <name>`, or nextest `-E 'test(/^<name>::/)'`. Never run a `suite_NN` unfiltered with default threads. Never `--release`.
+- Integration tests are grouped into `tests/suite_NN.rs` roots (`autotests = false`); a new `tests/*.rs` file must be added as a `#[path]` module of a suite root.
+- `scripts/check-test-suites.sh` (CI hygiene step) fails on unincluded or doubly-included test files and on `name::` collisions inside a suite.
 - Runs over ~30s: launch in background with completion notification, keep
   working, read the log when it lands. Do not block on repeated `wait` polls.
 - **A retry is only justified when the error message changes.** Identical error

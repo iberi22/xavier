@@ -1,10 +1,11 @@
 name: Rust Coverage (tarpaulin)
 
+# Report-only tarpaulin run: on main pushes and nightly, not on every PR.
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
 
 env:

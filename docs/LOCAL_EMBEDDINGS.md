@@ -84,7 +84,7 @@ The integration test suite is located in `tests/embedding_local_integration.rs`.
 By default, the tests run against a built-in mock server implemented with `axum`. This ensures that the tests can run in CI environments without needing a real Ollama instance.
 
 ```bash
-cargo test --test embedding_local_integration
+cargo nextest run -p xavier -E 'test(/^embedding_local_integration::/)'
 ```
 
 ### Against Real Ollama Instance
@@ -98,7 +98,7 @@ ollama pull embeddinggemma
 Then run the tests with the `XAVIER_TEST_OLLAMA` environment variable set to `1`:
 
 ```bash
-XAVIER_TEST_OLLAMA=1 cargo test --test embedding_local_integration
+XAVIER_TEST_OLLAMA=1 cargo nextest run -p xavier -E 'test(/^embedding_local_integration::/)'
 ```
 
 The test will attempt to connect to `http://localhost:11434/v1/embeddings`.

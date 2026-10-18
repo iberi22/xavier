@@ -130,7 +130,7 @@ comparison with the published figures as indicative, not a controlled benchmark.
 ### Fixture evaluation (no LLM)
 
 Data: 3 committed documents, 36 questions with gold page ranges, no LLM, no network
-(`cargo test -p xavier --features ci-safe --test pageindex_eval -- --nocapture`).
+(`cargo nextest run -p xavier --features ci-safe -E 'test(/^pageindex_eval::/)' --no-capture`).
 
 | Column | hit@1 | hit@3 | MRR | pages@3 |
 |--------|-------|-------|-----|---------|

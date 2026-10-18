@@ -49,7 +49,7 @@ jobs:
         run: |
           set -u
           source scripts/e2e-wave-target.sh
-          # Runs with --features mesh
+          # Runs with --features ci-safe,mesh
 
           targets=(
             'mesh_iroh_test'
@@ -60,7 +60,7 @@ jobs:
           failed=()
           for t in "${targets[@]}"; do
             echo "=== $t ==="
-            if ! run_wave_target "$t" 1200 mesh; then
+            if ! run_wave_target "$t" 1200 ci-safe,mesh; then
               echo "FAIL: $t"
               failed+=("$t")
             else

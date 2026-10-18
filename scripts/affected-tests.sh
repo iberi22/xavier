@@ -6,7 +6,9 @@
 #   - clippy on the crate and fails ONLY on diagnostics located in changed files
 #     (cargo caches the build, so this is the cost of one incremental check);
 #   - a batched test run for all touched lib modules and affected integration targets
-#     (using cargo-nextest if available, or a batched cargo test fallback);
+#     (using cargo-nextest if available, or a batched cargo test fallback). Integration
+#     tests are grouped in tests/suite_NN.rs; scripts/xavier-test-target.sh resolves an
+#     old target name to its suite, and a change to a suite file runs that whole suite;
 #   - a warning for changed Rust modules with no #[test] at all (add real tests).
 # A change to Cargo.toml / Cargo.lock only runs `cargo check`. Docs, panel-ui,
 # workflows and other non-Rust files run nothing.
@@ -30,6 +32,14 @@ set -uo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT" || exit 1
+
+# Target resolver: old [[test]] name -> suite_NN (grouped) or itself (standalone).
+if [ ! -f "$ROOT/scripts/xavier-test-target.sh" ]; then
+    echo "affected-tests: missing scripts/xavier-test-target.sh" >&2
+    exit 2
+fi
+# shellcheck source=xavier-test-target.sh
+source "$ROOT/scripts/xavier-test-target.sh"
 
 MODE="staged"; BASE=""; DRY=0; CLIPPY=1; QUICK=0; NO_INTEGRATION=0; FILES=()
 [ "${WI_BATCH_VALIDATE:-0}" = "1" ] && QUICK=1
@@ -186,7 +196,7 @@ run_build() {
 
 run_test_unlocked() {
     if [ "$DRY" -eq 1 ]; then
-        printf 'DRY: env TMPDIR=/tmp'; printf ' %q' "$@"; printf '\n'
+        printf 'DRY: env TMPDIR=/tmp'; printf ' %s' "$@"; printf '\n'
         return 0
     fi
     env TMPDIR=/tmp "$@"
@@ -241,18 +251,55 @@ if [ "${#LIB_FILTERS[@]}" -gt 0 ]; then
     mapfile -t SORTED_LIB_FILTERS < <(printf '%s\n' "${!LIB_FILTERS[@]}" | sort)
 fi
 
-ACTIVE_TARGETS=()
-if [ "${#SORTED_TARGETS[@]}" -gt 0 ]; then
-    if [ "$NO_INTEGRATION" -eq 1 ]; then
-        echo "affected-tests: deferred to pre-push/CI: ${SORTED_TARGETS[*]}"
-    else
-        ACTIVE_TARGETS=("${SORTED_TARGETS[@]}")
-    fi
+if [ "$NO_INTEGRATION" -eq 1 ] && [ "${#SORTED_TARGETS[@]}" -gt 0 ]; then
+    echo "affected-tests: deferred to pre-push/CI: ${SORTED_TARGETS[*]}"
 fi
 
-# Compute the union of required-features across selected integration targets
+# Resolve each changed target name to the unit that actually runs it:
+#   - tests/suite_NN.rs changed            -> SUITE_ALL[suite_NN] (whole suite binary)
+#   - old name grouped into suite_NN       -> SUITE_FILTERS[suite_NN] += "<name>::"
+#   - old name that is a standalone [[test]] -> STANDALONE[<name>]
+declare -A SUITE_ALL=() SUITE_FILTERS=() STANDALONE=()
+UNRESOLVED=()
+for t in "${SORTED_TARGETS[@]}"; do
+    if [[ "$t" =~ ^suite_[0-9]+$ ]] && [ -f "tests/$t.rs" ]; then
+        SUITE_ALL["$t"]=1
+        continue
+    fi
+    suite="$(xavier_test_suite "$t" 2>/dev/null || true)"
+    if [ -z "$suite" ]; then
+        UNRESOLVED+=("$t")
+        continue
+    fi
+    filter="$(xavier_test_filter "$t" 2>/dev/null || true)"
+    if [ -z "$filter" ]; then
+        STANDALONE["$suite"]=1
+    elif [[ " ${SUITE_FILTERS[$suite]-} " != *" $filter "* ]]; then
+        SUITE_FILTERS["$suite"]+=" $filter"
+    fi
+done
+if [ "${#UNRESOLVED[@]}" -gt 0 ]; then
+    echo "❌ affected-tests: no suite or [[test]] target for: ${UNRESOLVED[*]} (add the file to a tests/suite_NN.rs #[path] module or a [[test]] entry)"
+    RC=1
+fi
+
+ACTIVE_SUITES=()
+ACTIVE_STANDALONE=()
+if [ "$NO_INTEGRATION" -eq 0 ]; then
+    map_keys() { local -n _map="$1"; local _k; for _k in "${!_map[@]}"; do printf '%s\n' "$_k"; done; }
+    if [ "${#SUITE_ALL[@]}" -gt 0 ] || [ "${#SUITE_FILTERS[@]}" -gt 0 ]; then
+        mapfile -t ACTIVE_SUITES < <({ map_keys SUITE_ALL; map_keys SUITE_FILTERS; } | sort -u)
+    fi
+    if [ "${#STANDALONE[@]}" -gt 0 ]; then
+        mapfile -t ACTIVE_STANDALONE < <(map_keys STANDALONE | sort -u)
+    fi
+fi
+# Units that get a --test argument (deduplicated: each suite once, each standalone once)
+ACTIVE_UNITS=("${ACTIVE_SUITES[@]}" "${ACTIVE_STANDALONE[@]}")
+
+# Compute the union of required-features across selected test units
 declare -A FEAT_SET=( ["ci-safe"]=1 )
-for t in "${ACTIVE_TARGETS[@]}"; do
+for t in "${ACTIVE_UNITS[@]}"; do
     rf=$(awk -v t="$t" '/^\[\[/{intest=($0=="[[test]]"); name=""} intest && /^name *=/{n=$0; gsub(/^name *= *"|".*$/,"",n); name=n} intest && name==t && /^required-features/{v=$0; gsub(/^[^[]*\[|\].*$|"| /,"",v); print v; exit}' Cargo.toml)
     if [ -n "$rf" ]; then
         IFS=',' read -ra ADDFEATS <<< "$rf"
@@ -270,18 +317,18 @@ for feat in "${!FEAT_SET[@]}"; do
 done
 
 HAS_TESTS=0
-if [ "${#SORTED_LIB_FILTERS[@]}" -gt 0 ] || [ "${#ACTIVE_TARGETS[@]}" -gt 0 ]; then
+if [ "${#SORTED_LIB_FILTERS[@]}" -gt 0 ] || [ "${#ACTIVE_UNITS[@]}" -gt 0 ]; then
     HAS_TESTS=1
 fi
 
 if [ "$HAS_TESTS" -eq 1 ]; then
-    # Construct build args: -p xavier --features "$FEATURES" [--lib] [--test <t> ...]
+    # Construct build args: -p xavier --features "$FEATURES" [--lib] [--test <suite|standalone> ...]
     BUILD_ARGS=("-p" "xavier" "--features" "$FEATURES")
     if [ "${#SORTED_LIB_FILTERS[@]}" -gt 0 ]; then
         BUILD_ARGS+=("--lib")
     fi
-    for t in "${ACTIVE_TARGETS[@]}"; do
-        BUILD_ARGS+=("--test" "$t")
+    for u in "${ACTIVE_UNITS[@]}"; do
+        BUILD_ARGS+=("--test" "$u")
     done
 
     # Step 1 (BUILD, under the build slot): cargo test --no-run <build args>
@@ -300,8 +347,18 @@ if [ "$HAS_TESTS" -eq 1 ]; then
                 LIB_EXPR=$(IFS='|'; echo "${LIB_PARTS[*]}")
                 EXPR_PARTS+=("(kind(lib) & (${LIB_EXPR}))")
             fi
-            for t in "${ACTIVE_TARGETS[@]}"; do
-                EXPR_PARTS+=("binary(=${t})")
+            for s in "${ACTIVE_SUITES[@]}"; do
+                if [ -n "${SUITE_ALL[$s]-}" ]; then
+                    EXPR_PARTS+=("binary(=${s})")
+                else
+                    read -ra SUITE_NAMES <<< "${SUITE_FILTERS[$s]-}"
+                    for n in "${SUITE_NAMES[@]}"; do
+                        EXPR_PARTS+=("(binary(=${s}) & test(/^${n}/))")
+                    done
+                fi
+            done
+            for s in "${ACTIVE_STANDALONE[@]}"; do
+                EXPR_PARTS+=("binary(=${s})")
             done
             FULL_EXPR=$(IFS='|'; echo "${EXPR_PARTS[*]}")
 
@@ -311,10 +368,20 @@ if [ "$HAS_TESTS" -eq 1 ]; then
             if [ "${#SORTED_LIB_FILTERS[@]}" -gt 0 ]; then
                 run_test_unlocked cargo test -p xavier --features "$FEATURES" --lib -- --test-threads=1 "${SORTED_LIB_FILTERS[@]}" || RC=1
             fi
-            if [ "${#ACTIVE_TARGETS[@]}" -gt 0 ]; then
+            # One invocation per suite: whole suite if its file changed, else only the named modules.
+            for s in "${ACTIVE_SUITES[@]}"; do
+                FALLBACK_CMD=(cargo test -p xavier --features "$FEATURES" --test "$s" -- --test-threads=1)
+                if [ -z "${SUITE_ALL[$s]-}" ]; then
+                    read -ra SUITE_NAMES <<< "${SUITE_FILTERS[$s]-}"
+                    FALLBACK_CMD+=("${SUITE_NAMES[@]}")
+                fi
+                run_test_unlocked "${FALLBACK_CMD[@]}" || RC=1
+            done
+            # Standalone [[test]] targets share one invocation.
+            if [ "${#ACTIVE_STANDALONE[@]}" -gt 0 ]; then
                 FALLBACK_TARGET_ARGS=()
-                for t in "${ACTIVE_TARGETS[@]}"; do
-                    FALLBACK_TARGET_ARGS+=("--test" "$t")
+                for s in "${ACTIVE_STANDALONE[@]}"; do
+                    FALLBACK_TARGET_ARGS+=("--test" "$s")
                 done
                 run_test_unlocked cargo test -p xavier --features "$FEATURES" "${FALLBACK_TARGET_ARGS[@]}" -- --test-threads=1 || RC=1
             fi
