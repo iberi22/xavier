@@ -2377,7 +2377,6 @@ name = "demo"
             ("GET", "/api/v1/espacio/spaces/esp_ab"),
             // Unknown sub-paths under the OWN space are denied too.
             ("GET", "/api/v1/espacio/spaces/esp_a/"),
-            ("GET", "/api/v1/espacio/spaces/esp_a/members"),
             ("GET", "/api/v1/espacio/spaces/esp_a/tokens"),
             ("GET", "/api/v1/espacio/spaces/esp_a/keys"),
             ("POST", "/api/v1/espacio/spaces/esp_a/messages"),
@@ -2581,6 +2580,36 @@ name = "demo"
             (&g, "/mcp", SpaceRole::Admin, false),
             (&p, "/mcp", SpaceRole::Admin, false),
             (&p, "/mcp/tools/call", SpaceRole::Reader, true),
+            (
+                &g,
+                "/api/v1/espacio/spaces/esp_a/members",
+                SpaceRole::Reader,
+                true,
+            ),
+            (
+                &p,
+                "/api/v1/espacio/spaces/esp_a/members",
+                SpaceRole::Reader,
+                false,
+            ),
+            (
+                &p,
+                "/api/v1/espacio/spaces/esp_a/members",
+                SpaceRole::Member,
+                false,
+            ),
+            (
+                &p,
+                "/api/v1/espacio/spaces/esp_a/members",
+                SpaceRole::Moderator,
+                true,
+            ),
+            (
+                &p,
+                "/api/v1/espacio/spaces/esp_a/members",
+                SpaceRole::Admin,
+                true,
+            ),
         ] {
             assert_eq!(
                 space_token_may_access(path, OWN, role, m),
@@ -2596,12 +2625,6 @@ name = "demo"
         ));
         assert!(!space_token_may_access(
             "memory/search",
-            OWN,
-            SpaceRole::Admin,
-            &g
-        ));
-        assert!(!space_token_may_access(
-            "/api/v1/espacio/spaces/esp_a/members",
             OWN,
             SpaceRole::Admin,
             &g

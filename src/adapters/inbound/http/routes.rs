@@ -3272,6 +3272,10 @@ mod verify_save_route_tests {
                 password: None,
                 encrypt_records: false,
                 protocol: Some(crate::workspace::protocol::SpaceProtocol {
+                    storage: crate::workspace::protocol::StorageProtocol {
+                        backend: crate::memory::MemoryBackend::Sqlite,
+                        encrypt_records: false,
+                    },
                     members_cap: 1,
                     ..Default::default()
                 }),
