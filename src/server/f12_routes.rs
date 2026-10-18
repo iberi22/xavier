@@ -492,17 +492,42 @@ pub async fn private_mesh_sync(
 
     match mesh.sync_deltas(&req.wallet_id, &req.wallet_id, payload) {
         Ok(synced) => {
-            // Apply memory deltas locally to sync directory
+            // Apply memory deltas locally to sync directory with restrictive permissions (0600)
             if !memories.is_empty() {
                 let sync_memories_dir = state.data_dir.join("sync/memories");
                 let _ = std::fs::create_dir_all(&sync_memories_dir);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(
+                        &sync_memories_dir,
+                        std::fs::Permissions::from_mode(0o700),
+                    );
+                }
                 for mem in &synced.memories {
                     let sanitized = mem.path.replace('/', "_");
                     let file_path = sync_memories_dir.join(format!("{}.json", sanitized));
-                    let _ = std::fs::write(
-                        file_path,
-                        serde_json::to_string_pretty(mem).unwrap_or_default(),
-                    );
+                    let content = serde_json::to_string_pretty(mem).unwrap_or_default();
+                    let mut opts = std::fs::OpenOptions::new();
+                    opts.write(true).create(true).truncate(true);
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::OpenOptionsExt;
+                        opts.mode(0o600);
+                    }
+                    use std::io::Write;
+                    if let Ok(mut file) = opts.open(&file_path) {
+                        let _ = file.write_all(content.as_bytes());
+                        let _ = file.sync_all();
+                    }
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = std::fs::set_permissions(
+                            &file_path,
+                            std::fs::Permissions::from_mode(0o600),
+                        );
+                    }
                 }
             }
 
@@ -1810,7 +1835,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_private_mesh_sync_endpoint_success() {
-        let app = router(test_state());
+        let state = test_state();
+        let app = router(state.clone());
         let key = NodeIdentity::generate();
         let wallet = derive_wallet_id(&key.public_key);
         let challenge = fetch_wallet_challenge(&app, &wallet).await;
@@ -1820,12 +1846,57 @@ mod tests {
             StatusCode::CREATED
         );
 
-        let resp = sync_request(&app, &wallet, &key, "xv1-b").await;
+        let sync_challenge = fetch_wallet_challenge(&app, &wallet).await;
+        let sync_proof = sign_wallet_action(&key, &sync_challenge, "sync", "xv1-b");
+        let body = serde_json::json!({
+            "wallet_id": wallet,
+            "target_node": "xv1-b",
+            "proof": sync_proof,
+            "memories": [{
+                "path": "test/secret/doc.md",
+                "content": "Super secret memory delta",
+                "metadata": {"test": true},
+                "created_at": 1700000000
+            }]
+        });
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/private-mesh/sync")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = resp.into_body().collect().await.unwrap().to_bytes();
-        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         assert_eq!(v["status"], "success");
         assert_eq!(v["target_node"], "xv1-b");
+        assert_eq!(v["synced_memories"], 1);
+
+        let written_file = state.data_dir.join("sync/memories/test_secret_doc.md.json");
+        assert!(
+            written_file.exists(),
+            "Synced memory delta must be written to disk"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let meta = std::fs::metadata(&written_file).unwrap();
+            let mode = meta.permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "synced memory file must have mode 0600");
+
+            let dir_meta = std::fs::metadata(state.data_dir.join("sync/memories")).unwrap();
+            let dir_mode = dir_meta.permissions().mode() & 0o777;
+            assert_eq!(dir_mode, 0o700, "synced memories dir must have mode 0700");
+        }
     }
 
     /// Posts a sync for `wallet_id` to `target`, signed by `key` for that target.
