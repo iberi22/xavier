@@ -19,8 +19,19 @@ if ! echo "$OUT1" | grep -q "memory::access.*memory::repo_store"; then
     exit 1
 fi
 
-if ! echo "$OUT1" | grep -q "access_flush_drain.*tgd_prune_gate_test"; then
-    echo "FAILED: integration targets not batched in single invocation"
+# Integration targets are grouped into tests/suite_NN.rs: both suite binaries must be
+# built by one cargo invocation, and both module filters must appear in the run stage.
+S1="$(source scripts/xavier-test-target.sh && xavier_test_suite access_flush_drain)"
+S2="$(source scripts/xavier-test-target.sh && xavier_test_suite tgd_prune_gate_test)"
+BUILD_LINE="$(echo "$OUT1" | grep -- '--no-run' | head -1)"
+if ! echo "$BUILD_LINE" | grep -q -- "--test ${S1}" || ! echo "$BUILD_LINE" | grep -q -- "--test ${S2}"; then
+    echo "FAILED: integration suites not batched in single build invocation"
+    echo "$OUT1"
+    exit 1
+fi
+
+if ! echo "$OUT1" | grep -q "access_flush_drain::" || ! echo "$OUT1" | grep -q "tgd_prune_gate_test::"; then
+    echo "FAILED: integration module filters missing from run stage"
     echo "$OUT1"
     exit 1
 fi

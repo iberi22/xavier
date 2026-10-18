@@ -18,3 +18,72 @@ test-threads = "1"
 # test, XAVIER_INSIDE_TEST=1 for the lib-test binary, a private TMPDIR for the
 # exec temp-file count, busy_timeout=5000 on the stress writers). Do not
 # re-introduce per-test serialization here without re-measuring.
+
+# U7: the 17 files that use serial_test run one test at a time (test-group "serial").
+[test-groups]
+serial = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e)::/)'
+test-group = "serial"
+
+[[profile.default.overrides]]
+filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red)::/)'
+test-group = "serial"
+
+[[profile.default.overrides]]
+filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard)::/)'
+test-group = "serial"
+
+[[profile.default.overrides]]
+filter = 'binary(=suite_04) & test(/^(guardian_truth_test)::/)'
+test-group = "serial"
+
+[[profile.default.overrides]]
+filter = 'binary(=suite_07) & test(/^(memory_write_integrity_e2e|mesh_auth_binding_test|mesh_integration)::/)'
+test-group = "serial"
+
+[[profile.default.overrides]]
+filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
+test-group = "serial"
+
+[[profile.default.overrides]]
+filter = 'binary(=suite_11) & test(/^(skill_route_clearance)::/)'
+test-group = "serial"
+
+[[profile.default.overrides]]
+filter = 'binary(=suite_13) & test(/^(tgd_prune_gate_test)::/)'
+test-group = "serial"
+
+[[profile.ci.overrides]]
+filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e)::/)'
+test-group = "serial"
+
+[[profile.ci.overrides]]
+filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red)::/)'
+test-group = "serial"
+
+[[profile.ci.overrides]]
+filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard)::/)'
+test-group = "serial"
+
+[[profile.ci.overrides]]
+filter = 'binary(=suite_04) & test(/^(guardian_truth_test)::/)'
+test-group = "serial"
+
+[[profile.ci.overrides]]
+filter = 'binary(=suite_07) & test(/^(memory_write_integrity_e2e|mesh_auth_binding_test|mesh_integration)::/)'
+test-group = "serial"
+
+[[profile.ci.overrides]]
+filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
+test-group = "serial"
+
+[[profile.ci.overrides]]
+filter = 'binary(=suite_11) & test(/^(skill_route_clearance)::/)'
+test-group = "serial"
+
+[[profile.ci.overrides]]
+filter = 'binary(=suite_13) & test(/^(tgd_prune_gate_test)::/)'
+test-group = "serial"
+
