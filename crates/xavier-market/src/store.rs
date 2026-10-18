@@ -17,7 +17,7 @@ use crate::error::MarketError;
 use crate::model::{Listing, ListingUpdate, NewListing, NewReceipt, Receipt};
 
 /// Version written to `PRAGMA user_version` by this build.
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE IF NOT EXISTS market_listings (
@@ -82,8 +82,27 @@ BEGIN
 END;
 ";
 
+/// MKT-09: access grants with buyer-wrapped package keys, time limits and revocation.
+const SCHEMA_V4: &str = "
+CREATE TABLE IF NOT EXISTS market_access_grants (
+    id                  TEXT PRIMARY KEY,
+    listing_id          TEXT NOT NULL REFERENCES market_listings(id),
+    buyer_id            TEXT NOT NULL,
+    seller_id           TEXT NOT NULL,
+    ephemeral_pubkey    TEXT NOT NULL,
+    wrapped_key         TEXT NOT NULL,
+    nonce               TEXT NOT NULL,
+    created_at_ms       INTEGER NOT NULL,
+    expires_at_ms       INTEGER NOT NULL,
+    revoked_at_ms       INTEGER,
+    signature           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS market_access_grants_buyer ON market_access_grants (buyer_id);
+CREATE INDEX IF NOT EXISTS market_access_grants_listing ON market_access_grants (listing_id);
+";
+
 /// Migration steps in order. Step `n` (zero-based) brings the schema to `n + 1`.
-const MIGRATIONS: [&str; 3] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
+const MIGRATIONS: [&str; 4] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4];
 
 const _: () = assert!(MIGRATIONS.len() as i64 == SCHEMA_VERSION);
 /// Durable marketplace store. Every write is committed before the call returns,
