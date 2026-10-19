@@ -6,14 +6,69 @@
 //! [`xavier::codebase::repo_config`], which owns validation, so a bad value is
 //! rejected before it can reach disk.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::cli::commands::enums::{RepoConfigArgs, RepoConfigCommand};
 use anyhow::{bail, Result};
+use rusqlite::{Connection, OpenFlags};
 use xavier::codebase::repo_config::{
     init_config, repo_config_path, set_key, ProjectIdOrigin, RepoConfig, SETTABLE_KEYS,
 };
 use xavier::codebase::repo_identity::{find_repo_root, sanitize_project_id};
+
+#[derive(Debug, serde::Serialize)]
+pub struct AdoptReport {
+    pub total: u64,
+    pub encrypted_skipped: u64,
+    pub with_namespace_project: u64,
+    pub by_project: Vec<(String, u64)>,
+}
+
+pub fn adopt_dry_run_report(global_db: &Path) -> anyhow::Result<AdoptReport> {
+    if !global_db.exists() {
+        anyhow::bail!("missing database");
+    }
+
+    let conn = Connection::open_with_flags(global_db, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+
+    let total: u64 = conn.query_row("SELECT COUNT(*) FROM memory_records", [], |row| row.get(0))?;
+
+    let encrypted_skipped: u64 = conn.query_row(
+        "SELECT COUNT(*) FROM memory_records WHERE encrypted_dek IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let mut stmt = conn.prepare(
+        "SELECT json_extract(metadata, '$.namespace.project') AS proj, COUNT(*) AS count \
+         FROM memory_records \
+         WHERE encrypted_dek IS NULL \
+         AND json_extract(metadata, '$.namespace.project') IS NOT NULL \
+         GROUP BY proj \
+         ORDER BY count DESC, proj ASC",
+    )?;
+
+    let iter = stmt.query_map([], |row| {
+        let proj: String = row.get(0)?;
+        let count: u64 = row.get(1)?;
+        Ok((proj, count))
+    })?;
+
+    let mut by_project = Vec::new();
+    let mut with_namespace_project = 0;
+    for res in iter {
+        let (proj, count) = res?;
+        with_namespace_project += count;
+        by_project.push((proj, count));
+    }
+
+    Ok(AdoptReport {
+        total,
+        encrypted_skipped,
+        with_namespace_project,
+        by_project,
+    })
+}
 
 /// Repo package subcommands.
 pub fn run_repo_config_command(cmd: RepoConfigCommand) -> Result<()> {
@@ -225,6 +280,118 @@ pub fn config_path_hint(root: &std::path::Path) -> String {
 mod tests {
     use super::*;
     use crate::cli::commands::enums::RepoConfigArgs;
+    use sha2::{Digest, Sha256};
+
+    fn setup_fixture_db(dir: &Path) -> PathBuf {
+        let db_path = dir.join("vec-store.sqlite3");
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS memory_records (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                path TEXT NOT NULL,
+                content TEXT NOT NULL,
+                metadata TEXT NOT NULL DEFAULT '{}',
+                embedding BLOB,
+                encrypted_dek BLOB,
+                content_iv BLOB,
+                metadata_iv BLOB,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                revision INTEGER NOT NULL DEFAULT 1,
+                primary_flag INTEGER DEFAULT 1,
+                parent_id TEXT,
+                cluster_id TEXT,
+                level TEXT DEFAULT 'atom',
+                relation TEXT,
+                revisions TEXT,
+                embedding_status TEXT DEFAULT 'pending',
+                embedding_attempts INTEGER DEFAULT 0
+            )",
+            [],
+        )
+        .unwrap();
+
+        // 1 without namespace.project
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, metadata, created_at, updated_at)
+             VALUES ('1', 'ws1', 'p1', 'c1', '{}', '2023-01-01', '2023-01-01')",
+            [],
+        )
+        .unwrap();
+
+        // 2 with namespace.project = 'projA'
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, metadata, created_at, updated_at)
+             VALUES ('2', 'ws1', 'p2', 'c2', '{\"namespace\":{\"project\":\"projA\"}}', '2023-01-01', '2023-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, metadata, created_at, updated_at)
+             VALUES ('3', 'ws1', 'p3', 'c3', '{\"namespace\":{\"project\":\"projA\"}}', '2023-01-01', '2023-01-01')",
+            [],
+        )
+        .unwrap();
+
+        // 1 with namespace.project = 'projB'
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, metadata, created_at, updated_at)
+             VALUES ('4', 'ws1', 'p4', 'c4', '{\"namespace\":{\"project\":\"projB\"}}', '2023-01-01', '2023-01-01')",
+            [],
+        )
+        .unwrap();
+
+        // 1 encrypted row
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, metadata, encrypted_dek, created_at, updated_at)
+             VALUES ('5', 'ws1', 'p5', 'c5', 'encrypted', x'deadbeef', '2023-01-01', '2023-01-01')",
+            [],
+        )
+        .unwrap();
+
+        db_path
+    }
+
+    #[test]
+    fn adopt_dry_run_counts_by_namespace_project_on_fixture() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let db_path = setup_fixture_db(tmp.path());
+
+        let report = adopt_dry_run_report(&db_path).unwrap();
+        assert_eq!(report.total, 5);
+        assert_eq!(report.encrypted_skipped, 1);
+        assert_eq!(report.with_namespace_project, 3);
+
+        assert_eq!(report.by_project.len(), 2);
+        assert_eq!(report.by_project[0], ("projA".to_string(), 2));
+        assert_eq!(report.by_project[1], ("projB".to_string(), 1));
+    }
+
+    #[test]
+    fn adopt_dry_run_leaves_db_byte_identical() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let db_path = setup_fixture_db(tmp.path());
+
+        let bytes_before = std::fs::read(&db_path).unwrap();
+        let hash_before = crate::crypto::hex_encode(Sha256::digest(&bytes_before));
+
+        let _ = adopt_dry_run_report(&db_path).unwrap();
+
+        let bytes_after = std::fs::read(&db_path).unwrap();
+        let hash_after = crate::crypto::hex_encode(Sha256::digest(&bytes_after));
+
+        assert_eq!(hash_before, hash_after);
+    }
+
+    #[test]
+    fn adopt_dry_run_refuses_missing_database() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let db_path = tmp.path().join("missing.sqlite3");
+
+        let err = adopt_dry_run_report(&db_path).unwrap_err();
+        assert_eq!(err.to_string(), "missing database");
+    }
 
     fn args(root: PathBuf, json: bool) -> RepoConfigArgs {
         RepoConfigArgs {
