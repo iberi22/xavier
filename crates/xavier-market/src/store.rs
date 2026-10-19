@@ -10,6 +10,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
+use sha2::{Digest, Sha256};
 
 use crate::audit_chain::AuditChain;
 use crate::auth::Actor;
@@ -364,6 +365,73 @@ impl MarketStore {
             .query_map(params![buyer_id], raw_receipt)?
             .collect::<Result<Vec<_>, _>>()?;
         rows.into_iter().map(RawReceipt::into_receipt).collect()
+    }
+
+    /// All receipts, ordered by created_at_ms, rowid.
+    pub fn list_receipts(&self) -> Result<Vec<Receipt>, MarketError> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, listing_id, buyer_id, amount_credits, currency, created_at_ms
+             FROM market_receipts ORDER BY created_at_ms, rowid",
+        )?;
+        let rows = stmt
+            .query_map([], raw_receipt)?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows.into_iter().map(RawReceipt::into_receipt).collect()
+    }
+
+    /// Collects domain-separated Merkle leaves representing the current state of
+    /// the audit chain, all listings, and all receipts.
+    pub fn collect_merkle_leaves(&self) -> Result<Vec<String>, MarketError> {
+        let mut leaves = Vec::new();
+
+        // 1. Audit hash chain records (each r.hash is already 32-byte sha256 hex)
+        let audit_records = self.audit().records()?;
+        for r in audit_records {
+            leaves.push(r.hash);
+        }
+
+        // 2. Active and revoked listings (hashed deterministically)
+        let listings = self.list_listings()?;
+        for l in listings {
+            let mut hasher = Sha256::new();
+            hasher.update(b"swal-merkle-listing-v1:");
+            hasher.update(
+                format!(
+                    "{}|{}|{}|{}|{}|{}",
+                    l.id,
+                    l.seller_id,
+                    l.title,
+                    l.price_credits,
+                    l.created_at_ms,
+                    l.revoked_at_ms.unwrap_or(0)
+                )
+                .as_bytes(),
+            );
+            leaves.push(hex::encode(hasher.finalize()));
+        }
+
+        // 3. Purchase receipts (hashed deterministically)
+        let receipts = self.list_receipts()?;
+        for r in receipts {
+            let mut hasher = Sha256::new();
+            hasher.update(b"swal-merkle-receipt-v1:");
+            hasher.update(
+                format!(
+                    "{}|{}|{}|{}|{}|{}",
+                    r.id,
+                    r.listing_id,
+                    r.buyer_id,
+                    r.amount_credits,
+                    r.currency.as_str(),
+                    r.created_at_ms
+                )
+                .as_bytes(),
+            );
+            leaves.push(hex::encode(hasher.finalize()));
+        }
+
+        Ok(leaves)
     }
 }
 
@@ -889,5 +957,56 @@ mod tests {
         let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
         let listing = store.create_listing(&owner(), new).unwrap();
         assert_eq!(listing.price_credits, 100);
+    }
+
+    #[test]
+    fn collect_merkle_leaves_and_list_receipts() {
+        let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
+        // Empty store has 0 leaves
+        assert_eq!(store.collect_merkle_leaves().unwrap().len(), 0);
+        assert_eq!(store.list_receipts().unwrap().len(), 0);
+
+        // 1. Create a listing
+        let listing = store.create_listing(&owner(), new_listing(100)).unwrap();
+        let leaves_after_listing = store.collect_merkle_leaves().unwrap();
+        assert_eq!(leaves_after_listing.len(), 1);
+
+        // 2. Record a receipt
+        let receipt = store
+            .record_receipt(NewReceipt {
+                listing_id: listing.id.clone(),
+                buyer_id: "buyer-alpha".into(),
+            })
+            .unwrap();
+        assert_eq!(receipt.amount_credits, 100);
+
+        let all_receipts = store.list_receipts().unwrap();
+        assert_eq!(all_receipts.len(), 1);
+        assert_eq!(all_receipts[0].id, receipt.id);
+
+        // Leaves now include listing and receipt
+        let leaves_after_receipt = store.collect_merkle_leaves().unwrap();
+        assert_eq!(leaves_after_receipt.len(), 2);
+
+        // 3. Append to audit chain
+        store
+            .audit()
+            .append("receipt", &serde_json::json!({"id": receipt.id}))
+            .unwrap();
+
+        let leaves_after_audit = store.collect_merkle_leaves().unwrap();
+        assert_eq!(leaves_after_audit.len(), 3);
+
+        // Merkle root and proof can be computed over leaves
+        let root = crate::merkle::merkle_root(&leaves_after_audit).unwrap();
+        assert_eq!(root.len(), 64);
+        for i in 0..leaves_after_audit.len() {
+            let p = crate::merkle::proof(&leaves_after_audit, i).unwrap();
+            assert!(crate::merkle::verify_proof(
+                &leaves_after_audit[i],
+                &p,
+                &root
+            ));
+        }
     }
 }

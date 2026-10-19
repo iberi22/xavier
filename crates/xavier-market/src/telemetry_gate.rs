@@ -1,4 +1,4 @@
-use crate::consent::{ConsentError, ConsentRecord, ConsentState, ConsentStore};
+use crate::consent::{ConsentError, ConsentState, ConsentStore};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -145,6 +145,7 @@ impl TelemetryStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consent::ConsentRecord;
     use serde_json::json;
 
     fn helper_consent_store() -> ConsentStore {

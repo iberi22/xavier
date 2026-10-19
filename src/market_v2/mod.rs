@@ -32,8 +32,12 @@ pub mod ivn;
 pub mod listing_policy;
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::polygon_anchor::{
+    AnchorReceipt, AnchorTransport, MockAnchorTransport, DEFAULT_CHAIN_ID_AMOY,
+};
 
 use axum::{
     body::Bytes,
@@ -84,7 +88,11 @@ where
     }
     let opened = open_store_from_env().and_then(|store| Ok((store, issuer_key_from_env()?)));
     match opened {
-        Ok((store, issuer)) => router.merge(routes(Arc::new(store), issuer)),
+        Ok((store, issuer)) => {
+            let store_arc = Arc::new(store);
+            spawn_anchor_job_from_env(Arc::clone(&store_arc));
+            router.merge(routes(store_arc, issuer))
+        }
         Err(err) => {
             tracing::error!(error = %err, "market-v2 is enabled but its store or issuer key did not load; routes not mounted");
             router
@@ -184,6 +192,10 @@ where
         .route(
             "/v2/marketplace/telemetry/aggregates",
             get(get_telemetry_aggregates_handler),
+        )
+        .route(
+            "/v2/marketplace/anchor/dry-run",
+            post(trigger_dry_run_anchor_handler).get(get_latest_anchor_handler),
         )
         .merge(ivn::routes())
         .layer(Extension(store))
@@ -763,6 +775,150 @@ async fn record_telemetry_handler(
             .into_response(),
         Err(err) => error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
     }
+}
+
+/// Report produced by a dry-run anchor cycle.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AnchorRunReport {
+    pub root: String,
+    pub leaf_count: usize,
+    pub sampled_leaf: String,
+    pub proof_valid: bool,
+    pub receipt: AnchorReceipt,
+}
+
+static LATEST_ANCHOR_REPORT: LazyLock<RwLock<Option<AnchorRunReport>>> =
+    LazyLock::new(|| RwLock::new(None));
+
+/// Returns the report from the most recent dry-run anchor cycle, if any.
+pub fn latest_anchor_report() -> Option<AnchorRunReport> {
+    LATEST_ANCHOR_REPORT
+        .read()
+        .ok()
+        .and_then(|lock| lock.clone())
+}
+
+/// Runs a single dry-run Merkle anchor cycle over the audit chain, listings and receipts.
+///
+/// Returns:
+/// - `Ok(None)` if the flag is off (`XAVIER_MARKET_V2=beta` is unset or not `beta`),
+///   or if the store has no leaves to anchor.
+/// - `Ok(Some(report))` containing the verifiable root, sampled leaf proof verification,
+///   and mock anchor receipt.
+/// - `Err(MarketError)` if an unexpected error occurs during leaf collection or proof verification.
+pub fn run_dry_run_anchor_cycle(
+    store: &MarketStore,
+    transport: &impl AnchorTransport,
+) -> Result<Option<AnchorRunReport>, MarketError> {
+    if !is_enabled() {
+        return Ok(None);
+    }
+
+    let leaves = store.collect_merkle_leaves()?;
+    if leaves.is_empty() {
+        tracing::debug!("market-v2 dry-run anchor: store has no leaves to anchor");
+        return Ok(None);
+    }
+
+    let root = xavier_market::merkle::merkle_root(&leaves)
+        .ok_or_else(|| MarketError::InvalidInput("failed to compute merkle root".to_string()))?;
+
+    let sampled_idx = 0;
+    let sampled_leaf = &leaves[sampled_idx];
+    let proof_steps = xavier_market::merkle::proof(&leaves, sampled_idx).ok_or_else(|| {
+        MarketError::InvalidInput("failed to compute proof for sampled leaf".to_string())
+    })?;
+
+    let proof_valid = xavier_market::merkle::verify_proof(sampled_leaf, &proof_steps, &root);
+    if !proof_valid {
+        return Err(MarketError::InvalidInput(format!(
+            "merkle proof verification failed for sampled leaf {}",
+            sampled_leaf
+        )));
+    }
+
+    tracing::info!(
+        root = %root,
+        leaf_count = leaves.len(),
+        sampled_leaf = %sampled_leaf,
+        proof_valid = proof_valid,
+        "market-v2 dry-run anchor cycle verified"
+    );
+
+    let receipt = transport
+        .submit_hash(&root, DEFAULT_CHAIN_ID_AMOY, None)
+        .map_err(|e| MarketError::InvalidInput(format!("anchor transport error: {e}")))?;
+
+    let report = AnchorRunReport {
+        root,
+        leaf_count: leaves.len(),
+        sampled_leaf: sampled_leaf.clone(),
+        proof_valid,
+        receipt,
+    };
+
+    if let Ok(mut lock) = LATEST_ANCHOR_REPORT.write() {
+        *lock = Some(report.clone());
+    }
+
+    Ok(Some(report))
+}
+
+/// Spawns the periodic dry-run Merkle anchor background task.
+///
+/// Respects the `XAVIER_MARKET_V2=beta` flag (returns `None` when flag is off).
+/// Interval is controlled by `XAVIER_MARKET_ANCHOR_INTERVAL_SECS` (default 300s, 0 disables).
+pub fn spawn_anchor_job_from_env(store: Arc<MarketStore>) -> Option<tokio::task::JoinHandle<()>> {
+    if !is_enabled() {
+        return None;
+    }
+    let interval_secs: u64 = std::env::var("XAVIER_MARKET_ANCHOR_INTERVAL_SECS")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(300);
+    if interval_secs == 0 {
+        return None;
+    }
+
+    Some(tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+        let transport = MockAnchorTransport;
+        loop {
+            interval.tick().await;
+            match run_dry_run_anchor_cycle(&store, &transport) {
+                Ok(Some(report)) => {
+                    tracing::debug!(root = %report.root, "periodic merkle anchor dry-run cycle completed");
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    tracing::warn!(error = %err, "periodic merkle anchor dry-run cycle error");
+                }
+            }
+        }
+    }))
+}
+
+async fn trigger_dry_run_anchor_handler(Extension(store): StoreExt) -> Response {
+    let transport = MockAnchorTransport;
+    match run_dry_run_anchor_cycle(&store, &transport) {
+        Ok(Some(report)) => (StatusCode::OK, Json(report)).into_response(),
+        Ok(None) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "message": "no leaves to anchor",
+                "dry_run": true,
+            })),
+        )
+            .into_response(),
+        Err(err) => error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    }
+}
+
+async fn get_latest_anchor_handler(Extension(store): StoreExt) -> Response {
+    if let Some(report) = latest_anchor_report() {
+        return (StatusCode::OK, Json(report)).into_response();
+    }
+    trigger_dry_run_anchor_handler(Extension(store)).await
 }
 
 /// Verifies the publisher signature on a mutation. The signed path is the
@@ -2418,5 +2574,116 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn anchor_job_flag_off_nothing_runs() {
+        let _env = MarketEnv::with_flag(None);
+        let router: Router = mount(Router::new());
+        let (status, _) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/anchor/dry-run", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let (status, _) = send(
+            &router,
+            json_request(Method::POST, "/v2/marketplace/anchor/dry-run", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let store = MarketStore::open_in_memory(MarketConfig::default()).unwrap();
+        let report = run_dry_run_anchor_cycle(&store, &MockAnchorTransport).unwrap();
+        assert!(report.is_none());
+
+        let job_handle = spawn_anchor_job_from_env(Arc::new(store));
+        assert!(job_handle.is_none());
+    }
+
+    #[tokio::test]
+    async fn anchor_job_flag_on_produces_verifiable_root_and_mock_receipt() {
+        let _env = MarketEnv::with_flag(Some(FLAG_VALUE));
+        let router: Router = mount(Router::new());
+
+        // When empty, dry-run reports no leaves to anchor
+        let (status, empty_resp) = send(
+            &router,
+            json_request(Method::POST, "/v2/marketplace/anchor/dry-run", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(empty_resp["message"], "no leaves to anchor");
+        assert_eq!(empty_resp["dry_run"], true);
+
+        // Create a listing
+        let signer = Signer::from_seed([33; 32]);
+        let listing_req = signed_request(
+            &signer,
+            Method::POST,
+            "/v2/marketplace/listings",
+            Some(json!({
+                "seller_id": signer.public_key_hex(),
+                "title": "Dataset for anchor test",
+                "license": "CC-BY-4.0",
+                "price_credits": 250,
+                "consent_ref": "consent-v1"
+            })),
+        );
+        let (status, created) = send(&router, listing_req).await;
+        assert_eq!(status, StatusCode::CREATED);
+        let listing_id = created["id"].as_str().unwrap().to_string();
+
+        // Create a receipt
+        let receipt_req = json_request(
+            Method::POST,
+            "/v2/marketplace/receipts",
+            Some(json!({
+                "listing_id": listing_id,
+                "buyer_id": "buyer-node-1"
+            })),
+        );
+        let (status, receipt_resp) = send(&router, receipt_req).await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(receipt_resp["listing_id"], listing_id);
+
+        // POST /v2/marketplace/anchor/dry-run produces a verifiable root
+        let (status, report) = send(
+            &router,
+            json_request(Method::POST, "/v2/marketplace/anchor/dry-run", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(report["proof_valid"], true);
+        assert_eq!(report["receipt"]["dry_run"], true);
+        assert!(report["receipt"]["tx_hash"]
+            .as_str()
+            .unwrap()
+            .starts_with("mock:"));
+
+        let root_hex = report["root"].as_str().unwrap();
+        assert_eq!(root_hex.len(), 64);
+        assert!(report["leaf_count"].as_u64().unwrap() >= 2);
+
+        // Verify sampled leaf proof accepted by verify_proof
+        let sampled_leaf = report["sampled_leaf"].as_str().unwrap();
+        assert_eq!(sampled_leaf.len(), 64);
+
+        // GET /v2/marketplace/anchor/dry-run returns latest report with same root
+        let (status, get_report) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/anchor/dry-run", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(get_report["root"], root_hex);
+        assert_eq!(get_report["proof_valid"], true);
+
+        // Verify latest_anchor_report() helper returns the report
+        let latest = latest_anchor_report().expect("latest report exists");
+        assert_eq!(latest.root, root_hex);
+        assert_eq!(latest.proof_valid, true);
+        assert!(latest.receipt.dry_run);
     }
 }
