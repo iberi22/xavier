@@ -196,6 +196,32 @@ impl Cli {
                 RepoCommand::Config { cmd } => repo::run_repo_config_command(cmd.clone()),
                 RepoCommand::Pack { args } => repo_pack::run_repo_pack_command(args.clone()),
                 RepoCommand::Unpack { args } => repo_pack::run_repo_unpack_command(args.clone()),
+                RepoCommand::Adopt {
+                    root: _,
+                    global_db,
+                    dry_run,
+                } => {
+                    if !dry_run {
+                        eprintln!("adopt without --dry-run is not available in this version");
+                        std::process::exit(1);
+                    }
+                    let db_path = match global_db {
+                        Some(ref p) => std::path::PathBuf::from(p),
+                        None => {
+                            let data_dir = crate::settings::XavierSettings::resolve_data_dir();
+                            let c1 = data_dir.join("memory-store.sqlite3");
+                            let c2 = data_dir.join("xavier_memory.db");
+                            if c1.exists() {
+                                c1
+                            } else {
+                                c2
+                            }
+                        }
+                    };
+                    let report = repo::adopt_dry_run_report(&db_path)?;
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                    Ok(())
+                }
             },
             Command::Space { cmd } => {
                 // Commands::Space
@@ -971,6 +997,76 @@ mod skills_command_tests {
         match previous_data_dir {
             Some(v) => std::env::set_var("XAVIER_DATA_DIR", v),
             None => std::env::remove_var("XAVIER_DATA_DIR"),
+        }
+    }
+
+    #[test]
+    fn adopt_requires_dry_run_flag() {
+        use crate::cli::Cli;
+        use clap::Parser;
+        let parsed = Cli::try_parse_from(["xavier", "repo", "adopt"]);
+        assert!(parsed.is_ok());
+        if let Ok(Cli {
+            cmd:
+                Some(Command::Repo {
+                    cmd: RepoCommand::Adopt { dry_run, .. },
+                }),
+            ..
+        }) = parsed
+        {
+            assert!(!dry_run);
+        } else {
+            panic!("expected RepoCommand::Adopt");
+        }
+
+        let parsed_dry = Cli::try_parse_from(["xavier", "repo", "adopt", "--dry-run"]);
+        assert!(parsed_dry.is_ok());
+        if let Ok(Cli {
+            cmd:
+                Some(Command::Repo {
+                    cmd: RepoCommand::Adopt { dry_run, .. },
+                }),
+            ..
+        }) = parsed_dry
+        {
+            assert!(dry_run);
+        } else {
+            panic!("expected RepoCommand::Adopt with dry_run=true");
+        }
+    }
+
+    #[test]
+    fn pack_memory_flag_defaults_to_false() {
+        use crate::cli::Cli;
+        use clap::Parser;
+        let parsed = Cli::try_parse_from(["xavier", "repo", "pack"]);
+        assert!(parsed.is_ok());
+        if let Ok(Cli {
+            cmd:
+                Some(Command::Repo {
+                    cmd: RepoCommand::Pack { args },
+                }),
+            ..
+        }) = parsed
+        {
+            assert!(!args.memory);
+        } else {
+            panic!("expected RepoCommand::Pack");
+        }
+
+        let parsed_mem = Cli::try_parse_from(["xavier", "repo", "pack", "--memory"]);
+        assert!(parsed_mem.is_ok());
+        if let Ok(Cli {
+            cmd:
+                Some(Command::Repo {
+                    cmd: RepoCommand::Pack { args },
+                }),
+            ..
+        }) = parsed_mem
+        {
+            assert!(args.memory);
+        } else {
+            panic!("expected RepoCommand::Pack with memory=true");
         }
     }
 }
