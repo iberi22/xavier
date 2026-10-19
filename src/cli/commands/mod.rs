@@ -40,6 +40,7 @@ pub mod repo;
 pub mod repo_pack;
 pub mod secrets;
 pub mod session;
+pub mod space;
 pub mod spawn;
 pub mod tasks;
 pub mod telecom;
@@ -196,6 +197,12 @@ impl Cli {
                 RepoCommand::Pack { args } => repo_pack::run_repo_pack_command(args.clone()),
                 RepoCommand::Unpack { args } => repo_pack::run_repo_unpack_command(args.clone()),
             },
+            Command::Space { cmd } => {
+                // Commands::Space
+                let base_url = crate::cli::config::resolve_base_url();
+                let token = crate::cli::config::require_xavier_token()?;
+                space::run_space_command(cmd.clone(), &base_url, &token).await
+            }
             Command::Telecom(args) => telecom::execute_telecom_command(args.clone()).await,
             Command::Exec {
                 command,
