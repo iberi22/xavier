@@ -12,7 +12,7 @@ pub fn merge_rrf_result(
     source: FusionSource,
     rrf_k: usize,
     rank: usize,
-    bm25: Option<f32>,
+    extra_score: Option<f32>,
     record: MemoryRecord,
 ) {
     let rrf_score = 1.0 / (rrf_k as f32 + rank as f32);
@@ -21,10 +21,15 @@ pub fn merge_rrf_result(
     if let Some(existing) = scored.get_mut(&key) {
         existing.score += rrf_score * source_weight(source);
         match source {
-            FusionSource::Vector => existing.vector_score = rrf_score,
+            FusionSource::Vector => {
+                existing.vector_score = rrf_score;
+                if existing.vector_similarity.is_none() {
+                    existing.vector_similarity = extra_score;
+                }
+            }
             FusionSource::Fts => {
                 existing.lexical_score = rrf_score;
-                existing.bm25 = bm25;
+                existing.bm25 = extra_score;
             }
             FusionSource::Kg => existing.kg_score = rrf_score,
         }
@@ -36,12 +41,17 @@ pub fn merge_rrf_result(
             lexical_score: 0.0,
             kg_score: 0.0,
             bm25: None,
+            vector_similarity: if matches!(source, FusionSource::Vector) {
+                extra_score
+            } else {
+                None
+            },
         };
         match source {
             FusionSource::Vector => result.vector_score = rrf_score,
             FusionSource::Fts => {
                 result.lexical_score = rrf_score;
-                result.bm25 = bm25;
+                result.bm25 = extra_score;
             }
             FusionSource::Kg => result.kg_score = rrf_score,
         }

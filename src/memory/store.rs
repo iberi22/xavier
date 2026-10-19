@@ -126,6 +126,154 @@ pub struct HybridSearchResult {
     pub kg_score: f32,
     #[serde(default)]
     pub bm25: Option<f32>,
+    #[serde(default)]
+    pub vector_similarity: Option<f32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FederatedLegs {
+    pub store: String,
+    pub model_ok: bool,
+    pub vector: Vec<HybridSearchResult>,
+    pub lexical: Vec<HybridSearchResult>,
+    pub kg: Vec<HybridSearchResult>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FederatedHit {
+    pub store: String,
+    pub record_id: String,
+    pub score: f32,
+    pub sources: Vec<String>,
+    pub skipped_model_mismatch: bool,
+}
+
+pub fn merge_federated(legs: &[FederatedLegs], k: usize, limit: usize) -> Vec<FederatedHit> {
+    use std::collections::HashMap;
+
+    // We will accumulate scores keyed by (store, record_id)
+    struct HitAccumulator {
+        store: String,
+        record_id: String,
+        score: f32,
+        sources: Vec<String>,
+        skipped_model_mismatch: bool,
+    }
+
+    let mut accumulators: HashMap<(String, String), HitAccumulator> = HashMap::new();
+
+    // 1. Global vector list across all stores where model_ok is true
+    let mut global_vector_legs: Vec<(&String, &HybridSearchResult)> = Vec::new();
+    for leg in legs {
+        if leg.model_ok {
+            for res in &leg.vector {
+                global_vector_legs.push((&leg.store, res));
+            }
+        }
+    }
+
+    // Sort global vectors by raw vector_similarity descending, then store, then record.id
+    global_vector_legs.sort_by(|a, b| {
+        let sim_a = a.1.vector_similarity.unwrap_or(0.0);
+        let sim_b = b.1.vector_similarity.unwrap_or(0.0);
+        sim_b
+            .partial_cmp(&sim_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(b.0))
+            .then_with(|| a.1.record.id.cmp(&b.1.record.id))
+    });
+
+    // Apply RRF to global vectors
+    for (rank, (store, res)) in global_vector_legs.into_iter().enumerate() {
+        let rrf_score = 1.0 / (k as f32 + (rank + 1) as f32);
+        let key = (store.clone(), res.record.id.clone());
+        let acc = accumulators.entry(key).or_insert_with(|| HitAccumulator {
+            store: store.clone(),
+            record_id: res.record.id.clone(),
+            score: 0.0,
+            sources: Vec::new(),
+            skipped_model_mismatch: false,
+        });
+        acc.score += rrf_score;
+        if !acc.sources.contains(&"vector".to_string()) {
+            acc.sources.push("vector".to_string());
+        }
+    }
+
+    // 2. Per-store lexical and KG lists
+    for leg in legs {
+        // Lexical
+        for (rank, res) in leg.lexical.iter().enumerate() {
+            let rrf_score = 1.0 / (k as f32 + (rank + 1) as f32);
+            let key = (leg.store.clone(), res.record.id.clone());
+            let acc = accumulators.entry(key).or_insert_with(|| HitAccumulator {
+                store: leg.store.clone(),
+                record_id: res.record.id.clone(),
+                score: 0.0,
+                sources: Vec::new(),
+                skipped_model_mismatch: !leg.model_ok,
+            });
+            acc.score += rrf_score;
+            if !acc.sources.contains(&"lexical".to_string()) {
+                acc.sources.push("lexical".to_string());
+            }
+        }
+
+        // KG
+        for (rank, res) in leg.kg.iter().enumerate() {
+            let rrf_score = 1.0 / (k as f32 + (rank + 1) as f32);
+            let key = (leg.store.clone(), res.record.id.clone());
+            let acc = accumulators.entry(key).or_insert_with(|| HitAccumulator {
+                store: leg.store.clone(),
+                record_id: res.record.id.clone(),
+                score: 0.0,
+                sources: Vec::new(),
+                skipped_model_mismatch: !leg.model_ok,
+            });
+            acc.score += rrf_score;
+            if !acc.sources.contains(&"kg".to_string()) {
+                acc.sources.push("kg".to_string());
+            }
+        }
+    }
+
+    // Prepare final output
+    let mut hits: Vec<FederatedHit> = accumulators
+        .into_values()
+        .map(|acc| {
+            // Ensure sources is deterministic
+            let mut sources = acc.sources;
+            sources.sort();
+            FederatedHit {
+                store: acc.store,
+                record_id: acc.record_id,
+                score: acc.score,
+                sources,
+                skipped_model_mismatch: acc.skipped_model_mismatch,
+            }
+        })
+        .collect();
+
+    // Fix model mismatch flags for any record that might have been initialized before we knew model_mismatch for that store. Actually, we can just look it up.
+    let mismatch_map: HashMap<&str, bool> = legs
+        .iter()
+        .map(|l| (l.store.as_str(), !l.model_ok))
+        .collect();
+    for hit in &mut hits {
+        hit.skipped_model_mismatch = *mismatch_map.get(hit.store.as_str()).unwrap_or(&false);
+    }
+
+    // Sort by score desc, then store, then record_id
+    hits.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.store.cmp(&b.store))
+            .then_with(|| a.record_id.cmp(&b.record_id))
+    });
+
+    hits.truncate(limit);
+    hits
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1365,5 +1513,129 @@ impl<T: MemoryStore> crate::domain::cycle_breaks::w30_12::MemoryConsumerStore fo
         name: &str,
     ) -> Result<()> {
         self.delete_checkpoint(workspace_id, task_id, name).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dummy_record(id: &str) -> MemoryRecord {
+        let mut rec = MemoryRecord::default();
+        rec.id = id.to_string();
+        rec
+    }
+
+    fn dummy_hit(id: &str, vector_similarity: Option<f32>) -> HybridSearchResult {
+        HybridSearchResult {
+            record: dummy_record(id),
+            score: 0.0,
+            vector_score: 0.0,
+            lexical_score: 0.0,
+            kg_score: 0.0,
+            bm25: None,
+            vector_similarity,
+        }
+    }
+
+    #[test]
+    fn merge_is_rank_based_and_deterministic() {
+        let leg1 = FederatedLegs {
+            store: "store1".to_string(),
+            model_ok: true,
+            vector: vec![
+                dummy_hit("a", Some(0.9)), // globally rank 1 if it's the only one
+                dummy_hit("b", Some(0.8)), // globally rank 2
+            ],
+            lexical: vec![
+                dummy_hit("b", None), // rank 1 locally
+                dummy_hit("c", None), // rank 2 locally
+            ],
+            kg: vec![],
+        };
+
+        let leg2 = FederatedLegs {
+            store: "store2".to_string(),
+            model_ok: true,
+            vector: vec![
+                dummy_hit("a", Some(0.9)), // same similarity, tie break by store ("store1" < "store2") -> globally rank 2, store1's 'a' is rank 1
+                dummy_hit("d", Some(0.85)), // globally rank 3
+            ],
+            lexical: vec![],
+            kg: vec![
+                dummy_hit("e", None), // rank 1 locally
+            ],
+        };
+
+        let hits = merge_federated(&[leg1, leg2], 60, 10);
+        assert_eq!(hits.len(), 6); // store1:a, store2:a, store2:d, store1:b, store1:c, store2:e
+
+        assert_eq!(hits[0].store, "store1");
+        assert_eq!(hits[0].record_id, "b");
+    }
+
+    #[test]
+    fn vector_merge_uses_raw_similarity_across_stores() {
+        let leg1 = FederatedLegs {
+            store: "store1".to_string(),
+            model_ok: true,
+            vector: vec![dummy_hit("a", Some(0.1))],
+            lexical: vec![],
+            kg: vec![],
+        };
+        let leg2 = FederatedLegs {
+            store: "store2".to_string(),
+            model_ok: true,
+            vector: vec![dummy_hit("b", Some(0.9))],
+            lexical: vec![],
+            kg: vec![],
+        };
+
+        let hits = merge_federated(&[leg1, leg2], 60, 10);
+        // store2:b should be rank 1 in vector pool, store1:a rank 2
+        assert_eq!(hits[0].store, "store2");
+        assert_eq!(hits[0].record_id, "b");
+        assert_eq!(hits[1].store, "store1");
+        assert_eq!(hits[1].record_id, "a");
+    }
+
+    #[test]
+    fn model_mismatch_skips_vector_leg_and_flags_store() {
+        let leg1 = FederatedLegs {
+            store: "store1".to_string(),
+            model_ok: false,
+            vector: vec![
+                dummy_hit("a", Some(0.99)), // High sim, but should be ignored
+            ],
+            lexical: vec![dummy_hit("b", None)],
+            kg: vec![],
+        };
+
+        let hits = merge_federated(&[leg1], 60, 10);
+        // Only lexical should survive
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].record_id, "b");
+        assert_eq!(hits[0].skipped_model_mismatch, true);
+        assert_eq!(hits[0].sources, vec!["lexical".to_string()]);
+    }
+
+    #[test]
+    fn dedup_by_store_and_record_id() {
+        let leg1 = FederatedLegs {
+            store: "store1".to_string(),
+            model_ok: true,
+            vector: vec![dummy_hit("a", Some(0.9))],
+            lexical: vec![dummy_hit("a", None)],
+            kg: vec![dummy_hit("a", None)],
+        };
+
+        let hits = merge_federated(&[leg1], 60, 10);
+        assert_eq!(hits.len(), 1);
+        let hit = &hits[0];
+        assert_eq!(hit.record_id, "a");
+        assert_eq!(hit.sources.len(), 3);
+        assert!(hit.sources.contains(&"vector".to_string()));
+        assert!(hit.sources.contains(&"lexical".to_string()));
+        assert!(hit.sources.contains(&"kg".to_string()));
     }
 }

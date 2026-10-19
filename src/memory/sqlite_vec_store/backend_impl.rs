@@ -260,6 +260,7 @@ impl VecSqliteMemoryStore {
                         lexical_score: 0.0,
                         kg_score: 0.0,
                         bm25: None,
+                        vector_similarity: None,
                     })
                     .collect(),
             );
