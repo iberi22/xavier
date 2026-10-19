@@ -12,7 +12,7 @@ pub fn merge_rrf_result(
     source: FusionSource,
     rrf_k: usize,
     rank: usize,
-    bm25: Option<f32>,
+    extra_score: Option<f32>,
     record: MemoryRecord,
 ) {
     let rrf_score = 1.0 / (rrf_k as f32 + rank as f32);
@@ -21,10 +21,15 @@ pub fn merge_rrf_result(
     if let Some(existing) = scored.get_mut(&key) {
         existing.score += rrf_score * source_weight(source);
         match source {
-            FusionSource::Vector => existing.vector_score = rrf_score,
+            FusionSource::Vector => {
+                existing.vector_score = rrf_score;
+                if existing.vector_similarity.is_none() {
+                    existing.vector_similarity = extra_score;
+                }
+            }
             FusionSource::Fts => {
                 existing.lexical_score = rrf_score;
-                existing.bm25 = bm25;
+                existing.bm25 = extra_score;
             }
             FusionSource::Kg => existing.kg_score = rrf_score,
         }
@@ -36,12 +41,17 @@ pub fn merge_rrf_result(
             lexical_score: 0.0,
             kg_score: 0.0,
             bm25: None,
+            vector_similarity: if matches!(source, FusionSource::Vector) {
+                extra_score
+            } else {
+                None
+            },
         };
         match source {
             FusionSource::Vector => result.vector_score = rrf_score,
             FusionSource::Fts => {
                 result.lexical_score = rrf_score;
-                result.bm25 = bm25;
+                result.bm25 = extra_score;
             }
             FusionSource::Kg => result.kg_score = rrf_score,
         }
@@ -55,5 +65,40 @@ fn source_weight(source: FusionSource) -> f32 {
         FusionSource::Vector => DEFAULT_VECTOR_WEIGHT,
         FusionSource::Fts => DEFAULT_FTS_WEIGHT,
         FusionSource::Kg => DEFAULT_KG_WEIGHT,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_merge_rrf_result_vector_and_fts() {
+        let mut scored = HashMap::new();
+        let record = MemoryRecord {
+            id: "rec1".to_string(),
+            ..Default::default()
+        };
+
+        merge_rrf_result(
+            &mut scored,
+            FusionSource::Vector,
+            60,
+            1,
+            Some(0.95),
+            record.clone(),
+        );
+
+        let hit = scored.get("rec1").expect("should contain rec1");
+        assert_eq!(hit.vector_similarity, Some(0.95));
+        assert!(hit.vector_score > 0.0);
+        assert_eq!(hit.bm25, None);
+
+        merge_rrf_result(&mut scored, FusionSource::Fts, 60, 1, Some(12.5), record);
+
+        let hit2 = scored.get("rec1").expect("should contain rec1");
+        assert_eq!(hit2.vector_similarity, Some(0.95));
+        assert_eq!(hit2.bm25, Some(12.5));
+        assert!(hit2.lexical_score > 0.0);
     }
 }

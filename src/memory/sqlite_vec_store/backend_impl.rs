@@ -260,6 +260,7 @@ impl VecSqliteMemoryStore {
                         lexical_score: 0.0,
                         kg_score: 0.0,
                         bm25: None,
+                        vector_similarity: None,
                     })
                     .collect(),
             );
@@ -390,5 +391,18 @@ impl VecSqliteMemoryStore {
             query: query.to_string(),
             paths,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn candidate_limit_scaling() {
+        assert_eq!(VecSqliteMemoryStore::candidate_limit(0), 5);
+        assert_eq!(VecSqliteMemoryStore::candidate_limit(5), 25);
+        assert_eq!(VecSqliteMemoryStore::candidate_limit(50), 250);
+        assert_eq!(VecSqliteMemoryStore::candidate_limit(200), 1000);
     }
 }
