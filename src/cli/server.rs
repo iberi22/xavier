@@ -2040,6 +2040,42 @@ async fn start_http_server_inner(
         crate::cli::state::open_space_manager(&xavier::maloca::MalocaStore::resolve_state_dir());
     if let Some(m) = &space_manager {
         xavier::adapters::inbound::http::routes::init_space_manager(m.clone());
+        // Start background retention sweep task if configured
+        let raw_sweep = std::env::var("XAVIER_RETENTION_SWEEP_SECS").ok();
+        if let Some(interval) = retention_interval(raw_sweep.as_deref()) {
+            let manager = m.clone();
+            tokio::spawn(async move {
+                let mut ticker = tokio::time::interval(interval);
+                // Do not tick immediately on startup
+                ticker.tick().await;
+                loop {
+                    ticker.tick().await;
+                    let days_str = std::env::var("XAVIER_SPACE_RETENTION_DAYS")
+                        .unwrap_or_else(|_| "0".to_string());
+                    let days = days_str.trim().parse::<u64>().unwrap_or(0);
+
+                    if days > 0 {
+                        let ids: Vec<String> =
+                            manager.list().await.into_iter().map(|s| s.id).collect();
+                        let results = xavier::espacio::retention::sweep_spaces(
+                            &manager.stores(),
+                            &ids,
+                            chrono::Utc::now(),
+                            days,
+                        );
+                        for (id, deleted) in results {
+                            if deleted > 0 {
+                                tracing::info!(
+                                    "Space retention sweep: deleted {} messages in space {}",
+                                    deleted,
+                                    id
+                                );
+                            }
+                        }
+                    }
+                }
+            });
+        }
     }
 
     // Initialize and wire up the Memory Sync singleton
@@ -2948,6 +2984,15 @@ pub fn ingestion_interval_secs() -> u64 {
         .unwrap_or(600)
 }
 
+pub(crate) fn retention_interval(raw: Option<&str>) -> Option<std::time::Duration> {
+    let secs = raw?.trim().parse::<u64>().ok()?;
+    if secs >= 60 {
+        Some(std::time::Duration::from_secs(secs))
+    } else {
+        None
+    }
+}
+
 /// Parses an interval in seconds, tolerating surrounding whitespace and a
 /// trailing `s` unit (`"0 "`, `"0s"`, `" 300s "`). A near-miss of `0` must
 /// still read as `0`: falling back to the default would silently re-enable the
@@ -3685,5 +3730,28 @@ mod feature_route_parity_tests {
         );
         // This CLI-state handler is not part of the library create_router().
         assert!(live.contains(".route(\"/code/situ\",post(code_situ_handler))"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_retention_interval_off_when_unset_or_below_60() {
+        assert_eq!(retention_interval(None), None);
+        assert_eq!(retention_interval(Some("")), None);
+        assert_eq!(retention_interval(Some("abc")), None);
+        assert_eq!(retention_interval(Some("0")), None);
+        assert_eq!(retention_interval(Some("59")), None);
+        assert_eq!(
+            retention_interval(Some("60")),
+            Some(Duration::from_secs(60))
+        );
+        assert_eq!(
+            retention_interval(Some(" 3600 ")),
+            Some(Duration::from_secs(3600))
+        );
     }
 }
