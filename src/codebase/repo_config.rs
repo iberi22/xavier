@@ -458,6 +458,15 @@ const HEADER: &str = "\
 # Commit this file to share the instance across the team.
 ";
 
+const REPO_GITIGNORE: &str = "\
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+";
+
 /// Write a fresh, fully commented `config.toml` for `root`.
 ///
 /// Fails with [`RepoConfigError::Invalid`] if a file already exists, so `init`
@@ -476,6 +485,16 @@ pub fn init_config(root: &Path, force: bool) -> Result<PathBuf, RepoConfigError>
             path: dir.to_path_buf(),
             source,
         })?;
+
+        let gitignore_path = dir.join(".gitignore");
+        if force || !gitignore_path.exists() {
+            std::fs::write(&gitignore_path, REPO_GITIGNORE).map_err(|source| {
+                RepoConfigError::Write {
+                    path: gitignore_path,
+                    source,
+                }
+            })?;
+        }
     }
     let cfg = RepoConfig::defaults_for(root);
     let file = RepoConfigFile {
@@ -968,5 +987,72 @@ retention_days = 90
             root_of(Path::new("/tmp/some-repo/.xavier/config.toml")),
             PathBuf::from("/tmp/some-repo")
         );
+    }
+
+    #[test]
+    fn config_init_writes_gitignore_excluding_live_dbs() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = tmp.path().join("gitignore-repo");
+        std::fs::create_dir_all(repo.join(".git")).expect("mkdir .git");
+
+        init_config(&repo, false).expect("init creates the file");
+
+        let gitignore_path = repo.join(REPO_PACKAGE_DIR).join(".gitignore");
+        let body = std::fs::read_to_string(&gitignore_path).expect("read .gitignore");
+
+        assert!(body.contains("*.db"));
+        assert!(body.contains("*.db-wal"));
+        assert!(body.contains("*.db-shm"));
+        assert!(body.contains("*.sqlite3"));
+        assert!(body.contains("*.sqlite3-wal"));
+        assert!(body.contains("*.sqlite3-shm"));
+    }
+
+    #[test]
+    fn gitignore_does_not_exclude_config_or_enc() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = tmp.path().join("gitignore-excludes");
+        std::fs::create_dir_all(repo.join(".git")).expect("mkdir .git");
+
+        init_config(&repo, false).expect("init creates the file");
+
+        let gitignore_path = repo.join(REPO_PACKAGE_DIR).join(".gitignore");
+        let body = std::fs::read_to_string(&gitignore_path).expect("read .gitignore");
+
+        assert!(!body.contains("config.toml"));
+        assert!(!body.contains("*.enc"));
+    }
+
+    #[test]
+    fn init_without_force_keeps_existing_gitignore() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = tmp.path().join("gitignore-keeps");
+        std::fs::create_dir_all(repo.join(".git")).expect("mkdir .git");
+        let pkg_dir = repo.join(REPO_PACKAGE_DIR);
+        std::fs::create_dir_all(&pkg_dir).expect("mkdir .xavier");
+
+        let gitignore_path = pkg_dir.join(".gitignore");
+        std::fs::write(&gitignore_path, "ignoreme").expect("write existing gitignore");
+
+        // We bypass init_config for the first run, and test force
+        // since init_config with existing config.toml errors unless force=true.
+        // Actually, init_config doesn't write gitignore if config.toml fails.
+        // So let's write config.toml and use force=false
+
+        // Let's test that init_config with force doesn't clobber if we write another file
+
+        // Re-read: "Without `force`, an existing `.gitignore` is left untouched."
+        // Let's create an existing .gitignore, but NO config.toml.
+        // This will let init_config(repo, false) run.
+
+        init_config(&repo, false).expect("init creates config.toml");
+
+        let body = std::fs::read_to_string(&gitignore_path).expect("read .gitignore");
+        assert_eq!(body, "ignoreme"); // Should not be overwritten
+
+        // Now use force
+        init_config(&repo, true).expect("init with force");
+        let body2 = std::fs::read_to_string(&gitignore_path).expect("read .gitignore after force");
+        assert!(body2.contains("*.sqlite3")); // Should be overwritten
     }
 }
