@@ -185,7 +185,8 @@ fn listing_body() -> Value {
         "seller_id": owner().public_key_hex(),
         "title": "Weather station logs",
         "license": "CC-BY-4.0",
-        "price_credits": 25
+        "price_credits": 25,
+        "consent_ref": "consent-2026-10-19"
     })
 }
 
@@ -303,7 +304,12 @@ async fn listing_and_receipt_survive_a_daemon_restart() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(fetched, listing);
+    let mut fetched_listing = fetched.clone();
+    fetched_listing
+        .as_object_mut()
+        .unwrap()
+        .remove("provenance");
+    assert_eq!(fetched_listing, listing);
 
     let (status, receipts) = send(
         &after,
