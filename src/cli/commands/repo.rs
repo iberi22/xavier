@@ -374,12 +374,12 @@ mod tests {
         let db_path = setup_fixture_db(tmp.path());
 
         let bytes_before = std::fs::read(&db_path).unwrap();
-        let hash_before = hex::encode(Sha256::digest(&bytes_before));
+        let hash_before = crate::crypto::hex_encode(Sha256::digest(&bytes_before));
 
         let _ = adopt_dry_run_report(&db_path).unwrap();
 
         let bytes_after = std::fs::read(&db_path).unwrap();
-        let hash_after = hex::encode(Sha256::digest(&bytes_after));
+        let hash_after = crate::crypto::hex_encode(Sha256::digest(&bytes_after));
 
         assert_eq!(hash_before, hash_after);
     }
