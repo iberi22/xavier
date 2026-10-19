@@ -659,6 +659,15 @@ pub enum RepoCommand {
         #[command(flatten)]
         args: RepoPackageArgs,
     },
+    /// Adopt memory records
+    Adopt {
+        #[arg(long)]
+        root: Option<String>,
+        #[arg(long)]
+        global_db: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// Common options for every `xavier repo pack` / `xavier repo unpack` action.
@@ -670,6 +679,9 @@ pub struct RepoPackageArgs {
     /// Output as JSON instead of human-readable text
     #[arg(long, default_value_t = false)]
     pub json: bool,
+    /// Package memory snapshot
+    #[arg(long)]
+    pub memory: bool,
 }
 
 /// Common options for every `xavier repo config …` action.
@@ -684,6 +696,51 @@ pub struct RepoConfigArgs {
 }
 
 /// `xavier repo config …` actions.
+#[cfg(test)]
+mod repo_enums_tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser, Debug)]
+    struct DummyApp {
+        #[command(subcommand)]
+        cmd: RepoCommand,
+    }
+
+    #[derive(Parser, Debug)]
+    struct DummyPackApp {
+        #[command(flatten)]
+        args: RepoPackageArgs,
+    }
+
+    #[test]
+    fn adopt_requires_dry_run_flag() {
+        // clap doesn't natively enforce that a bool flag *must* be present to avoid erroring,
+        // but we verify that `try_parse_from` handles it.
+        // We will enforce the error in mod.rs per instructions.
+        let parsed = DummyApp::try_parse_from(["dummy", "adopt", "--dry-run"]).unwrap();
+        match parsed.cmd {
+            RepoCommand::Adopt { dry_run, .. } => assert!(dry_run),
+            _ => panic!("wrong variant"),
+        }
+
+        let parsed2 = DummyApp::try_parse_from(["dummy", "adopt"]).unwrap();
+        match parsed2.cmd {
+            RepoCommand::Adopt { dry_run, .. } => assert!(!dry_run),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn pack_memory_flag_defaults_to_false() {
+        let parsed = DummyPackApp::try_parse_from(["dummy"]).unwrap();
+        assert!(!parsed.args.memory);
+
+        let parsed_true = DummyPackApp::try_parse_from(["dummy", "--memory"]).unwrap();
+        assert!(parsed_true.args.memory);
+    }
+}
+
 #[derive(Subcommand, Debug, Clone)]
 pub enum RepoConfigCommand {
     /// Create a commented `config.toml` for this repo (refuses to clobber)

@@ -196,6 +196,21 @@ impl Cli {
                 RepoCommand::Config { cmd } => repo::run_repo_config_command(cmd.clone()),
                 RepoCommand::Pack { args } => repo_pack::run_repo_pack_command(args.clone()),
                 RepoCommand::Unpack { args } => repo_pack::run_repo_unpack_command(args.clone()),
+                RepoCommand::Adopt {
+                    global_db, dry_run, ..
+                } => {
+                    if !dry_run {
+                        eprintln!("adopt without --dry-run is not available in this version");
+                        std::process::exit(1);
+                    }
+                    let db_path = global_db
+                        .as_ref()
+                        .map(std::path::PathBuf::from)
+                        .ok_or_else(|| anyhow::anyhow!("adopt requires a --global-db argument"))?;
+                    let report = repo::adopt_dry_run_report(&db_path)?;
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                    Ok(())
+                }
             },
             Command::Space { cmd } => {
                 // Commands::Space

@@ -133,6 +133,7 @@ fn resolve_target(root: Option<PathBuf>) -> Result<Resolved> {
 /// `xavier repo pack -C <dir>`: seal `code_graph.db` into `code_graph.db.enc`.
 pub fn run_repo_pack_command(args: RepoPackageArgs) -> Result<()> {
     let json = args.json;
+    let memory = args.memory;
     let Resolved {
         root,
         project_id,
@@ -140,6 +141,13 @@ pub fn run_repo_pack_command(args: RepoPackageArgs) -> Result<()> {
     } = resolve_target(args.root)?;
 
     let outcome = pack_with_kek(&root, &project_id, &kek)?;
+
+    if memory {
+        let mem_db_src = root.join(".xavier").join("memory.sqlite3");
+        let mem_db_dst = package_path_for(&root, "memory.sqlite3");
+        pack_memory_snapshot(&mem_db_src, &mem_db_dst, &kek)?;
+    }
+
     if json {
         println!(
             "{}",
@@ -157,6 +165,12 @@ pub fn run_repo_pack_command(args: RepoPackageArgs) -> Result<()> {
         );
     } else {
         println!("Paquete cifrado creado: {}", outcome.enc_path.display());
+        if memory {
+            println!(
+                "Paquete memoria cifrado creado: {}",
+                package_path_for(&root, "memory.sqlite3").display()
+            );
+        }
         println!("  repo root:     {}", outcome.repo_root.display());
         println!("  project_id:    {}", outcome.project_id);
         println!(
