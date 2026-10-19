@@ -173,7 +173,7 @@ pub(crate) fn space_token_may_access(
         }
         let ok = match (method, tail.split_once('/')) {
             (&Method::GET | &Method::POST, None) => {
-                if tail == "members" {
+                if tail == "members" || tail == "invites" {
                     return match *method {
                         Method::GET => can(role, SpaceAction::Read),
                         Method::POST => can(role, SpaceAction::ManageMembers),
@@ -2392,7 +2392,6 @@ name = "demo"
             ("GET", "/api/v1/espacio/spaces/esp_a/tokens"),
             ("GET", "/api/v1/espacio/spaces/esp_a/keys"),
             ("POST", "/api/v1/espacio/spaces/esp_a/messages"),
-            ("POST", "/api/v1/espacio/spaces/esp_a/invites"),
             ("GET", "/api/v1/espacio/spaces/esp_a/isolation/esp_b"),
             ("GET", "/api/v1/espacio/spaces/esp_a/whatever/deep/path"),
             // Verbs without a route.
@@ -2406,6 +2405,16 @@ name = "demo"
                 "{m} {p}"
             );
         }
+        assert_eq!(
+            call(
+                &f.app,
+                "POST",
+                "/api/v1/espacio/spaces/esp_a/invites",
+                &f.admin_b
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
         assert_eq!(
             call(&f.app, "GET", OWN_PATH, &f.admin_b).await,
             StatusCode::FORBIDDEN
@@ -2801,5 +2810,69 @@ name = "demo"
             assert_ne!(st, StatusCode::UNAUTHORIZED, "{path} with readonly JWT");
             assert_ne!(st, StatusCode::FORBIDDEN, "{path} with readonly JWT");
         }
+    }
+
+    #[test]
+    fn space_admin_token_can_create_invites_of_own_space() {
+        let path = "/api/v1/espacio/spaces/esp_a/invites";
+        assert!(space_token_may_access(
+            path,
+            "esp_a",
+            SpaceRole::Admin,
+            &Method::POST
+        ));
+        assert!(space_token_may_access(
+            path,
+            "esp_a",
+            SpaceRole::Moderator,
+            &Method::POST
+        ));
+    }
+
+    #[test]
+    fn reader_token_cannot_create_invites() {
+        let path = "/api/v1/espacio/spaces/esp_a/invites";
+        assert!(!space_token_may_access(
+            path,
+            "esp_a",
+            SpaceRole::Reader,
+            &Method::POST
+        ));
+        assert!(!space_token_may_access(
+            path,
+            "esp_a",
+            SpaceRole::Member,
+            &Method::POST
+        ));
+
+        // But reader can GET
+        assert!(space_token_may_access(
+            path,
+            "esp_a",
+            SpaceRole::Reader,
+            &Method::GET
+        ));
+    }
+
+    #[test]
+    fn space_token_cannot_accept_invites() {
+        let path = "/api/v1/espacio/invites/inv_123/accept";
+        assert!(!space_token_may_access(
+            path,
+            "esp_a",
+            SpaceRole::Admin,
+            &Method::POST
+        ));
+    }
+
+    #[test]
+    fn space_token_cannot_read_another_spaces_invites() {
+        let path = "/api/v1/espacio/spaces/esp_b/invites";
+        assert!(!space_token_may_access(
+            path,
+            "esp_a",
+            SpaceRole::Admin,
+            &Method::GET
+        ));
     }
 }
