@@ -198,6 +198,18 @@ pub(crate) fn space_token_may_access(
                 }
                 false
             }
+            (&Method::POST, Some(("members", rest))) => {
+                if let Some((mid, "token")) = rest.split_once('/') {
+                    let valid_mid = !mid.is_empty()
+                        && mid
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'));
+                    if valid_mid {
+                        return can(role, SpaceAction::Admin);
+                    }
+                }
+                false
+            }
             _ => false,
         };
         return ok && can(role, SpaceAction::Admin);

@@ -1131,6 +1131,10 @@ where
             axum::routing::delete(espacio_members_remove_handler),
         )
         .route(
+            "/spaces/{id}/members/{node_id}/token",
+            post(espacio_members_token_handler),
+        )
+        .route(
             "/spaces/{id}/links",
             post(espacio_link_create_handler).get(espacio_link_list_handler),
         )
@@ -1310,6 +1314,66 @@ pub async fn espacio_members_remove_handler(
         Some(Ok(false)) => (
             axum::http::StatusCode::NOT_FOUND,
             Json(serde_json::json!({"status":"error","message":"member not found"})),
+        )
+            .into_response(),
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
+    }
+}
+
+/// POST /api/v1/espacio/spaces/{id}/members/{node_id}/token
+pub async fn espacio_members_token_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    root: Option<axum::extract::Extension<RootCredential>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path((id, node_id)): axum::extract::Path<(String, String)>,
+) -> axum::response::Response {
+    let is_admin = match &auth {
+        Some(a) => a.0.space_id == id && a.0.role == crate::espacio::SpaceRole::Admin,
+        None => root.is_some(),
+    };
+    if !is_admin {
+        return espacio_forbidden();
+    }
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+
+    let sid = id.clone();
+    let nid = node_id.clone();
+    let mgr = manager.clone();
+    let member_role = match run_blocking(async move {
+        mgr.members(&sid)
+            .await
+            .map(|m| m.into_iter().find(|x| x.node_id == nid).map(|m| m.role))
+    })
+    .await
+    {
+        Some(Ok(Some(r))) => r,
+        Some(Ok(None)) => {
+            return (
+                axum::http::StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"status":"error","message":"member not found"})),
+            )
+                .into_response();
+        }
+        Some(Err(err)) => return espacio_error_response(err),
+        None => return espacio_join_error(),
+    };
+
+    match run_blocking(async move {
+        let store = manager.stores().get(&id)?;
+        Ok(store.issue_token(&id, &node_id, member_role, None)?)
+    })
+    .await
+    {
+        Some(Ok(issued)) => (
+            axum::http::StatusCode::CREATED,
+            Json(serde_json::json!({
+                "status": "ok",
+                "token": issued.raw.expose(),
+                "note": "token is shown once; store it now."
+            })),
         )
             .into_response(),
         Some(Err(err)) => espacio_error_response(err),
@@ -3389,6 +3453,67 @@ mod verify_save_route_tests {
         )
         .await;
         assert_eq!(res_add.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn member_token_is_shown_once_and_admin_only() {
+        let (_tmp, mgr) = setup_test_space(None).await;
+        let ext = Some(axum::extract::Extension(mgr.clone()));
+        let auth_admin = Some(axum::extract::Extension(crate::espacio::SpaceAuth {
+            space_id: "space-1".to_string(),
+            member_id: "n1".to_string(),
+            role: crate::espacio::SpaceRole::Admin,
+        }));
+        let auth_mod = Some(axum::extract::Extension(crate::espacio::SpaceAuth {
+            space_id: "space-1".to_string(),
+            member_id: "mod1".to_string(),
+            role: crate::espacio::SpaceRole::Moderator,
+        }));
+
+        let res_mod = super::espacio_members_token_handler(
+            ext.clone(),
+            None,
+            auth_mod,
+            axum::extract::Path(("space-1".to_string(), "n1".to_string())),
+        )
+        .await;
+        assert_eq!(res_mod.status(), StatusCode::FORBIDDEN);
+
+        let res_admin = super::espacio_members_token_handler(
+            ext,
+            None,
+            auth_admin,
+            axum::extract::Path(("space-1".to_string(), "n1".to_string())),
+        )
+        .await;
+        assert_eq!(res_admin.status(), StatusCode::CREATED);
+        let body_bytes = axum::body::to_bytes(res_admin.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(body["status"], "ok");
+        assert!(body["token"].is_string());
+        assert_eq!(body["note"], "token is shown once; store it now.");
+    }
+
+    #[tokio::test]
+    async fn member_token_unknown_member_is_404() {
+        let (_tmp, mgr) = setup_test_space(None).await;
+        let ext = Some(axum::extract::Extension(mgr.clone()));
+        let auth_admin = Some(axum::extract::Extension(crate::espacio::SpaceAuth {
+            space_id: "space-1".to_string(),
+            member_id: "n1".to_string(),
+            role: crate::espacio::SpaceRole::Admin,
+        }));
+
+        let res_admin = super::espacio_members_token_handler(
+            ext,
+            None,
+            auth_admin,
+            axum::extract::Path(("space-1".to_string(), "unknown-node".to_string())),
+        )
+        .await;
+        assert_eq!(res_admin.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
