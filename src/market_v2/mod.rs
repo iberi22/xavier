@@ -177,6 +177,8 @@ where
             "/v2/marketplace/consent",
             post(set_consent_handler).get(get_consent_handler),
         )
+        .route("/v2/marketplace/audit", get(list_audit_handler))
+        .route("/v2/marketplace/audit/verify", get(verify_audit_handler))
         .merge(ivn::routes())
         .layer(Extension(store))
         .layer(Extension(Arc::new(issuer)))
@@ -323,7 +325,19 @@ async fn create_receipt_handler(
     Json(new): Json<NewReceipt>,
 ) -> Response {
     match store.record_receipt(new) {
-        Ok(receipt) => (StatusCode::CREATED, Json(receipt)).into_response(),
+        Ok(receipt) => {
+            if let Err(err) = store.audit().append(
+                "receipt",
+                &serde_json::to_value(&receipt).unwrap_or_default(),
+            ) {
+                tracing::error!(error = %err, "failed to append receipt to audit chain");
+                return error_status(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("audit log failed: {err}"),
+                );
+            }
+            (StatusCode::CREATED, Json(receipt)).into_response()
+        }
         Err(err) => error_response(err),
     }
 }
@@ -393,7 +407,19 @@ async fn create_grant_handler(
         payload.expires_at_ms,
         &payload.signature_hex,
     ) {
-        Ok(grant) => (StatusCode::CREATED, Json(grant)).into_response(),
+        Ok(grant) => {
+            if let Err(err) = store
+                .audit()
+                .append("grant", &serde_json::to_value(&grant).unwrap_or_default())
+            {
+                tracing::error!(error = %err, "failed to append grant to audit chain");
+                return error_status(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("audit log failed: {err}"),
+                );
+            }
+            (StatusCode::CREATED, Json(grant)).into_response()
+        }
         Err(err) => error_response(err),
     }
 }
@@ -566,6 +592,34 @@ async fn get_consent_handler(Query(query): Query<ConsentQuery>) -> Response {
     }
 }
 
+async fn list_audit_handler(Extension(store): StoreExt) -> Response {
+    match store.audit().records() {
+        Ok(records) => Json(records).into_response(),
+        Err(err) => error_status(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to fetch audit records: {err}"),
+        ),
+    }
+}
+
+async fn verify_audit_handler(Extension(store): StoreExt) -> Response {
+    match store.audit().verify() {
+        Ok(count) => Json(serde_json::json!({
+            "verified": true,
+            "records": count,
+        }))
+        .into_response(),
+        Err(err) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({
+                "verified": false,
+                "error": err.to_string(),
+            })),
+        )
+            .into_response(),
+    }
+}
+
 /// Verifies the publisher signature on a mutation. The signed path is the
 /// request path, and the signed body is the raw request body.
 fn authenticate(
@@ -644,7 +698,10 @@ fn error_response(err: MarketError) -> Response {
         MarketError::InvalidInput(_)
         | MarketError::LicenseNotEnabled(_)
         | MarketError::Config(_) => StatusCode::BAD_REQUEST,
-        MarketError::SchemaTooNew(_) | MarketError::Corrupt(_) | MarketError::Sqlite(_) => {
+        MarketError::SchemaTooNew(_)
+        | MarketError::Corrupt(_)
+        | MarketError::Sqlite(_)
+        | MarketError::Audit(_) => {
             tracing::error!(error = %err, "market-v2 store error");
             StatusCode::INTERNAL_SERVER_ERROR
         }
@@ -1881,5 +1938,166 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn audit_chain_records_grants_and_receipts_and_detects_tampering() {
+        use xavier_market::{grant_signing_bytes, wrap_key_for_buyer};
+
+        let env = MarketEnv::with_flag(Some("beta"));
+        let router: Router = mount(Router::new());
+
+        // Initial audit chain is empty and verifies (0 records)
+        let (status, verify_json) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/audit/verify", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(verify_json["verified"], true);
+        assert_eq!(verify_json["records"], 0);
+
+        // 1. Create a listing
+        let listing_id = create_owned_listing(&router).await;
+
+        // 2. Create a receipt via POST /v2/marketplace/receipts
+        let receipt_payload = json!({
+            "listing_id": listing_id,
+            "buyer_id": "buyer-test-1",
+        });
+        let (status, receipt_json) = send(
+            &router,
+            json_request(
+                Method::POST,
+                "/v2/marketplace/receipts",
+                Some(receipt_payload),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(receipt_json["listing_id"], listing_id);
+
+        // Verify audit chain has 1 record for receipt
+        let (status, records) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/audit", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(records.as_array().unwrap().len(), 1);
+        let first_record_entry: Value =
+            serde_json::from_str(records[0]["entry_json"].as_str().unwrap()).unwrap();
+        assert_eq!(first_record_entry["kind"], "receipt");
+
+        // 3. Create a grant via POST /v2/marketplace/grants
+        let buyer_secret = x25519_dalek::StaticSecret::from([55u8; 32]);
+        let buyer_public = x25519_dalek::PublicKey::from(&buyer_secret);
+        let buyer_pub_hex = crate::crypto::hex_encode(buyer_public.as_bytes());
+
+        let package_key = b"super-secret-content-key-123456";
+        let ephemeral_seed = [77u8; 32];
+        let nonce = [88u8; 12];
+        let (wrapped, eph_pub, nonce_hex) = wrap_key_for_buyer(
+            package_key,
+            buyer_public.as_bytes(),
+            &ephemeral_seed,
+            &nonce,
+        )
+        .unwrap();
+
+        let expires_at = now_ms() + 3_600_000;
+
+        let owner_signing_key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
+        let signing_bytes = grant_signing_bytes(
+            &listing_id,
+            &buyer_pub_hex,
+            &eph_pub,
+            &wrapped,
+            &nonce_hex,
+            expires_at,
+        );
+        let sig = owner_signing_key.sign(&signing_bytes);
+        let signature_hex = crate::crypto::hex_encode(sig.to_bytes());
+
+        let grant_payload = json!({
+            "listing_id": listing_id,
+            "buyer_x25519_pubkey_hex": buyer_pub_hex,
+            "ephemeral_pubkey_hex": eph_pub,
+            "wrapped_key_hex": wrapped,
+            "nonce_hex": nonce_hex,
+            "expires_at_ms": expires_at,
+            "signature_hex": signature_hex,
+        });
+
+        let (status, grant_json) = send(
+            &router,
+            signed_request(
+                &owner(),
+                Method::POST,
+                "/v2/marketplace/grants",
+                Some(grant_payload),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(grant_json["listing_id"], listing_id);
+
+        // Verify audit chain has 2 records and verify endpoint returns 2
+        let (status, records) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/audit", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(records.as_array().unwrap().len(), 2);
+        let second_record_entry: Value =
+            serde_json::from_str(records[1]["entry_json"].as_str().unwrap()).unwrap();
+        assert_eq!(second_record_entry["kind"], "grant");
+
+        let (status, verify_json) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/audit/verify", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(verify_json["verified"], true);
+        assert_eq!(verify_json["records"], 2);
+
+        // 4. Tamper with the audit log in the database file
+        let db_path = env._dir.path().join("market.sqlite3");
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute(
+            "UPDATE market_audit_log SET entry_json = '{\"tampered\": true}' WHERE seq = 1",
+            [],
+        )
+        .unwrap();
+
+        // 5. Verification fails on tampered chain!
+        let (status, verify_fail) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/audit/verify", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(verify_fail["verified"], false);
+    }
+
+    #[tokio::test]
+    async fn audit_routes_unmounted_when_flag_off() {
+        let _env = MarketEnv::with_flag(None);
+        let router: Router = mount(Router::new());
+        let (status, _) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/audit", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let (status, _) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/audit/verify", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 }

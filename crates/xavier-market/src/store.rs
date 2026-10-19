@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
+use crate::audit_chain::AuditChain;
 use crate::auth::Actor;
 use crate::config::{Currency, License, MarketConfig};
 use crate::error::MarketError;
@@ -111,6 +112,7 @@ const _: () = assert!(MIGRATIONS.len() as i64 == SCHEMA_VERSION);
 pub struct MarketStore {
     conn: Mutex<Connection>,
     config: MarketConfig,
+    audit: AuditChain,
 }
 
 impl MarketStore {
@@ -118,16 +120,22 @@ impl MarketStore {
     pub fn open(path: &Path, config: MarketConfig) -> Result<Self, MarketError> {
         config.validate()?;
         let conn = Connection::open(path)?;
-        Self::init(conn, config)
+        let audit = AuditChain::open(path)?;
+        Self::init(conn, config, audit)
     }
 
     /// An in-memory store with the same schema and rules. For tests.
     pub fn open_in_memory(config: MarketConfig) -> Result<Self, MarketError> {
         config.validate()?;
-        Self::init(Connection::open_in_memory()?, config)
+        let audit = AuditChain::open_in_memory()?;
+        Self::init(Connection::open_in_memory()?, config, audit)
     }
 
-    fn init(conn: Connection, config: MarketConfig) -> Result<Self, MarketError> {
+    fn init(
+        conn: Connection,
+        config: MarketConfig,
+        audit: AuditChain,
+    ) -> Result<Self, MarketError> {
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
         if version > SCHEMA_VERSION {
@@ -144,7 +152,12 @@ impl MarketStore {
         Ok(Self {
             conn: Mutex::new(conn),
             config,
+            audit,
         })
+    }
+
+    pub fn audit(&self) -> &AuditChain {
+        &self.audit
     }
 
     pub fn config(&self) -> &MarketConfig {

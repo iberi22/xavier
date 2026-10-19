@@ -30,4 +30,6 @@ pub enum MarketError {
     Corrupt(String),
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
+    #[error(transparent)]
+    Audit(#[from] crate::audit_chain::AuditError),
 }
