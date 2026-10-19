@@ -6,10 +6,81 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::adapters::inbound::http::routes::{
-    espacio_disabled, espacio_error_response, espacio_forbidden, espacio_join_error,
-    get_space_manager, run_blocking, RootCredential,
-};
+use crate::adapters::inbound::http::routes::{get_space_manager, RootCredential};
+
+fn espacio_disabled() -> axum::response::Response {
+    use axum::response::IntoResponse;
+    (
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({"status":"error","message":"espacio is disabled on this node"})),
+    )
+        .into_response()
+}
+
+fn espacio_forbidden() -> axum::response::Response {
+    use axum::response::IntoResponse;
+    (
+        axum::http::StatusCode::FORBIDDEN,
+        Json(serde_json::json!({"status":"error","message":"Forbidden"})),
+    )
+        .into_response()
+}
+
+fn espacio_join_error() -> axum::response::Response {
+    use axum::response::IntoResponse;
+    (
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({"status":"error","message":"internal error"})),
+    )
+        .into_response()
+}
+
+fn espacio_error_response(err: anyhow::Error) -> axum::response::Response {
+    use crate::espacio::SpaceError;
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+    let msg = err.to_string();
+    let status = match err.downcast_ref::<SpaceError>() {
+        Some(SpaceError::AlreadyExists(_)) => StatusCode::CONFLICT,
+        Some(SpaceError::InvalidId(_) | SpaceError::InvalidProtocol(_)) => StatusCode::BAD_REQUEST,
+        Some(SpaceError::NotFound(_)) => StatusCode::NOT_FOUND,
+        _ => match err.downcast_ref::<crate::espacio::manager::MembersCapReached>() {
+            Some(_) => StatusCode::CONFLICT,
+            _ => {
+                if msg.contains("already used") || msg.contains("already exists") {
+                    StatusCode::CONFLICT
+                } else if msg.contains("expired")
+                    || msg.contains("revoked")
+                    || msg.contains("invalid")
+                    || msg.contains("not addressed")
+                    || msg.contains("signature")
+                {
+                    StatusCode::BAD_REQUEST
+                } else if msg.contains("not found") {
+                    StatusCode::NOT_FOUND
+                } else {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
+            }
+        },
+    };
+    (
+        status,
+        Json(serde_json::json!({"status":"error","message":msg})),
+    )
+        .into_response()
+}
+
+async fn run_blocking<T, F>(fut: F) -> Option<T>
+where
+    T: Send + 'static,
+    F: std::future::Future<Output = T> + Send + 'static,
+{
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::spawn_blocking(move || handle.block_on(fut))
+        .await
+        .ok()
+}
 use crate::espacio::invite::SpaceRole;
 use crate::espacio::SpaceManager;
 
@@ -60,7 +131,7 @@ pub async fn espacio_invite_create_handler(
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
 
-    let has_access = match auth {
+    let has_access = match &auth {
         Some(a) => {
             a.0.space_id == id
                 && crate::espacio::permissions::can(
@@ -109,10 +180,10 @@ pub async fn espacio_invite_create_handler(
 
     let expires_at = chrono::Utc::now() + chrono::Duration::hours(req.ttl_hours);
 
+    let invites = crate::espacio::InviteManager::with_stores(manager.stores());
     match run_blocking(async move {
         manager.get(&id).await?;
-        manager
-            .invites()
+        invites
             .create_with_expiry(id, inviter_node, req.target_node, role, expires_at)
             .await
     })
@@ -136,7 +207,7 @@ pub async fn espacio_invite_list_handler(
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
 
-    let has_access = match auth {
+    let has_access = match &auth {
         Some(a) => {
             a.0.space_id == id
                 && crate::espacio::permissions::can(
@@ -155,9 +226,10 @@ pub async fn espacio_invite_list_handler(
         return espacio_disabled();
     };
 
+    let invites = crate::espacio::InviteManager::with_stores(manager.stores());
     match run_blocking(async move {
         manager.get(&id).await?;
-        Ok::<_, anyhow::Error>(manager.invites().list_for_space(&id).await)
+        Ok::<_, anyhow::Error>(invites.list_for_space(&id).await)
     })
     .await
     {
@@ -172,7 +244,7 @@ pub async fn espacio_invite_list_handler(
 pub async fn espacio_invite_accept_handler(
     extension: Option<axum::extract::Extension<Arc<SpaceManager>>>,
     root: Option<axum::extract::Extension<RootCredential>>,
-    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    _auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
     axum::extract::Path(invite_id): axum::extract::Path<String>,
     Json(req): Json<AcceptInviteRequest>,
 ) -> axum::response::Response {
@@ -187,9 +259,9 @@ pub async fn espacio_invite_accept_handler(
         return espacio_disabled();
     };
 
+    let invites = crate::espacio::InviteManager::with_stores(manager.stores());
     match run_blocking(async move {
-        manager
-            .invites()
+        invites
             .accept_invite(&invite_id, &req.member_display, None, false)
             .await
     })
@@ -206,13 +278,14 @@ pub async fn espacio_invite_accept_handler(
         )
             .into_response(),
         Some(Err(err)) => {
-            if err.to_string().contains("already used") {
+            let msg = err.to_string();
+            if msg.contains("already used") || msg.contains("revoked") {
                 return (
                     axum::http::StatusCode::CONFLICT,
-                    Json(serde_json::json!({"status":"error","message":err.to_string()})),
+                    Json(serde_json::json!({"status":"error","message":msg})),
                 )
                     .into_response();
-            } else if err.to_string().contains("expired") {
+            } else if msg.contains("expired") {
                 return (
                     axum::http::StatusCode::BAD_REQUEST, // Or 410 Gone? Prompt says 4xx.
                     Json(serde_json::json!({"status":"error","message":err.to_string()})),
@@ -239,13 +312,16 @@ mod tests {
 
     async fn setup_test_space() -> (tempfile::TempDir, Arc<SpaceManager>) {
         let tmp = tempfile::tempdir().unwrap();
-        let mgr = crate::cli::state::open_space_manager_with_kek(
-            tmp.path(),
-            Arc::new(crate::espacio::MasterNodeKek::for_test()),
-        )
-        .unwrap();
+        let kek = Arc::new(crate::espacio::StaticNodeKek::new([9u8; 32]));
+        let mgr = crate::cli::state::open_space_manager_with_kek(tmp.path(), kek).unwrap();
         let _ = mgr
-            .create("space-1", "admin", "admin-pwd", SpaceRole::Admin)
+            .create(
+                "space-1".to_string(),
+                "Space 1".to_string(),
+                "".to_string(),
+                "admin".to_string(),
+                false,
+            )
             .await
             .unwrap();
         (tmp, mgr)
@@ -259,7 +335,7 @@ mod tests {
 
         let res = espacio_invite_create_handler(
             ext.clone(),
-            root.clone(),
+            root,
             None,
             axum::extract::Path("space-1".to_string()),
             Json(CreateInviteRequest {
@@ -279,7 +355,7 @@ mod tests {
 
         let res_accept = espacio_invite_accept_handler(
             ext.clone(),
-            root.clone(),
+            root,
             None,
             axum::extract::Path(invite_id.clone()),
             Json(AcceptInviteRequest {
@@ -296,8 +372,8 @@ mod tests {
         let ext = Some(axum::extract::Extension(mgr.clone()));
         let root = Some(axum::extract::Extension(RootCredential));
 
-        let invite = mgr
-            .invites()
+        let invites = crate::espacio::InviteManager::with_stores(mgr.stores());
+        let invite = invites
             .create(
                 "space-1".to_string(),
                 "admin".to_string(),
@@ -309,7 +385,7 @@ mod tests {
 
         let res_accept1 = espacio_invite_accept_handler(
             ext.clone(),
-            root.clone(),
+            root,
             None,
             axum::extract::Path(invite.id.clone()),
             Json(AcceptInviteRequest {
@@ -338,8 +414,8 @@ mod tests {
         let ext = Some(axum::extract::Extension(mgr.clone()));
         let root = Some(axum::extract::Extension(RootCredential));
 
-        let invite = mgr
-            .invites()
+        let invites = crate::espacio::InviteManager::with_stores(mgr.stores());
+        let invite = invites
             .create_with_expiry(
                 "space-1".to_string(),
                 "admin".to_string(),
@@ -352,7 +428,7 @@ mod tests {
 
         let res_accept = espacio_invite_accept_handler(
             ext.clone(),
-            root.clone(),
+            root,
             None,
             axum::extract::Path(invite.id.clone()),
             Json(AcceptInviteRequest {
@@ -371,7 +447,7 @@ mod tests {
 
         let res = espacio_invite_create_handler(
             ext.clone(),
-            root.clone(),
+            root,
             None,
             axum::extract::Path("space-1".to_string()),
             Json(CreateInviteRequest {
