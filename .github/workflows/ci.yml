@@ -455,6 +455,48 @@ jobs:
             espacio_space_paths espacio_production_router espacio_isolation_e2e \
             test_maloca_auth_gate
 
+  # Job 3c: Repo Memory Isolation Gate (WAVE-39.V19)
+  repo-memory-isolation:
+    name: repo-memory-isolation
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-safe-test
+          save-if: false
+
+      - name: Run repo memory isolation tests with zero-test guard
+        run: |
+          set -euo pipefail
+          mkdir -p target/test-reports
+
+          cargo test --package xavier --features ci-safe --lib -- --test-threads=1 memory::repo_store_registry 2>&1 | tee target/test-reports/out-registry.txt
+          cargo test --package xavier --features ci-safe --lib -- --test-threads=1 memory::repo_retention 2>&1 | tee target/test-reports/out-retention.txt
+          cargo test --package xavier --features ci-safe --lib -- --test-threads=1 memory::sqlite_vec_store::store_impl::tests::repo_store 2>&1 | tee target/test-reports/out-store.txt
+          cargo test --package xavier --features ci-safe --test espacio_isolation_memory -- --test-threads=1 2>&1 | tee target/test-reports/out-espacio-mem.txt
+          cargo test --package xavier --features ci-safe --test espacio_isolation_e2e -- --test-threads=1 2>&1 | tee target/test-reports/out-espacio-e2e.txt
+
+          for f in target/test-reports/*.txt; do
+            if ! grep -E "running [1-9][0-9]* test" "$f" >/dev/null; then
+              echo "::error::Zero-test guard failed for $f: matched 0 running tests"
+              exit 1
+            fi
+            echo "Verified $f executed tests successfully"
+          done
+
   # Job 4: Secret Scan
   secret-scan:
     name: Secret Scan (Gitleaks)
