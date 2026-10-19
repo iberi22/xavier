@@ -262,6 +262,42 @@ fn resolve_pack_root(root: Option<PathBuf>) -> Result<PathBuf> {
 /// like a committed memory package but restore nothing. An existing `.enc` is
 /// not an error: `pack` is how you refresh a committed package, so it is
 /// replaced and the caller is told.
+/// Create a consistent snapshot of `src` SQLite database into `dst` using `VACUUM INTO`.
+///
+/// Opens `src` with `SQLITE_OPEN_READ_ONLY`. Returns an error if `dst` already exists.
+pub(crate) fn snapshot_sqlite_to(src: &Path, dst: &Path) -> Result<()> {
+    if dst.exists() {
+        bail!(
+            "el destino del snapshot ya existe: {} (VACUUM INTO requiere que el destino no exista)",
+            dst.display()
+        );
+    }
+    let dst_str = dst
+        .to_str()
+        .ok_or_else(|| anyhow!("la ruta de destino no es utf-8 válido: {}", dst.display()))?;
+
+    let conn =
+        rusqlite::Connection::open_with_flags(src, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .with_context(|| format!("fallo abriendo base de datos origen {}", src.display()))?;
+
+    conn.execute("VACUUM INTO ?1", rusqlite::params![dst_str])
+        .with_context(|| {
+            format!(
+                "fallo ejecutando VACUUM INTO desde {} hacia {}",
+                src.display(),
+                dst.display()
+            )
+        })?;
+
+    Ok(())
+}
+
+/// Encrypt `<repo>/.xavier/code_graph.db` into `<repo>/.xavier/code_graph.db.enc`.
+///
+/// Fails loudly when there is no database to pack — an empty `.enc` would look
+/// like a committed memory package but restore nothing. An existing `.enc` is
+/// not an error: `pack` is how you refresh a committed package, so it is
+/// replaced and the caller is told.
 pub fn pack_with_kek(root: &Path, project_id: &str, kek: &[u8; 32]) -> Result<PackOutcome> {
     let db_path = code_graph_db_path_for_root(root);
     if !db_path.is_file() {
@@ -274,11 +310,28 @@ pub fn pack_with_kek(root: &Path, project_id: &str, kek: &[u8; 32]) -> Result<Pa
     let enc_path = package_path_for(root, PACKED_FILE_NAME);
     let overwritten = enc_path.exists();
 
+    let parent = db_path.parent().ok_or_else(|| {
+        anyhow!(
+            "{} no tiene directorio padre; no se puede empaquetar",
+            db_path.display()
+        )
+    })?;
+
+    // Create a temporary staging directory to capture a consistent SQLite snapshot via VACUUM INTO
+    let temp_dir = tempfile::Builder::new()
+        .prefix("repo_pack_")
+        .tempdir_in(parent)
+        .with_context(|| format!("fallo creando directorio temporal en {}", parent.display()))?;
+    let temp_snap_path = temp_dir.path().join("code_graph.snapshot.db");
+
+    snapshot_sqlite_to(&db_path, &temp_snap_path)
+        .with_context(|| format!("fallo capturando snapshot de {}", db_path.display()))?;
+
     // checkpoint → git HEAD → "unknown". Never invented.
     let indexed_commit = read_indexed_commit(root);
     let header = header_for(project_id, PACKED_FILE_NAME, &indexed_commit);
-    let written = encrypt_file(&db_path, &enc_path, kek, &header)
-        .with_context(|| format!("fallo cifrando {}", db_path.display()))?;
+    let written = encrypt_file(&temp_snap_path, &enc_path, kek, &header)
+        .with_context(|| format!("fallo cifrando {}", temp_snap_path.display()))?;
 
     Ok(PackOutcome {
         repo_root: root.to_path_buf(),
@@ -289,6 +342,37 @@ pub fn pack_with_kek(root: &Path, project_id: &str, kek: &[u8; 32]) -> Result<Pa
         plaintext_len: written.plaintext_len,
         overwritten,
     })
+}
+
+/// Encrypt a consistent snapshot of `<repo>/.xavier/memory.sqlite3` into `dst_enc`.
+///
+/// Uses `VACUUM INTO` to safely include uncheckpointed WAL rows into a temporary snapshot
+/// before AEAD encryption.
+pub(crate) fn pack_memory_snapshot(
+    src_memory_db: &Path,
+    dst_enc: &Path,
+    kek: &[u8; 32],
+) -> Result<()> {
+    if !src_memory_db.is_file() {
+        bail!(
+            "no existe {} — no se puede empaquetar la memoria",
+            src_memory_db.display()
+        );
+    }
+    let parent = dst_enc.parent().unwrap_or_else(|| Path::new("."));
+    let temp_dir = tempfile::Builder::new()
+        .prefix("mem_pack_")
+        .tempdir_in(parent)
+        .with_context(|| format!("fallo creando directorio temporal en {}", parent.display()))?;
+    let snap_path = temp_dir.path().join("memory.snapshot.db");
+
+    snapshot_sqlite_to(src_memory_db, &snap_path)?;
+
+    let header = header_for("memory", "memory.sqlite3", UNKNOWN_COMMIT);
+    encrypt_file(&snap_path, dst_enc, kek, &header)
+        .with_context(|| format!("fallo cifrando {}", snap_path.display()))?;
+
+    Ok(())
 }
 
 /// Restore `<repo>/.xavier/code_graph.db.enc` over `code_graph.db`.
@@ -458,7 +542,7 @@ mod tests {
         let tmp = tempdir().expect("tempdir");
         let repo = repo_with_db("roundtrip-repo", tmp.path());
         let db = code_graph_db_path_for_root(&repo);
-        let original = std::fs::read(&db).expect("read original db");
+        let _original = std::fs::read(&db).expect("read original db");
 
         std::fs::write(
             repo.join(".xavier").join(SYNC_CHECKPOINT_FILE),
@@ -483,7 +567,7 @@ mod tests {
             packed.enc_path,
             repo.join(".xavier").join("code_graph.db.enc")
         );
-        assert_eq!(packed.plaintext_len, original.len() as u64);
+        assert!(packed.plaintext_len > 0);
 
         // The artifact is not a SQLite file and does not leak the commit.
         let raw = std::fs::read(&packed.enc_path).expect("read enc");
@@ -502,14 +586,9 @@ mod tests {
         assert_eq!(restored.project_id, project_id);
         assert_eq!(restored.indexed_commit, "cafebabe12345678");
         assert_eq!(restored.source_file_name, "code_graph.db");
-        assert_eq!(restored.plaintext_len, original.len() as u64);
+        assert_eq!(restored.plaintext_len, packed.plaintext_len);
         assert!(restored.commit_matches, "repo is still at the checkpoint");
 
-        assert_eq!(
-            std::fs::read(&db).expect("read restored db"),
-            original,
-            "the restored database must be byte-identical"
-        );
         assert_eq!(
             read_db_names(&db),
             vec!["alpha_fn", "beta_fn", "gamma_fn"],
@@ -867,6 +946,81 @@ mod tests {
         assert!(err.to_string().contains("no es un directorio"), "{err}");
     }
 
+    #[test]
+    fn snapshot_includes_uncheckpointed_wal_rows() {
+        let tmp = tempdir().expect("tempdir");
+        let src_db = tmp.path().join("wal_test.db");
+        let dst_db = tmp.path().join("wal_snapshot.db");
+
+        let conn = rusqlite::Connection::open(&src_db).expect("open src");
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA wal_autocheckpoint = 0;
+             CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT);
+             INSERT INTO items (name) VALUES ('alpha'), ('beta');",
+        )
+        .expect("init table and wal");
+
+        // Verify that the WAL file exists with uncheckpointed rows
+        let wal_file = tmp.path().join("wal_test.db-wal");
+        assert!(
+            wal_file.exists(),
+            "WAL file should exist with uncheckpointed rows"
+        );
+
+        // Take snapshot using VACUUM INTO while source has active uncheckpointed WAL
+        snapshot_sqlite_to(&src_db, &dst_db).expect("snapshot_sqlite_to via VACUUM INTO");
+        assert!(dst_db.exists(), "snapshot destination must exist");
+
+        // Verify rows in the snapshot
+        let snap_conn = rusqlite::Connection::open(&dst_db).expect("open snap");
+        let count: i64 = snap_conn
+            .query_row("SELECT count(*) FROM items", [], |r| r.get(0))
+            .expect("query row count");
+        assert_eq!(count, 2, "snapshot includes uncheckpointed wal rows");
+
+        drop(conn);
+    }
+
+    #[test]
+    fn snapshot_refuses_existing_destination() {
+        let tmp = tempdir().expect("tempdir");
+        let src_db = tmp.path().join("src.db");
+        let dst_db = tmp.path().join("dst_exists.db");
+
+        {
+            let conn = rusqlite::Connection::open(&src_db).expect("open src");
+            conn.execute("CREATE TABLE t (x INT);", [])
+                .expect("create table");
+        }
+        std::fs::write(&dst_db, b"already exists").expect("write dst");
+
+        // VACUUM INTO refused because destination exists
+        let err = snapshot_sqlite_to(&src_db, &dst_db).expect_err("should refuse existing dst");
+        assert!(
+            err.to_string().contains("ya existe"),
+            "expected error mentioning existing destination, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_pack_memory_snapshot_works() {
+        let tmp = tempdir().expect("tempdir");
+        let mem_db = tmp.path().join("memory.sqlite3");
+        let enc_mem = tmp.path().join("memory.sqlite3.enc");
+        {
+            let conn = rusqlite::Connection::open(&mem_db).expect("open mem");
+            conn.execute("CREATE TABLE beliefs (id TEXT);", [])
+                .expect("create table");
+            conn.execute("INSERT INTO beliefs VALUES ('core');", [])
+                .expect("insert");
+        }
+        let kek = [42u8; 32];
+        pack_memory_snapshot(&mem_db, &enc_mem, &kek).expect("pack_memory_snapshot");
+        assert!(enc_mem.exists());
+    }
+
     // --- helpers -----------------------------------------------------------
 
     fn dir_has_leftovers(dir: &Path, needle: &str) -> bool {
@@ -911,8 +1065,8 @@ mod tests {
         if !run(&["init", "-q"]).status.success() {
             return String::new();
         }
-        run(&["config", "user.email", "t@t.t"]);
-        run(&["config", "user.name", "t"]);
+        run(&["config", "user.email", "swal-dev@swal.network"]);
+        run(&["config", "user.name", "swal-dev"]);
         std::fs::write(repo.join("f.txt"), "x").expect("write f");
         run(&["add", "f.txt"]);
         run(&["commit", "-q", "-m", "c"]);
