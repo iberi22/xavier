@@ -1,4 +1,4 @@
-use crate::consent::{ConsentError, ConsentState, ConsentStore};
+use crate::consent::{ConsentError, ConsentRecord, ConsentState, ConsentStore};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
