@@ -91,6 +91,53 @@ describe("malocaApi prefixes and introspection contract", () => {
     expect(listings.length).toBe(1);
     expect(listings[0].title).toBe("Test Biology");
 
+    // Create listing with signed headers
+    const fnCreate = mockFetch({
+      id: "list_2",
+      seller_id: "seller_node",
+      title: "New Dataset",
+      description: "Description",
+      price_credits: 15,
+      license: "mit",
+      terms_version: "v1.0",
+      created_at_ms: 1500,
+    }, 201);
+    const createdListing = await malocaApi.createMarketplaceListing(
+      {
+        seller_id: "seller_node",
+        title: "New Dataset",
+        description: "Description",
+        price_credits: 15,
+        license: "mit",
+        terms_version: "v1.0",
+      },
+      {
+        "X-Xavier-Actor-Key": "actor_key_hex",
+        "X-Xavier-Actor-Timestamp": "1500",
+        "X-Xavier-Actor-Signature": "sig_hex",
+      },
+    );
+    expect(fnCreate.mock.calls[0][0]).toBe("/v2/marketplace/listings");
+    expect(fnCreate.mock.calls[0][1].method).toBe("POST");
+    expect(fnCreate.mock.calls[0][1].headers["X-Xavier-Actor-Key"]).toBe("actor_key_hex");
+    expect(createdListing.id).toBe("list_2");
+
+    // Revoke listing with signed headers
+    const fnRevoke = mockFetch({
+      id: "list_2",
+      seller_id: "seller_node",
+      title: "New Dataset",
+      revoked_at_ms: 2000,
+    });
+    await malocaApi.revokeMarketplaceListing("list_2", {
+      "X-Xavier-Actor-Key": "actor_key_hex",
+      "X-Xavier-Actor-Timestamp": "2000",
+      "X-Xavier-Actor-Signature": "sig_hex_revoke",
+    });
+    expect(fnRevoke.mock.calls[0][0]).toBe("/v2/marketplace/listings/list_2/revoke");
+    expect(fnRevoke.mock.calls[0][1].method).toBe("POST");
+    expect(fnRevoke.mock.calls[0][1].headers["X-Xavier-Actor-Key"]).toBe("actor_key_hex");
+
     // Buy listing
     mockFetch({
       id: "rcpt_1",
@@ -113,19 +160,35 @@ describe("malocaApi prefixes and introspection contract", () => {
     expect(myReceipts.length).toBe(1);
 
     // Set and get consent
-    mockFetch({
+    const fnConsent = mockFetch({
       node_id: "node_1",
       state: "shared",
       terms_version: "v1.0",
       consent_version: "v1.0",
       updated_at_ms: 3000,
     });
-    const consent = await malocaApi.setMarketplaceConsent({
+    const consent = await malocaApi.setMarketplaceConsent(
+      {
+        node_id: "node_1",
+        state: "shared",
+        terms_version: "v1.0",
+        consent_version: "v1.0",
+      },
+      {
+        "X-Xavier-Actor-Key": "actor_key_hex",
+        "X-Xavier-Actor-Timestamp": "3000",
+        "X-Xavier-Actor-Signature": "sig_consent_hex",
+      },
+    );
+    expect(fnConsent.mock.calls[0][0]).toBe("/v2/marketplace/consent");
+    expect(fnConsent.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(fnConsent.mock.calls[0][1].body)).toEqual({
       node_id: "node_1",
       state: "shared",
       terms_version: "v1.0",
       consent_version: "v1.0",
     });
+    expect(fnConsent.mock.calls[0][1].headers["X-Xavier-Actor-Key"]).toBe("actor_key_hex");
     expect(consent.state).toBe("shared");
 
     mockFetch({

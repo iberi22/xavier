@@ -510,12 +510,13 @@ export const malocaApi = {
       "/v2/marketplace",
     );
   },
-  setMarketplaceConsent: (body: SetConsentBody) =>
+  setMarketplaceConsent: (body: SetConsentBody, headers?: Record<string, string>) =>
     fetchMaloca<MarketConsentRecord>(
       "/consent",
       {
         method: "POST",
         body: JSON.stringify(body),
+        headers,
       },
       "/v2/marketplace",
     ),

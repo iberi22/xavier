@@ -22,8 +22,11 @@ export default function MalocaView({ onClose }: Props) {
     setActiveTab,
     deviceKey,
     isWebAuthnLoading,
+    marketplaceAvailable,
     handleObtainWebAuthnKey,
   } = useMalocaView();
+
+  const visibleTabs = TABS.filter((t) => t.id !== "marketplace" || marketplaceAvailable);
 
   const renderActiveTab = () => {
     switch (activeTab) {
@@ -93,7 +96,7 @@ export default function MalocaView({ onClose }: Props) {
         <div className="flex flex-col lg:flex-row gap-6 mt-6 flex-1 min-h-0">
           {/* Sidebar Navigation */}
           <nav className="w-full lg:w-64 shrink-0 flex lg:flex-col gap-2 overflow-x-auto lg:overflow-x-visible custom-scrollbar pb-2 lg:pb-0">
-            {TABS.map((tab) => {
+            {visibleTabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               return (

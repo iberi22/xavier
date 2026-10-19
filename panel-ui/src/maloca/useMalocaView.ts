@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getApiUrl } from "../api/client";
 import { obtainDeviceKeyViaWebAuthn } from "./webauthn";
 import { MalocaTabId } from "./tabs";
 
@@ -7,6 +8,27 @@ export function useMalocaView() {
   const [error, setError] = useState<string | null>(null);
   const [deviceKey, setDeviceKey] = useState<string | null>(null);
   const [isWebAuthnLoading, setIsWebAuthnLoading] = useState(false);
+  const [marketplaceAvailable, setMarketplaceAvailable] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function checkMarketplace() {
+      try {
+        const res = await fetch(getApiUrl("/v2/marketplace/listings"));
+        if (!cancelled) {
+          setMarketplaceAvailable(res.ok);
+        }
+      } catch {
+        if (!cancelled) {
+          setMarketplaceAvailable(false);
+        }
+      }
+    }
+    void checkMarketplace();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleObtainWebAuthnKey = async () => {
     setIsWebAuthnLoading(true);
@@ -32,6 +54,7 @@ export function useMalocaView() {
     error,
     deviceKey,
     isWebAuthnLoading,
+    marketplaceAvailable,
     handleObtainWebAuthnKey,
   };
 }

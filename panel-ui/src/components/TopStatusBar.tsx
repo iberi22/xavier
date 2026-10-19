@@ -99,7 +99,7 @@ export default React.memo(function TopStatusBar({
   const [modules, setModules] = useState({
     time: true,
     founder: true,
-    marketplace: true,
+    marketplace: false,
     channels: true,
     resources: true,
     security: true,
@@ -197,6 +197,17 @@ export default React.memo(function TopStatusBar({
         }
       } catch (err) {
         console.debug("Error fetching memories count:", err);
+      }
+
+      try {
+        const res = await fetch(getApiUrl("/v2/marketplace/listings"));
+        if (res.ok) {
+          setModules((prev) => (prev.marketplace ? prev : { ...prev, marketplace: true }));
+        } else if (res.status === 404) {
+          setModules((prev) => (!prev.marketplace ? prev : { ...prev, marketplace: false }));
+        }
+      } catch (err) {
+        console.debug("Error checking marketplace v2 status:", err);
       } finally {
         setInternalLoading(false);
       }

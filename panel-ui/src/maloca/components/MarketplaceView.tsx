@@ -40,15 +40,19 @@ export function MarketplaceView() {
   const [newTermsVersion, setNewTermsVersion] = useState("v1.0");
   const [isPublishing, setIsPublishing] = useState(false);
 
+  // Signing is not available in panel-ui yet (requires client-side ed25519 keypair signing)
+  const isSigningAvailable = false;
+
   // Consent Screen State
   const [consentNodeId, setConsentNodeId] = useState("local-node");
+  const [activeConsentNodeId, setActiveConsentNodeId] = useState("local-node");
   const [consentState, setConsentState] = useState<"off" | "local" | "shared" | "shared_sensitive">("off");
   const [consentTermsVer, setConsentTermsVer] = useState("v1.0");
   const [consentVer, setConsentVer] = useState("v1.0");
   const [consentRecords, setConsentRecords] = useState<MarketConsentRecord[]>([]);
   const [isSavingConsent, setIsSavingConsent] = useState(false);
 
-  const fetchMarketData = async () => {
+  const fetchMarketData = async (targetNodeId = activeConsentNodeId) => {
     setLoading(true);
     setError(null);
     try {
@@ -57,14 +61,14 @@ export function MarketplaceView() {
       const consentData = await malocaApi.getMarketplaceConsent();
       if (Array.isArray(consentData)) {
         setConsentRecords(consentData);
-        const current = consentData.find((r) => r.node_id === consentNodeId);
+        const current = consentData.find((r) => r.node_id === targetNodeId);
         if (current) {
           setConsentState(current.state);
           setConsentTermsVer(current.terms_version || "v1.0");
           setConsentVer(current.consent_version || "v1.0");
         }
       }
-      const myReceipts = await malocaApi.getMarketplaceReceipts(consentNodeId).catch(() => []);
+      const myReceipts = await malocaApi.getMarketplaceReceipts(targetNodeId).catch(() => []);
       setReceipts(myReceipts);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to load marketplace";
@@ -75,8 +79,8 @@ export function MarketplaceView() {
   };
 
   useEffect(() => {
-    void fetchMarketData();
-  }, [consentNodeId]);
+    void fetchMarketData(activeConsentNodeId);
+  }, [activeConsentNodeId]);
 
   const handleBuy = async (listing: MarketListing) => {
     setBuyingId(listing.id);
@@ -85,10 +89,10 @@ export function MarketplaceView() {
     try {
       const receipt = await malocaApi.buyMarketplaceListing({
         listing_id: listing.id,
-        buyer_id: consentNodeId,
+        buyer_id: activeConsentNodeId,
       });
       setActionMessage(`Purchase successful! Receipt ID: ${receipt.id.slice(0, 8)}... (${receipt.amount_credits} credits)`);
-      await fetchMarketData();
+      await fetchMarketData(activeConsentNodeId);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Purchase failed";
       setError(msg);
@@ -99,6 +103,10 @@ export function MarketplaceView() {
 
   const handleCreateListing = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSigningAvailable) {
+      setError("Signing required to publish listings.");
+      return;
+    }
     setIsPublishing(true);
     setError(null);
     setActionMessage(null);
@@ -114,7 +122,7 @@ export function MarketplaceView() {
       setActionMessage(`Listing created: "${created.title}"`);
       setNewTitle("");
       setNewDesc("");
-      await fetchMarketData();
+      await fetchMarketData(activeConsentNodeId);
       setSubView("catalogue");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to create listing";
@@ -125,12 +133,19 @@ export function MarketplaceView() {
   };
 
   const handleRevokeListing = async (id: string) => {
+    if (!isSigningAvailable) {
+      setError("Signing required to revoke listings.");
+      return;
+    }
+    if (typeof window !== "undefined" && !window.confirm("Are you sure you want to revoke this listing?")) {
+      return;
+    }
     setError(null);
     setActionMessage(null);
     try {
       await malocaApi.revokeMarketplaceListing(id);
       setActionMessage(`Listing revoked successfully.`);
-      await fetchMarketData();
+      await fetchMarketData(activeConsentNodeId);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to revoke listing";
       setError(msg);
@@ -428,14 +443,26 @@ export function MarketplaceView() {
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={isPublishing}
-                className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-emerald-500 text-black font-semibold rounded-xl text-xs font-mono hover:bg-emerald-400 transition-all shadow-[0_0_15px_rgba(57,255,20,0.3)]"
-              >
-                <Plus size={16} />
-                {isPublishing ? "Publishing..." : "Publish Listing"}
-              </button>
+              <div className="flex items-center gap-3 mt-2">
+                <button
+                  type="submit"
+                  disabled={isPublishing || !isSigningAvailable}
+                  className={`flex items-center gap-2 px-5 py-2.5 font-semibold rounded-xl text-xs font-mono transition-all ${
+                    !isSigningAvailable
+                      ? "bg-white/10 text-white/40 cursor-not-allowed border border-white/10"
+                      : "bg-emerald-500 text-black hover:bg-emerald-400 shadow-[0_0_15px_rgba(57,255,20,0.3)]"
+                  }`}
+                  title={!isSigningAvailable ? "Signing required (ed25519 publisher signature)" : undefined}
+                >
+                  <Plus size={16} />
+                  {isPublishing ? "Publishing..." : "Publish Listing"}
+                </button>
+                {!isSigningAvailable && (
+                  <span className="text-[11px] font-mono text-amber-400/80 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20">
+                    Signing required (client-side Ed25519 signature)
+                  </span>
+                )}
+              </div>
             </form>
           </div>
 
@@ -459,8 +486,14 @@ export function MarketplaceView() {
                     {!l.revoked_at_ms ? (
                       <button
                         type="button"
+                        disabled={!isSigningAvailable}
                         onClick={() => void handleRevokeListing(l.id)}
-                        className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg text-[11px] transition-colors"
+                        className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${
+                          !isSigningAvailable
+                            ? "bg-white/5 text-white/30 border border-white/5 cursor-not-allowed"
+                            : "bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                        }`}
+                        title={!isSigningAvailable ? "Signing required to revoke" : undefined}
                       >
                         Revoke
                       </button>
@@ -491,13 +524,29 @@ export function MarketplaceView() {
             <form onSubmit={handleSaveConsent} className="space-y-5 max-w-xl">
               <div>
                 <label className="block text-xs font-mono text-white/70 mb-1">Target Node ID</label>
-                <input
-                  type="text"
-                  required
-                  value={consentNodeId}
-                  onChange={(e) => setConsentNodeId(e.target.value)}
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-emerald-500"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    value={consentNodeId}
+                    onChange={(e) => setConsentNodeId(e.target.value)}
+                    onBlur={() => setActiveConsentNodeId(consentNodeId.trim())}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        setActiveConsentNodeId(consentNodeId.trim());
+                      }
+                    }}
+                    className="flex-1 bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setActiveConsentNodeId(consentNodeId.trim())}
+                    className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-mono transition-colors"
+                  >
+                    Load Node
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -534,6 +583,7 @@ export function MarketplaceView() {
                   <input
                     type="text"
                     required
+                    aria-label="Terms Version"
                     value={consentTermsVer}
                     onChange={(e) => setConsentTermsVer(e.target.value)}
                     className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-emerald-500"
@@ -545,6 +595,7 @@ export function MarketplaceView() {
                   <input
                     type="text"
                     required
+                    aria-label="Consent Version"
                     value={consentVer}
                     onChange={(e) => setConsentVer(e.target.value)}
                     className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-emerald-500"

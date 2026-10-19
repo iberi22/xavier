@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ShoppingBag, ShieldCheck, ArrowRight, RefreshCw } from "lucide-react";
+import { ShoppingBag, ArrowRight, RefreshCw } from "lucide-react";
 import { malocaApi, MarketListing, MarketConsentRecord } from "../maloca/api";
 
 export interface MarketplaceStatusCardProps {
@@ -74,7 +74,7 @@ export function MarketplaceStatusCard({
       <div className="grid grid-cols-2 gap-2 mb-3">
         <div className="p-2 rounded-lg bg-black/40 border border-white/5">
           <div className="text-[10px] font-mono text-white/50 uppercase">Active Listings</div>
-          <div className="text-lg font-bold text-white font-mono">
+          <div data-testid="card-active-listings" className="text-lg font-bold text-white font-mono">
             {loading ? "..." : (activeListingsCount ?? 0)}
           </div>
         </div>

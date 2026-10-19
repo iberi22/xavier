@@ -407,11 +407,30 @@ fn open_consent_store() -> Result<ConsentStore, ConsentError> {
     ConsentStore::open(&path)
 }
 
-async fn set_consent_handler(body: Bytes) -> Response {
+async fn set_consent_handler(
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let actor = match authenticate(&method, &uri, &headers, &body) {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
     let payload: SetConsentPayload = match parse_body(&body) {
         Ok(payload) => payload,
         Err(response) => return response,
     };
+    if payload.node_id != actor.id() {
+        return error_status(
+            StatusCode::FORBIDDEN,
+            format!(
+                "node_id mismatch: request specifies '{}' but caller authenticated as '{}'",
+                payload.node_id,
+                actor.id()
+            ),
+        );
+    }
     let state = match ConsentState::parse(&payload.state) {
         Ok(state) => state,
         Err(err) => return error_status(StatusCode::BAD_REQUEST, err.to_string()),
@@ -1485,14 +1504,50 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["state"], "off");
 
-        // Opt in requires terms and consent versions
+        // Unsigned consent mutation returns 401 Unauthorized
         let (status, _) = send(
             &router,
             json_request(
                 Method::POST,
                 "/v2/marketplace/consent",
                 Some(json!({
-                    "node_id": "node_x",
+                    "node_id": owner().public_key_hex(),
+                    "state": "shared",
+                    "terms_version": "v1.0",
+                    "consent_version": "v1.0"
+                })),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Mismatched node_id (another node's id) returns 403 Forbidden
+        let (status, _) = send(
+            &router,
+            signed_request(
+                &owner(),
+                Method::POST,
+                "/v2/marketplace/consent",
+                Some(json!({
+                    "node_id": stranger().public_key_hex(),
+                    "state": "shared",
+                    "terms_version": "v1.0",
+                    "consent_version": "v1.0"
+                })),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // Opt in requires terms and consent versions
+        let (status, _) = send(
+            &router,
+            signed_request(
+                &owner(),
+                Method::POST,
+                "/v2/marketplace/consent",
+                Some(json!({
+                    "node_id": owner().public_key_hex(),
                     "state": "shared",
                     "terms_version": "",
                     "consent_version": "v1"
@@ -1502,14 +1557,15 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
 
-        // Valid consent update
+        // Valid signed consent update
         let (status, body) = send(
             &router,
-            json_request(
+            signed_request(
+                &owner(),
                 Method::POST,
                 "/v2/marketplace/consent",
                 Some(json!({
-                    "node_id": "node_x",
+                    "node_id": owner().public_key_hex(),
                     "state": "shared",
                     "terms_version": "v1.0",
                     "consent_version": "v1.0"
@@ -1520,10 +1576,17 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["state"], "shared");
 
-        // Query node_x again
+        // Query owner again
         let (status, body) = send(
             &router,
-            json_request(Method::GET, "/v2/marketplace/consent?node_id=node_x", None),
+            json_request(
+                Method::GET,
+                &format!(
+                    "/v2/marketplace/consent?node_id={}",
+                    owner().public_key_hex()
+                ),
+                None,
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -1539,6 +1602,6 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         let list = body.as_array().unwrap();
         assert_eq!(list.len(), 1);
-        assert_eq!(list[0]["node_id"], "node_x");
+        assert_eq!(list[0]["node_id"], owner().public_key_hex());
     }
 }
