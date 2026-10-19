@@ -6,6 +6,8 @@ import "../contracts/MarketSettlement.sol";
 // Minimal cheatcode interface matching foundry's VM
 interface Vm {
     function prank(address msgSender) external;
+    function startPrank(address msgSender) external;
+    function stopPrank() external;
     function deal(address who, uint256 newBalance) external;
     function warp(uint256 newTimestamp) external;
     function expectRevert(bytes calldata revertData) external;
@@ -240,5 +242,165 @@ contract MarketSettlementTest {
         vm.expectRevert(abi.encodeWithSignature("Error(string)", "Only owner"));
         vm.prank(STRANGER);
         settlement.anchorMerkleRoot(root, 10);
+    }
+
+    function test_disputedOrderBlocksBuyerTimeoutRefund() public {
+        vm.prank(BUYER);
+        settlement.createEscrow{value: 1 ether}(
+            ORDER_1,
+            LISTING_1,
+            SELLER,
+            address(0),
+            1 ether,
+            250,
+            2 hours
+        );
+
+        // Buyer or seller flags dispute
+        vm.prank(BUYER);
+        settlement.disputeEscrow(ORDER_1, "Disputed");
+
+        // Warp past timeout
+        vm.warp(block.timestamp + 2 hours + 1);
+
+        // Buyer cannot refund via timeout while order is disputed
+        vm.expectRevert(abi.encodeWithSignature("Error(string)", "Buyer cannot refund disputed order"));
+        vm.prank(BUYER);
+        settlement.refundEscrow(ORDER_1, "Attempt bypass");
+
+        // Seller CAN refund while disputed
+        uint256 buyerBefore = BUYER.balance;
+        vm.prank(SELLER);
+        settlement.refundEscrow(ORDER_1, "Seller agrees to refund");
+        require(BUYER.balance == buyerBefore + 1 ether, "Buyer refund mismatch");
+    }
+
+    function test_disputeResolvedFullRefundEmitsRefunded() public {
+        vm.prank(BUYER);
+        settlement.createEscrow{value: 1 ether}(
+            ORDER_1,
+            LISTING_1,
+            SELLER,
+            address(0),
+            1 ether,
+            250,
+            2 hours
+        );
+
+        vm.prank(BUYER);
+        settlement.disputeEscrow(ORDER_1, "Full refund dispute");
+
+        uint256 buyerBefore = BUYER.balance;
+        vm.prank(OWNER);
+        settlement.resolveDispute(ORDER_1, 10000, "100% to buyer");
+
+        MarketSettlement.EscrowOrder memory order = settlement.getEscrow(ORDER_1);
+        require(order.state == MarketSettlement.EscrowState.Refunded, "State not refunded");
+        require(BUYER.balance == buyerBefore + 1 ether, "Buyer full refund mismatch");
+    }
+
+    function test_anchorMerkleRootSelectorMatchesConstant() public pure {
+        // Assert that the contract selector for anchorMerkleRoot(bytes32,uint256) matches the independent keccak
+        bytes4 expected = bytes4(keccak256("anchorMerkleRoot(bytes32,uint256)"));
+        require(MarketSettlement.anchorMerkleRoot.selector == expected, "Selector mismatch");
+        // Also verify the selector value: 0x6f70d0fd
+        require(MarketSettlement.anchorMerkleRoot.selector == bytes4(0x6f70d0fd), "Selector value mismatch");
+    }
+
+    function test_revertDuplicateOrderId() public {
+        vm.prank(BUYER);
+        settlement.createEscrow{value: 1 ether}(
+            ORDER_1,
+            LISTING_1,
+            SELLER,
+            address(0),
+            1 ether,
+            250,
+            2 hours
+        );
+
+        vm.expectRevert(abi.encodeWithSignature("Error(string)", "Order already exists"));
+        vm.prank(BUYER);
+        settlement.createEscrow{value: 1 ether}(
+            ORDER_1,
+            LISTING_1,
+            SELLER,
+            address(0),
+            1 ether,
+            250,
+            2 hours
+        );
+    }
+
+    function test_revertFeeBpsExceedsMax() public {
+        vm.expectRevert(abi.encodeWithSignature("Error(string)", "Fee exceeds maximum"));
+        vm.prank(BUYER);
+        settlement.createEscrow{value: 1 ether}(
+            ORDER_1,
+            LISTING_1,
+            SELLER,
+            address(0),
+            1 ether,
+            1001, // > 1000 (10%)
+            2 hours
+        );
+    }
+
+    function test_revertTimeoutLessThanOneHour() public {
+        vm.expectRevert(abi.encodeWithSignature("Error(string)", "Timeout must be at least 1 hour"));
+        vm.prank(BUYER);
+        settlement.createEscrow{value: 1 ether}(
+            ORDER_1,
+            LISTING_1,
+            SELLER,
+            address(0),
+            1 ether,
+            250,
+            30 minutes
+        );
+    }
+
+    function test_revertNativePaymentMismatch() public {
+        vm.expectRevert(abi.encodeWithSignature("Error(string)", "Native payment mismatch"));
+        vm.prank(BUYER);
+        settlement.createEscrow{value: 0.5 ether}(
+            ORDER_1,
+            LISTING_1,
+            SELLER,
+            address(0),
+            1 ether,
+            250,
+            2 hours
+        );
+    }
+
+    function test_revertStrangerCallingCompleteOrRefund() public {
+        vm.prank(BUYER);
+        settlement.createEscrow{value: 1 ether}(
+            ORDER_1,
+            LISTING_1,
+            SELLER,
+            address(0),
+            1 ether,
+            250,
+            2 hours
+        );
+
+        // Stranger complete
+        vm.expectRevert(abi.encodeWithSignature("Error(string)", "Only buyer or owner can release"));
+        vm.prank(STRANGER);
+        settlement.completeEscrow(ORDER_1);
+
+        // Stranger refund
+        vm.expectRevert(abi.encodeWithSignature("Error(string)", "Not authorized to refund"));
+        vm.prank(STRANGER);
+        settlement.refundEscrow(ORDER_1, "Malicious refund");
+    }
+
+    function test_revertLeafCountZero() public {
+        bytes32 root = keccak256("merkle-root-v3");
+        vm.expectRevert(abi.encodeWithSignature("Error(string)", "Leaf count must be positive"));
+        vm.prank(OWNER);
+        settlement.anchorMerkleRoot(root, 0);
     }
 }

@@ -78,6 +78,13 @@ contract MarketSettlement {
         string reason
     );
 
+    event DisputeResolved(
+        bytes32 indexed orderId,
+        uint256 buyerAmount,
+        uint256 sellerAmount,
+        uint256 feeAmount
+    );
+
     event MerkleRootAnchored(
         bytes32 indexed root,
         uint256 leafCount,
@@ -153,7 +160,7 @@ contract MarketSettlement {
             (bool success, bytes memory data) = token.call(
                 abi.encodeWithSignature("transferFrom(address,address,uint256)", msg.sender, address(this), amount)
             );
-            require(success && (data.len() == 0 || abi.decode(data, (bool))), "Token transferFrom failed");
+            require(success && (data.length == 0 || abi.decode(data, (bool))), "Token transferFrom failed");
         }
 
         escrows[orderId] = EscrowOrder({
@@ -215,6 +222,7 @@ contract MarketSettlement {
         );
 
         if (msg.sender == order.buyer) {
+            require(order.state == EscrowState.Deposited, "Buyer cannot refund disputed order");
             require(block.timestamp >= order.createdAt + order.timeoutDuration, "Timeout not expired");
         } else {
             require(msg.sender == order.seller || msg.sender == owner, "Not authorized to refund");
@@ -267,7 +275,12 @@ contract MarketSettlement {
             _payout(order.token, feeRecipient, feeAmount);
         }
 
-        emit EscrowCompleted(orderId, order.seller, sellerAmount, feeAmount);
+        emit DisputeResolved(orderId, buyerAmount, sellerAmount, feeAmount);
+        if (buyerShareBps == 10000) {
+            emit EscrowRefunded(orderId, order.buyer, buyerAmount, resolutionNotes);
+        } else {
+            emit EscrowCompleted(orderId, order.seller, sellerAmount, feeAmount);
+        }
     }
 
     /**
@@ -293,7 +306,7 @@ contract MarketSettlement {
             (bool success, bytes memory data) = token.call(
                 abi.encodeWithSignature("transfer(address,uint256)", to, amount)
             );
-            require(success && (data.len() == 0 || abi.decode(data, (bool))), "Token transfer failed");
+            require(success && (data.length == 0 || abi.decode(data, (bool))), "Token transfer failed");
         }
     }
 

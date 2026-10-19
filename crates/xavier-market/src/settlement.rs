@@ -10,38 +10,11 @@
 //! - `market.settlement=on_chain` (rejected by default in v1 until ADR, Amoy soak period, and audit)
 //! - `market.anchor_mode=dry_run` (anchoring runs in dry-run mode only by default)
 
+use crate::config::AnchorMode;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const DEFAULT_AMOY_CHAIN_ID: u64 = 80002;
-pub const KEY_ANCHOR_MODE: &str = "market.anchor_mode";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum AnchorMode {
-    #[default]
-    DryRun,
-    LiveAmoy,
-}
-
-impl AnchorMode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::DryRun => "dry_run",
-            Self::LiveAmoy => "live_amoy",
-        }
-    }
-
-    pub fn parse(value: &str) -> Result<Self, SettlementError> {
-        match value.trim() {
-            "dry_run" => Ok(Self::DryRun),
-            "live_amoy" => Ok(Self::LiveAmoy),
-            other => Err(SettlementError::InvalidConfig(format!(
-                "unknown anchor_mode '{other}'"
-            ))),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -92,8 +65,8 @@ pub enum SettlementError {
 }
 
 /// Selector for `anchorMerkleRoot(bytes32,uint256)`
-/// keccak256("anchorMerkleRoot(bytes32,uint256)")[0..4]
-pub const SELECTOR_ANCHOR_MERKLE_ROOT: [u8; 4] = [0x53, 0x16, 0x69, 0xc1];
+/// keccak256("anchorMerkleRoot(bytes32,uint256)")[0..4] == 0x6f70d0fd
+pub const SELECTOR_ANCHOR_MERKLE_ROOT: [u8; 4] = [0x6f, 0x70, 0xd0, 0xfd];
 
 /// Encodes calldata for `anchorMerkleRoot(bytes32,uint256)`.
 pub fn encode_anchor_merkle_root_calldata(
@@ -181,7 +154,7 @@ mod tests {
             plan.merkle_root,
             crate::merkle::merkle_root(&leaves).unwrap()
         );
-        assert!(plan.calldata_hex.starts_with("0x531669c1"));
+        assert!(plan.calldata_hex.starts_with("0x6f70d0fd"));
         // 4 bytes selector + 32 bytes root + 32 bytes leaf count = 68 bytes = 136 hex chars + '0x' = 138
         assert_eq!(plan.calldata_hex.len(), 2 + 68 * 2);
     }
