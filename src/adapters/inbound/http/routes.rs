@@ -1363,7 +1363,7 @@ pub async fn espacio_members_token_handler(
 
     match run_blocking(async move {
         let store = manager.stores().get(&id)?;
-        Ok(store.issue_token(&id, &node_id, member_role, None)?)
+        store.issue_token(&id, &node_id, member_role, None)
     })
     .await
     {
@@ -1371,7 +1371,7 @@ pub async fn espacio_members_token_handler(
             axum::http::StatusCode::CREATED,
             Json(serde_json::json!({
                 "status": "ok",
-                "token": issued.raw.expose(),
+                "token": issued.raw,
                 "note": "token is shown once; store it now."
             })),
         )
