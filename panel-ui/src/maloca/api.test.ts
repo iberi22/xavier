@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { malocaApi } from "./api";
+import { malocaApi, probeMarketplaceAvailable } from "./api";
+import { AUTH_TOKEN_KEY } from "./authPrompt";
 
 const session = {
   id: "is_1",
@@ -200,5 +201,49 @@ describe("malocaApi prefixes and introspection contract", () => {
     });
     const retrievedConsent = await malocaApi.getMarketplaceConsent("node_1");
     expect((retrievedConsent as any).state).toBe("shared");
+  });
+});
+
+describe("marketplace availability probe and consent scope", () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sends the stored X-Xavier-Token when checking the marketplace routes", async () => {
+    localStorage.setItem(AUTH_TOKEN_KEY, "tok_probe");
+    const fn = mockFetch([]);
+    expect(await probeMarketplaceAvailable()).toBe(true);
+    expect(fn.mock.calls[0][0]).toBe("/v2/marketplace/listings");
+    expect(fn.mock.calls[0][1].headers["X-Xavier-Token"]).toBe("tok_probe");
+  });
+
+  it("omits the token header when no token is stored", async () => {
+    const fn = mockFetch([]);
+    expect(await probeMarketplaceAvailable()).toBe(true);
+    expect(fn.mock.calls[0][1].headers["X-Xavier-Token"]).toBeUndefined();
+  });
+
+  it("reports the marketplace unavailable on 404 or 401", async () => {
+    mockFetch({ error: "Not Found" }, 404);
+    expect(await probeMarketplaceAvailable()).toBe(false);
+
+    mockFetch({ error: "Unauthorized" }, 401);
+    expect(await probeMarketplaceAvailable()).toBe(false);
+  });
+
+  it("reports the marketplace unavailable when the request fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    expect(await probeMarketplaceAvailable()).toBe(false);
+  });
+
+  it("reads consent for one node only", async () => {
+    const fn = mockFetch({
+      node_id: "node_1",
+      state: "off",
+      terms_version: "",
+      consent_version: "",
+      updated_at_ms: 0,
+    });
+    await malocaApi.getMarketplaceConsent("node_1");
+    expect(fn.mock.calls[0][0]).toBe("/v2/marketplace/consent?node_id=node_1");
   });
 });

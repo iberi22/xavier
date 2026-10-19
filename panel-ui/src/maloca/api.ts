@@ -375,6 +375,21 @@ async function fetchMaloca<T>(
   return response.json() as Promise<T>;
 }
 
+/**
+ * Whether the marketplace v2 routes are mounted. Sends the stored token like every
+ * other Maloca call, so a protected route is not reported as missing. Never
+ * prompts for a token: anything other than a 2xx (404, 401, network error) is
+ * reported as unavailable.
+ */
+export async function probeMarketplaceAvailable(): Promise<boolean> {
+  try {
+    const response = await fetchMalocaOnce(getApiUrl("/v2/marketplace/listings"));
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 // --- Specific Endpoints ---
 
 export const malocaApi = {
@@ -502,14 +517,13 @@ export const malocaApi = {
       undefined,
       "/v2/marketplace",
     ),
-  getMarketplaceConsent: (nodeId?: string) => {
-    const query = nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : "";
-    return fetchMaloca<MarketConsentRecord | MarketConsentRecord[]>(
-      `/consent${query}`,
+  // The server requires a node_id (no unscoped read of every node's consent).
+  getMarketplaceConsent: (nodeId: string) =>
+    fetchMaloca<MarketConsentRecord>(
+      `/consent?node_id=${encodeURIComponent(nodeId)}`,
       undefined,
       "/v2/marketplace",
-    );
-  },
+    ),
   setMarketplaceConsent: (body: SetConsentBody, headers?: Record<string, string>) =>
     fetchMaloca<MarketConsentRecord>(
       "/consent",

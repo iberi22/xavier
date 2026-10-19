@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { ShoppingBag, ArrowRight, RefreshCw } from "lucide-react";
-import { malocaApi, MarketListing, MarketConsentRecord } from "../maloca/api";
+import { malocaApi } from "../maloca/api";
+
+// The node whose consent tier this card shows. Matches the default node in MarketplaceView.
+const CONSENT_NODE_ID = "local-node";
 
 export interface MarketplaceStatusCardProps {
   onOpenMarketplace?: () => void;
@@ -22,11 +25,9 @@ export function MarketplaceStatusCard({
       const active = listings.filter((l) => !l.revoked_at_ms).length;
       setActiveListingsCount(active);
 
-      const consent = await malocaApi.getMarketplaceConsent().catch(() => []);
-      if (Array.isArray(consent) && consent.length > 0) {
-        setConsentStatus(consent[0].state || "off");
-      } else if (!Array.isArray(consent) && consent && "state" in consent) {
-        setConsentStatus((consent as MarketConsentRecord).state);
+      const consent = await malocaApi.getMarketplaceConsent(CONSENT_NODE_ID).catch(() => null);
+      if (consent) {
+        setConsentStatus(consent.state || "off");
       }
     } catch {
       setActiveListingsCount(0);

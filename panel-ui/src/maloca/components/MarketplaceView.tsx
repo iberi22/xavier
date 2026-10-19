@@ -15,7 +15,6 @@ import {
   CheckCircle2,
   AlertCircle,
   XCircle,
-  Layers,
 } from "lucide-react";
 
 export function MarketplaceView() {
@@ -58,16 +57,12 @@ export function MarketplaceView() {
     try {
       const data = await malocaApi.getMarketplaceListings();
       setListings(data);
-      const consentData = await malocaApi.getMarketplaceConsent();
-      if (Array.isArray(consentData)) {
-        setConsentRecords(consentData);
-        const current = consentData.find((r) => r.node_id === targetNodeId);
-        if (current) {
-          setConsentState(current.state);
-          setConsentTermsVer(current.terms_version || "v1.0");
-          setConsentVer(current.consent_version || "v1.0");
-        }
-      }
+      // Consent is read for the node on screen only; the API has no unscoped read.
+      const consent = await malocaApi.getMarketplaceConsent(targetNodeId);
+      setConsentRecords([consent]);
+      setConsentState(consent.state);
+      setConsentTermsVer(consent.terms_version || "v1.0");
+      setConsentVer(consent.consent_version || "v1.0");
       const myReceipts = await malocaApi.getMarketplaceReceipts(targetNodeId).catch(() => []);
       setReceipts(myReceipts);
     } catch (err: unknown) {
@@ -154,6 +149,10 @@ export function MarketplaceView() {
 
   const handleSaveConsent = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSigningAvailable) {
+      setError("Signing required to update consent.");
+      return;
+    }
     setIsSavingConsent(true);
     setError(null);
     setActionMessage(null);
@@ -603,14 +602,26 @@ export function MarketplaceView() {
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={isSavingConsent}
-                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 text-black font-semibold rounded-xl text-xs font-mono hover:bg-emerald-400 transition-all shadow-[0_0_15px_rgba(57,255,20,0.3)]"
-              >
-                <FileCheck size={16} />
-                {isSavingConsent ? "Saving..." : "Apply Node Consent"}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={isSavingConsent || !isSigningAvailable}
+                  className={`flex items-center gap-2 px-5 py-2.5 font-semibold rounded-xl text-xs font-mono transition-all ${
+                    !isSigningAvailable
+                      ? "bg-white/10 text-white/40 cursor-not-allowed border border-white/10"
+                      : "bg-emerald-500 text-black hover:bg-emerald-400 shadow-[0_0_15px_rgba(57,255,20,0.3)]"
+                  }`}
+                  title={!isSigningAvailable ? "Signing required (ed25519 node signature)" : undefined}
+                >
+                  <FileCheck size={16} />
+                  {isSavingConsent ? "Saving..." : "Apply Node Consent"}
+                </button>
+                {!isSigningAvailable && (
+                  <span className="text-[11px] font-mono text-amber-400/80 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20">
+                    Signing required (client-side Ed25519 signature)
+                  </span>
+                )}
+              </div>
             </form>
           </div>
 

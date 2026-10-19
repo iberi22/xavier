@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { getApiUrl } from "../api/client";
 import { obtainDeviceKeyViaWebAuthn } from "./webauthn";
 import { MalocaTabId } from "./tabs";
+import { probeMarketplaceAvailable } from "./api";
 
 export function useMalocaView() {
   const [activeTab, setActiveTab] = useState<MalocaTabId>("overview");
@@ -13,15 +13,9 @@ export function useMalocaView() {
   useEffect(() => {
     let cancelled = false;
     async function checkMarketplace() {
-      try {
-        const res = await fetch(getApiUrl("/v2/marketplace/listings"));
-        if (!cancelled) {
-          setMarketplaceAvailable(res.ok);
-        }
-      } catch {
-        if (!cancelled) {
-          setMarketplaceAvailable(false);
-        }
+      const available = await probeMarketplaceAvailable();
+      if (!cancelled) {
+        setMarketplaceAvailable(available);
       }
     }
     void checkMarketplace();

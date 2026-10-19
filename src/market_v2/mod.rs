@@ -456,28 +456,28 @@ async fn set_consent_handler(
 }
 
 async fn get_consent_handler(Query(query): Query<ConsentQuery>) -> Response {
+    // Unscoped reads would list every node's consent, so a node_id filter is required.
+    let Some(node_id) = query.node_id.filter(|s| !s.trim().is_empty()) else {
+        return error_status(
+            StatusCode::BAD_REQUEST,
+            "node_id query parameter is required",
+        );
+    };
     let store = match open_consent_store() {
         Ok(store) => store,
         Err(err) => return error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
     };
-    if let Some(node_id) = query.node_id.filter(|s| !s.trim().is_empty()) {
-        match store.get(node_id.trim()) {
-            Ok(Some(record)) => Json(record).into_response(),
-            Ok(None) => Json(ConsentRecord {
-                node_id: node_id.trim().to_string(),
-                state: ConsentState::Off,
-                terms_version: String::new(),
-                consent_version: String::new(),
-                updated_at_ms: 0,
-            })
-            .into_response(),
-            Err(err) => error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
-        }
-    } else {
-        match store.list() {
-            Ok(records) => Json(records).into_response(),
-            Err(err) => error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
-        }
+    match store.get(node_id.trim()) {
+        Ok(Some(record)) => Json(record).into_response(),
+        Ok(None) => Json(ConsentRecord {
+            node_id: node_id.trim().to_string(),
+            state: ConsentState::Off,
+            terms_version: String::new(),
+            consent_version: String::new(),
+            updated_at_ms: 0,
+        })
+        .into_response(),
+        Err(err) => error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
     }
 }
 
@@ -1592,16 +1592,28 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["state"], "shared");
         assert_eq!(body["terms_version"], "v1.0");
+    }
 
-        // Query all consent records
-        let (status, body) = send(
+    #[tokio::test]
+    async fn consent_read_without_node_id_is_a_bad_request() {
+        let _env = MarketEnv::with_flag(Some(FLAG_VALUE));
+
+        let router = mount(Router::new());
+
+        // An unscoped read would expose every node's consent state, so it is refused
+        let (status, _) = send(
             &router,
             json_request(Method::GET, "/v2/marketplace/consent", None),
         )
         .await;
-        assert_eq!(status, StatusCode::OK);
-        let list = body.as_array().unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0]["node_id"], owner().public_key_hex());
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // A blank node_id is treated the same as a missing one
+        let (status, _) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/consent?node_id=%20", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 }

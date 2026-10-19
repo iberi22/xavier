@@ -4,6 +4,7 @@ import React from "react";
 import { MarketplaceView } from "./MarketplaceView";
 import { MarketplaceStatusCard } from "../../components/MarketplaceStatusCard";
 import MalocaView from "../MalocaView";
+import { AUTH_TOKEN_KEY } from "../authPrompt";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -12,7 +13,10 @@ function json(body: unknown, status = 200) {
   });
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  localStorage.clear();
+});
 
 describe("MarketplaceView and MarketplaceStatusCard", () => {
   const mockListing = {
@@ -27,15 +31,14 @@ describe("MarketplaceView and MarketplaceStatusCard", () => {
     revoked_at_ms: null,
   };
 
-  const mockConsent = [
-    {
-      node_id: "local-node",
-      state: "shared",
-      terms_version: "v1.0",
-      consent_version: "v1.0",
-      updated_at_ms: 2000,
-    },
-  ];
+  // GET /v2/marketplace/consent?node_id=... returns one record, not a list.
+  const mockConsent = {
+    node_id: "local-node",
+    state: "shared",
+    terms_version: "v1.0",
+    consent_version: "v1.0",
+    updated_at_ms: 2000,
+  };
 
   it("renders buyer catalogue and executes buy flow", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -101,19 +104,13 @@ describe("MarketplaceView and MarketplaceStatusCard", () => {
     expect(revokeBtn).toBeDisabled();
   });
 
-  it("submits consent form with expected method, URL and body", async () => {
-    let consentPostCall: { url: string; method?: string; body?: string } | null = null;
+  it("disables Apply Node Consent while signing is unavailable and never posts unsigned consent", async () => {
+    let consentPosts = 0;
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.includes("/v2/marketplace/listings")) return json([mockListing]);
       if (url.includes("/v2/marketplace/consent") && init?.method === "POST") {
-        consentPostCall = { url, method: init.method, body: init.body as string };
-        return json({
-          node_id: "node_custom",
-          state: "shared_sensitive",
-          terms_version: "v2.0",
-          consent_version: "v2.0",
-          updated_at_ms: 5000,
-        });
+        consentPosts += 1;
+        return json({ error: "signed request required" }, 401);
       }
       if (url.includes("/v2/marketplace/consent")) return json(mockConsent);
       if (url.includes("/v2/marketplace/receipts")) return json([]);
@@ -123,33 +120,18 @@ describe("MarketplaceView and MarketplaceStatusCard", () => {
 
     render(<MarketplaceView />);
 
-    // Switch to consent screen
     const consentTabBtn = await screen.findByRole("button", { name: /Consent Screen/i });
     fireEvent.click(consentTabBtn);
     expect(await screen.findByText("Data Node Participation Consent")).toBeTruthy();
 
-    // Select Shared Sensitive tier
-    const sharedSensBtn = screen.getByRole("button", { name: /Shared Sensitive/i });
-    fireEvent.click(sharedSensBtn);
-
-    // Update versions
-    const termsInput = screen.getByLabelText("Terms Version");
-    fireEvent.change(termsInput, { target: { value: "v2.0" } });
-
-    // Submit consent form
     const applyBtn = screen.getByRole("button", { name: /Apply Node Consent/i });
-    fireEvent.click(applyBtn);
+    expect(applyBtn).toBeDisabled();
+    expect(screen.getByText(/Signing required \(client-side Ed25519 signature\)/i)).toBeTruthy();
 
-    await waitFor(() => {
-      expect(consentPostCall).not.toBeNull();
-    });
-
-    expect(consentPostCall!.url).toContain("/v2/marketplace/consent");
-    expect(consentPostCall!.method).toBe("POST");
-    const sentBody = JSON.parse(consentPostCall!.body!);
-    expect(sentBody.state).toBe("shared_sensitive");
-    expect(sentBody.node_id).toBe("local-node");
-    expect(await screen.findByText(/Consent state updated to: SHARED_SENSITIVE/i)).toBeTruthy();
+    // Submitting the form directly is refused before any request is sent.
+    fireEvent.submit(applyBtn.closest("form") as HTMLFormElement);
+    expect(await screen.findByText("Signing required to update consent.")).toBeTruthy();
+    expect(consentPosts).toBe(0);
   });
 
   it("renders read-only status card in panel-ui with active listings and consent", async () => {
@@ -166,6 +148,31 @@ describe("MarketplaceView and MarketplaceStatusCard", () => {
     const activeElem = await screen.findByTestId("card-active-listings");
     expect(activeElem.textContent).toBe("1");
     expect(await screen.findByText("shared")).toBeTruthy();
+
+    // Consent is read only for the node the card shows, never unscoped.
+    const consentUrls = fetchMock.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes("/v2/marketplace/consent"));
+    expect(consentUrls).toEqual(["/v2/marketplace/consent?node_id=local-node"]);
+  });
+
+  it("MalocaView checks marketplace availability with the stored token", async () => {
+    localStorage.setItem(AUTH_TOKEN_KEY, "tok_maloca_test");
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      if (url.includes("/v2/marketplace/listings")) {
+        // The protected route answers 401 unless the token is sent.
+        return headers["X-Xavier-Token"] === "tok_maloca_test"
+          ? json([mockListing])
+          : json({ error: "Unauthorized" }, 401);
+      }
+      if (url.includes("/maloca/pack")) return json(mockPack);
+      return json([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MalocaView />);
+    expect(await screen.findByRole("button", { name: /Marketplace/i })).toBeTruthy();
   });
 
   const mockPack = {

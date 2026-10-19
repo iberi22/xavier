@@ -97,10 +97,10 @@ impl ConsentStore {
     }
 
     pub fn set(&self, record: ConsentRecord) -> Result<(), ConsentError> {
-        if record.state != ConsentState::Off {
-            if record.terms_version.trim().is_empty() || record.consent_version.trim().is_empty() {
-                return Err(ConsentError::MissingVersion);
-            }
+        if record.state != ConsentState::Off
+            && (record.terms_version.trim().is_empty() || record.consent_version.trim().is_empty())
+        {
+            return Err(ConsentError::MissingVersion);
         }
         let conn = self.conn.lock().unwrap_or_else(PoisonError::into_inner);
         conn.execute(
@@ -163,42 +163,6 @@ impl ConsentStore {
         } else {
             Ok(ConsentState::Off)
         }
-    }
-
-    pub fn list(&self) -> Result<Vec<ConsentRecord>, ConsentError> {
-        let conn = self.conn.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut stmt = conn.prepare(
-            "SELECT node_id, state, terms_version, consent_version, updated_at_ms
-             FROM market_consent
-             ORDER BY updated_at_ms DESC",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            let node_id: String = row.get(0)?;
-            let state_str: String = row.get(1)?;
-            let terms_version: String = row.get(2)?;
-            let consent_version: String = row.get(3)?;
-            let updated_at_ms: i64 = row.get(4)?;
-            Ok((
-                node_id,
-                state_str,
-                terms_version,
-                consent_version,
-                updated_at_ms,
-            ))
-        })?;
-        let mut out = Vec::new();
-        for item in rows {
-            let (nid, state_str, tv, cv, upd) = item?;
-            let state = ConsentState::parse(&state_str)?;
-            out.push(ConsentRecord {
-                node_id: nid,
-                state,
-                terms_version: tv,
-                consent_version: cv,
-                updated_at_ms: upd,
-            });
-        }
-        Ok(out)
     }
 }
 
@@ -286,33 +250,5 @@ mod tests {
             assert_eq!(store2.state_of("node1").unwrap(), ConsentState::Shared);
         }
         let _ = fs::remove_dir_all(temp_dir);
-    }
-
-    #[test]
-    fn test_list_records() {
-        let store = ConsentStore::open_in_memory().unwrap();
-        assert!(store.list().unwrap().is_empty());
-
-        let rec1 = ConsentRecord {
-            node_id: "node1".into(),
-            state: ConsentState::Shared,
-            terms_version: "v1".into(),
-            consent_version: "v1".into(),
-            updated_at_ms: 100,
-        };
-        let rec2 = ConsentRecord {
-            node_id: "node2".into(),
-            state: ConsentState::Local,
-            terms_version: "v1".into(),
-            consent_version: "v1".into(),
-            updated_at_ms: 200,
-        };
-        store.set(rec1).unwrap();
-        store.set(rec2).unwrap();
-
-        let list = store.list().unwrap();
-        assert_eq!(list.len(), 2);
-        assert_eq!(list[0].node_id, "node2");
-        assert_eq!(list[1].node_id, "node1");
     }
 }

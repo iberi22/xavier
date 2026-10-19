@@ -25,6 +25,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { ApiClient, getApiUrl, getRemoteUrl, setRemoteUrl } from "../api/client";
 import { getApiTokenSync } from "../hooks/useApiToken";
 import { useNotificationStream } from "../hooks/useNotificationStream";
+import { probeMarketplaceAvailable } from "../maloca/api";
 import FounderNodeStatusCard from "./FounderNodeStatusCard";
 import MarketplaceStatusCard from "./MarketplaceStatusCard";
 import MessagingConfigModal from "./MessagingConfigModal";
@@ -200,14 +201,10 @@ export default React.memo(function TopStatusBar({
       }
 
       try {
-        const res = await fetch(getApiUrl("/v2/marketplace/listings"));
-        if (res.ok) {
-          setModules((prev) => (prev.marketplace ? prev : { ...prev, marketplace: true }));
-        } else if (res.status === 404) {
-          setModules((prev) => (!prev.marketplace ? prev : { ...prev, marketplace: false }));
-        }
-      } catch (err) {
-        console.debug("Error checking marketplace v2 status:", err);
+        const available = await probeMarketplaceAvailable();
+        setModules((prev) =>
+          prev.marketplace === available ? prev : { ...prev, marketplace: available },
+        );
       } finally {
         setInternalLoading(false);
       }
