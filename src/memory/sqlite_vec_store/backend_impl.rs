@@ -400,8 +400,9 @@ mod tests {
 
     #[test]
     fn candidate_limit_scaling() {
-        assert_eq!(VecSqliteMemoryStore::candidate_limit(5), 60);
-        assert_eq!(VecSqliteMemoryStore::candidate_limit(50), 150);
-        assert_eq!(VecSqliteMemoryStore::candidate_limit(200), 400);
+        assert_eq!(VecSqliteMemoryStore::candidate_limit(0), 5);
+        assert_eq!(VecSqliteMemoryStore::candidate_limit(5), 25);
+        assert_eq!(VecSqliteMemoryStore::candidate_limit(50), 250);
+        assert_eq!(VecSqliteMemoryStore::candidate_limit(200), 1000);
     }
 }
