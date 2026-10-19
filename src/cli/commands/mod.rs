@@ -197,13 +197,18 @@ impl Cli {
                 RepoCommand::Pack { args } => repo_pack::run_repo_pack_command(args.clone()),
                 RepoCommand::Unpack { args } => repo_pack::run_repo_unpack_command(args.clone()),
                 RepoCommand::Adopt {
-                    root: _,
+                    root,
                     global_db,
                     dry_run,
                 } => {
                     if !dry_run {
-                        eprintln!("adopt without --dry-run is not available in this version");
-                        std::process::exit(1);
+                        anyhow::bail!("adopt without --dry-run is not available in this version");
+                    }
+                    if let Some(ref r) = root {
+                        let path = std::path::Path::new(r);
+                        if !path.exists() {
+                            anyhow::bail!("repository root does not exist: {}", path.display());
+                        }
                     }
                     let db_path = match global_db {
                         Some(ref p) => std::path::PathBuf::from(p),
@@ -1068,5 +1073,39 @@ mod skills_command_tests {
         } else {
             panic!("expected RepoCommand::Pack with memory=true");
         }
+    }
+
+    #[tokio::test]
+    async fn adopt_without_dry_run_bails() {
+        use crate::cli::Cli;
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["xavier", "repo", "adopt"]).expect("parse");
+        let result = cli.run().await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("without --dry-run is not available"));
+    }
+
+    #[tokio::test]
+    async fn adopt_with_nonexistent_root_bails() {
+        use crate::cli::Cli;
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "xavier",
+            "repo",
+            "adopt",
+            "--dry-run",
+            "--root",
+            "/path/that/does/not/exist/for/sure/12345",
+        ])
+        .expect("parse");
+        let result = cli.run().await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("repository root does not exist"));
     }
 }
