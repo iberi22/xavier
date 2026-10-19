@@ -1888,9 +1888,11 @@ pub(crate) mod tests {
         let (state, workspace) = crate::server::mcp::tests::test_state().await;
 
         // Ensure the manager exists for the node
+        use crate::espacio::{SpaceManager, StaticNodeKek};
         let tmp = tempfile::tempdir().expect("tempdir");
-        let manager = SpaceManager::open_with_keys(tmp.path(), kek());
-        crate::adapters::inbound::http::routes::set_space_manager_for_tests(manager.clone());
+        let kek = || std::sync::Arc::new(StaticNodeKek::new([7u8; 32]));
+        let manager = std::sync::Arc::new(SpaceManager::open_with_keys(tmp.path(), kek()));
+        crate::adapters::inbound::http::routes::init_space_manager(manager.clone());
 
         let ro = crate::security::auth::Claims::new(
             "u".into(),
@@ -1926,21 +1928,24 @@ pub(crate) mod tests {
     async fn member_add_tool_reports_cap_as_error() {
         crate::isolate_test_process!();
         let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        use crate::espacio::{SpaceManager, StaticNodeKek};
         let tmp = tempfile::tempdir().expect("tempdir");
-        let manager = SpaceManager::open_with_keys(tmp.path(), kek());
-        crate::adapters::inbound::http::routes::set_space_manager_for_tests(manager.clone());
+        let kek = || std::sync::Arc::new(StaticNodeKek::new([7u8; 32]));
+        let manager = std::sync::Arc::new(SpaceManager::open_with_keys(tmp.path(), kek()));
+        crate::adapters::inbound::http::routes::init_space_manager(manager.clone());
 
-        fn with_protocol(
-            protocol: crate::espacio::protocol::SpaceProtocol,
-        ) -> crate::espacio::manager::KeyOptions {
+        use crate::workspace::protocol::SpaceProtocol;
+        fn with_protocol(protocol: SpaceProtocol) -> crate::espacio::manager::KeyOptions {
             crate::espacio::manager::KeyOptions {
                 protocol: Some(protocol),
                 ..Default::default()
             }
         }
 
-        let mut p = crate::espacio::protocol::SpaceProtocol::default();
-        p.members_cap = 1; // owner takes the 1 slot
+        let p = SpaceProtocol {
+            members_cap: 1,
+            ..Default::default()
+        };
 
         manager
             .create_with_keys(
@@ -1972,16 +1977,18 @@ pub(crate) mod tests {
         assert!(res["content"][0]["text"]
             .as_str()
             .unwrap()
-            .contains("MembersCapReached"));
+            .contains("reached members_cap"));
     }
 
     #[tokio::test]
     async fn member_list_tool_returns_added_member() {
         crate::isolate_test_process!();
         let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        use crate::espacio::{SpaceManager, StaticNodeKek};
         let tmp = tempfile::tempdir().expect("tempdir");
-        let manager = SpaceManager::open_with_keys(tmp.path(), kek());
-        crate::adapters::inbound::http::routes::set_space_manager_for_tests(manager.clone());
+        let kek = || std::sync::Arc::new(StaticNodeKek::new([7u8; 32]));
+        let manager = std::sync::Arc::new(SpaceManager::open_with_keys(tmp.path(), kek()));
+        crate::adapters::inbound::http::routes::init_space_manager(manager.clone());
 
         manager
             .create(
@@ -2009,7 +2016,7 @@ pub(crate) mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(res_add["isError"], serde_json::Value::Null); // or absent, meaning not an error
+        assert_eq!(res_add["isError"], false);
 
         // List
         let res_list = crate::server::mcp::server::with_root_credential(
