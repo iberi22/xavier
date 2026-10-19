@@ -43,6 +43,10 @@ pub use ivn::{
     CastVote, IdentityRequest, NewIdentityRequest, NewValidator, RequestStatus, Validator, Vote,
     VoteDecision,
 };
+pub use merkle::{
+    dry_run_plan, leaf_hash, leaf_hash_hex, merkle_root, proof, verify_proof, AnchorPlan,
+    ProofStep, DEFAULT_CHAIN_ID,
+};
 pub use model::{Listing, ListingUpdate, NewListing, NewReceipt, Receipt};
 pub use pack::{
     export_namespace_pack, import_namespace_pack, pack_hash, read_pack, read_pack_info, write_pack,
