@@ -49,3 +49,6 @@ pub use pack::{
     write_pack_with_namespace, NamespacePack, PackEntry, PackError, PACK_MAGIC,
 };
 pub use store::{MarketStore, SCHEMA_VERSION};
+pub use telemetry_gate::{
+    sanitize, AggregateRow, Sample, Sanitized, TelemetryError, TelemetryStore, INTERNAL_FIELDS,
+};

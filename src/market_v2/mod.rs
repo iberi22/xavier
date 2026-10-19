@@ -48,8 +48,9 @@ use rand::rngs::OsRng;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use xavier_market::credential::{self, ListingCredential};
 use xavier_market::{
-    Actor, ConsentError, ConsentRecord, ConsentState, ConsentStore, Listing, ListingUpdate,
-    MarketConfig, MarketError, MarketStore, NewListing, NewReceipt, SignedRequest,
+    Actor, AggregateRow, ConsentError, ConsentRecord, ConsentState, ConsentStore, Listing,
+    ListingUpdate, MarketConfig, MarketError, MarketStore, NewListing, NewReceipt, Sample,
+    SignedRequest, TelemetryError, TelemetryStore,
 };
 
 /// Runtime flag. Only the exact value `beta` enables the routes.
@@ -179,6 +180,11 @@ where
         )
         .route("/v2/marketplace/audit", get(list_audit_handler))
         .route("/v2/marketplace/audit/verify", get(verify_audit_handler))
+        .route("/v2/marketplace/telemetry", post(record_telemetry_handler))
+        .route(
+            "/v2/marketplace/telemetry/aggregates",
+            get(get_telemetry_aggregates_handler),
+        )
         .merge(ivn::routes())
         .layer(Extension(store))
         .layer(Extension(Arc::new(issuer)))
@@ -617,6 +623,145 @@ async fn verify_audit_handler(Extension(store): StoreExt) -> Response {
             })),
         )
             .into_response(),
+    }
+}
+
+fn open_telemetry_store() -> Result<TelemetryStore, TelemetryError> {
+    let path = db_path_from_env();
+    TelemetryStore::open(&path)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TelemetryQuery {
+    pub node_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RecordTelemetryPayload {
+    pub node_id: Option<String>,
+    #[serde(flatten)]
+    pub sample: Sample,
+}
+
+async fn get_telemetry_aggregates_handler(
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    Query(query): Query<TelemetryQuery>,
+    body: Bytes,
+) -> Response {
+    let authenticated_actor = if headers.contains_key(ACTOR_KEY_HEADER) {
+        match authenticate(&method, &uri, &headers, &body) {
+            Ok(actor) => Some(actor),
+            Err(resp) => return resp,
+        }
+    } else {
+        None
+    };
+
+    let node_id = match (authenticated_actor, query.node_id) {
+        (Some(actor), Some(q_id)) => {
+            if actor.id() != q_id.trim() {
+                return error_status(
+                    StatusCode::FORBIDDEN,
+                    format!(
+                        "node_id mismatch: query specifies '{}' but caller authenticated as '{}'",
+                        q_id,
+                        actor.id()
+                    ),
+                );
+            }
+            actor.id().to_string()
+        }
+        (Some(actor), None) => actor.id().to_string(),
+        (None, Some(q_id)) if !q_id.trim().is_empty() => q_id.trim().to_string(),
+        (None, _) => {
+            return error_status(
+                StatusCode::BAD_REQUEST,
+                "node_id query parameter is required",
+            );
+        }
+    };
+
+    let consent_store = match open_consent_store() {
+        Ok(store) => store,
+        Err(err) => return error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    };
+    let telemetry_store = match open_telemetry_store() {
+        Ok(store) => store,
+        Err(err) => return error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    };
+
+    match telemetry_store.aggregate(&consent_store, &node_id) {
+        Ok(aggs) => Json(aggs).into_response(),
+        Err(TelemetryError::NotOptedIn) => error_status(
+            StatusCode::FORBIDDEN,
+            "node is not opted into shared telemetry (reciprocity requires shared consent)",
+        ),
+        Err(err) => error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    }
+}
+
+async fn record_telemetry_handler(
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let authenticated_actor = if headers.contains_key(ACTOR_KEY_HEADER) {
+        match authenticate(&method, &uri, &headers, &body) {
+            Ok(actor) => Some(actor),
+            Err(resp) => return resp,
+        }
+    } else {
+        None
+    };
+
+    let payload: RecordTelemetryPayload = match parse_body(&body) {
+        Ok(p) => p,
+        Err(resp) => return resp,
+    };
+
+    let node_id = match (authenticated_actor, payload.node_id) {
+        (Some(actor), Some(p_id)) => {
+            if actor.id() != p_id.trim() {
+                return error_status(
+                    StatusCode::FORBIDDEN,
+                    format!(
+                        "node_id mismatch: body specifies '{}' but caller authenticated as '{}'",
+                        p_id,
+                        actor.id()
+                    ),
+                );
+            }
+            actor.id().to_string()
+        }
+        (Some(actor), None) => actor.id().to_string(),
+        (None, Some(p_id)) if !p_id.trim().is_empty() => p_id.trim().to_string(),
+        (None, _) => {
+            return error_status(StatusCode::BAD_REQUEST, "node_id field is required");
+        }
+    };
+
+    let consent_store = match open_consent_store() {
+        Ok(store) => store,
+        Err(err) => return error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    };
+    let telemetry_store = match open_telemetry_store() {
+        Ok(store) => store,
+        Err(err) => return error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    };
+
+    match telemetry_store.record(&consent_store, &node_id, &payload.sample, now_ms()) {
+        Ok(recorded) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "recorded": recorded,
+                "node_id": node_id,
+            })),
+        )
+            .into_response(),
+        Err(err) => error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
     }
 }
 
@@ -2096,6 +2241,180 @@ mod tests {
         let (status, _) = send(
             &router,
             json_request(Method::GET, "/v2/marketplace/audit/verify", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn telemetry_aggregates_reciprocity_and_opt_in_gate() {
+        let _env = MarketEnv::with_flag(Some(FLAG_VALUE));
+        let router: Router = mount(Router::new());
+
+        // 1. Unregistered node gets 403 Forbidden
+        let (status, err) = send(
+            &router,
+            json_request(
+                Method::GET,
+                "/v2/marketplace/telemetry/aggregates?node_id=unregistered_node",
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(err["error"]
+            .as_str()
+            .unwrap()
+            .contains("not opted into shared telemetry"));
+
+        // Missing node_id query param gets 400 Bad Request
+        let (status, _) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/telemetry/aggregates", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // 2. Set consent to 'local' for node_local
+        let signer_local = Signer::from_seed([11; 32]);
+        let node_local = signer_local.public_key_hex();
+        let payload_local = json!({
+            "node_id": node_local,
+            "state": "local",
+            "terms_version": "v1.0",
+            "consent_version": "v1.0"
+        });
+        let req_local = signed_request(
+            &signer_local,
+            Method::POST,
+            "/v2/marketplace/consent",
+            Some(payload_local),
+        );
+        let (status, _) = send(&router, req_local).await;
+        assert_eq!(status, StatusCode::OK);
+
+        // Record a telemetry sample for node_local
+        let (status, record_resp) = send(
+            &router,
+            json_request(
+                Method::POST,
+                "/v2/marketplace/telemetry",
+                Some(json!({
+                    "node_id": node_local,
+                    "kind": "bandwidth",
+                    "fields": {
+                        "metric_name": "bytes_out",
+                        "value": 1024
+                    }
+                })),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(record_resp["recorded"], true);
+
+        // Reciprocity rule: node_local CANNOT fetch aggregates (403 Forbidden)
+        let (status, err) = send(
+            &router,
+            json_request(
+                Method::GET,
+                &format!("/v2/marketplace/telemetry/aggregates?node_id={node_local}"),
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(err["error"]
+            .as_str()
+            .unwrap()
+            .contains("not opted into shared telemetry"));
+
+        // 3. Set consent to 'shared' for node_shared
+        let signer_shared = Signer::from_seed([12; 32]);
+        let node_shared = signer_shared.public_key_hex();
+        let payload_shared = json!({
+            "node_id": node_shared,
+            "state": "shared",
+            "terms_version": "v1.0",
+            "consent_version": "v1.0"
+        });
+        let req_shared = signed_request(
+            &signer_shared,
+            Method::POST,
+            "/v2/marketplace/consent",
+            Some(payload_shared),
+        );
+        let (status, _) = send(&router, req_shared).await;
+        assert_eq!(status, StatusCode::OK);
+
+        // Record a sample for node_shared
+        let (status, record_resp) = send(
+            &router,
+            json_request(
+                Method::POST,
+                "/v2/marketplace/telemetry",
+                Some(json!({
+                    "node_id": node_shared,
+                    "kind": "query_latency",
+                    "fields": {
+                        "metric_name": "duration_ms",
+                        "value": 15
+                    }
+                })),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(record_resp["recorded"], true);
+
+        // Node shared CAN fetch aggregates! (200 OK)
+        let (status, aggs) = send(
+            &router,
+            json_request(
+                Method::GET,
+                &format!("/v2/marketplace/telemetry/aggregates?node_id={node_shared}"),
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let arr = aggs.as_array().unwrap();
+        assert_eq!(arr.len(), 2); // bandwidth and query_latency
+
+        // Authenticated GET /v2/marketplace/telemetry/aggregates using signer_shared
+        let auth_req = signed_request(
+            &signer_shared,
+            Method::GET,
+            "/v2/marketplace/telemetry/aggregates",
+            None,
+        );
+        let (status, aggs_auth) = send(&router, auth_req).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(aggs_auth.as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn telemetry_routes_unmounted_when_flag_off() {
+        let _env = MarketEnv::with_flag(None);
+        let router: Router = mount(Router::new());
+        let (status, _) = send(
+            &router,
+            json_request(
+                Method::GET,
+                "/v2/marketplace/telemetry/aggregates?node_id=any",
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let (status, _) = send(
+            &router,
+            json_request(
+                Method::POST,
+                "/v2/marketplace/telemetry",
+                Some(json!({"node_id": "x", "kind": "k"})),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);

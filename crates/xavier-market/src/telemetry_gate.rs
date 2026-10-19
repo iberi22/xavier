@@ -1,4 +1,4 @@
-use crate::consent::ConsentState;
+use crate::consent::{ConsentError, ConsentRecord, ConsentState, ConsentStore};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -30,6 +30,8 @@ pub struct AggregateRow {
 pub enum TelemetryError {
     #[error("Not opted in")]
     NotOptedIn,
+    #[error("Consent error: {0}")]
+    Consent(#[from] ConsentError),
     #[error("DB err: {0}")]
     Sqlite(#[from] rusqlite::Error),
     #[error("JSON err: {0}")]
@@ -71,7 +73,21 @@ impl TelemetryStore {
             conn: Mutex::new(conn),
         })
     }
+
+    /// Records a telemetry sample by checking the node's consent state from `consent_store`.
     pub fn record(
+        &self,
+        consent_store: &ConsentStore,
+        node_id: &str,
+        sample: &Sample,
+        now_ms: i64,
+    ) -> Result<bool, TelemetryError> {
+        let state = consent_store.state_of(node_id)?;
+        self.record_raw(state, sample, now_ms)
+    }
+
+    /// Records a telemetry sample directly for a known `ConsentState`.
+    pub fn record_raw(
         &self,
         state: ConsentState,
         sample: &Sample,
@@ -89,8 +105,25 @@ impl TelemetryStore {
         )?;
         Ok(true)
     }
-    pub fn aggregate(&self, state: ConsentState) -> Result<Vec<AggregateRow>, TelemetryError> {
-        if state == ConsentState::Off {
+
+    /// Computes aggregate metrics across telemetry kinds for the given `node_id`.
+    /// Enforces the reciprocity rule: reads consent from `consent_store` and requires
+    /// `Shared` (or `SharedSensitive`) consent (`state.may_leave_node()`). Local or Off nodes
+    /// are refused with `TelemetryError::NotOptedIn`.
+    pub fn aggregate(
+        &self,
+        consent_store: &ConsentStore,
+        node_id: &str,
+    ) -> Result<Vec<AggregateRow>, TelemetryError> {
+        let state = consent_store.state_of(node_id)?;
+        self.aggregate_raw(state)
+    }
+
+    /// Computes aggregate metrics directly for a given `ConsentState`.
+    /// Enforces the reciprocity rule: only states where telemetry is shared with the network
+    /// may fetch aggregates.
+    pub fn aggregate_raw(&self, state: ConsentState) -> Result<Vec<AggregateRow>, TelemetryError> {
+        if !state.may_leave_node() {
             return Err(TelemetryError::NotOptedIn);
         }
         let conn = self.conn.lock().unwrap_or_else(PoisonError::into_inner);
@@ -113,6 +146,48 @@ impl TelemetryStore {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn helper_consent_store() -> ConsentStore {
+        let store = ConsentStore::open_in_memory().unwrap();
+        store
+            .set(ConsentRecord {
+                node_id: "node_off".into(),
+                state: ConsentState::Off,
+                terms_version: "v1".into(),
+                consent_version: "v1".into(),
+                updated_at_ms: 100,
+            })
+            .unwrap();
+        store
+            .set(ConsentRecord {
+                node_id: "node_local".into(),
+                state: ConsentState::Local,
+                terms_version: "v1".into(),
+                consent_version: "v1".into(),
+                updated_at_ms: 100,
+            })
+            .unwrap();
+        store
+            .set(ConsentRecord {
+                node_id: "node_shared".into(),
+                state: ConsentState::Shared,
+                terms_version: "v1".into(),
+                consent_version: "v1".into(),
+                updated_at_ms: 100,
+            })
+            .unwrap();
+        store
+            .set(ConsentRecord {
+                node_id: "node_shared_sens".into(),
+                state: ConsentState::SharedSensitive,
+                terms_version: "v1".into(),
+                consent_version: "v1".into(),
+                updated_at_ms: 100,
+            })
+            .unwrap();
+        store
+    }
+
     #[test]
     fn test_sanitize() {
         let mut fields = Map::new();
@@ -125,12 +200,10 @@ mod tests {
         assert!(s.fields.contains_key("value"));
         assert!(!s.fields.contains_key("unknown"));
     }
+
     #[test]
     fn test_sanitize_non_finite() {
         let mut fields = Map::new();
-        // serde_json cannot hold a non-finite number: "1e500" fails to parse and
-        // json!(f64::INFINITY) becomes Null, so the value must never survive as
-        // a non-finite f64.
         fields.insert(
             "value".into(),
             serde_json::from_str("1e500").unwrap_or(json!(f64::INFINITY)),
@@ -145,11 +218,24 @@ mod tests {
             .and_then(Value::as_f64)
             .is_none_or(f64::is_finite));
     }
+
     #[test]
     fn test_record_off() {
+        let consent = helper_consent_store();
         let store = TelemetryStore::open_in_memory().unwrap();
         assert!(!store
             .record(
+                &consent,
+                "node_off",
+                &Sample {
+                    kind: "k".into(),
+                    fields: Map::new()
+                },
+                0
+            )
+            .unwrap());
+        assert!(!store
+            .record_raw(
                 ConsentState::Off,
                 &Sample {
                     kind: "k".into(),
@@ -159,14 +245,17 @@ mod tests {
             )
             .unwrap());
     }
+
     #[test]
     fn test_record_local() {
+        let consent = helper_consent_store();
         let store = TelemetryStore::open_in_memory().unwrap();
         let mut fields = Map::new();
         fields.insert("metric_name".into(), json!("m"));
         assert!(store
             .record(
-                ConsentState::Local,
+                &consent,
+                "node_local",
                 &Sample {
                     kind: "k".into(),
                     fields
@@ -174,23 +263,63 @@ mod tests {
                 1
             )
             .unwrap());
-        let aggs = store.aggregate(ConsentState::Local).unwrap();
-        assert_eq!(aggs[0].count, 1);
     }
+
     #[test]
-    fn test_aggregate_off() {
+    fn test_aggregate_off_and_unknown_refused() {
+        let consent = helper_consent_store();
         let store = TelemetryStore::open_in_memory().unwrap();
         assert!(matches!(
-            store.aggregate(ConsentState::Off),
+            store.aggregate(&consent, "node_off"),
+            Err(TelemetryError::NotOptedIn)
+        ));
+        assert!(matches!(
+            store.aggregate(&consent, "node_unknown"),
+            Err(TelemetryError::NotOptedIn)
+        ));
+        assert!(matches!(
+            store.aggregate_raw(ConsentState::Off),
             Err(TelemetryError::NotOptedIn)
         ));
     }
+
     #[test]
-    fn test_aggregate_shared() {
+    fn test_aggregate_local_denied_by_reciprocity() {
+        let consent = helper_consent_store();
+        let store = TelemetryStore::open_in_memory().unwrap();
+        let mut fields = Map::new();
+        fields.insert("metric_name".into(), json!("m"));
+        store
+            .record(
+                &consent,
+                "node_local",
+                &Sample {
+                    kind: "k".into(),
+                    fields,
+                },
+                1,
+            )
+            .unwrap();
+
+        // Node local can record locally, but reciprocity denies reading mesh aggregates
+        assert!(matches!(
+            store.aggregate(&consent, "node_local"),
+            Err(TelemetryError::NotOptedIn)
+        ));
+        assert!(matches!(
+            store.aggregate_raw(ConsentState::Local),
+            Err(TelemetryError::NotOptedIn)
+        ));
+    }
+
+    #[test]
+    fn test_aggregate_shared_and_shared_sensitive_permitted() {
+        let consent = helper_consent_store();
         let store = TelemetryStore::open_in_memory().unwrap();
         store
             .record(
-                ConsentState::Shared,
+                &consent,
+                "node_shared",
                 &Sample {
                     kind: "k".into(),
                     fields: Map::new(),
@@ -198,18 +327,27 @@ mod tests {
                 0,
             )
             .unwrap();
-        let aggs = store.aggregate(ConsentState::Shared).unwrap();
+        let aggs = store.aggregate(&consent, "node_shared").unwrap();
         assert_eq!(aggs[0].count, 1);
+
+        let aggs_sens = store.aggregate(&consent, "node_shared_sens").unwrap();
+        assert_eq!(aggs_sens[0].count, 1);
+
+        let aggs_raw = store.aggregate_raw(ConsentState::Shared).unwrap();
+        assert_eq!(aggs_raw[0].count, 1);
     }
+
     #[test]
     fn test_stored_row_only_internal() {
+        let consent = helper_consent_store();
         let store = TelemetryStore::open_in_memory().unwrap();
         let mut fields = Map::new();
         fields.insert("metric_name".into(), json!("m"));
         fields.insert("unknown".into(), json!("x"));
         store
             .record(
-                ConsentState::Local,
+                &consent,
+                "node_local",
                 &Sample {
                     kind: "k".into(),
                     fields,
