@@ -3,7 +3,7 @@
 //! This module defines the [`Command`] enum and all related subcommand enums
 //! used for parsing CLI arguments via clap.
 
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -499,10 +499,111 @@ pub enum Command {
         cmd: RepoCommand,
     },
 
+    /// Manage Xavier spaces
+    Space {
+        #[command(subcommand)]
+        cmd: SpaceCommand,
+    },
+
     /// Skill controller: build, apply, and roll back skill projection plans (D4)
     Skills {
         #[command(subcommand)]
         cmd: SkillsCommand,
+    },
+}
+
+/// Space management subcommands.
+#[derive(Subcommand, Debug, Clone)]
+pub enum SpaceCommand {
+    /// Create a new space
+    Create {
+        /// The space ID
+        id: String,
+        /// Labels for the space
+        #[arg(long)]
+        label: Vec<String>,
+    },
+    /// List all spaces
+    List,
+    /// Unlock a space
+    Unlock {
+        /// The space ID
+        id: String,
+        /// Unlock mode
+        #[arg(long)]
+        mode: UnlockMode,
+    },
+    /// Check space lock status
+    Status {
+        /// The space ID
+        id: String,
+    },
+    /// Manage space members
+    Members {
+        /// The space ID
+        id: String,
+        #[command(subcommand)]
+        action: Option<SpaceMemberAction>,
+    },
+    /// Manage space invites
+    Invites {
+        /// The space ID
+        id: String,
+        #[command(subcommand)]
+        action: Option<SpaceInviteAction>,
+    },
+    /// Accept a space invite
+    Accept {
+        /// The invite ID
+        invite_id: String,
+        /// Display name for the peer
+        display: String,
+    },
+    /// Lock a space
+    Lock {
+        /// The space ID
+        id: String,
+    },
+}
+
+#[derive(clap::ValueEnum, Debug, Clone)]
+pub enum UnlockMode {
+    Node,
+    Password,
+    Recovery,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum SpaceMemberAction {
+    /// List space members
+    List,
+    /// Add a member
+    Add {
+        /// Node ID
+        node: String,
+        /// Role
+        role: crate::espacio::SpaceRole,
+    },
+    /// Remove a member
+    Remove {
+        /// Node ID
+        node: String,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum SpaceInviteAction {
+    /// List space invites
+    List,
+    /// Create an invite
+    Create {
+        /// Node ID
+        node: String,
+        /// Role
+        role: crate::espacio::SpaceRole,
+        /// TTL in hours
+        #[arg(long)]
+        ttl: Option<u32>,
     },
 }
 

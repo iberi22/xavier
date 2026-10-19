@@ -1,0 +1,13 @@
+Closes #3273
+
+Part of #3205 (wave-i task e-cli)
+
+This PR implements the `xavier space` subcommand family for interacting with the daemon's Space API. It wires up the commands via `clap` subcommands in `enums.rs` and routes them to the new `SpaceCommand` runner in `space.rs`.
+
+**Changes:**
+- Added `SpaceCommand` to `src/cli/commands/enums.rs` with `Create`, `List`, `Unlock`, `Status`, `Members`, `Invites`, `Accept`, and `Lock`.
+- Hooked up the dispatch arm for `Commands::Space` in `src/cli/commands/mod.rs` resolving the base url and token globally.
+- Created `src/cli/commands/space.rs` runner to make HTTP requests against `/api/v1/espacio/spaces`.
+- **Note:** `lock` is explicitly not implemented and outputs an error as instructed. `unlock` and `status` immediately print "not available on this daemon version" as the endpoints do not exist yet on this branch.
+
+Tested via unit tests for argument validation. Cargo check/test runs via GitHub CI.
