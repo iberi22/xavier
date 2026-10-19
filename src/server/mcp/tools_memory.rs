@@ -1062,11 +1062,71 @@ async fn handle_memory_save(
     });
 
     validate_memory_write_clearance(workspace, &path, &metadata, typed.as_ref())?;
+
+    let repo_root = arguments.get("repo").and_then(|r| {
+        r.get("root")
+            .and_then(|v| v.as_str())
+            .or_else(|| r.as_str())
+    });
+
+    if let Some(repo_arg) = repo_root {
+        let doc_id = save_to_repo_store(
+            crate::memory::repo_store_registry::repo_stores(),
+            std::path::Path::new(repo_arg),
+            &path,
+            text,
+            metadata,
+            typed,
+        )
+        .await?;
+        return super::server::mcp_text_result(format!("Memory saved. id={doc_id}"), false);
+    }
+
     let doc_id = workspace
         .workspace
         .ingest_typed(path, text.to_string(), metadata, typed, None, false)
         .await?;
     super::server::mcp_text_result(format!("Memory saved. id={doc_id}"), false)
+}
+
+async fn save_to_repo_store(
+    registry: &crate::memory::repo_store_registry::RepoStoreRegistry,
+    root: &std::path::Path,
+    path: &str,
+    text: &str,
+    metadata: Value,
+    typed: Option<TypedMemoryPayload>,
+) -> anyhow::Result<String> {
+    use crate::memory::repo_store_registry::existing_repo_store_path;
+    use crate::memory::store::{MemoryRecord, MemoryStore};
+
+    existing_repo_store_path(registry, root)
+        .map_err(|e| anyhow::anyhow!("repo memory store error: {e}"))?;
+
+    let store = registry
+        .open(root)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to open repo store: {e}"))?;
+
+    let unique_id = ulid::Ulid::new().to_string();
+    let doc_id = format!("mem_{unique_id}");
+
+    let record = MemoryRecord {
+        id: doc_id.clone(),
+        content: text.to_string(),
+        path: path.to_string(),
+        workspace_id: "repo".to_string(),
+        metadata,
+        clearance: typed.as_ref().and_then(|t| t.clearance).unwrap_or_default(),
+        ..Default::default()
+    };
+
+    store
+        .put(record)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to put record into repo store: {e}"))?;
+
+    Ok(doc_id)
 }
 
 /// Handles update/read/stats memory operations.
@@ -1767,5 +1827,154 @@ mod tests {
         let parsed = parse_namespace_arg(&obj_arg).unwrap().unwrap();
         assert_eq!(parsed.project.as_deref(), Some("xavier"));
         assert_eq!(parsed.agent_id.as_deref(), Some("antigravity"));
+    }
+
+    use crate::memory::connection_provider::InMemoryProvider;
+    use crate::memory::repo_store_registry::{RepoRecordKeySource, RepoStoreRegistry};
+    use crate::memory::store::MemoryStore;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    const OPT_IN: &str = "memory_store = \"repo\"\n";
+    const TEST_MASTER: [u8; 32] = [0x3C; 32];
+
+    struct TestKeys;
+    impl RepoRecordKeySource for TestKeys {
+        fn record_key(&self, project_id: &str) -> anyhow::Result<[u8; 32]> {
+            crate::codebase::repo_package_crypto::derive_repo_record_key_from_master(
+                &TEST_MASTER,
+                project_id,
+            )
+        }
+    }
+
+    fn make_test_repo(base: &Path, name: &str, config: Option<&str>) -> PathBuf {
+        let root = base.join(name);
+        std::fs::create_dir_all(root.join(".git")).expect("mkdir .git");
+        if let Some(body) = config {
+            std::fs::create_dir_all(root.join(".xavier")).expect("mkdir .xavier");
+            std::fs::write(root.join(".xavier/config.toml"), body).expect("write config");
+        }
+        root.canonicalize().expect("canonical repo root")
+    }
+
+    fn test_registry(allowed: &[&Path]) -> RepoStoreRegistry {
+        let roots: Vec<PathBuf> = allowed.iter().map(|p| p.to_path_buf()).collect();
+        RepoStoreRegistry::new(
+            &roots,
+            Arc::new(InMemoryProvider::new()),
+            Arc::new(TestKeys),
+        )
+    }
+
+    #[test]
+    fn mcp_save_without_repo_is_unchanged() {
+        let args_without = json!({
+            "text": "hello",
+            "path": "test/path"
+        });
+        let repo_without = args_without.get("repo").and_then(|r| {
+            r.get("root")
+                .and_then(|v| v.as_str())
+                .or_else(|| r.as_str())
+        });
+        assert!(repo_without.is_none());
+
+        let args_with_obj = json!({
+            "text": "hello",
+            "path": "test/path",
+            "repo": { "root": "/tmp/my-repo" }
+        });
+        let repo_with_obj = args_with_obj.get("repo").and_then(|r| {
+            r.get("root")
+                .and_then(|v| v.as_str())
+                .or_else(|| r.as_str())
+        });
+        assert_eq!(repo_with_obj, Some("/tmp/my-repo"));
+    }
+
+    #[tokio::test]
+    async fn mcp_save_with_repo_writes_to_repo_store() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = make_test_repo(tmp.path(), "my-mcp-repo", Some(OPT_IN));
+        let reg = test_registry(&[tmp.path()]);
+
+        // MCP requires the store file to already exist
+        let store_file = root.join(".xavier/memory.sqlite3");
+        std::fs::write(&store_file, b"").expect("create store file stub");
+
+        let doc_id = save_to_repo_store(
+            &reg,
+            &root,
+            "mcp/save/test1",
+            "mcp repo content",
+            json!({"tag": "mcp-test"}),
+            None,
+        )
+        .await
+        .expect("save_to_repo_store must succeed");
+
+        assert!(doc_id.starts_with("mem_"));
+
+        let store = reg.open(&root).await.expect("open store");
+        let retrieved = store
+            .get("repo", "mcp/save/test1")
+            .await
+            .expect("get record");
+        assert!(retrieved.is_some());
+        let record = retrieved.unwrap();
+        assert_eq!(record.content, "mcp repo content");
+        assert_eq!(record.id, doc_id);
+    }
+
+    #[tokio::test]
+    async fn mcp_cannot_create_repo_store() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = make_test_repo(tmp.path(), "no-store-repo", Some(OPT_IN));
+        let reg = test_registry(&[tmp.path()]);
+
+        // Store file is NOT created. MCP must refuse to create stores.
+        let res =
+            save_to_repo_store(&reg, &root, "mcp/save/test2", "content", json!({}), None).await;
+
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("file does not exist") || err_msg.contains("does not exist"));
+    }
+
+    #[tokio::test]
+    async fn save_to_repo_store_refuses_outside_allowlist() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = make_test_repo(tmp.path(), "outside-repo", Some(OPT_IN));
+        let other_dir = tempfile::tempdir().expect("tempdir2");
+        let reg = test_registry(&[other_dir.path()]);
+
+        let store_file = root.join(".xavier/memory.sqlite3");
+        std::fs::write(&store_file, b"").expect("create store file stub");
+
+        let res =
+            save_to_repo_store(&reg, &root, "mcp/save/test3", "content", json!({}), None).await;
+
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("outside"));
+    }
+
+    #[tokio::test]
+    async fn save_to_repo_store_refuses_not_opted_in() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = make_test_repo(tmp.path(), "unopted-repo", None);
+        let reg = test_registry(&[tmp.path()]);
+
+        let store_file = root.join(".xavier/memory.sqlite3");
+        std::fs::create_dir_all(root.join(".xavier")).expect("mkdir .xavier");
+        std::fs::write(&store_file, b"").expect("create store file stub");
+
+        let res =
+            save_to_repo_store(&reg, &root, "mcp/save/test4", "content", json!({}), None).await;
+
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("opted in"));
     }
 }
