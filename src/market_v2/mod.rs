@@ -21,8 +21,15 @@
 //! The IVN routes (`/v2/ivn/*`, MKT-17) live in [`ivn`] and share the store.
 //! Their config keys are `market.ivn.quorum_ratio` and
 //! `market.ivn.validators_per_request`, read from `XAVIER_MARKET_IVN_*`.
+//!
+//! Listing create runs the privacy admission gate (`listing_policy`). It needs a
+//! `consent_ref` in the body. `GET /v2/marketplace/listings/{id}` returns the
+//! listing with a `provenance` credential, signed by the node key in
+//! `XAVIER_MARKET_V2_ISSUER_SEED` (64 hex chars). Without that variable a fresh
+//! key is generated per process. `GET /v2/marketplace/listings?q=` ranks by text.
 
 pub mod ivn;
+pub mod listing_policy;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -36,10 +43,13 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use ed25519_dalek::SigningKey;
+use rand::rngs::OsRng;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use xavier_market::credential::{self, ListingCredential};
 use xavier_market::{
-    Actor, ConsentError, ConsentRecord, ConsentState, ConsentStore, ListingUpdate, MarketConfig,
-    MarketError, MarketStore, NewListing, NewReceipt, SignedRequest,
+    Actor, ConsentError, ConsentRecord, ConsentState, ConsentStore, Listing, ListingUpdate,
+    MarketConfig, MarketError, MarketStore, NewListing, NewReceipt, SignedRequest,
 };
 
 /// Runtime flag. Only the exact value `beta` enables the routes.
@@ -47,6 +57,8 @@ pub const FLAG_ENV: &str = "XAVIER_MARKET_V2";
 pub const FLAG_VALUE: &str = "beta";
 pub const DB_PATH_ENV: &str = "XAVIER_MARKET_V2_DB_PATH";
 pub const DB_FILE_NAME: &str = "market-v2.sqlite3";
+/// Hex-encoded 32-byte ed25519 seed of the node key that signs provenance credentials.
+pub const ISSUER_SEED_ENV: &str = "XAVIER_MARKET_V2_ISSUER_SEED";
 
 /// Request headers that carry the publisher signature on mutations.
 pub const ACTOR_KEY_HEADER: &str = "x-xavier-actor-key";
@@ -69,13 +81,30 @@ where
     if !is_enabled() {
         return router;
     }
-    match open_store_from_env() {
-        Ok(store) => router.merge(routes(Arc::new(store))),
+    let opened = open_store_from_env().and_then(|store| Ok((store, issuer_key_from_env()?)));
+    match opened {
+        Ok((store, issuer)) => router.merge(routes(Arc::new(store), issuer)),
         Err(err) => {
-            tracing::error!(error = %err, "market-v2 is enabled but its store did not open; routes not mounted");
+            tracing::error!(error = %err, "market-v2 is enabled but its store or issuer key did not load; routes not mounted");
             router
         }
     }
+}
+
+/// Reads the provenance issuer key from [`ISSUER_SEED_ENV`]. Unset means a
+/// fresh random key for this process. A malformed value is an error, so the
+/// routes stay unmounted instead of signing with an unexpected key.
+pub fn issuer_key_from_env() -> Result<SigningKey, MarketError> {
+    let Some(raw) = std::env::var_os(ISSUER_SEED_ENV) else {
+        return Ok(SigningKey::generate(&mut OsRng));
+    };
+    let raw = raw.to_string_lossy();
+    let bytes = crate::crypto::hex_decode(raw.trim())
+        .map_err(|err| MarketError::InvalidInput(format!("{ISSUER_SEED_ENV} is not hex: {err}")))?;
+    let seed: [u8; 32] = bytes.try_into().map_err(|_| {
+        MarketError::InvalidInput(format!("{ISSUER_SEED_ENV} must be 32 bytes (64 hex chars)"))
+    })?;
+    Ok(SigningKey::from_bytes(&seed))
 }
 
 /// Opens the store described by the environment.
@@ -114,7 +143,7 @@ fn db_path_from_env() -> PathBuf {
 }
 
 /// The `/v2/marketplace/*` routes over a shared store.
-pub fn routes<S>(store: Arc<MarketStore>) -> Router<S>
+pub fn routes<S>(store: Arc<MarketStore>, issuer: SigningKey) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
@@ -150,9 +179,21 @@ where
         )
         .merge(ivn::routes())
         .layer(Extension(store))
+        .layer(Extension(Arc::new(issuer)))
 }
 
 type StoreExt = Extension<Arc<MarketStore>>;
+type IssuerExt = Extension<Arc<SigningKey>>;
+
+/// Listing create body: the listing fields plus the consent reference the
+/// privacy gate requires. The reference is checked, not stored.
+#[derive(Debug, Deserialize)]
+pub struct CreateListingPayload {
+    #[serde(flatten)]
+    pub listing: NewListing,
+    #[serde(default)]
+    pub consent_ref: Option<String>,
+}
 
 async fn create_listing_handler(
     Extension(store): StoreExt,
@@ -165,11 +206,17 @@ async fn create_listing_handler(
         Ok(actor) => actor,
         Err(response) => return response,
     };
-    let new: NewListing = match parse_body(&body) {
-        Ok(new) => new,
+    let payload: CreateListingPayload = match parse_body(&body) {
+        Ok(payload) => payload,
         Err(response) => return response,
     };
-    match store.create_listing(&actor, new) {
+    if let Err(err) = listing_policy::admit_listing(&payload.listing, payload.consent_ref) {
+        return error_status(
+            StatusCode::BAD_REQUEST,
+            format!("listing refused by privacy gate: {err}"),
+        );
+    }
+    match store.create_listing(&actor, payload.listing) {
         Ok(listing) => (StatusCode::CREATED, Json(listing)).into_response(),
         Err(err) => error_response(err),
     }
@@ -215,19 +262,57 @@ async fn revoke_listing_handler(
     }
 }
 
-async fn list_listings_handler(Extension(store): StoreExt) -> Response {
-    match store.list_listings() {
-        Ok(listings) => Json(listings).into_response(),
-        Err(err) => error_response(err),
+#[derive(Debug, Deserialize)]
+struct ListingQuery {
+    q: Option<String>,
+}
+
+async fn list_listings_handler(
+    Extension(store): StoreExt,
+    Query(query): Query<ListingQuery>,
+) -> Response {
+    let listings = match store.list_listings() {
+        Ok(listings) => listings,
+        Err(err) => return error_response(err),
+    };
+    match query
+        .q
+        .map(|q| q.trim().to_string())
+        .filter(|q| !q.is_empty())
+    {
+        Some(q) => Json(listing_policy::search(&q, listings)).into_response(),
+        None => Json(listings).into_response(),
     }
+}
+
+/// A listing with its provenance credential. The listing fields stay at the
+/// top level, so existing readers keep working.
+#[derive(Debug, Serialize)]
+struct ListingWithProvenance {
+    #[serde(flatten)]
+    listing: Listing,
+    provenance: ListingCredential,
 }
 
 async fn get_listing_handler(
     Extension(store): StoreExt,
+    Extension(issuer): IssuerExt,
     PathParam(id): PathParam<String>,
 ) -> Response {
     match store.get_listing(&id) {
-        Ok(Some(listing)) => Json(listing).into_response(),
+        Ok(Some(listing)) => {
+            // valid_from is the listing's creation time, so the credential is
+            // stable across reads apart from its id.
+            let issued_at = chrono::DateTime::from_timestamp_millis(listing.created_at_ms)
+                .map(|at| at.to_rfc3339())
+                .unwrap_or_default();
+            let provenance = credential::issue(&listing, &issuer, &issued_at);
+            Json(ListingWithProvenance {
+                listing,
+                provenance,
+            })
+            .into_response()
+        }
         Ok(None) => error_status(StatusCode::NOT_FOUND, format!("listing {id} not found")),
         Err(err) => error_response(err),
     }
@@ -609,6 +694,7 @@ mod tests {
                 "XAVIER_MARKET_LEGAL_TEXT_STATUS",
                 "XAVIER_MARKET_IVN_QUORUM_RATIO",
                 "XAVIER_MARKET_IVN_VALIDATORS_PER_REQUEST",
+                ISSUER_SEED_ENV,
             ];
             let saved = names
                 .iter()
@@ -708,11 +794,17 @@ mod tests {
     }
 
     fn listing_body() -> Value {
+        listing_with_title("Weather station logs")
+    }
+
+    /// A clean listing request with a consent reference, for the given title.
+    fn listing_with_title(title: &str) -> Value {
         json!({
             "seller_id": owner().public_key_hex(),
-            "title": "Weather station logs",
+            "title": title,
             "license": "CC-BY-4.0",
-            "price_credits": 25
+            "price_credits": 25,
+            "consent_ref": "consent-2026-10-19"
         })
     }
 
@@ -1007,6 +1099,180 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn personal_data_in_a_listing_is_refused_by_the_privacy_gate() {
+        let _env = MarketEnv::with_flag(Some("beta"));
+        let router: Router = mount(Router::new());
+
+        let (status, body) = send(
+            &router,
+            signed_request(
+                &owner(),
+                Method::POST,
+                "/v2/marketplace/listings",
+                Some(listing_with_title("Samples from alice@example.com")),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"].as_str().unwrap().contains("privacy gate"));
+
+        let (_, listings) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/listings", None),
+        )
+        .await;
+        assert_eq!(listings, json!([]));
+    }
+
+    #[tokio::test]
+    async fn a_listing_without_a_consent_reference_is_refused() {
+        let _env = MarketEnv::with_flag(Some("beta"));
+        let router: Router = mount(Router::new());
+
+        let mut missing = listing_body();
+        missing.as_object_mut().unwrap().remove("consent_ref");
+        let mut blank = listing_body();
+        blank["consent_ref"] = json!("   ");
+
+        for body in [missing, blank] {
+            let (status, response) = send(
+                &router,
+                signed_request(
+                    &owner(),
+                    Method::POST,
+                    "/v2/marketplace/listings",
+                    Some(body),
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert!(response["error"]
+                .as_str()
+                .unwrap()
+                .contains("consent reference"));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_clean_listing_with_consent_is_admitted() {
+        let _env = MarketEnv::with_flag(Some("beta"));
+        let router: Router = mount(Router::new());
+        let listing_id = create_owned_listing(&router).await;
+        assert!(!listing_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_listing_returns_a_provenance_credential_that_verifies() {
+        let _env = MarketEnv::with_flag(Some("beta"));
+        let router: Router = mount(Router::new());
+        let listing_id = create_owned_listing(&router).await;
+
+        let (status, body) = send(
+            &router,
+            json_request(
+                Method::GET,
+                &format!("/v2/marketplace/listings/{listing_id}"),
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let provenance: ListingCredential =
+            serde_json::from_value(body["provenance"].clone()).unwrap();
+        let mut listing_fields = body.clone();
+        listing_fields.as_object_mut().unwrap().remove("provenance");
+        let listing: Listing = serde_json::from_value(listing_fields).unwrap();
+
+        assert_eq!(listing.id, listing_id);
+        assert_eq!(
+            provenance.credential_subject.content_hash,
+            credential::content_hash(&listing)
+        );
+        assert!(credential::verify(&provenance, &listing).is_ok());
+
+        // A changed listing no longer matches the credential's content hash.
+        let mut altered = listing.clone();
+        altered.price_credits += 1;
+        assert_eq!(
+            credential::verify(&provenance, &altered),
+            Err(credential::CredentialError::DigestMismatch)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_malformed_issuer_seed_leaves_routes_unmounted() {
+        let _env = MarketEnv::with_flag(Some("beta"));
+        std::env::set_var(ISSUER_SEED_ENV, "not-hex");
+        let router: Router = mount(Router::new());
+        let (status, _) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/listings", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn listing_search_ranks_by_text_and_drops_non_matches() {
+        let _env = MarketEnv::with_flag(Some("beta"));
+        let router: Router = mount(Router::new());
+        for title in [
+            "Traffic camera frames",
+            "Solar weather archive",
+            "Weather station logs",
+        ] {
+            let (status, _) = send(
+                &router,
+                signed_request(
+                    &owner(),
+                    Method::POST,
+                    "/v2/marketplace/listings",
+                    Some(listing_with_title(title)),
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::CREATED);
+        }
+
+        // Without a query the list is unchanged: every listing, oldest first.
+        let (_, all) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/listings", None),
+        )
+        .await;
+        assert_eq!(all.as_array().unwrap().len(), 3);
+
+        // Both tokens match "Weather station logs" (1.0); "Solar weather archive"
+        // matches one of two (0.5); the traffic listing does not match at all.
+        let (status, hits) = send(
+            &router,
+            json_request(
+                Method::GET,
+                "/v2/marketplace/listings?q=weather%20station",
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let titles: Vec<&str> = hits
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|listing| listing["title"].as_str().unwrap())
+            .collect();
+        assert_eq!(titles, ["Weather station logs", "Solar weather archive"]);
+
+        // A blank query is treated as no query.
+        let (_, blank) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/listings?q=%20", None),
+        )
+        .await;
+        assert_eq!(blank.as_array().unwrap().len(), 3);
     }
 
     #[tokio::test]
