@@ -12,6 +12,53 @@ use rusqlite::params;
 use std::collections::{HashMap, HashSet};
 
 use super::{fts, graph, search, utils, FusionSource, VecSqliteMemoryStore};
+use std::collections::VecDeque;
+use std::sync::{LazyLock, Mutex};
+use std::time::Instant;
+
+/// Represents a slow leg execution in the memory store.
+#[derive(Debug, Clone)]
+pub struct SlowQuery {
+    pub store: String,
+    pub leg: &'static str,
+    pub ms: u64,
+    pub rows: usize,
+}
+
+static SLOW_QUERY_RING: LazyLock<Mutex<VecDeque<SlowQuery>>> =
+    LazyLock::new(|| Mutex::new(VecDeque::with_capacity(64)));
+
+/// Returns a snapshot of the current slow query ring.
+pub fn slow_query_snapshot() -> Vec<SlowQuery> {
+    let Ok(ring) = SLOW_QUERY_RING.lock() else {
+        return vec![];
+    };
+    ring.iter().cloned().collect()
+}
+
+fn record_slow_query(store: String, leg: &'static str, elapsed_ms: u64, rows: usize) {
+    if elapsed_ms > 500 {
+        tracing::warn!(
+            store = %store,
+            leg = leg,
+            elapsed_ms = elapsed_ms,
+            rows = rows,
+            "Slow memory query leg detected"
+        );
+        let Ok(mut ring) = SLOW_QUERY_RING.lock() else {
+            return;
+        };
+        if ring.len() >= 64 {
+            ring.pop_front();
+        }
+        ring.push_back(SlowQuery {
+            store,
+            leg,
+            ms: elapsed_ms,
+            rows,
+        });
+    }
+}
 
 impl VecSqliteMemoryStore {
     #[expect(dead_code, reason = "Metodo de backend usado via Backend trait")]
@@ -66,6 +113,7 @@ impl VecSqliteMemoryStore {
         // Resolved once per query: decrypts rows inside the SQL closure.
         let node_key = self.read_record_key();
         let crypto = self.crypto.clone();
+        let store_name = format!("vec_sqlite:{}", self.project_id);
 
         let scored = self.conn_provider.with_conn(&self.project_id, move |conn| {
             let mut internal_scored: HashMap<String, HybridSearchResult> = HashMap::new();
@@ -84,6 +132,7 @@ impl VecSqliteMemoryStore {
 
             if include_vector {
                 if let Some(emb) = &embedding {
+                    let start = Instant::now();
                     let embedding_json = serde_json::to_string(emb).unwrap_or_default();
                     let table_name = if emb.len() == 768 {
                         "memory_embeddings_768"
@@ -139,11 +188,13 @@ impl VecSqliteMemoryStore {
                             );
                         }
                     }
+                    record_slow_query(store_name.clone(), "vector", start.elapsed().as_millis() as u64, rank);
                 }
             }
 
             if include_text && !trimmed_query_c.is_empty() {
                 if let Some(fts_query) = fts::build_fts_query(&trimmed_query_c) {
+                    let start = Instant::now();
                     let fts_sql = r#"
                         SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
                                m.created_at, m.updated_at, m.revision, m.primary_flag,
@@ -184,10 +235,12 @@ impl VecSqliteMemoryStore {
                             );
                         }
                     }
+                    record_slow_query(store_name.clone(), "fts", start.elapsed().as_millis() as u64, rank);
                 }
 
                 let entity_terms = utils::search_tokens(&trimmed_query_c);
                 if !entity_terms.is_empty() {
+                    let start = Instant::now();
                     let mut kg_rank = 0usize;
                     let mut seen_ids = HashSet::<String>::new();
 
@@ -234,6 +287,7 @@ impl VecSqliteMemoryStore {
                             }
                         }
                     }
+                    record_slow_query(store_name.clone(), "kg", start.elapsed().as_millis() as u64, kg_rank);
                 }
             }
             Ok(internal_scored)
@@ -404,5 +458,53 @@ mod tests {
         assert_eq!(VecSqliteMemoryStore::candidate_limit(5), 25);
         assert_eq!(VecSqliteMemoryStore::candidate_limit(50), 250);
         assert_eq!(VecSqliteMemoryStore::candidate_limit(200), 1000);
+    }
+
+    #[test]
+    fn slow_query_ring_records_leg_and_store() {
+        // Clear ring if it has items from other tests.
+        if let Ok(mut ring) = SLOW_QUERY_RING.lock() {
+            ring.clear();
+        }
+
+        record_slow_query("test_store".to_string(), "vector", 600, 10);
+
+        let snap = slow_query_snapshot();
+        assert_eq!(snap.len(), 1);
+        assert_eq!(snap[0].store, "test_store");
+        assert_eq!(snap[0].leg, "vector");
+        assert_eq!(snap[0].ms, 600);
+        assert_eq!(snap[0].rows, 10);
+    }
+
+    #[test]
+    fn ring_is_bounded_to_64() {
+        if let Ok(mut ring) = SLOW_QUERY_RING.lock() {
+            ring.clear();
+        }
+
+        for i in 0..100 {
+            record_slow_query("test_store".to_string(), "fts", 501 + i, 1);
+        }
+
+        let snap = slow_query_snapshot();
+        assert_eq!(snap.len(), 64);
+        // The first 36 elements (0..36) should be popped off.
+        // The oldest remaining should be the one where i=36 (ms=537)
+        assert_eq!(snap[0].ms, 537);
+        assert_eq!(snap.last().unwrap().ms, 600);
+    }
+
+    #[test]
+    fn fast_legs_are_not_recorded() {
+        if let Ok(mut ring) = SLOW_QUERY_RING.lock() {
+            ring.clear();
+        }
+
+        record_slow_query("test_store".to_string(), "kg", 499, 1);
+        record_slow_query("test_store".to_string(), "kg", 500, 1);
+
+        let snap = slow_query_snapshot();
+        assert!(snap.is_empty());
     }
 }
