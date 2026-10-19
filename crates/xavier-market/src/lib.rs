@@ -31,6 +31,7 @@ pub use config::{
     DEFAULT_GRANT_MAX_TTL_SECONDS, DEFAULT_GRANT_TTL_SECONDS, KEY_GRANT_DEFAULT_TTL_SECONDS,
     KEY_GRANT_MAX_TTL_SECONDS,
 };
+pub use consent::{ConsentError, ConsentRecord, ConsentState, ConsentStore};
 pub use error::MarketError;
 pub use grant::{
     grant_signing_bytes, unwrap_key_as_buyer, wrap_key_for_buyer, AccessGrant, GrantError,

@@ -38,8 +38,8 @@ use axum::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use xavier_market::{
-    Actor, ListingUpdate, MarketConfig, MarketError, MarketStore, NewListing, NewReceipt,
-    SignedRequest,
+    Actor, ConsentError, ConsentRecord, ConsentState, ConsentStore, ListingUpdate, MarketConfig,
+    MarketError, MarketStore, NewListing, NewReceipt, SignedRequest,
 };
 
 /// Runtime flag. Only the exact value `beta` enables the routes.
@@ -143,6 +143,10 @@ where
         .route(
             "/v2/marketplace/grants/{id}/revoke",
             post(revoke_grant_handler),
+        )
+        .route(
+            "/v2/marketplace/consent",
+            post(set_consent_handler).get(get_consent_handler),
         )
         .merge(ivn::routes())
         .layer(Extension(store))
@@ -382,6 +386,98 @@ async fn revoke_grant_handler(
             Json(sanitized).into_response()
         }
         Err(err) => error_response(err),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetConsentPayload {
+    pub node_id: String,
+    pub state: String,
+    pub terms_version: String,
+    pub consent_version: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConsentQuery {
+    pub node_id: Option<String>,
+}
+
+fn open_consent_store() -> Result<ConsentStore, ConsentError> {
+    let path = db_path_from_env();
+    ConsentStore::open(&path)
+}
+
+async fn set_consent_handler(
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let actor = match authenticate(&method, &uri, &headers, &body) {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let payload: SetConsentPayload = match parse_body(&body) {
+        Ok(payload) => payload,
+        Err(response) => return response,
+    };
+    if payload.node_id != actor.id() {
+        return error_status(
+            StatusCode::FORBIDDEN,
+            format!(
+                "node_id mismatch: request specifies '{}' but caller authenticated as '{}'",
+                payload.node_id,
+                actor.id()
+            ),
+        );
+    }
+    let state = match ConsentState::parse(&payload.state) {
+        Ok(state) => state,
+        Err(err) => return error_status(StatusCode::BAD_REQUEST, err.to_string()),
+    };
+    let record = ConsentRecord {
+        node_id: payload.node_id,
+        state,
+        terms_version: payload.terms_version,
+        consent_version: payload.consent_version,
+        updated_at_ms: now_ms(),
+    };
+    let store = match open_consent_store() {
+        Ok(store) => store,
+        Err(err) => return error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    };
+    match store.set(record.clone()) {
+        Ok(()) => (StatusCode::OK, Json(record)).into_response(),
+        Err(ConsentError::MissingVersion) => {
+            error_status(StatusCode::BAD_REQUEST, "Missing consent or terms version")
+        }
+        Err(err) => error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    }
+}
+
+async fn get_consent_handler(Query(query): Query<ConsentQuery>) -> Response {
+    // Unscoped reads would list every node's consent, so a node_id filter is required.
+    let Some(node_id) = query.node_id.filter(|s| !s.trim().is_empty()) else {
+        return error_status(
+            StatusCode::BAD_REQUEST,
+            "node_id query parameter is required",
+        );
+    };
+    let store = match open_consent_store() {
+        Ok(store) => store,
+        Err(err) => return error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    };
+    match store.get(node_id.trim()) {
+        Ok(Some(record)) => Json(record).into_response(),
+        Ok(None) => Json(ConsentRecord {
+            node_id: node_id.trim().to_string(),
+            state: ConsentState::Off,
+            terms_version: String::new(),
+            consent_version: String::new(),
+            updated_at_ms: 0,
+        })
+        .into_response(),
+        Err(err) => error_status(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
     }
 }
 
@@ -1391,5 +1487,133 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn consent_flow_and_query_tests() {
+        let _env = MarketEnv::with_flag(Some(FLAG_VALUE));
+
+        let router = mount(Router::new());
+
+        // Initial consent state for unknown node is 'off'
+        let (status, body) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/consent?node_id=node_x", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["state"], "off");
+
+        // Unsigned consent mutation returns 401 Unauthorized
+        let (status, _) = send(
+            &router,
+            json_request(
+                Method::POST,
+                "/v2/marketplace/consent",
+                Some(json!({
+                    "node_id": owner().public_key_hex(),
+                    "state": "shared",
+                    "terms_version": "v1.0",
+                    "consent_version": "v1.0"
+                })),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Mismatched node_id (another node's id) returns 403 Forbidden
+        let (status, _) = send(
+            &router,
+            signed_request(
+                &owner(),
+                Method::POST,
+                "/v2/marketplace/consent",
+                Some(json!({
+                    "node_id": stranger().public_key_hex(),
+                    "state": "shared",
+                    "terms_version": "v1.0",
+                    "consent_version": "v1.0"
+                })),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // Opt in requires terms and consent versions
+        let (status, _) = send(
+            &router,
+            signed_request(
+                &owner(),
+                Method::POST,
+                "/v2/marketplace/consent",
+                Some(json!({
+                    "node_id": owner().public_key_hex(),
+                    "state": "shared",
+                    "terms_version": "",
+                    "consent_version": "v1"
+                })),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // Valid signed consent update
+        let (status, body) = send(
+            &router,
+            signed_request(
+                &owner(),
+                Method::POST,
+                "/v2/marketplace/consent",
+                Some(json!({
+                    "node_id": owner().public_key_hex(),
+                    "state": "shared",
+                    "terms_version": "v1.0",
+                    "consent_version": "v1.0"
+                })),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["state"], "shared");
+
+        // Query owner again
+        let (status, body) = send(
+            &router,
+            json_request(
+                Method::GET,
+                &format!(
+                    "/v2/marketplace/consent?node_id={}",
+                    owner().public_key_hex()
+                ),
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["state"], "shared");
+        assert_eq!(body["terms_version"], "v1.0");
+    }
+
+    #[tokio::test]
+    async fn consent_read_without_node_id_is_a_bad_request() {
+        let _env = MarketEnv::with_flag(Some(FLAG_VALUE));
+
+        let router = mount(Router::new());
+
+        // An unscoped read would expose every node's consent state, so it is refused
+        let (status, _) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/consent", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // A blank node_id is treated the same as a missing one
+        let (status, _) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/consent?node_id=%20", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 }

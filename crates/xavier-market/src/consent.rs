@@ -97,10 +97,10 @@ impl ConsentStore {
     }
 
     pub fn set(&self, record: ConsentRecord) -> Result<(), ConsentError> {
-        if record.state != ConsentState::Off {
-            if record.terms_version.trim().is_empty() || record.consent_version.trim().is_empty() {
-                return Err(ConsentError::MissingVersion);
-            }
+        if record.state != ConsentState::Off
+            && (record.terms_version.trim().is_empty() || record.consent_version.trim().is_empty())
+        {
+            return Err(ConsentError::MissingVersion);
         }
         let conn = self.conn.lock().unwrap_or_else(PoisonError::into_inner);
         conn.execute(

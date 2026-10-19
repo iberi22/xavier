@@ -14,6 +14,7 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  ShoppingBag,
   Users,
   Wifi,
   WifiOff,
@@ -24,7 +25,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { ApiClient, getApiUrl, getRemoteUrl, setRemoteUrl } from "../api/client";
 import { getApiTokenSync } from "../hooks/useApiToken";
 import { useNotificationStream } from "../hooks/useNotificationStream";
+import { probeMarketplaceAvailable } from "../maloca/api";
 import FounderNodeStatusCard from "./FounderNodeStatusCard";
+import MarketplaceStatusCard from "./MarketplaceStatusCard";
 import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
 import OperationModeBadge from "./OperationModeBadge";
@@ -78,6 +81,7 @@ export default React.memo(function TopStatusBar({
   });
   const [showConfig, setShowConfig] = useState(false);
   const [showFounderCard, setShowFounderCard] = useState(false);
+  const [showMarketplaceCard, setShowMarketplaceCard] = useState(false);
   const [showMessaging, setShowMessaging] = useState(false);
   const [messagingTab, setMessagingTab] = useState<MessagingPlatform>("telegram");
   const [showNotifications, setShowNotifications] = useState(false);
@@ -96,6 +100,7 @@ export default React.memo(function TopStatusBar({
   const [modules, setModules] = useState({
     time: true,
     founder: true,
+    marketplace: false,
     channels: true,
     resources: true,
     security: true,
@@ -193,6 +198,13 @@ export default React.memo(function TopStatusBar({
         }
       } catch (err) {
         console.debug("Error fetching memories count:", err);
+      }
+
+      try {
+        const available = await probeMarketplaceAvailable();
+        setModules((prev) =>
+          prev.marketplace === available ? prev : { ...prev, marketplace: available },
+        );
       } finally {
         setInternalLoading(false);
       }
@@ -475,6 +487,7 @@ export default React.memo(function TopStatusBar({
                   {Object.entries({
                     time: "Time & Date",
                     founder: "Founder Node",
+                    marketplace: "Marketplace Status",
                     resources: "System Resources",
                     channels: "Communication",
                     security: "Security & Proxy",
@@ -552,6 +565,48 @@ export default React.memo(function TopStatusBar({
               Maloca
             </span>
           </motion.button>
+
+          {/* Marketplace Status Card Pill */}
+          {modules.marketplace && (
+            <div className="relative">
+              <motion.button
+                layout
+                transition={spring}
+                type="button"
+                onClick={() => setShowMarketplaceCard((prev) => !prev)}
+                className={`bg-[#0a0a0a]/80 backdrop-blur-md border ${
+                  showMarketplaceCard
+                    ? "border-emerald-500/60 bg-emerald-500/10 text-emerald-300"
+                    : "border-white/10 text-white/70 hover:border-emerald-400/30 hover:bg-emerald-500/5 hover:text-white"
+                } shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0 transition-colors`}
+                title="Marketplace v2 Status"
+                aria-label="Marketplace v2 Status"
+              >
+                <ShoppingBag className="w-3 h-3 text-emerald-400" />
+                <span className="font-mono text-[9px] uppercase tracking-wide hidden sm:inline-block">
+                  Market
+                </span>
+              </motion.button>
+
+              <AnimatePresence>
+                {showMarketplaceCard && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute top-full mt-3 right-0 w-72 z-[70]"
+                  >
+                    <MarketplaceStatusCard
+                      onOpenMarketplace={() => {
+                        setShowMarketplaceCard(false);
+                        window.location.hash = "#/maloca";
+                      }}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
 
           {/* Security & Proxy */}
           {modules.security && (
