@@ -26,6 +26,7 @@ mod store;
 pub mod telemetry_gate;
 pub mod terms;
 
+pub use audit_chain::{AuditChain, AuditError, AuditRecord, ENTRY_KINDS, GENESIS_HASH};
 pub use auth::{Actor, SignedHeaders, SignedRequest, Signer};
 pub use config::{
     AnchorMode, ConfigError, Currency, LegalTextStatus, License, MarketConfig, Settlement,

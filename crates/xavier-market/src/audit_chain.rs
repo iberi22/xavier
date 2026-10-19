@@ -9,7 +9,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use thiserror::Error;
 
 pub const GENESIS_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-pub const ENTRY_KINDS: [&str; 2] = ["grant", "purchase"];
+pub const ENTRY_KINDS: [&str; 3] = ["grant", "purchase", "receipt"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditRecord {
@@ -60,7 +60,7 @@ impl AuditChain {
         )
     }
 
-    fn conn(&self) -> MutexGuard<'_, Connection> {
+    pub fn conn(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -135,9 +135,11 @@ mod tests {
         let chain = AuditChain::open_in_memory().unwrap();
         let r1 = chain.append("grant", &json!(1)).unwrap();
         let r2 = chain.append("purchase", &json!(2)).unwrap();
+        let r3 = chain.append("receipt", &json!(3)).unwrap();
         assert_eq!(r1.prev_hash, GENESIS_HASH);
         assert_eq!(r2.prev_hash, r1.hash);
-        assert_eq!(chain.verify().unwrap(), 2);
+        assert_eq!(r3.prev_hash, r2.hash);
+        assert_eq!(chain.verify().unwrap(), 3);
     }
 
     #[test]
