@@ -12,4 +12,5 @@ pub mod time_metrics_adapter;
 pub mod plugins;
 
 pub use state::AppState;
+pub mod espacio_invites;
 pub mod handlers;

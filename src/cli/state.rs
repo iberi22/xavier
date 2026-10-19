@@ -148,7 +148,8 @@ pub fn guarded_espacio_router(state: &CliState) -> axum::Router<CliState> {
     axum::Router::new()
         .nest(
             "/api/v1/espacio",
-            xavier::adapters::inbound::http::routes::espacio_production_routes(),
+            xavier::adapters::inbound::http::routes::espacio_production_routes()
+                .merge(crate::adapters::inbound::http::espacio_invites::espacio_invite_routes()),
         )
         .layer(middleware::from_fn_with_state(
             state.clone(),
