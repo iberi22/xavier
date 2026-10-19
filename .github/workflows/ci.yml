@@ -481,13 +481,14 @@ jobs:
       - name: Run repo memory isolation tests with zero-test guard
         run: |
           set -euo pipefail
+          source scripts/xavier-test-target.sh
           mkdir -p target/test-reports
 
           cargo test --package xavier --features ci-safe --lib -- --test-threads=1 memory::repo_store_registry 2>&1 | tee target/test-reports/out-registry.txt
           cargo test --package xavier --features ci-safe --lib -- --test-threads=1 memory::repo_retention 2>&1 | tee target/test-reports/out-retention.txt
           cargo test --package xavier --features ci-safe --lib -- --test-threads=1 memory::sqlite_vec_store::store_impl::tests::repo_store 2>&1 | tee target/test-reports/out-store.txt
-          cargo test --package xavier --features ci-safe --test espacio_isolation_memory -- --test-threads=1 2>&1 | tee target/test-reports/out-espacio-mem.txt
-          cargo test --package xavier --features ci-safe --test espacio_isolation_e2e -- --test-threads=1 2>&1 | tee target/test-reports/out-espacio-e2e.txt
+          xavier_cargo_test ci-safe espacio_isolation_memory 2>&1 | tee target/test-reports/out-espacio-mem.txt
+          xavier_cargo_test ci-safe espacio_isolation_e2e 2>&1 | tee target/test-reports/out-espacio-e2e.txt
 
           for f in target/test-reports/*.txt; do
             if ! grep -E "running [1-9][0-9]* test" "$f" >/dev/null; then
