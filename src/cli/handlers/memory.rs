@@ -21,6 +21,11 @@ use xavier::memory::sync::index::{embed_if_missing, index_applied_changes};
 use xavier::ports::inbound::MemoryQueryPort;
 use xavier::workspace::WorkspaceContext;
 
+use serde::{Deserialize, Serialize};
+
+use crate::memory::repo_store_registry::{
+    open_repo_store, repo_stores, RepoStoreError, RepoStoreRegistry,
+};
 use xavier::memory::schema::MemoryLevel;
 use xavier::memory::store::MemoryRecord;
 use xavier::ports::inbound::input_security_port::SecureInputResult;
@@ -566,6 +571,21 @@ pub async fn get_handler(
     }
 }
 
+/// Reference to an opted-in repository store root.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoRef {
+    pub root: String,
+}
+
+/// Request wrapper for memory add allowing optional per-repo store routing.
+#[derive(Debug, Deserialize)]
+pub struct RepoAddRequest {
+    #[serde(flatten)]
+    pub payload: AddPayload,
+    #[serde(default)]
+    pub repo: Option<RepoRef>,
+}
+
 /// Add handler.
 #[allow(clippy::too_many_arguments)]
 pub async fn add_handler(
@@ -579,8 +599,10 @@ pub async fn add_handler(
     client: Option<axum::Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
     space: Option<Extension<SpaceContext>>,
     workspace: Option<Extension<WorkspaceContext>>,
-    axum::Json(payload): axum::Json<AddPayload>,
+    axum::Json(request): axum::Json<RepoAddRequest>,
 ) -> impl axum::response::IntoResponse {
+    let payload = request.payload;
+    let repo_opt = request.repo;
     let scoped = match scoped_memory(
         &state,
         space.as_ref().map(|e| &e.0),
@@ -799,62 +821,125 @@ pub async fn add_handler(
         metadata_iv: None,
         ..Default::default()
     };
-    match scoped.memory.add(record).await {
-        Ok(id) => {
-            info!("Memory added successfully: {}", path);
-            // Bridge: the v1/MCP search reads the workspace vector memory
-            // (QmdMemory docs), not the record store above. Mirror the doc
-            // there (same id+path) so fresh writes are searchable immediately
-            // instead of only after a reboot's init-from-store. Background:
-            // never delays the write response. Skipped when the caller did
-            // not layer a workspace (direct unit-test routers): the record
-            // store write above already succeeded.
-            if let (None, Some(Extension(workspace))) = (&scoped.space, workspace) {
-                let mirror = workspace.workspace.memory.clone();
-                let (mirror_id, mirror_path, mirror_content, mirror_meta) = (
-                    id.clone(),
-                    path.clone(),
-                    effective_content.to_string(),
-                    normalized_metadata.clone(),
-                );
-                tokio::spawn(async move {
-                    let mut doc = MemoryDocument {
-                        id: Some(mirror_id.clone()),
-                        path: mirror_path,
-                        content: mirror_content,
-                        metadata: mirror_meta,
-                        ..Default::default()
-                    };
-                    embed_if_missing(&mut doc).await;
-                    if let Err(error) = mirror.add(doc).await {
-                        tracing::warn!(error = %error, memory_id = %mirror_id, "qmd mirror failed");
-                    }
-                });
-            }
-            axum::Json(serde_json::json!({
-                "status": "ok",
-                "message": "Memory added",
-                "path": path,
-                "id": id,
-                "security": {
-                    "scanned": true,
-                    "sanitized": sec_result.sanitized_input.is_some(),
-                    "attack_type": sec_result.attack_type,
-                }
-            }))
-            .into_response()
-        }
-        Err(e) => {
-            info!("Add memory error: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
+    if let Some(repo) = repo_opt {
+        let registry = repo_stores();
+        match add_to_repo_store(registry, std::path::Path::new(&repo.root), record).await {
+            Ok(id) => {
+                info!("Memory added to repo store successfully: {}", path);
                 axum::Json(serde_json::json!({
-                    "status": "error",
-                    "message": e.to_string(),
-                })),
-            )
+                    "status": "ok",
+                    "message": "Memory added",
+                    "path": path,
+                    "id": id,
+                    "security": {
+                        "scanned": true,
+                        "sanitized": sec_result.sanitized_input.is_some(),
+                        "attack_type": sec_result.attack_type,
+                    }
+                }))
                 .into_response()
+            }
+            Err(err) => {
+                let status = repo_store_error_to_status(&err);
+                info!("Add memory to repo store error: {}", err);
+                (
+                    status,
+                    axum::Json(serde_json::json!({
+                        "status": "error",
+                        "message": err.to_string(),
+                    })),
+                )
+                    .into_response()
+            }
         }
+    } else {
+        match scoped.memory.add(record).await {
+            Ok(id) => {
+                info!("Memory added successfully: {}", path);
+                // Bridge: the v1/MCP search reads the workspace vector memory
+                // (QmdMemory docs), not the record store above. Mirror the doc
+                // there (same id+path) so fresh writes are searchable immediately
+                // instead of only after a reboot's init-from-store. Background:
+                // never delays the write response. Skipped when the caller did
+                // not layer a workspace (direct unit-test routers): the record
+                // store write above already succeeded.
+                if let (None, Some(Extension(workspace))) = (&scoped.space, workspace) {
+                    let mirror = workspace.workspace.memory.clone();
+                    let (mirror_id, mirror_path, mirror_content, mirror_meta) = (
+                        id.clone(),
+                        path.clone(),
+                        effective_content.to_string(),
+                        normalized_metadata.clone(),
+                    );
+                    tokio::spawn(async move {
+                        let mut doc = MemoryDocument {
+                            id: Some(mirror_id.clone()),
+                            path: mirror_path,
+                            content: mirror_content,
+                            metadata: mirror_meta,
+                            ..Default::default()
+                        };
+                        embed_if_missing(&mut doc).await;
+                        if let Err(error) = mirror.add(doc).await {
+                            tracing::warn!(error = %error, memory_id = %mirror_id, "qmd mirror failed");
+                        }
+                    });
+                }
+                axum::Json(serde_json::json!({
+                    "status": "ok",
+                    "message": "Memory added",
+                    "path": path,
+                    "id": id,
+                    "security": {
+                        "scanned": true,
+                        "sanitized": sec_result.sanitized_input.is_some(),
+                        "attack_type": sec_result.attack_type,
+                    }
+                }))
+                .into_response()
+            }
+            Err(e) => {
+                info!("Add memory error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(serde_json::json!({
+                        "status": "error",
+                        "message": e.to_string(),
+                    })),
+                )
+                    .into_response()
+            }
+        }
+    }
+}
+
+/// Adds a record directly to the opted-in repo store.
+pub(crate) async fn add_to_repo_store(
+    registry: &RepoStoreRegistry,
+    root: &std::path::Path,
+    record: MemoryRecord,
+) -> Result<String, RepoStoreError> {
+    use crate::memory::store::MemoryStore;
+    let store = registry.open(root).await?;
+    let mut record = record;
+    if record.id.is_empty() {
+        record.id = format!("mem_{}", ulid::Ulid::new());
+    }
+    let id = record.id.clone();
+    store.put(record).await.map_err(|e| RepoStoreError::Open {
+        path: root.to_path_buf(),
+        reason: e.to_string(),
+    })?;
+    Ok(id)
+}
+
+fn repo_store_error_to_status(err: &RepoStoreError) -> StatusCode {
+    match err {
+        RepoStoreError::OutsideAllowlist { .. } | RepoStoreError::NotOptedIn { .. } => {
+            StatusCode::FORBIDDEN
+        }
+        RepoStoreError::RootUnavailable { .. } => StatusCode::NOT_FOUND,
+        _ => StatusCode::SERVICE_UNAVAILABLE,
     }
 }
 
@@ -2582,5 +2667,118 @@ pub async fn timeline_query_handler(
                 "message": e.to_string()
             }),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::connection_provider::InMemoryProvider;
+    use crate::memory::repo_store_registry::{
+        RepoRecordKeySource, RepoStoreError, RepoStoreRegistry,
+    };
+    use crate::memory::store::{MemoryRecord, MemoryStore};
+    use std::path::{Path, PathBuf};
+
+    const OPT_IN: &str = "memory_store = \"repo\"\n";
+    const TEST_MASTER: [u8; 32] = [0x3C; 32];
+
+    struct TestKeys;
+    impl RepoRecordKeySource for TestKeys {
+        fn record_key(&self, project_id: &str) -> anyhow::Result<[u8; 32]> {
+            crate::codebase::repo_package_crypto::derive_repo_record_key_from_master(
+                &TEST_MASTER,
+                project_id,
+            )
+        }
+    }
+
+    fn make_test_repo(base: &Path, name: &str, config: Option<&str>) -> PathBuf {
+        let root = base.join(name);
+        std::fs::create_dir_all(root.join(".git")).expect("mkdir .git");
+        if let Some(body) = config {
+            std::fs::create_dir_all(root.join(".xavier")).expect("mkdir .xavier");
+            std::fs::write(root.join(".xavier/config.toml"), body).expect("write config");
+        }
+        root.canonicalize().expect("canonical repo root")
+    }
+
+    fn test_registry(allowed: &[&Path]) -> RepoStoreRegistry {
+        let roots: Vec<PathBuf> = allowed.iter().map(|p| p.to_path_buf()).collect();
+        RepoStoreRegistry::new(
+            &roots,
+            Arc::new(InMemoryProvider::new()),
+            Arc::new(TestKeys),
+        )
+    }
+
+    #[tokio::test]
+    async fn add_with_repo_writes_only_repo_store() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = make_test_repo(tmp.path(), "my-repo", Some(OPT_IN));
+        let reg = test_registry(&[tmp.path()]);
+
+        let record = MemoryRecord {
+            id: String::new(),
+            workspace_id: "repo".to_string(),
+            path: "notes/sample".to_string(),
+            content: "repo-only test content".to_string(),
+            ..Default::default()
+        };
+
+        let id = add_to_repo_store(&reg, &root, record)
+            .await
+            .expect("add to repo store");
+        assert!(!id.is_empty());
+
+        let store = reg.open(&root).await.expect("open repo store");
+        let retrieved = store.get("repo", "notes/sample").await.expect("get");
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().content, "repo-only test content");
+    }
+
+    #[tokio::test]
+    async fn add_with_repo_refuses_outside_allowlist() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = make_test_repo(tmp.path(), "outside-repo", Some(OPT_IN));
+        let other_dir = tempfile::tempdir().expect("tempdir2");
+        let reg = test_registry(&[other_dir.path()]);
+
+        let record = MemoryRecord {
+            id: String::new(),
+            workspace_id: "repo".to_string(),
+            path: "notes/outside".to_string(),
+            content: "forbidden".to_string(),
+            ..Default::default()
+        };
+
+        let res = add_to_repo_store(&reg, &root, record).await;
+        assert!(matches!(res, Err(RepoStoreError::OutsideAllowlist { .. })));
+        if let Err(err) = res {
+            assert_eq!(repo_store_error_to_status(&err), StatusCode::FORBIDDEN);
+        }
+    }
+
+    #[test]
+    fn add_without_repo_is_unchanged() {
+        let json_without_repo = serde_json::json!({
+            "content": "regular note without repo",
+            "path": "notes/plain"
+        });
+        let req: RepoAddRequest = serde_json::from_value(json_without_repo).expect("deserialize");
+        assert!(req.repo.is_none());
+        assert_eq!(req.payload.content, "regular note without repo");
+        assert_eq!(req.payload.path.as_deref(), Some("notes/plain"));
+
+        let json_with_repo = serde_json::json!({
+            "content": "repo note",
+            "repo": {
+                "root": "/tmp/test-repo"
+            }
+        });
+        let req_with: RepoAddRequest = serde_json::from_value(json_with_repo).expect("deserialize");
+        assert!(req_with.repo.is_some());
+        assert_eq!(req_with.repo.unwrap().root, "/tmp/test-repo");
+        assert_eq!(req_with.payload.content, "repo note");
     }
 }
