@@ -20,6 +20,7 @@ pub mod merkle;
 mod model;
 pub mod pack;
 pub mod ranking;
+pub mod settlement;
 pub mod signed_receipt;
 mod store;
 pub mod telemetry_gate;
@@ -27,9 +28,9 @@ pub mod terms;
 
 pub use auth::{Actor, SignedHeaders, SignedRequest, Signer};
 pub use config::{
-    ConfigError, Currency, LegalTextStatus, License, MarketConfig, Settlement,
-    DEFAULT_GRANT_MAX_TTL_SECONDS, DEFAULT_GRANT_TTL_SECONDS, KEY_GRANT_DEFAULT_TTL_SECONDS,
-    KEY_GRANT_MAX_TTL_SECONDS,
+    AnchorMode, ConfigError, Currency, LegalTextStatus, License, MarketConfig, Settlement,
+    DEFAULT_GRANT_MAX_TTL_SECONDS, DEFAULT_GRANT_TTL_SECONDS, KEY_ANCHOR_MODE,
+    KEY_GRANT_DEFAULT_TTL_SECONDS, KEY_GRANT_MAX_TTL_SECONDS,
 };
 pub use consent::{ConsentError, ConsentRecord, ConsentState, ConsentStore};
 pub use error::MarketError;

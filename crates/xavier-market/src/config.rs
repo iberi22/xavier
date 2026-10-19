@@ -16,6 +16,7 @@ pub const KEY_IVN_QUORUM_RATIO: &str = "market.ivn.quorum_ratio";
 pub const KEY_IVN_VALIDATORS_PER_REQUEST: &str = "market.ivn.validators_per_request";
 pub const KEY_GRANT_DEFAULT_TTL_SECONDS: &str = "market.grant_default_ttl_seconds";
 pub const KEY_GRANT_MAX_TTL_SECONDS: &str = "market.grant_max_ttl_seconds";
+pub const KEY_ANCHOR_MODE: &str = "market.anchor_mode";
 
 /// Lowest quorum a request may use. Below half, a bare majority could pass
 /// a request that most assigned validators rejected.
@@ -158,6 +159,36 @@ impl LegalTextStatus {
     }
 }
 
+/// Anchoring execution mode. Defaults to dry-run mode only (no transactions, no funds).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AnchorMode {
+    #[default]
+    DryRun,
+    /// Real submission to Amoy testnet. Blocked by owner decision: needs owner's go and funded deployer.
+    LiveAmoy,
+}
+
+impl AnchorMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DryRun => "dry_run",
+            Self::LiveAmoy => "live_amoy",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, ConfigError> {
+        match value.trim() {
+            "dry_run" => Ok(Self::DryRun),
+            "live_amoy" => Ok(Self::LiveAmoy),
+            other => Err(ConfigError::UnknownValue {
+                key: KEY_ANCHOR_MODE,
+                value: other.to_string(),
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ConfigError {
     #[error("unknown value {value:?} for {key}")]
@@ -174,6 +205,8 @@ pub enum ConfigError {
     SwalTokenNotEnabled,
     #[error("market.currency=usd_polar needs market.legal_text_status=reviewed")]
     UsdRequiresReviewedTerms,
+    #[error("market.anchor_mode=live_amoy needs owner authorization and a funded deployer")]
+    LiveAmoyNotEnabled,
     #[error("{key} value {value} is outside its allowed range")]
     OutOfRange { key: &'static str, value: String },
 }
@@ -195,11 +228,13 @@ pub struct MarketConfig {
     pub grant_default_ttl_seconds: u64,
     /// Maximum allowed time-to-live for access grants, in seconds. Default 2,592,000 (30 days).
     pub grant_max_ttl_seconds: u64,
+    /// Mode for periodic Merkle anchoring. Default dry_run (no transactions, no funds).
+    pub anchor_mode: AnchorMode,
 }
 
 impl Default for MarketConfig {
     /// The v1 defaults: internal credits, off-chain, the full license menu,
-    /// placeholder legal text, IVN quorum 80% over 5 validators.
+    /// placeholder legal text, IVN quorum 80% over 5 validators, dry-run anchoring.
     fn default() -> Self {
         Self {
             currency: Currency::InternalCredits,
@@ -211,6 +246,7 @@ impl Default for MarketConfig {
             ivn_validators_per_request: 5,
             grant_default_ttl_seconds: DEFAULT_GRANT_TTL_SECONDS,
             grant_max_ttl_seconds: DEFAULT_GRANT_MAX_TTL_SECONDS,
+            anchor_mode: AnchorMode::DryRun,
         }
     }
 }
@@ -283,6 +319,9 @@ impl MarketConfig {
                         value: value.trim().to_string(),
                     })?;
         }
+        if let Some(value) = lookup(KEY_ANCHOR_MODE) {
+            config.anchor_mode = AnchorMode::parse(&value)?;
+        }
         config.validate()?;
         Ok(config)
     }
@@ -291,6 +330,9 @@ impl MarketConfig {
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.settlement == Settlement::OnChain {
             return Err(ConfigError::OnChainNotImplemented);
+        }
+        if self.anchor_mode == AnchorMode::LiveAmoy {
+            return Err(ConfigError::LiveAmoyNotEnabled);
         }
         match self.currency {
             Currency::SwalToken => return Err(ConfigError::SwalTokenNotEnabled),
@@ -565,5 +607,26 @@ mod tests {
             (KEY_GRANT_MAX_TTL_SECONDS, "2000"),
         ]));
         assert!(matches!(inverted, Err(ConfigError::OutOfRange { .. })));
+    }
+
+    #[test]
+    fn anchor_mode_defaults_to_dry_run_and_rejects_live_amoy_by_default() {
+        let defaults = MarketConfig::from_lookup(|_| None).unwrap();
+        assert_eq!(defaults.anchor_mode, AnchorMode::DryRun);
+        assert_eq!(defaults.anchor_mode.as_str(), "dry_run");
+
+        // live_amoy is rejected in v1 by owner decision
+        let live_err = MarketConfig::from_lookup(lookup(&[(KEY_ANCHOR_MODE, "live_amoy")]));
+        assert_eq!(live_err, Err(ConfigError::LiveAmoyNotEnabled));
+
+        // invalid value is rejected as UnknownValue
+        let unknown = MarketConfig::from_lookup(lookup(&[(KEY_ANCHOR_MODE, "polygon_mainnet")]));
+        assert!(matches!(
+            unknown,
+            Err(ConfigError::UnknownValue {
+                key: KEY_ANCHOR_MODE,
+                ..
+            })
+        ));
     }
 }
