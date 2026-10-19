@@ -659,6 +659,18 @@ pub enum RepoCommand {
         #[command(flatten)]
         args: RepoPackageArgs,
     },
+    /// Adopt memories from global DB into repo store (dry-run only)
+    Adopt {
+        /// Repository root
+        #[arg(long, short = 'C')]
+        root: Option<String>,
+        /// Path to global database
+        #[arg(long)]
+        global_db: Option<String>,
+        /// Must be passed to perform adopt dry-run
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// Common options for every `xavier repo pack` / `xavier repo unpack` action.
@@ -670,6 +682,9 @@ pub struct RepoPackageArgs {
     /// Output as JSON instead of human-readable text
     #[arg(long, default_value_t = false)]
     pub json: bool,
+    /// Include memory database snapshot in pack
+    #[arg(long, default_value_t = false)]
+    pub memory: bool,
 }
 
 /// Common options for every `xavier repo config …` action.

@@ -140,6 +140,14 @@ pub fn run_repo_pack_command(args: RepoPackageArgs) -> Result<()> {
     } = resolve_target(args.root)?;
 
     let outcome = pack_with_kek(&root, &project_id, &kek)?;
+    if args.memory {
+        let memory_db = root.join(".xavier").join("memory.sqlite3");
+        let memory_enc = root.join(".xavier").join("memory.sqlite3.enc");
+        pack_memory_snapshot(&memory_db, &memory_enc, &kek)?;
+        if !json {
+            println!("Memoria cifrada creada: {}", memory_enc.display());
+        }
+    }
     if json {
         println!(
             "{}",
