@@ -67,3 +67,38 @@ fn source_weight(source: FusionSource) -> f32 {
         FusionSource::Kg => DEFAULT_KG_WEIGHT,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_merge_rrf_result_vector_and_fts() {
+        let mut scored = HashMap::new();
+        let record = MemoryRecord {
+            id: "rec1".to_string(),
+            ..Default::default()
+        };
+
+        merge_rrf_result(
+            &mut scored,
+            FusionSource::Vector,
+            60,
+            1,
+            Some(0.95),
+            record.clone(),
+        );
+
+        let hit = scored.get("rec1").expect("should contain rec1");
+        assert_eq!(hit.vector_similarity, Some(0.95));
+        assert!(hit.vector_score > 0.0);
+        assert_eq!(hit.bm25, None);
+
+        merge_rrf_result(&mut scored, FusionSource::Fts, 60, 1, Some(12.5), record);
+
+        let hit2 = scored.get("rec1").expect("should contain rec1");
+        assert_eq!(hit2.vector_similarity, Some(0.95));
+        assert_eq!(hit2.bm25, Some(12.5));
+        assert!(hit2.lexical_score > 0.0);
+    }
+}

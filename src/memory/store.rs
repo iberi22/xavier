@@ -1521,9 +1521,10 @@ mod tests {
     use super::*;
 
     fn dummy_record(id: &str) -> MemoryRecord {
-        let mut rec = MemoryRecord::default();
-        rec.id = id.to_string();
-        rec
+        MemoryRecord {
+            id: id.to_string(),
+            ..Default::default()
+        }
     }
 
     fn dummy_hit(id: &str, vector_similarity: Option<f32>) -> HybridSearchResult {
@@ -1615,7 +1616,7 @@ mod tests {
         // Only lexical should survive
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].record_id, "b");
-        assert_eq!(hits[0].skipped_model_mismatch, true);
+        assert!(hits[0].skipped_model_mismatch);
         assert_eq!(hits[0].sources, vec!["lexical".to_string()]);
     }
 
