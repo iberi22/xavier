@@ -566,11 +566,41 @@ pub enum SpaceCommand {
     },
 }
 
-#[derive(clap::ValueEnum, Debug, Clone)]
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnlockMode {
     Node,
     Password,
     Recovery,
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CliSpaceRole {
+    Admin,
+    Moderator,
+    Member,
+    Reader,
+}
+
+impl From<CliSpaceRole> for crate::espacio::SpaceRole {
+    fn from(r: CliSpaceRole) -> Self {
+        match r {
+            CliSpaceRole::Admin => crate::espacio::SpaceRole::Admin,
+            CliSpaceRole::Moderator => crate::espacio::SpaceRole::Moderator,
+            CliSpaceRole::Member => crate::espacio::SpaceRole::Member,
+            CliSpaceRole::Reader => crate::espacio::SpaceRole::Reader,
+        }
+    }
+}
+
+impl CliSpaceRole {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Admin => "admin",
+            Self::Moderator => "moderator",
+            Self::Member => "member",
+            Self::Reader => "reader",
+        }
+    }
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -582,7 +612,7 @@ pub enum SpaceMemberAction {
         /// Node ID
         node: String,
         /// Role
-        role: crate::espacio::SpaceRole,
+        role: CliSpaceRole,
     },
     /// Remove a member
     Remove {
@@ -600,7 +630,7 @@ pub enum SpaceInviteAction {
         /// Node ID
         node: String,
         /// Role
-        role: crate::espacio::SpaceRole,
+        role: CliSpaceRole,
         /// TTL in hours
         #[arg(long)]
         ttl: Option<u32>,
