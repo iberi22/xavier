@@ -53,8 +53,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use xavier_market::credential::{self, ListingCredential};
 use xavier_market::{
     Actor, AggregateRow, ConsentError, ConsentRecord, ConsentState, ConsentStore, Listing,
-    ListingUpdate, MarketConfig, MarketError, MarketStore, NewListing, NewReceipt, Sample,
-    SignedRequest, TelemetryError, TelemetryStore,
+    ListingUpdate, MarketConfig, MarketError, MarketStore, NewListing, NewReceipt, Offer,
+    OfferBook, Sample, SignedRequest, TelemetryError, TelemetryStore,
 };
 
 /// Runtime flag. Only the exact value `beta` enables the routes.
@@ -196,6 +196,14 @@ where
         .route(
             "/v2/marketplace/anchor/dry-run",
             post(trigger_dry_run_anchor_handler).get(get_latest_anchor_handler),
+        )
+        .route(
+            "/v2/marketplace/gossip/offers",
+            post(gossip_offers_handler).get(get_offers_handler),
+        )
+        .route(
+            "/v1/mesh/gossip/offers",
+            post(gossip_offers_handler).get(get_offers_handler),
         )
         .merge(ivn::routes())
         .layer(Extension(store))
@@ -919,6 +927,64 @@ async fn get_latest_anchor_handler(Extension(store): StoreExt) -> Response {
         return (StatusCode::OK, Json(report)).into_response();
     }
     trigger_dry_run_anchor_handler(Extension(store)).await
+}
+
+/// Payload accepted by the offer gossip exchange route. Can be either a structured
+/// [`crate::mesh::protocol::MeshOfferGossipRequest`] envelope or a flat list of [`Offer`]s.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum OfferGossipPayload {
+    Envelope(crate::mesh::protocol::MeshOfferGossipRequest),
+    List(Vec<Offer>),
+}
+
+fn resolve_local_node_id() -> crate::mesh::NodeId {
+    if let Ok(id) = std::env::var("XAVIER_NODE_ID") {
+        if !id.trim().is_empty() {
+            return crate::mesh::NodeId(id.trim().to_string());
+        }
+    }
+    crate::mesh::NodeIdentity::load_or_create()
+        .map(|ident| ident.node_id)
+        .unwrap_or_else(|_| crate::mesh::NodeId("xv1-market-node".to_string()))
+}
+
+async fn get_offers_handler(Extension(store): StoreExt) -> Response {
+    match store.offer_book() {
+        Ok(book) => {
+            let offers = book.offers();
+            (StatusCode::OK, Json(offers)).into_response()
+        }
+        Err(err) => error_response(err),
+    }
+}
+
+async fn gossip_offers_handler(Extension(store): StoreExt, body: Bytes) -> Response {
+    let payload: OfferGossipPayload = match parse_body(&body) {
+        Ok(p) => p,
+        Err(response) => return response,
+    };
+
+    let incoming_offers = match payload {
+        OfferGossipPayload::Envelope(req) => req.offers,
+        OfferGossipPayload::List(offers) => offers,
+    };
+
+    let merged_count = store.merge_offers(incoming_offers);
+
+    match store.offer_book() {
+        Ok(book) => {
+            let local_offers = book.offers();
+            let node_id = resolve_local_node_id();
+            let resp = crate::mesh::protocol::MeshOfferGossipResponse {
+                node_id,
+                offers: local_offers,
+                merged_count,
+            };
+            (StatusCode::OK, Json(resp)).into_response()
+        }
+        Err(err) => error_response(err),
+    }
 }
 
 /// Verifies the publisher signature on a mutation. The signed path is the
@@ -2685,5 +2751,182 @@ mod tests {
         assert_eq!(latest.root, root_hex);
         assert_eq!(latest.proof_valid, true);
         assert!(latest.receipt.dry_run);
+    }
+
+    #[tokio::test]
+    async fn offer_gossip_flag_off_returns_404() {
+        let _env = MarketEnv::with_flag(Some("off"));
+        let router = mount(Router::new());
+        let (status, _) = send(
+            &router,
+            json_request(Method::GET, "/v2/marketplace/gossip/offers", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let (status, _) = send(
+            &router,
+            json_request(Method::POST, "/v2/marketplace/gossip/offers", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn two_nodes_exchange_offers_over_mesh_transport_metadata_only() {
+        let _env = MarketEnv::with_flag(Some(FLAG_VALUE));
+
+        // Node A setup
+        let store_a = Arc::new(MarketStore::open_in_memory(MarketConfig::default()).unwrap());
+        let issuer_a = SigningKey::generate(&mut OsRng);
+        let id_a = Arc::new(crate::mesh::NodeIdentity::generate());
+        let transport_a = crate::mesh::MeshTransport::new(Arc::clone(&id_a));
+        let router_a = routes(Arc::clone(&store_a), issuer_a);
+
+        // Node B setup
+        let store_b = Arc::new(MarketStore::open_in_memory(MarketConfig::default()).unwrap());
+        let issuer_b = SigningKey::generate(&mut OsRng);
+        let id_b = Arc::new(crate::mesh::NodeIdentity::generate());
+        let transport_b = crate::mesh::MeshTransport::new(Arc::clone(&id_b));
+        let router_b = routes(Arc::clone(&store_b), issuer_b);
+
+        // Create Listing on Node A
+        let signer_a = Signer::from_seed([41; 32]);
+        let (status_a, created_a) = send(
+            &router_a,
+            signed_request(
+                &signer_a,
+                Method::POST,
+                "/v2/marketplace/listings",
+                Some(json!({
+                    "seller_id": signer_a.public_key_hex(),
+                    "title": "Alpha Dataset for Science",
+                    "license": "CC-BY-4.0",
+                    "price_credits": 100,
+                    "consent_ref": "consent-v1"
+                })),
+            ),
+        )
+        .await;
+        assert_eq!(status_a, StatusCode::CREATED);
+        let listing_a_id = created_a["id"].as_str().unwrap().to_string();
+
+        // Create Listing on Node B
+        let signer_b = Signer::from_seed([42; 32]);
+        let (status_b, created_b) = send(
+            &router_b,
+            signed_request(
+                &signer_b,
+                Method::POST,
+                "/v2/marketplace/listings",
+                Some(json!({
+                    "seller_id": signer_b.public_key_hex(),
+                    "title": "Beta Dataset for Research",
+                    "license": "CC-BY-NC-4.0",
+                    "price_credits": 500,
+                    "consent_ref": "consent-v1"
+                })),
+            ),
+        )
+        .await;
+        assert_eq!(status_b, StatusCode::CREATED);
+        let listing_b_id = created_b["id"].as_str().unwrap().to_string();
+
+        // Spawn Node B server
+        let listener_b = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind node B");
+        let addr_b = listener_b.local_addr().expect("addr B");
+        let router_b_serve = router_b.clone();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener_b, router_b_serve).await;
+        });
+        let node_b_url = format!("http://{addr_b}");
+
+        // Spawn Node A server
+        let listener_a = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind node A");
+        let addr_a = listener_a.local_addr().expect("addr A");
+        let router_a_serve = router_a.clone();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener_a, router_a_serve).await;
+        });
+        let node_a_url = format!("http://{addr_a}");
+
+        // Initial state verification: each node only has its local offer
+        let initial_offers_a = store_a.offer_book().unwrap().offers();
+        assert_eq!(initial_offers_a.len(), 1);
+        assert_eq!(initial_offers_a[0].listing_id, listing_a_id);
+
+        let initial_offers_b = store_b.offer_book().unwrap().offers();
+        assert_eq!(initial_offers_b.len(), 1);
+        assert_eq!(initial_offers_b[0].listing_id, listing_b_id);
+
+        // Node A gossips to Node B over MeshTransport
+        let local_offers_a = store_a.local_offers().unwrap();
+        let resp_from_b = transport_a
+            .exchange_offers(&node_b_url, "token-b", local_offers_a)
+            .await
+            .expect("exchange offers over mesh transport");
+
+        // Node A merges the response from Node B
+        assert_eq!(resp_from_b.merged_count, 1);
+        let merged_into_a = store_a.merge_offers(resp_from_b.offers);
+        assert!(merged_into_a >= 1);
+
+        // Now both nodes have BOTH offers
+        let final_offers_a = store_a.offer_book().unwrap().offers();
+        let final_offers_b = store_b.offer_book().unwrap().offers();
+        assert_eq!(final_offers_a.len(), 2);
+        assert_eq!(final_offers_b.len(), 2);
+
+        // Crucial acceptance verification: NO content / title left the node!
+        for offer in final_offers_a.iter().chain(final_offers_b.iter()) {
+            let serialized = serde_json::to_string(offer).unwrap();
+            assert!(!serialized.contains("Alpha Dataset"));
+            assert!(!serialized.contains("Beta Dataset"));
+            assert!(!serialized.contains("Science"));
+            assert!(!serialized.contains("Research"));
+            assert!(!serialized.contains("title"));
+            assert!(!serialized.contains("description"));
+        }
+
+        // Idempotency: second exchange produces 0 changes
+        let local_offers_a_again = store_a.local_offers().unwrap();
+        let second_resp = transport_a
+            .exchange_offers(&node_b_url, "token-b", local_offers_a_again)
+            .await
+            .expect("second exchange");
+        assert_eq!(second_resp.merged_count, 0);
+
+        // Reverse direction: Node B gossips to Node A over MeshTransport
+        let local_offers_b = store_b.local_offers().unwrap();
+        let resp_from_a = transport_b
+            .exchange_offers(&node_a_url, "token-a", local_offers_b)
+            .await
+            .expect("reverse exchange");
+        assert_eq!(resp_from_a.merged_count, 0);
+
+        // Test GET /v2/marketplace/gossip/offers returns full offer list
+        let client = reqwest::Client::new();
+        let get_resp = client
+            .get(format!("{node_a_url}/v2/marketplace/gossip/offers"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(get_resp.status(), StatusCode::OK);
+        let fetched_offers: Vec<xavier_market::Offer> = get_resp.json().await.unwrap();
+        assert_eq!(fetched_offers.len(), 2);
+
+        // Test /v1/mesh/gossip/offers alias works
+        let alias_resp = client
+            .get(format!("{node_a_url}/v1/mesh/gossip/offers"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(alias_resp.status(), StatusCode::OK);
+        let alias_offers: Vec<xavier_market::Offer> = alias_resp.json().await.unwrap();
+        assert_eq!(alias_offers, fetched_offers);
     }
 }

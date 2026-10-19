@@ -217,6 +217,64 @@ impl MeshTransport {
 
         Ok(())
     }
+
+    /// Gossip/exchange offers with a remote peer over the mesh transport.
+    ///
+    /// Sends `local_offers` (metadata only) to `peer_url` and returns the peer's
+    /// offers in [`crate::mesh::protocol::MeshOfferGossipResponse`]. No content leaves the node.
+    #[cfg(feature = "market-v2")]
+    pub async fn exchange_offers(
+        &self,
+        peer_url: &str,
+        token: &str,
+        local_offers: Vec<xavier_market::Offer>,
+    ) -> Result<crate::mesh::protocol::MeshOfferGossipResponse> {
+        let url = format!(
+            "{}/v2/marketplace/gossip/offers",
+            peer_url.trim_end_matches('/')
+        );
+        let request = crate::mesh::protocol::MeshOfferGossipRequest {
+            node_id: self.local_identity.node_id.clone(),
+            offers: local_offers,
+            timestamp: chrono::Utc::now().timestamp_millis(),
+        };
+
+        let mut req = self.client.post(&url).json(&request);
+        if !token.is_empty() {
+            req = req.header("X-Xavier-Token", token);
+        }
+
+        let resp = req
+            .send()
+            .await
+            .context("Failed to send offer gossip request over mesh transport")?;
+
+        if !resp.status().is_success() {
+            anyhow::bail!(
+                "Offer gossip request failed with status: {} (peer: {})",
+                resp.status(),
+                url
+            );
+        }
+
+        let result: crate::mesh::protocol::MeshOfferGossipResponse = resp
+            .json()
+            .await
+            .context("Failed to parse offer gossip response from peer")?;
+        Ok(result)
+    }
+
+    /// Gossip/exchange offers with a [`PeerInfo`] over the mesh transport.
+    #[cfg(feature = "market-v2")]
+    pub async fn exchange_offers_with_peer(
+        &self,
+        peer: &PeerInfo,
+        token: &str,
+        local_offers: Vec<xavier_market::Offer>,
+    ) -> Result<crate::mesh::protocol::MeshOfferGossipResponse> {
+        self.exchange_offers(&peer.endpoint_url, token, local_offers)
+            .await
+    }
 }
 
 #[cfg(test)]

@@ -35,6 +35,7 @@ pub use config::{
 };
 pub use consent::{ConsentError, ConsentRecord, ConsentState, ConsentStore};
 pub use error::MarketError;
+pub use gossip::{exchange, offer_for, Offer, OfferBook};
 pub use grant::{
     grant_signing_bytes, unwrap_key_as_buyer, wrap_key_for_buyer, AccessGrant, GrantError,
     ACCESS_GRANT_DOMAIN,

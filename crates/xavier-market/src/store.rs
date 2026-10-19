@@ -114,6 +114,7 @@ pub struct MarketStore {
     conn: Mutex<Connection>,
     config: MarketConfig,
     audit: AuditChain,
+    offers: Mutex<crate::gossip::OfferBook>,
 }
 
 impl MarketStore {
@@ -154,6 +155,7 @@ impl MarketStore {
             conn: Mutex::new(conn),
             config,
             audit,
+            offers: Mutex::new(crate::gossip::OfferBook::new()),
         })
     }
 
@@ -163,6 +165,31 @@ impl MarketStore {
 
     pub fn config(&self) -> &MarketConfig {
         &self.config
+    }
+
+    /// Returns the local listings as metadata-only [`crate::gossip::Offer`]s.
+    pub fn local_offers(&self) -> Result<Vec<crate::gossip::Offer>, MarketError> {
+        let listings = self.list_listings()?;
+        Ok(listings.iter().map(crate::gossip::offer_for).collect())
+    }
+
+    /// Returns the current [`crate::gossip::OfferBook`] containing local listings
+    /// and any merged gossip offers received from peers.
+    pub fn offer_book(&self) -> Result<crate::gossip::OfferBook, MarketError> {
+        let mut book = self
+            .offers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let listings = self.list_listings()?;
+        book.add_listings(&listings);
+        Ok(book)
+    }
+
+    /// Merges incoming peer offers into the store's [`crate::gossip::OfferBook`].
+    pub fn merge_offers(&self, incoming: Vec<crate::gossip::Offer>) -> usize {
+        let mut book = self.offers.lock().unwrap_or_else(PoisonError::into_inner);
+        book.merge(incoming)
     }
 
     pub(crate) fn conn(&self) -> MutexGuard<'_, Connection> {
