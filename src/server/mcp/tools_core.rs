@@ -356,6 +356,9 @@ pub fn is_core_tool(name: &str) -> bool {
             | "codegraph_gods"
             | "espacio_channel_list"
             | "espacio_channel_create"
+            | "espacio_member_list"
+            | "espacio_member_add"
+            | "espacio_member_remove"
             | "recovery_status"
             | "drive_connect_status"
     )
@@ -1321,6 +1324,81 @@ pub async fn handle_core_tool(
                 payload, false,
             ))?)
         }
+        "espacio_member_list" => {
+            let manager = espacio_manager_for_root()?;
+            let space_id = arguments
+                .get("space_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing space_id"))?;
+            let members = manager.members(space_id).await?;
+            let val = json!({
+                "space_id": space_id,
+                "members": members,
+            });
+            Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
+        }
+        "espacio_member_add" => {
+            let manager = espacio_manager_for_root()?;
+            let space_id = arguments
+                .get("space_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing space_id"))?;
+            let node_id = arguments
+                .get("node_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing node_id"))?;
+            let role_str = arguments
+                .get("role")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing role"))?;
+            let role = match role_str {
+                "admin" => crate::espacio::invite::SpaceRole::Admin,
+                "moderator" => crate::espacio::invite::SpaceRole::Moderator,
+                "member" => crate::espacio::invite::SpaceRole::Member,
+                "reader" => crate::espacio::invite::SpaceRole::Reader,
+                _ => return Err(anyhow::anyhow!("Invalid role")),
+            };
+
+            match manager.add_member(space_id, node_id, role).await {
+                Ok(membership) => {
+                    let val = json!({
+                        "space_id": space_id,
+                        "membership": membership,
+                    });
+                    Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
+                }
+                Err(err) => {
+                    if let Some(_cap_err) =
+                        err.downcast_ref::<crate::espacio::manager::MembersCapReached>()
+                    {
+                        Ok(serde_json::to_value(MCPToolResult::text(
+                            err.to_string(),
+                            true,
+                        ))?)
+                    } else {
+                        Err(err)
+                    }
+                }
+            }
+        }
+        "espacio_member_remove" => {
+            let manager = espacio_manager_for_root()?;
+            let space_id = arguments
+                .get("space_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing space_id"))?;
+            let node_id = arguments
+                .get("node_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing node_id"))?;
+            let removed = manager.remove_member(space_id, node_id).await?;
+            let val = json!({
+                "space_id": space_id,
+                "node_id": node_id,
+                "removed": removed,
+            });
+            Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
+        }
         "recovery_status" => {
             let crypt = arguments
                 .get("crypt_passphrase_backed_up")
@@ -1802,5 +1880,191 @@ pub(crate) mod tests {
         .expect("sync_gitcore must succeed when caller clearance is sufficient");
 
         assert!(res.to_string().contains("created=1") || res.to_string().contains("Synced"));
+    }
+
+    #[tokio::test]
+    async fn member_tools_are_root_only() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+
+        // Ensure the manager exists for the node
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let manager = SpaceManager::open_with_keys(tmp.path(), kek());
+        crate::adapters::inbound::http::routes::set_space_manager_for_tests(manager.clone());
+
+        let ro = crate::security::auth::Claims::new(
+            "u".into(),
+            "u@swal.dev".into(),
+            crate::security::auth::UserRole::Readonly,
+            chrono::Duration::hours(1),
+        );
+
+        for name in [
+            "espacio_member_list",
+            "espacio_member_add",
+            "espacio_member_remove",
+        ] {
+            let call_args = if name == "espacio_member_add" {
+                json!({"space_id": "esp_mcp", "node_id": "node", "role": "reader"})
+            } else if name == "espacio_member_remove" {
+                json!({"space_id": "esp_mcp", "node_id": "node"})
+            } else {
+                json!({"space_id": "esp_mcp"})
+            };
+
+            let err = crate::server::mcp::server::with_root_credential(
+                false,
+                handle_core_tool(state.clone(), workspace.clone(), Some(&ro), name, call_args),
+            )
+            .await
+            .expect_err("non-root must be refused");
+            assert!(err.to_string().contains("Forbidden"), "{err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn member_add_tool_reports_cap_as_error() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let manager = SpaceManager::open_with_keys(tmp.path(), kek());
+        crate::adapters::inbound::http::routes::set_space_manager_for_tests(manager.clone());
+
+        fn with_protocol(
+            protocol: crate::espacio::protocol::SpaceProtocol,
+        ) -> crate::espacio::manager::KeyOptions {
+            crate::espacio::manager::KeyOptions {
+                protocol: Some(protocol),
+                ..Default::default()
+            }
+        }
+
+        let mut p = crate::espacio::protocol::SpaceProtocol::default();
+        p.members_cap = 1; // owner takes the 1 slot
+
+        manager
+            .create_with_keys(
+                "esp_cap".into(),
+                "app".into(),
+                "".into(),
+                "owner".into(),
+                false,
+                with_protocol(p),
+            )
+            .await
+            .unwrap();
+
+        let root = root_claims();
+        let res = crate::server::mcp::server::with_root_credential(
+            true,
+            handle_core_tool(
+                state.clone(),
+                workspace.clone(),
+                Some(&root),
+                "espacio_member_add",
+                json!({"space_id": "esp_cap", "node_id": "intruder", "role": "reader"}),
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(res["isError"], true, "{res}");
+        assert!(res["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("MembersCapReached"));
+    }
+
+    #[tokio::test]
+    async fn member_list_tool_returns_added_member() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let manager = SpaceManager::open_with_keys(tmp.path(), kek());
+        crate::adapters::inbound::http::routes::set_space_manager_for_tests(manager.clone());
+
+        manager
+            .create(
+                "esp_list".into(),
+                "app".into(),
+                "".into(),
+                "owner".into(),
+                false,
+            )
+            .await
+            .unwrap();
+
+        let root = root_claims();
+
+        // Add
+        let res_add = crate::server::mcp::server::with_root_credential(
+            true,
+            handle_core_tool(
+                state.clone(),
+                workspace.clone(),
+                Some(&root),
+                "espacio_member_add",
+                json!({"space_id": "esp_list", "node_id": "friend", "role": "member"}),
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_add["isError"], serde_json::Value::Null); // or absent, meaning not an error
+
+        // List
+        let res_list = crate::server::mcp::server::with_root_credential(
+            true,
+            handle_core_tool(
+                state.clone(),
+                workspace.clone(),
+                Some(&root),
+                "espacio_member_list",
+                json!({"space_id": "esp_list"}),
+            ),
+        )
+        .await
+        .unwrap();
+
+        let members = res_list["structuredContent"]["members"].as_array().unwrap();
+        // owner + friend = 2
+        assert_eq!(members.len(), 2);
+
+        let friend = members.iter().find(|m| m["node_id"] == "friend").unwrap();
+        assert_eq!(friend["role"], "member");
+
+        // Remove
+        crate::server::mcp::server::with_root_credential(
+            true,
+            handle_core_tool(
+                state.clone(),
+                workspace.clone(),
+                Some(&root),
+                "espacio_member_remove",
+                json!({"space_id": "esp_list", "node_id": "friend"}),
+            ),
+        )
+        .await
+        .unwrap();
+
+        // List again
+        let res_list2 = crate::server::mcp::server::with_root_credential(
+            true,
+            handle_core_tool(
+                state.clone(),
+                workspace.clone(),
+                Some(&root),
+                "espacio_member_list",
+                json!({"space_id": "esp_list"}),
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            res_list2["structuredContent"]["members"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
     }
 }
