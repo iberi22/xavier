@@ -2392,7 +2392,6 @@ name = "demo"
             ("GET", "/api/v1/espacio/spaces/esp_a/tokens"),
             ("GET", "/api/v1/espacio/spaces/esp_a/keys"),
             ("POST", "/api/v1/espacio/spaces/esp_a/messages"),
-            ("POST", "/api/v1/espacio/spaces/esp_a/invites"),
             ("GET", "/api/v1/espacio/spaces/esp_a/isolation/esp_b"),
             ("GET", "/api/v1/espacio/spaces/esp_a/whatever/deep/path"),
             // Verbs without a route.
@@ -2406,6 +2405,16 @@ name = "demo"
                 "{m} {p}"
             );
         }
+        assert_eq!(
+            call(
+                &f.app,
+                "POST",
+                "/api/v1/espacio/spaces/esp_a/invites",
+                &f.admin_b
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
         assert_eq!(
             call(&f.app, "GET", OWN_PATH, &f.admin_b).await,
             StatusCode::FORBIDDEN
