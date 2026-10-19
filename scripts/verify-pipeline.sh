@@ -205,6 +205,7 @@ PY
   # target_features <old_name>: cargo features the xavier test target is built with.
   target_features() {
     case "$1" in
+      market_v2_router_restart) echo "ci-safe,market-v2" ;;
       mesh_integration) echo "ci-safe,mesh" ;;
       *)                echo "ci-safe" ;;
     esac
@@ -252,6 +253,8 @@ PY
     # NOTE: specific prefixes first — bash case takes the first match,
     # so src/telegram/* must precede the generic src/* (same for mesh).
     case "$1" in
+      src/market_v2/*)
+        INV_LABEL="xavier market_v2"; INV_ARGS=(test -p xavier --features ci-safe,market-v2 --lib) ;;
       src/telegram/*)
         INV_LABEL="xavier telegram"; INV_ARGS=(test -p xavier --features telegram --lib) ;;
       tests/mesh_integration.rs)
