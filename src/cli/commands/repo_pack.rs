@@ -143,9 +143,16 @@ pub fn run_repo_pack_command(args: RepoPackageArgs) -> Result<()> {
     if args.memory {
         let memory_db = root.join(".xavier").join("memory.sqlite3");
         let memory_enc = root.join(".xavier").join("memory.sqlite3.enc");
-        pack_memory_snapshot(&memory_db, &memory_enc, &kek)?;
-        if !json {
-            println!("Memoria cifrada creada: {}", memory_enc.display());
+        if memory_db.is_file() {
+            pack_memory_snapshot(&memory_db, &memory_enc, &kek)?;
+            if !json {
+                println!("Memoria cifrada creada: {}", memory_enc.display());
+            }
+        } else if !json {
+            eprintln!(
+                "[aviso] no existe {} — se omite el empaquetado de memoria",
+                memory_db.display()
+            );
         }
     }
     if json {
@@ -363,7 +370,7 @@ pub(crate) fn pack_memory_snapshot(
 ) -> Result<()> {
     if !src_memory_db.is_file() {
         bail!(
-            "no existe {} — no se puede empaquetar la memoria",
+            "archivo de memoria no encontrado: {} — asegurese de inicializar o registrar la memoria del repositorio antes de empaquetar",
             src_memory_db.display()
         );
     }
@@ -1027,6 +1034,20 @@ mod tests {
         let kek = [42u8; 32];
         pack_memory_snapshot(&mem_db, &enc_mem, &kek).expect("pack_memory_snapshot");
         assert!(enc_mem.exists());
+    }
+
+    #[test]
+    fn test_pack_memory_snapshot_missing_db_error() {
+        let tmp = tempdir().expect("tempdir");
+        let mem_db = tmp.path().join("non_existent_memory.sqlite3");
+        let enc_mem = tmp.path().join("memory.sqlite3.enc");
+        let kek = [42u8; 32];
+        let result = pack_memory_snapshot(&mem_db, &enc_mem, &kek);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("archivo de memoria no encontrado"));
     }
 
     // --- helpers -----------------------------------------------------------
