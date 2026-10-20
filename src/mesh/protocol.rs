@@ -73,6 +73,25 @@ pub struct MeshSessionShare {
     pub token_stats: Option<TokenStats>,
 }
 
+/// Request carrying metadata-only offers from a peer over the mesh transport.
+#[cfg(feature = "market-v2")]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct MeshOfferGossipRequest {
+    pub node_id: NodeId,
+    pub offers: Vec<xavier_market::Offer>,
+    #[serde(default)]
+    pub timestamp: i64,
+}
+
+/// Response returned by a peer containing its local metadata-only offers.
+#[cfg(feature = "market-v2")]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct MeshOfferGossipResponse {
+    pub node_id: NodeId,
+    pub offers: Vec<xavier_market::Offer>,
+    pub merged_count: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,5 +132,34 @@ mod tests {
         assert_eq!(deserialized.node_id, manifest.node_id);
         assert_eq!(deserialized.chunks.len(), 1);
         assert_eq!(deserialized.chunks[0].hash, "hash1");
+    }
+
+    #[cfg(feature = "market-v2")]
+    #[test]
+    fn test_offer_gossip_protocol_serialization() {
+        let req = MeshOfferGossipRequest {
+            node_id: NodeId("xv1-alice".to_string()),
+            offers: vec![xavier_market::Offer {
+                listing_id: "list-1".to_string(),
+                seller_id: "seller-1".to_string(),
+                content_hash: "hash123".to_string(),
+                license: xavier_market::License::CcBy40,
+                price_credits: 50,
+                created_at_ms: 1000,
+            }],
+            timestamp: 2000,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let deserialized: MeshOfferGossipRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, req);
+
+        let resp = MeshOfferGossipResponse {
+            node_id: NodeId("xv1-bob".to_string()),
+            offers: req.offers.clone(),
+            merged_count: 1,
+        };
+        let resp_json = serde_json::to_string(&resp).unwrap();
+        let deserialized_resp: MeshOfferGossipResponse = serde_json::from_str(&resp_json).unwrap();
+        assert_eq!(deserialized_resp, resp);
     }
 }
