@@ -1035,34 +1035,50 @@ async fn handle_create_memory(
         )
         .await?;
 
-    // Asynchronously compute embedding and update document in the background
+    // Fill the acknowledged row directly: identical-write dedup ignores vector changes.
     let ws_clone = workspace.workspace.clone();
-    let content_owned = content.to_string();
+    let workspace_id = workspace.workspace_id.clone();
+    let memory_id = doc_id.clone();
     let path_owned = path.to_string();
     tokio::spawn(async move {
-        // Stability: the bus auto-capture quota in `writer::add` would drop
-        // this re-ingest — skip the GPU embedding instead of wasting it.
         if crate::memory::qmd::writer::bus_quota_exhausted(&path_owned) {
-            tracing::debug!(
-                path = %path_owned,
-                "skipping background embedding: bus quota exhausted"
-            );
             return;
         }
-        if let Ok(vector) =
-            crate::memory::qmd_memory::reader::generate_embedding(&content_owned).await
-        {
+        let store = ws_clone.durable_store();
+        let Ok(Some(record)) = store.get(&workspace_id, &memory_id).await else {
+            return;
+        };
+        if !record.embedding.is_empty() {
+            return;
+        }
+        let private = record
+            .encrypted_dek
+            .as_deref()
+            .is_some_and(crate::memory::sqlite_vec_store::at_rest::is_space_row)
+            || crate::memory::sqlite_vec_store::at_rest::is_private_record(
+                &record.metadata,
+                &record.path,
+            );
+        let vector = if private {
+            match crate::memory::embedder::EmbeddingClient::from_env_private_async().await {
+                Ok(client) => client.embed(&record.content).await,
+                Err(error) => Err(error),
+            }
+        } else {
+            crate::memory::qmd_memory::reader::generate_embedding(&record.content).await
+        };
+        if let Ok(vector) = vector {
             if !vector.is_empty() {
-                let _ = ws_clone
-                    .ingest_typed(
-                        path_owned,
-                        content_owned,
-                        metadata,
-                        typed_payload,
-                        Some(vector),
-                        false,
-                    )
-                    .await;
+                let Ok(Some(mut current)) = store.get(&workspace_id, &memory_id).await else {
+                    return;
+                };
+                if current.revision != record.revision || current.updated_at != record.updated_at {
+                    return;
+                }
+                current.embedding = vector;
+                if let Err(error) = ws_clone.memory.update(current.to_document()).await {
+                    tracing::warn!(%error, memory_id = %memory_id, "background embedding update failed");
+                }
             }
         }
     });

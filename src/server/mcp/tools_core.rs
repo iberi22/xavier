@@ -539,21 +539,11 @@ pub async fn handle_core_tool(
 ) -> anyhow::Result<Value> {
     match name {
         "list_projects" => {
-            let records = workspace.workspace.list_memory_records().await?;
-            let mut projects = std::collections::BTreeMap::<String, usize>::new();
-
-            for record in records {
-                if let Ok(resolved) = crate::memory::schema::resolve_metadata(
-                    &record.path,
-                    &record.metadata,
-                    &workspace.workspace_id,
-                    None,
-                ) {
-                    if let Some(project) = resolved.namespace.project {
-                        *projects.entry(project).or_insert(0) += 1;
-                    }
-                }
-            }
+            let projects = workspace
+                .workspace
+                .durable_store()
+                .project_counts(&workspace.workspace_id)
+                .await?;
 
             let text = if projects.is_empty() {
                 "No projects found.".to_string()

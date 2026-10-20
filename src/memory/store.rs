@@ -606,10 +606,31 @@ pub trait MemoryStore: crate::domain::cycle_breaks::w30_12::MemoryConsumerStore 
         Ok(None)
     }
     async fn put(&self, record: MemoryRecord) -> Result<()>;
+    /// Persist a caller-supplied vector, including an intentionally empty one.
+    async fn put_without_embedding(&self, record: MemoryRecord) -> Result<()> {
+        self.put(record).await
+    }
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>>;
     async fn update(&self, record: MemoryRecord) -> Result<()>;
     async fn delete(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>>;
     async fn list(&self, workspace_id: &str) -> Result<Vec<MemoryRecord>>;
+    /// Count resolved projects without requiring record payloads when supported.
+    async fn project_counts(
+        &self,
+        workspace_id: &str,
+    ) -> Result<std::collections::BTreeMap<String, usize>> {
+        let mut projects = std::collections::BTreeMap::new();
+        for record in self.list(workspace_id).await? {
+            if let Ok(resolved) =
+                resolve_metadata(&record.path, &record.metadata, workspace_id, None)
+            {
+                if let Some(project) = resolved.namespace.project {
+                    *projects.entry(project).or_insert(0) += 1;
+                }
+            }
+        }
+        Ok(projects)
+    }
     async fn list_filtered(
         &self,
         workspace_id: &str,

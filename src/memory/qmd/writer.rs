@@ -406,9 +406,12 @@ async fn add_validated(memory: &QmdMemory, mut doc: MemoryDocument) -> Result<Op
     emit_operation_event(memory, "add", &doc.path, &doc.metadata).await;
     memory.invalidate_cache().await;
     if let Some(store) = memory.store().await {
-        store
-            .put(memory_record_from_document(&memory.workspace_id, &doc))
-            .await?;
+        let record = memory_record_from_document(&memory.workspace_id, &doc);
+        if doc.content_vector.as_ref().is_some_and(Vec::is_empty) {
+            store.put_without_embedding(record).await?;
+        } else {
+            store.put(record).await?;
+        }
     }
     Ok(doc.id)
 }
