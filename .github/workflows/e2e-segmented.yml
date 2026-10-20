@@ -1,12 +1,12 @@
 name: E2E Segmented
 
-# Runs 141 integration-test targets (some also covered by ci.yml), in
+# Runs 143 integration-test targets (some also covered by ci.yml), in
 # 13 independent jobs.
 #
 # Why (Belal, 2026-06-06): as a single job the first failing target hides every
 # target after it, and nobody learns whether the rest is green. One job per
 # segment, and inside each job the loop does not break on failure, so one run
-# reports the state of all 141 targets instead of just the first break.
+# reports the state of all 143 targets instead of just the first break.
 #
 # No job goes red on a failing target, on purpose: visibility first. A separate
 # gate job decides what blocks a release, so one broken segment never hides the
@@ -747,7 +747,7 @@ jobs:
           if-no-files-found: ignore
 
   e2e-13:
-    name: W13 storage (2)
+    name: W13 storage/tooling (4)
     if: github.event_name != 'pull_request'
     outputs:
       failed: ${{ steps.run-wave.outputs.failed }}
@@ -763,7 +763,7 @@ jobs:
         with:
           shared-key: e2e-ci-safe
           save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'e2e-01' }}
-      - name: Run all 2 targets of wave 13
+      - name: Run all 4 targets of wave 13
         id: run-wave
         # Keep running after a red target; the shared helper checks exit status
         # and test counts, while the gate consumes the failed-target summary.
@@ -774,6 +774,8 @@ jobs:
           source scripts/e2e-wave-target.sh
           cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
+            'delivery_scripts'
+            'oss_scanner_config'
             'storage_isolation'
             'unified_storage_validation'
           )
@@ -783,7 +785,7 @@ jobs:
             if run_wave_target "$t" 240 ci-safe; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
           done
           echo
-          echo "==== wave 13 (storage): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "==== wave 13 (storage/tooling): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
           echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log

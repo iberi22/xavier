@@ -17,6 +17,9 @@ mod data_commons;
 #[path = "e2e/decentralized_login_e2e.rs"]
 mod decentralized_login_e2e;
 
+#[path = "delivery_scripts.rs"]
+mod delivery_scripts;
+
 #[path = "distributed_tracer_test.rs"]
 mod distributed_tracer_test;
 
