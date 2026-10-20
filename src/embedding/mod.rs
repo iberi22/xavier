@@ -759,16 +759,53 @@ pub async fn warm_embedder(embedder: &dyn Embedder, enabled: bool) {
     }
 }
 
-/// Re-sends the warmup request every `period` on the same `embedder`, so the
+/// Builds an embedder off the async workers. Injectable so tests can script
+/// failures and recoveries; production uses `EmbedderConfig::from_env().build_sync()`.
+type WarmupBuilder = Arc<dyn Fn() -> Result<Arc<dyn Embedder>, EmbeddingError> + Send + Sync>;
+
+/// Builds one usable embedder. A `NoopEmbedder` fallback (no backend initialised,
+/// dimension 0) counts as a failed build, so it is never warmed or kept.
+async fn build_real_embedder(build: WarmupBuilder) -> Result<Arc<dyn Embedder>, String> {
+    let built = tokio::task::spawn_blocking(move || build())
+        .await
+        .map_err(|join_error| format!("build task failed: {join_error}"))?;
+    let embedder = built.map_err(|error| error.to_string())?;
+    if embedder.dimension() == 0 {
+        return Err("no embedding backend initialised (noop embedder)".to_string());
+    }
+    Ok(embedder)
+}
+
+/// Re-sends the warmup request every `period` on the same embedder, so the
 /// provider does not unload the model after its idle keep-alive. The first
-/// tick is consumed because the boot warmup has just run.
-pub async fn run_periodic_warmup(embedder: Arc<dyn Embedder>, period: std::time::Duration) {
+/// tick is consumed because the boot warmup has just run. While no usable
+/// embedder exists (`current` is `None`), each tick rebuilds one first.
+pub async fn run_periodic_warmup(
+    mut current: Option<Arc<dyn Embedder>>,
+    build: WarmupBuilder,
+    period: std::time::Duration,
+) {
     let mut tick = tokio::time::interval(period);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     tick.tick().await;
     loop {
         tick.tick().await;
-        match encode_warmup(embedder.as_ref()).await {
+        if current.is_none() {
+            match build_real_embedder(build.clone()).await {
+                Ok(embedder) => {
+                    tracing::debug!("embedder rebuilt for re-warm");
+                    current = Some(embedder);
+                }
+                Err(reason) => {
+                    tracing::warn!(%reason, "embedder re-warm: rebuild failed, retrying next tick");
+                    continue;
+                }
+            }
+        }
+        let Some(embedder) = current.as_deref() else {
+            continue;
+        };
+        match encode_warmup(embedder).await {
             Ok((elapsed, _)) => tracing::debug!(
                 elapsed_ms = elapsed.as_millis() as u64,
                 "embedder re-warm complete"
@@ -778,18 +815,29 @@ pub async fn run_periodic_warmup(embedder: Arc<dyn Embedder>, period: std::time:
     }
 }
 
-/// Warmup only applies to remote/HTTP backends (Ollama, OpenAI-compatible). An
-/// in-process gllm model is loaded by the server itself; warming a chain that
-/// contains it would construct a second resident copy.
+/// Warmup applies when the chain's primary (first) backend is remote (Ollama,
+/// OpenAI-compatible). An in-process gllm primary is loaded by the server itself;
+/// warming it would construct a second resident copy. A remote primary is warmed
+/// even when later fallbacks are gllm, because only the primary is warmed.
 pub(crate) fn warmup_supported(config: &EmbedderConfig) -> bool {
     match config {
-        EmbedderConfig::Fallback(backends) => {
-            !backends.is_empty()
-                && backends
-                    .iter()
-                    .all(|b| !matches!(b, EmbedderBackendConfig::Gllm(_)))
-        }
+        EmbedderConfig::Fallback(backends) => matches!(
+            backends.first(),
+            Some(primary) if !matches!(primary, EmbedderBackendConfig::Gllm(_))
+        ),
         EmbedderConfig::Noop | EmbedderConfig::Invalid(_) => false,
+    }
+}
+
+/// Keeps only the primary backend, so the warmup builds and warms exactly the
+/// backend that serves the first search.
+fn warmup_primary(config: EmbedderConfig) -> EmbedderConfig {
+    match config {
+        EmbedderConfig::Fallback(mut backends) => {
+            backends.truncate(1);
+            EmbedderConfig::Fallback(backends)
+        }
+        other => other,
     }
 }
 
@@ -802,9 +850,34 @@ fn try_claim(flag: &AtomicBool) -> bool {
         .is_ok()
 }
 
+/// Test-only: clears the process-wide guard so tests can claim it again.
+#[cfg(test)]
+fn reset_warmup_guard() {
+    WARMUP_STARTED.store(false, AtomicOrdering::SeqCst);
+}
+
+/// Boot warmup, then the periodic re-warm when `period` is set. When the boot
+/// build yields no usable embedder, the re-warm loop keeps retrying the build.
+async fn run_warmup_task(build: WarmupBuilder, period: Option<std::time::Duration>) {
+    let current = match build_real_embedder(build.clone()).await {
+        Ok(embedder) => {
+            warm_embedder(embedder.as_ref(), true).await;
+            Some(embedder)
+        }
+        Err(reason) => {
+            tracing::warn!(%reason, "embedder warmup: no usable embedder at boot");
+            None
+        }
+    };
+    if let Some(period) = period {
+        run_periodic_warmup(current, build, period).await;
+    }
+}
+
 /// Spawns the boot warmup without blocking startup, then the periodic re-warm
 /// unless `XAVIER_EMBED_WARMUP_INTERVAL_SECS=0`. Uses the same builder as the
-/// `/memory/search` path (`EmbeddingClient::from_env` -> `build_sync`).
+/// `/memory/search` path (`EmbeddingClient::from_env` -> `build_sync`). Only the
+/// first call starts a task; later calls are no-ops.
 pub fn spawn_embedder_warmup() {
     if !embed_warmup_enabled() {
         info!("embedder warmup disabled by XAVIER_EMBED_WARMUP");
@@ -816,7 +889,7 @@ pub fn spawn_embedder_warmup() {
     }
     if !warmup_supported(&config) {
         if matches!(config, EmbedderConfig::Fallback(_)) {
-            info!("embedder warmup skipped: in-process backend");
+            info!("embedder warmup skipped: primary backend is in-process");
         }
         return;
     }
@@ -824,25 +897,9 @@ pub fn spawn_embedder_warmup() {
         return;
     }
     let period = embed_warmup_interval();
-    tokio::spawn(async move {
-        // Building can probe Ollama synchronously, so keep it off the async workers.
-        let embedder: Arc<dyn Embedder> =
-            match tokio::task::spawn_blocking(move || config.build_sync()).await {
-                Ok(Ok(embedder)) => embedder,
-                Ok(Err(error)) => {
-                    tracing::warn!(%error, "embedder warmup skipped: build failed");
-                    return;
-                }
-                Err(join_error) => {
-                    tracing::warn!(%join_error, "embedder warmup skipped: build task failed");
-                    return;
-                }
-            };
-        warm_embedder(embedder.as_ref(), true).await;
-        if let Some(period) = period {
-            run_periodic_warmup(embedder, period).await;
-        }
-    });
+    let config = warmup_primary(config);
+    let build: WarmupBuilder = Arc::new(move || config.clone().build_sync());
+    tokio::spawn(run_warmup_task(build, period));
 }
 
 #[derive(Debug, Default)]
@@ -1864,26 +1921,119 @@ mod embed_warmup_tests {
     }
 
     #[test]
-    fn warmup_skipped_for_in_process_backends() {
+    fn warmup_skipped_only_for_in_process_primary() {
         let gllm = EmbedderBackendConfig::Gllm(gllm_config());
         let ollama = EmbedderBackendConfig::Ollama(ollama_config());
         assert!(!warmup_supported(&EmbedderConfig::Fallback(vec![
             gllm.clone()
         ])));
         assert!(!warmup_supported(&EmbedderConfig::Fallback(vec![
+            gllm.clone(),
+            ollama.clone()
+        ])));
+        assert!(warmup_supported(&EmbedderConfig::Fallback(vec![
             ollama.clone(),
             gllm
         ])));
-        assert!(!warmup_supported(&EmbedderConfig::Noop));
         assert!(warmup_supported(&EmbedderConfig::Fallback(vec![ollama])));
+        assert!(!warmup_supported(&EmbedderConfig::Fallback(vec![])));
+        assert!(!warmup_supported(&EmbedderConfig::Noop));
+    }
+
+    #[test]
+    fn warmup_targets_only_primary_backend() {
+        let ollama = EmbedderBackendConfig::Ollama(ollama_config());
+        let gllm = EmbedderBackendConfig::Gllm(gllm_config());
+        match warmup_primary(EmbedderConfig::Fallback(vec![ollama, gllm])) {
+            EmbedderConfig::Fallback(backends) => {
+                assert_eq!(backends.len(), 1);
+                assert!(matches!(backends[0], EmbedderBackendConfig::Ollama(_)));
+            }
+            other => panic!("expected a fallback chain, got {other:?}"),
+        }
+    }
+
+    /// Production config: `XAVIER_EMBEDDER=openai-compatible` with the local
+    /// provider mode (Ollama nomic-embed-text). Must resolve to a single remote
+    /// backend that is warmed, with or without the `local-gllm` feature.
+    #[test]
+    fn production_explicit_openai_compatible_is_warmed() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDER", "openai-compatible");
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "local");
+        std::env::set_var(
+            "XAVIER_EMBEDDING_LOCAL_URL",
+            "http://localhost:11434/v1/embeddings",
+        );
+        std::env::set_var("XAVIER_EMBEDDING_LOCAL_MODEL", "nomic-embed-text");
+
+        let config = EmbedderConfig::from_env();
+        assert!(matches!(
+            &config,
+            EmbedderConfig::Fallback(backends)
+                if backends.len() == 1
+                    && matches!(backends[0], EmbedderBackendConfig::OpenAICompatible(_))
+        ));
+        assert!(warmup_supported(&config));
+        match warmup_primary(config) {
+            EmbedderConfig::Fallback(backends) => assert_eq!(backends.len(), 1),
+            other => panic!("expected a fallback chain, got {other:?}"),
+        }
     }
 
     #[test]
     fn warmup_guard_claims_once() {
-        let flag = AtomicBool::new(false);
-        assert!(try_claim(&flag));
-        assert!(!try_claim(&flag));
-        assert!(!try_claim(&flag));
+        reset_warmup_guard();
+        assert!(try_claim(&WARMUP_STARTED));
+        assert!(!try_claim(&WARMUP_STARTED));
+        assert!(!try_claim(&WARMUP_STARTED));
+        reset_warmup_guard();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn periodic_warmup_rebuilds_after_noop_boot() {
+        let builds = Arc::new(AtomicUsize::new(0));
+        let counting = Arc::new(CountingEmbedder {
+            calls: AtomicUsize::new(0),
+            fail: false,
+        });
+        let build: WarmupBuilder = {
+            let builds = builds.clone();
+            let counting = counting.clone();
+            Arc::new(move || {
+                if builds.fetch_add(1, Ordering::SeqCst) == 0 {
+                    let noop: Arc<dyn Embedder> = Arc::new(NoopEmbedder);
+                    Ok(noop)
+                } else {
+                    let real: Arc<dyn Embedder> = counting.clone();
+                    Ok(real)
+                }
+            })
+        };
+        let handle = tokio::spawn(run_warmup_task(
+            build,
+            Some(std::time::Duration::from_secs(60)),
+        ));
+        settle_until(|| builds.load(Ordering::SeqCst) == 1).await;
+        assert_eq!(counting.calls.load(Ordering::SeqCst), 0);
+
+        tokio::time::advance(std::time::Duration::from_secs(60)).await;
+        settle_until(|| counting.calls.load(Ordering::SeqCst) == 1).await;
+        assert_eq!(builds.load(Ordering::SeqCst), 2);
+        assert_eq!(counting.calls.load(Ordering::SeqCst), 1);
+        handle.abort();
+    }
+
+    /// Lets spawned tasks (and `spawn_blocking` completions) run until `done`
+    /// holds, with a bounded wait.
+    async fn settle_until(done: impl Fn() -> bool) {
+        for _ in 0..2000 {
+            if done() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            tokio::task::yield_now().await;
+        }
     }
 
     #[tokio::test(start_paused = true)]
@@ -1892,8 +2042,10 @@ mod embed_warmup_tests {
             calls: AtomicUsize::new(0),
             fail: false,
         });
+        let unused: WarmupBuilder = Arc::new(|| Err(EmbeddingError::Config("unused".to_string())));
         let handle = tokio::spawn(run_periodic_warmup(
-            embedder.clone(),
+            Some(embedder.clone()),
+            unused,
             std::time::Duration::from_secs(60),
         ));
         // Yield so the task reaches its first tick; the boot tick is consumed.
