@@ -463,6 +463,7 @@ pub async fn search_handler(
         query: effective_query.to_string(),
         limit,
         filters: Some(filters),
+        include_embedding: Some(true),
         ..Default::default()
     };
     // Link filters run after the search: over-fetch so a filtered page fills.
