@@ -681,6 +681,66 @@ async fn build_embedder_from_env_with_cache(
     }
 }
 
+/// Synthetic text sent once at boot. Never written to the memory store.
+const EMBED_WARMUP_TEXT: &str = "xavier warmup";
+/// Upper bound for the boot warmup; a cold model load can take tens of seconds.
+const EMBED_WARMUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Boot warmup is on unless `XAVIER_EMBED_WARMUP` is `0`, `false` or `off`.
+pub fn embed_warmup_enabled() -> bool {
+    !matches!(
+        std::env::var("XAVIER_EMBED_WARMUP")
+            .ok()
+            .map(|v| v.trim().to_ascii_lowercase())
+            .as_deref(),
+        Some("0" | "false" | "off")
+    )
+}
+
+/// Sends one synthetic embedding request through `embedder` so the model is
+/// loaded before the first real search. Never panics or propagates: success is
+/// logged at info with elapsed ms, failure at warn.
+pub async fn warm_embedder(embedder: &dyn Embedder, enabled: bool) {
+    if !enabled {
+        return;
+    }
+    let started = std::time::Instant::now();
+    match tokio::time::timeout(EMBED_WARMUP_TIMEOUT, embedder.encode(EMBED_WARMUP_TEXT)).await {
+        Ok(Ok(vector)) => info!(
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            dimension = vector.len(),
+            "embedder warmup complete"
+        ),
+        Ok(Err(error)) => tracing::warn!(
+            %error,
+            "embedder warmup failed; the first search may be slow"
+        ),
+        Err(_) => tracing::warn!(
+            timeout_secs = EMBED_WARMUP_TIMEOUT.as_secs(),
+            "embedder warmup timed out; the first search may be slow"
+        ),
+    }
+}
+
+/// Spawns the boot warmup without blocking startup. Uses the same builder as the
+/// `/memory/search` path (`EmbeddingClient::from_env` -> `build_sync`).
+pub fn spawn_embedder_warmup() {
+    if !embed_warmup_enabled() {
+        info!("embedder warmup disabled by XAVIER_EMBED_WARMUP");
+        return;
+    }
+    let config = EmbedderConfig::from_env();
+    if !config.is_configured() {
+        return;
+    }
+    tokio::spawn(async move {
+        match config.build_sync() {
+            Ok(embedder) => warm_embedder(embedder.as_ref(), true).await,
+            Err(error) => tracing::warn!(%error, "embedder warmup skipped: build failed"),
+        }
+    });
+}
+
 #[derive(Debug, Default)]
 pub struct NoopEmbedder;
 
@@ -1609,5 +1669,78 @@ mod local_endpoint_tests {
         ] {
             assert!(!endpoint_is_local(bad), "{bad}");
         }
+    }
+}
+
+#[cfg(test)]
+mod embed_warmup_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Counts `encode` calls; fails on demand. Touches no disk or network.
+    struct CountingEmbedder {
+        calls: AtomicUsize,
+        fail: bool,
+    }
+
+    #[async_trait]
+    impl Embedder for CountingEmbedder {
+        async fn encode(&self, _text: &str) -> Result<Vec<f32>, EmbeddingError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.fail {
+                Err(EmbeddingError::Config("mock embed failure".to_string()))
+            } else {
+                Ok(vec![0.0; 4])
+            }
+        }
+
+        fn dimension(&self) -> usize {
+            4
+        }
+    }
+
+    #[tokio::test]
+    async fn warmup_calls_embed_exactly_once() {
+        let embedder = CountingEmbedder {
+            calls: AtomicUsize::new(0),
+            fail: false,
+        };
+        warm_embedder(&embedder, true).await;
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn warmup_disabled_does_not_call_embed() {
+        let embedder = CountingEmbedder {
+            calls: AtomicUsize::new(0),
+            fail: false,
+        };
+        warm_embedder(&embedder, false).await;
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn warmup_embed_error_is_contained() {
+        let embedder = CountingEmbedder {
+            calls: AtomicUsize::new(0),
+            fail: true,
+        };
+        // Must return normally: no panic, no propagated error.
+        warm_embedder(&embedder, true).await;
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn embed_warmup_env_opt_out() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        std::env::remove_var("XAVIER_EMBED_WARMUP");
+        assert!(embed_warmup_enabled());
+        for off in ["0", "false", "OFF", " off "] {
+            std::env::set_var("XAVIER_EMBED_WARMUP", off);
+            assert!(!embed_warmup_enabled(), "{off:?} should disable warmup");
+        }
+        std::env::set_var("XAVIER_EMBED_WARMUP", "1");
+        assert!(embed_warmup_enabled());
+        std::env::remove_var("XAVIER_EMBED_WARMUP");
     }
 }

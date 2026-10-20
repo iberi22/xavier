@@ -1422,6 +1422,9 @@ async fn start_http_server_inner(
     let settings = XavierSettings::current();
     settings.apply_to_env();
 
+    // Load the embedder in the background so the first /memory/search is not cold.
+    xavier::embedding::spawn_embedder_warmup();
+
     // Validate opencode CLI if active
     if settings
         .models
