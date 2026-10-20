@@ -188,7 +188,8 @@ pub async fn handle_context_tool(
                     .workspace
                     .memory
                     .has_session_document(session_id)
-                    .await?)
+                    .await?
+                || workspace.workspace.has_session_records(session_id).await?)
             {
                 return super::server::mcp_text_result(
                     format!("no saved context for session {}", session_id),

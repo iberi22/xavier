@@ -3307,3 +3307,48 @@ async fn context_restore_saved_session_still_succeeds() {
         .unwrap_or_default()
         .contains("\"status\": \"ok\""));
 }
+
+#[tokio::test]
+#[serial_test::serial]
+async fn context_restore_finds_session_only_in_persistent_store() {
+    let (state, workspace) = test_state().await;
+
+    // Load the QMD snapshot first, so the write below is not in it.
+    workspace
+        .workspace
+        .memory
+        .ensure_loaded()
+        .await
+        .expect("warm QMD");
+
+    let doc = crate::memory::qmd_memory::MemoryDocument {
+        path: "sessions/store-only-session/1".to_string(),
+        content: "User: hi\nAssistant: hello".to_string(),
+        metadata: json!({"session_id": "store-only-session"}),
+        ..Default::default()
+    };
+    let record = crate::memory::store::MemoryRecord::from_document(
+        &workspace.workspace_id,
+        &doc,
+        true,
+        None,
+    );
+    workspace
+        .workspace
+        .put_store_record_for_tests(record)
+        .await
+        .expect("direct store write");
+
+    let result = stdio_tool_result(
+        &state,
+        &workspace,
+        "xavier_context_restore",
+        json!({"session_id": "store-only-session"}),
+    )
+    .await;
+    assert_ne!(result["isError"], true, "{result}");
+    assert!(result["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("\"status\": \"ok\""));
+}
