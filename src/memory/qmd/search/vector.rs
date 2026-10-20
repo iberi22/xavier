@@ -27,12 +27,19 @@ pub async fn vsearch_filtered(
     }
 
     let include_activity = filters.and_then(|f| f.include_activity).unwrap_or(false);
-    let docs = memory.docs.clone().read_owned().await;
+    let docs = memory.docs.clone();
     let workspace_id = memory.workspace_id.clone();
     let owned_filters = filters.cloned();
     let cancelled = tokio_util::sync::CancellationToken::new();
     let _cancel_on_drop = cancelled.clone().drop_guard();
     tokio::task::spawn_blocking(move || {
+        if cancelled.is_cancelled() {
+            return Vec::new();
+        }
+        let docs = docs.blocking_read();
+        if cancelled.is_cancelled() {
+            return Vec::new();
+        }
         let mut similarities: Vec<(f32, usize)> = docs
             .iter()
             .enumerate()

@@ -10,7 +10,7 @@ use std::time::Instant;
 use crate::memory::qmd_memory::config::EMBEDDING_CACHE;
 use crate::memory::qmd_memory::config::EMBEDDING_CACHE_TTL_SECS;
 use crate::memory::qmd_memory::query_builder::normalize_query;
-use crate::memory::qmd_memory::search::lexical_score;
+use crate::memory::qmd_memory::search::scoring::LexicalBatchScorer;
 use crate::memory::qmd_memory::types::{
     CachedSearchResult, EmbeddingCacheEntry, MemoryDocument, MemoryUsage, SearchCacheKey,
 };
@@ -178,105 +178,149 @@ pub async fn search_with_cache_filtered(
     limit: usize,
     filters: Option<&MemoryQueryFilters>,
 ) -> Result<CachedSearchResult> {
-    let normalized_query = normalize_query(query_text);
-    let cache_key = SearchCacheKey {
-        workspace_id: memory.workspace_id.clone(),
-        query: normalized_query.clone(),
-        limit,
-        filters: serde_json::to_string(&filters).unwrap_or_default(),
-    };
+    Ok(
+        search_queries_with_cache_filtered(memory, &[query_text.to_string()], limit, filters, None)
+            .await?
+            .remove(0)
+            .expect("direct lexical retrieval always completes"),
+    )
+}
 
-    if let Some(cached) = memory.search_cache.read().await.get(&cache_key).cloned() {
-        memory
-            .cache_counters
-            .hits
-            .fetch_add(1, AtomicOrdering::Relaxed);
-        return Ok(CachedSearchResult {
-            documents: cached,
-            cache_hit: true,
-        });
+/// Rank all uncached variants in one corpus pass, retaining every fusion vote.
+pub(crate) async fn search_queries_with_cache_filtered(
+    memory: &QmdMemory,
+    queries: &[String],
+    limit: usize,
+    filters: Option<&MemoryQueryFilters>,
+    optional_deadline: Option<tokio::time::Instant>,
+) -> Result<Vec<Option<CachedSearchResult>>> {
+    let keys: Vec<_> = queries
+        .iter()
+        .map(|query| SearchCacheKey {
+            workspace_id: memory.workspace_id.clone(),
+            query: normalize_query(query),
+            limit,
+            filters: serde_json::to_string(&filters).unwrap_or_default(),
+        })
+        .collect();
+    let mut results = Vec::with_capacity(keys.len());
+    let mut missing = Vec::new();
+    {
+        let cache = memory.search_cache.read().await;
+        for (index, key) in keys.iter().enumerate() {
+            if let Some(documents) = cache.get(key) {
+                memory
+                    .cache_counters
+                    .hits
+                    .fetch_add(1, AtomicOrdering::Relaxed);
+                results.push(Some(CachedSearchResult {
+                    documents: documents.clone(),
+                    cache_hit: true,
+                }));
+            } else {
+                missing.push(index);
+                results.push(None);
+            }
+        }
     }
-
+    if missing.is_empty() {
+        return Ok(results);
+    }
     let include_activity = filters.and_then(|f| f.include_activity).unwrap_or(false);
-    let docs = memory.docs.clone().read_owned().await;
+    let docs = memory.docs.clone();
     let workspace_id = memory.workspace_id.clone();
     let owned_filters = filters.cloned();
-    let scoring_query = normalized_query.clone();
+    let scoring_queries = missing
+        .iter()
+        .map(|index| keys[*index].query.clone())
+        .collect();
     let cancelled = tokio_util::sync::CancellationToken::new();
     let _cancel_on_drop = cancelled.clone().drop_guard();
-    let documents = tokio::task::spawn_blocking(move || {
-        let mut scored: Vec<(f32, usize)> = docs
+    let retrieval = tokio::task::spawn_blocking(move || {
+        if cancelled.is_cancelled() {
+            return Vec::new();
+        }
+        let docs = docs.blocking_read();
+        if cancelled.is_cancelled() {
+            return Vec::new();
+        }
+        let scorer = LexicalBatchScorer::new(scoring_queries);
+        let mut rankings: Vec<Vec<(f32, usize)>> = Vec::new();
+        for (index, doc) in docs
             .iter()
             .enumerate()
             .take_while(|_| !cancelled.is_cancelled())
-            .filter_map(|(index, doc)| {
-                if !matches_filters(
-                    &doc.path,
-                    &doc.metadata,
-                    &workspace_id,
-                    owned_filters.as_ref(),
-                ) {
-                    return None;
+        {
+            if !matches_filters(
+                &doc.path,
+                &doc.metadata,
+                &workspace_id,
+                owned_filters.as_ref(),
+            ) || (!include_activity && crate::memory::schema::is_noise_content(&doc.content))
+            {
+                continue;
+            }
+            let scores = scorer.scores(doc);
+            rankings.resize_with(scores.len(), Vec::new);
+            for (ranking, score) in rankings.iter_mut().zip(scores) {
+                if score > 0.0 {
+                    ranking.push((score, index));
                 }
-                if !include_activity && crate::memory::schema::is_noise_content(&doc.content) {
-                    return None;
-                }
-                let score = lexical_score(doc, &scoring_query);
-                (score > 0.0).then_some((score, index))
-            })
-            .collect();
-        let compare = |left: &(f32, usize), right: &(f32, usize)| {
-            right
-                .0
-                .partial_cmp(&left.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| docs[left.1].path.cmp(&docs[right.1].path))
-                .then_with(|| left.1.cmp(&right.1))
-        };
-        if scored.len() > limit {
-            scored.select_nth_unstable_by(limit, compare);
-            scored.truncate(limit);
+            }
         }
-        scored.sort_unstable_by(compare);
-        // Copy only the selected documents, not the entire corpus.
-        scored
+        rankings
             .into_iter()
-            .map(|(_, index)| docs[index].clone())
+            .map(|mut scored| {
+                let compare = |left: &(f32, usize), right: &(f32, usize)| {
+                    right
+                        .0
+                        .partial_cmp(&left.0)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| docs[left.1].path.cmp(&docs[right.1].path))
+                        .then_with(|| left.1.cmp(&right.1))
+                };
+                if scored.len() > limit {
+                    scored.select_nth_unstable_by(limit, compare);
+                    scored.truncate(limit);
+                }
+                scored.sort_unstable_by(compare);
+                scored
+                    .into_iter()
+                    .map(|(_, index)| docs[index].clone())
+                    .collect::<Vec<_>>()
+            })
             .collect::<Vec<_>>()
-    })
-    .await?;
-
-    {
-        let mut search_cache = memory.search_cache.write().await;
-        search_cache.insert(cache_key, documents.clone());
-        // Bound memory: search_cache was an unbounded HashMap keyed by
-        // (workspace, query, limit, filters). Each value clones up to
-        // `limit` docs with 768d embeddings — under diverse query load
-        // this grew without bound (GBs). Cap at 1000 entries; evict
-        // everything on overflow (correctness preserved via miss).
-        const MAX_SEARCH_CACHE_ENTRIES: usize = 1000;
-        if search_cache.len() > MAX_SEARCH_CACHE_ENTRIES {
-            search_cache.clear();
-            search_cache.insert(
-                SearchCacheKey {
-                    workspace_id: memory.workspace_id.clone(),
-                    query: normalized_query.clone(),
-                    limit,
-                    filters: serde_json::to_string(&filters).unwrap_or_default(),
-                },
-                documents.clone(),
-            );
+    });
+    // A cached direct result must survive optional variants waiting for a writer.
+    let documents = if results.first().is_some_and(Option::is_some) {
+        if let Some(deadline) = optional_deadline {
+            match tokio::time::timeout_at(deadline, retrieval).await {
+                Ok(result) => result?,
+                Err(_) => return Ok(results),
+            }
+        } else {
+            retrieval.await?
         }
+    } else {
+        retrieval.await?
+    };
+    let mut cache = memory.search_cache.write().await;
+    for (position, index) in missing.into_iter().enumerate() {
+        let documents = documents.get(position).cloned().unwrap_or_default();
+        if cache.len() >= 1000 {
+            cache.clear();
+        }
+        cache.insert(keys[index].clone(), documents.clone());
+        memory
+            .cache_counters
+            .misses
+            .fetch_add(1, AtomicOrdering::Relaxed);
+        results[index] = Some(CachedSearchResult {
+            documents,
+            cache_hit: false,
+        });
     }
-    memory
-        .cache_counters
-        .misses
-        .fetch_add(1, AtomicOrdering::Relaxed);
-
-    Ok(CachedSearchResult {
-        documents,
-        cache_hit: false,
-    })
+    Ok(results)
 }
 
 /// Invalidate cache.
@@ -387,6 +431,148 @@ mod latency_regression {
     use std::future::Future;
     use std::sync::Arc;
     use tokio::sync::RwLock;
+
+    #[tokio::test]
+    async fn batch_rankings_match_scalar_search_with_filters_and_partial_cache() {
+        use crate::memory::qmd_memory::search::lexical_score;
+        let docs: Vec<_> = [
+            ("a", "bbb bbb bbb bbb aaa", "left"),
+            ("b", "aaa aaa aaa aaa bbb", "left"),
+            ("c", "bbb bbb aaa bbb", "left"),
+            ("d", "aaaaa ééé", "left"),
+            ("e", "aaa bbb aaa bbb aaa", "right"),
+        ]
+        .into_iter()
+        .map(|(id, content, namespace)| MemoryDocument {
+            id: Some(id.into()),
+            path: format!("docs/{id}"),
+            content: content.into(),
+            metadata: serde_json::json!({"kind": "document", "workspace_id": namespace}),
+            ..Default::default()
+        })
+        .collect();
+        let memory = QmdMemory::new_with_workspace(Arc::new(RwLock::new(docs.clone())), "left");
+        let queries = [
+            "aaa bbb",
+            "aaa bbb aaa",
+            "aaa bbb bbb",
+            "aa aaa aa",
+            "é éé",
+            "unmatched",
+        ]
+        .map(str::to_string)
+        .to_vec();
+        memory
+            .search_with_cache_filtered(&queries[0], 3, None)
+            .await
+            .unwrap();
+        let filter = MemoryQueryFilters {
+            workspace_id: Some("left".into()),
+            include_activity: Some(true),
+            ..Default::default()
+        };
+        for filters in [None, Some(&filter)] {
+            let results = search_queries_with_cache_filtered(&memory, &queries, 3, filters, None)
+                .await
+                .unwrap();
+            for (query, actual) in queries.iter().zip(results) {
+                let mut expected: Vec<_> = docs
+                    .iter()
+                    .filter(|doc| matches_filters(&doc.path, &doc.metadata, "left", filters))
+                    .map(|doc| (lexical_score(doc, query), doc.path.clone()))
+                    .filter(|(score, _)| *score > 0.0)
+                    .collect();
+                expected.sort_by(|left, right| {
+                    right
+                        .0
+                        .partial_cmp(&left.0)
+                        .unwrap()
+                        .then_with(|| left.1.cmp(&right.1))
+                });
+                expected.truncate(3);
+                assert_eq!(
+                    actual
+                        .unwrap()
+                        .documents
+                        .iter()
+                        .map(|doc| doc.path.clone())
+                        .collect::<Vec<_>>(),
+                    expected
+                        .into_iter()
+                        .map(|(_, path)| path)
+                        .collect::<Vec<_>>(),
+                    "query={query}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cancelled_queued_scans_release_document_lock() {
+        use std::time::Duration;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .max_blocking_threads(1)
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            for vector in [false, true] {
+                let memory = QmdMemory::new(Arc::new(RwLock::new(vec![MemoryDocument::default()])));
+                let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+                let (release_tx, release_rx) = std::sync::mpsc::channel();
+                let blocker = tokio::task::spawn_blocking(move || {
+                    ready_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+                });
+                ready_rx.await.unwrap();
+                let search: std::pin::Pin<Box<dyn Future<Output = Result<()>>>> = if vector {
+                    Box::pin(async {
+                        crate::memory::qmd_memory::search::vector::vsearch_filtered(
+                            &memory,
+                            vec![1.0],
+                            1,
+                            None,
+                        )
+                        .await
+                        .map(|_| ())
+                    })
+                } else {
+                    Box::pin(async {
+                        search_with_cache_filtered(&memory, "query", 1, None)
+                            .await
+                            .map(|_| ())
+                    })
+                };
+                let mut search = search;
+                assert!(
+                    std::future::poll_fn(|cx| std::task::Poll::Ready(
+                        search.as_mut().poll(cx).is_pending()
+                    ))
+                    .await
+                );
+                drop(search);
+                let write =
+                    tokio::time::timeout(Duration::from_millis(200), memory.docs.write()).await;
+                release_tx.send(()).unwrap();
+                assert!(
+                    write.is_ok(),
+                    "cancelled queued scan retained the read guard (vector={vector})"
+                );
+                drop(write);
+                blocker.await.unwrap();
+                // The cancelled closure must skip even acquiring a read guard when dequeued.
+                let writer = memory.docs.write().await;
+                tokio::time::timeout(
+                    Duration::from_millis(200),
+                    tokio::task::spawn_blocking(|| ()),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                drop(writer);
+            }
+        });
+    }
 
     #[tokio::test]
     async fn lexical_cache_miss_yields_and_preserves_ranking() {

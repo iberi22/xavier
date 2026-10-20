@@ -19,32 +19,49 @@ pub fn lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
         return locomo_lexical_score(doc, normalized_query);
     }
 
-    let content = doc.content.to_lowercase();
-    let path = doc.path.to_lowercase();
-    let query_terms: Vec<&str> = normalized_query
-        .split_whitespace()
-        .filter(|term| !term.is_empty())
-        .collect();
+    let prepared = PreparedLexicalDocument::new(doc);
+    lexical_score_prepared(doc, normalized_query, &prepared, None)
+}
 
-    // BM25-style term-frequency saturation + document-length normalization.
-    // Root cause: raw `content.matches(term).count()` grows unbounded with
-    // document length, so long auto-generated documents that happen to
-    // repeat many query-adjacent words (e.g. verbose self-reflection
-    // summaries) out-scored short, precisely-relevant docs purely by being
-    // long — independent of the activity/gestalt-thinking namespace
-    // exclusion above. `k1` bounds how much repeats of the same term can
-    // contribute; `b`/`avg_doc_len_words` penalize documents longer than a
-    // typical memory record.
+struct PreparedLexicalDocument {
+    content: String,
+    path: String,
+    length_norm: f32,
+}
+
+impl PreparedLexicalDocument {
+    fn new(doc: &MemoryDocument) -> Self {
+        let content = doc.content.to_lowercase();
+        let doc_len_words = document_word_count(&content).max(1) as f32;
+        Self {
+            content,
+            path: doc.path.to_lowercase(),
+            length_norm: 0.25 + 0.75 * (doc_len_words / 220.0),
+        }
+    }
+}
+
+fn lexical_score_prepared(
+    doc: &MemoryDocument,
+    normalized_query: &str,
+    prepared: &PreparedLexicalDocument,
+    counts: Option<&[usize]>,
+) -> f32 {
+    if normalized_query.is_empty() {
+        return 0.0;
+    }
+    let content = &prepared.content;
+    let path = &prepared.path;
+    let query_terms: Vec<&str> = normalized_query.split_whitespace().collect();
     const BM25_K1: f32 = 1.5;
-    const BM25_B: f32 = 0.75;
-    const AVG_DOC_LEN_WORDS: f32 = 220.0;
-    let doc_len_words = content.split_whitespace().count().max(1) as f32;
-    let length_norm = (1.0 - BM25_B) + BM25_B * (doc_len_words / AVG_DOC_LEN_WORDS);
+    let length_norm = prepared.length_norm;
 
     let mut matched_terms = 0usize;
     let mut score = 0.0f32;
-    for term in &query_terms {
-        let raw_content_hits = content.matches(term).count() as f32;
+    for (index, term) in query_terms.iter().enumerate() {
+        let raw_content_hits = counts
+            .map(|values| values[index] as f32)
+            .unwrap_or_else(|| content.matches(term).count() as f32);
         let content_hits = if raw_content_hits > 0.0 {
             (raw_content_hits * (BM25_K1 + 1.0)) / (raw_content_hits + BM25_K1 * length_norm)
         } else {
@@ -176,6 +193,75 @@ pub fn lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
     let decay = temporal_decay_multiplier(created_at, half_life_days);
 
     score * decay
+}
+
+/// Reuse corpus normalization and term counts without changing per-variant scores.
+pub(crate) struct LexicalBatchScorer {
+    queries: Vec<String>,
+    term_indices: Vec<Vec<usize>>,
+    terms: Vec<String>,
+}
+
+impl LexicalBatchScorer {
+    pub(crate) fn new(queries: Vec<String>) -> Self {
+        let mut terms = Vec::new();
+        // Repeated query terms retain repeated indices and their original scoring weight.
+        let term_indices = queries
+            .iter()
+            .map(|query| {
+                query
+                    .split_whitespace()
+                    .map(|term| {
+                        if let Some(index) = terms.iter().position(|existing| *existing == term) {
+                            index
+                        } else {
+                            terms.push(term);
+                            terms.len() - 1
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+        let terms = terms.into_iter().map(str::to_string).collect();
+        Self {
+            queries,
+            term_indices,
+            terms,
+        }
+    }
+
+    pub(crate) fn scores(&self, doc: &MemoryDocument) -> Vec<f32> {
+        if is_locomo_document(&doc.path, &doc.metadata) {
+            return self
+                .queries
+                .iter()
+                .map(|query| lexical_score(doc, query))
+                .collect();
+        }
+        let prepared = PreparedLexicalDocument::new(doc);
+        let counts: Vec<_> = self
+            .terms
+            .iter()
+            .map(|term| prepared.content.matches(term.as_str()).count())
+            .collect();
+        self.queries
+            .iter()
+            .zip(&self.term_indices)
+            .map(|(query, indices)| {
+                let query_counts: Vec<_> = indices.iter().map(|index| counts[*index]).collect();
+                lexical_score_prepared(doc, query, &prepared, Some(&query_counts))
+            })
+            .collect()
+    }
+}
+
+fn document_word_count(content: &str) -> usize {
+    // ASCII splitting excludes vertical tab; retain Unicode whitespace semantics.
+    if content.is_ascii() && !content.as_bytes().contains(&0x0b) {
+        content.split_ascii_whitespace().count()
+    } else {
+        content.split_whitespace().count()
+    }
 }
 
 /// Lexical scoring for LOCOMO documents with structured metadata.
@@ -569,6 +655,69 @@ pub fn memory_decay_penalty(document: &MemoryDocument) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batch_scores_preserve_independent_term_counts_and_unicode() {
+        let queries = [
+            "aa aaa a aa",
+            "é éé rust",
+            "rust how",
+            "",
+            "aaa bbb",
+            "aaa bbb aaa",
+            "sunrise identity",
+        ]
+        .map(str::to_string)
+        .to_vec();
+        let scorer = LexicalBatchScorer::new(queries.clone());
+        for (path, content, metadata) in [
+            (
+                "docs/aaa",
+                "aaaaa bbb aaa",
+                serde_json::json!({"kind": "document"}),
+            ),
+            (
+                "docs/rust",
+                "RUST rust how ééé\u{b}two\u{a0}three",
+                serde_json::json!({"memory_kind": "fact_atom"}),
+            ),
+            (
+                "notes/other",
+                "sunrise transgender unrelated",
+                serde_json::json!({"category": "session_summary"}),
+            ),
+            (
+                "locomo/session",
+                "Rust aaa bbb",
+                serde_json::json!({"benchmark": "locomo"}),
+            ),
+        ] {
+            let doc = MemoryDocument {
+                path: path.into(),
+                content: content.into(),
+                metadata,
+                ..Default::default()
+            };
+            assert_eq!(
+                scorer.scores(&doc),
+                queries
+                    .iter()
+                    .map(|query| lexical_score(&doc, query))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn word_count_preserves_unicode_and_control_whitespace() {
+        for byte in 0..=127 {
+            let text = format!("one{}two", char::from(byte));
+            assert_eq!(document_word_count(&text), text.split_whitespace().count());
+        }
+        for text in ["", "uno\u{a0}dos", "één twee", "a\u{2003}b"] {
+            assert_eq!(document_word_count(text), text.split_whitespace().count());
+        }
+    }
 
     #[test]
     fn test_temporal_decay_multiplier_math() {

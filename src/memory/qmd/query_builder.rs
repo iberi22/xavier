@@ -81,6 +81,23 @@ pub fn build_query_bundle_internal(query_text: &str) -> QueryBundle {
         }
     }
 
+    // Repeated terms change lexical ranks and contribute independent fusion votes.
+    if variants.len() == 1 {
+        for token in query_text.split_whitespace().take(MAX_EXPANSIONS) {
+            let cleaned = normalize_token(token);
+            if cleaned.len() < 3 || cleaned == normalized_query {
+                continue;
+            }
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                weights.entry(format!("{normalized_query} {cleaned}"))
+            {
+                let expanded = entry.key().clone();
+                variants.push(expanded.clone());
+                entry.insert(0.8);
+            }
+        }
+    }
+
     variants.truncate(5);
 
     QueryBundle {
@@ -120,13 +137,22 @@ mod latency_regression {
     use super::*;
 
     #[test]
-    fn natural_language_does_not_repeat_existing_terms_as_variants() {
-        let bundle =
-            build_query_bundle_internal("como configurar el runtime de memoria cognitiva en rust");
+    fn natural_language_preserves_original_weighted_variants() {
+        let query = "como configurar el runtime de memoria cognitiva en rust";
+        let bundle = build_query_bundle_internal(query);
         assert_eq!(
             bundle.variants,
-            ["como configurar el runtime de memoria cognitiva en rust"]
+            [
+                query.to_string(),
+                format!("{query} como"),
+                format!("{query} configurar"),
+                format!("{query} runtime")
+            ]
         );
+        assert_eq!(bundle.weight_for(query), 1.0);
+        for variant in &bundle.variants[1..] {
+            assert_eq!(bundle.weight_for(variant), 0.8);
+        }
     }
 
     #[test]

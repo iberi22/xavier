@@ -84,41 +84,19 @@ pub async fn search_hybrid_optimized_with_mode(
     let mut candidate_scores: HashMap<String, ScoredCandidate> = HashMap::new();
     let mut vector_used = false;
 
-    // Keep the direct lexical pass; additional variants share the optional-work budget.
-    for (index, expanded_query) in query_bundle.variants.iter().enumerate() {
-        if index > 0 && tokio::time::Instant::now() >= variants_deadline {
-            break;
-        }
-        let retrieval = memory.search_with_cache_filtered(expanded_query, limit.max(3), filters);
-        let cache_hit = if index == 0 {
-            retrieval.await?
-        } else {
-            match tokio::time::timeout_at(variants_deadline, retrieval).await {
-                Ok(result) => result?,
-                Err(_) => break,
-            }
-        };
-        merge_ranked_candidates(
-            &mut candidate_scores,
-            cache_hit.documents,
-            expanded_query,
-            query_bundle.weight_for(expanded_query) * KEYWORD_WEIGHT,
-            RetrievalLeg::Lexical,
-        );
-    }
-
-    // 2. Vector retrieval (when embedder is configured). Bounded by a short,
-    // configurable fallback budget (`XAVIER_EMBEDDING_FALLBACK_BUDGET_MS`,
-    // default 2s): on a fresh install with an unreachable embedding
-    // endpoint, `generate_embedding` alone can retry for 10s+ internally.
-    // Without this outer timeout that unbounded wait used to make
-    // `mem_search`/`memory_search` hang well past client/middleware
-    // timeouts instead of degrading to the lexical results already
-    // gathered above.
-    if tokio::time::Instant::now() < deadline
-        && (crate::memory::embedder::EmbeddingClient::is_configured_from_env()
+    let lexical = crate::memory::qmd_memory::reader::search_queries_with_cache_filtered(
+        memory,
+        &query_bundle.variants,
+        limit.max(3),
+        filters,
+        Some(variants_deadline),
+    );
+    let vector = async {
+        if !(crate::memory::embedder::EmbeddingClient::is_configured_from_env()
             || std::env::var("XAVIER_EMBEDDING_URL").is_ok())
-    {
+        {
+            return None;
+        }
         let embed_budget = crate::memory::embedder::embedding_fallback_budget()
             .min(deadline.saturating_duration_since(tokio::time::Instant::now()));
         match tokio::time::timeout(
@@ -127,37 +105,49 @@ pub async fn search_hybrid_optimized_with_mode(
         )
         .await
         {
-            Ok(Ok(vector)) if !vector.is_empty() => {
-                if let Ok(Ok(filtered_hits)) = tokio::time::timeout_at(
-                    deadline,
-                    vsearch_filtered(memory, vector, limit.max(5), filters),
-                )
-                .await
-                {
-                    vector_used = true;
-                    merge_ranked_candidates(
-                        &mut candidate_scores,
-                        filtered_hits,
-                        &query_bundle.normalized_query,
-                        SEMANTIC_WEIGHT,
-                        RetrievalLeg::Vector,
-                    );
-                }
-            }
-            Ok(Ok(_)) => {}
+            Ok(Ok(vector)) if !vector.is_empty() => tokio::time::timeout_at(
+                deadline,
+                vsearch_filtered(memory, vector, limit.max(5), filters),
+            )
+            .await
+            .ok()
+            .and_then(Result::ok),
             Ok(Err(error)) => {
-                tracing::warn!(
-                    error = %error,
-                    "hybrid search: embedding generation failed, degrading to lexical-only"
-                );
+                tracing::warn!(error = %error, "hybrid search: embedding generation failed, degrading to lexical-only");
+                None
             }
             Err(_) => {
                 tracing::warn!(
                     budget_ms = embed_budget.as_millis() as u64,
                     "hybrid search: embedding generation timed out, degrading to lexical-only"
                 );
+                None
             }
+            _ => None,
         }
+    };
+    // Cold lexical scoring must not spend the vector leg's deadline before it starts.
+    let (lexical, vector) = tokio::join!(lexical, vector);
+    for (expanded_query, hits) in query_bundle.variants.iter().zip(lexical?) {
+        if let Some(hits) = hits {
+            merge_ranked_candidates(
+                &mut candidate_scores,
+                hits.documents,
+                expanded_query,
+                query_bundle.weight_for(expanded_query) * KEYWORD_WEIGHT,
+                RetrievalLeg::Lexical,
+            );
+        }
+    }
+    if let Some(hits) = vector {
+        vector_used = true;
+        merge_ranked_candidates(
+            &mut candidate_scores,
+            hits,
+            &query_bundle.normalized_query,
+            SEMANTIC_WEIGHT,
+            RetrievalLeg::Vector,
+        );
     }
 
     if candidate_scores.is_empty() {
@@ -1038,6 +1028,53 @@ mod latency_regression {
     use tokio::sync::RwLock;
 
     #[tokio::test]
+    async fn repeated_term_variants_preserve_base_order_end_to_end() {
+        use crate::memory::query_engine::{MemoryQueryEngine, SearchQuery};
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
+        let data_dir =
+            std::env::temp_dir().join(format!("xavier-variant-parity-{}", std::process::id()));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        std::env::set_var("XAVIER_DATA_DIR", &data_dir);
+        let docs = ["a", "b", "c", "d"].into_iter().map(|path| MemoryDocument {
+            id: Some(path.into()),
+            path: path.into(),
+            content: if path == "d" {
+                format!("bbb {}", "aaa ".repeat(10))
+            } else {
+                format!("{}aaa", "bbb ".repeat(10))
+            },
+            metadata: serde_json::json!({"kind": "document", "importance": if path == "d" { 1 } else { 0 }}),
+            ..Default::default()
+        }).collect();
+        let memory = QmdMemory::new(Arc::new(RwLock::new(docs)));
+        let engine = MemoryQueryEngine::new();
+        for _ in 0..2 {
+            let result = engine
+                .search(
+                    &memory,
+                    SearchQuery {
+                        query: "aaa bbb".into(),
+                        limit: 3,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            assert_eq!(result.total_available, 4);
+            assert_eq!(
+                result
+                    .results
+                    .iter()
+                    .map(|doc| doc.path.as_str())
+                    .collect::<Vec<_>>(),
+                ["a", "b", "d"]
+            );
+        }
+        std::fs::remove_dir_all(data_dir).unwrap();
+    }
+
+    #[tokio::test]
     async fn optional_expansion_deadline_preserves_direct_hits() {
         let _env = crate::settings::tests::TempEnv::new();
         std::env::set_var("XAVIER_EMBEDDER", "disabled");
@@ -1069,6 +1106,58 @@ mod latency_regression {
                 assert_eq!(hits[0].id.as_deref(), Some("direct"));
             }
         }
+    }
+
+    #[tokio::test]
+    async fn vector_retrieval_completes_while_cold_lexical_waits() {
+        use crate::memory::qmd_memory::{
+            config::EMBEDDING_CACHE, reader, types::EmbeddingCacheEntry,
+        };
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER");
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "local");
+        std::env::set_var("XAVIER_EMBEDDER", "openai-compatible");
+        std::env::set_var("XAVIER_EMBEDDING_URL", "http://127.0.0.1:0/v1/embeddings");
+        std::env::set_var("XAVIER_SEARCH_DEADLINE_MS", "100");
+        let query = "budgetparity";
+        let key = reader::embedding_cache_key(&reader::preprocess_for_embedding(query));
+        let previous = EMBEDDING_CACHE.write().await.insert(
+            key.clone(),
+            EmbeddingCacheEntry {
+                vector: vec![1.0, 0.0],
+                cached_at: std::time::Instant::now(),
+            },
+        );
+        let memory = QmdMemory::new(Arc::new(RwLock::new(vec![MemoryDocument {
+            id: Some("semantic".into()),
+            path: "semantic".into(),
+            content: "unrelated".into(),
+            metadata: serde_json::json!({"kind": "document"}),
+            embedding: vec![1.0, 0.0],
+            ..Default::default()
+        }])));
+        let cache_writer = memory.search_cache.write().await;
+        let search = search_hybrid_optimized_with_mode(&memory, query, 1, None);
+        tokio::pin!(search);
+        // Continue driving both legs while the lexical cache is inaccessible past the deadline.
+        tokio::select! {
+            result = &mut search => panic!("lexical retrieval unexpectedly completed: {result:?}"),
+            _ = tokio::time::sleep(Duration::from_millis(200)) => {}
+        }
+        drop(cache_writer);
+        let result = search.await;
+        let mut cache = EMBEDDING_CACHE.write().await;
+        if let Some(previous) = previous {
+            cache.insert(key, previous);
+        } else {
+            cache.remove(&key);
+        }
+        let (hits, vector_used) = result.unwrap();
+        assert!(
+            vector_used,
+            "cold lexical work consumed the vector deadline"
+        );
+        assert_eq!(hits[0].path, "semantic");
     }
 
     #[tokio::test]
