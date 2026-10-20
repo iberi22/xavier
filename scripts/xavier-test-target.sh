@@ -17,7 +17,8 @@ _xavier_test_root() {
     local src dir root
     src="${BASH_SOURCE[0]:-$0}"
     dir="$(cd -- "$(dirname -- "$src")" 2>/dev/null && pwd -P)" || return 1
-    root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || root=""
+    # Under a git hook GIT_DIR is exported and --show-toplevel would return $dir itself.
+    root="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || root=""
     if [ -z "$root" ]; then
         root="$(cd -- "$dir/.." 2>/dev/null && pwd -P)" || return 1
     fi
