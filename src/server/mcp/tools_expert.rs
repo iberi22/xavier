@@ -17,9 +17,9 @@ pub fn get_expert_tools() -> Vec<MCPTool> {
     vec![MCPTool {
         name: "ask_expert".to_string(),
         description: "Ask a local mini-expert. Routes the prompt to the active expert whose \
-            domain best matches (or the one named by `domain`). Returns the answer plus which \
-            expert/version answered, or \"no expert\" when none matches so the caller can use \
-            the general model."
+            domain best matches (or the one named by `domain`). When none matches, the general \
+            local model answers (`expert: \"general\"`, `fallback: true`). Returns the answer plus \
+            which expert/version answered."
             .to_string(),
         input_schema: json!({
             "type": "object",
@@ -57,6 +57,26 @@ pub async fn run_ask_expert(router: &ExpertRouter, arguments: Value) -> anyhow::
         anyhow::bail!("ask_expert: 'prompt' must not be empty");
     }
     match router.ask(&args.prompt, args.domain.as_deref()).await {
+        Ok(outcome) if outcome.expert.is_none() => {
+            // No expert chosen: the general local model answers. A failure is degraded, not a tool error.
+            let payload = match router.ask_general(&args.prompt).await {
+                Ok(answer) => json!({
+                    "answer": answer,
+                    "expert": "general",
+                    "version": null,
+                    "score": null,
+                    "matched_by": null,
+                    "fallback": true,
+                }),
+                Err(e) => {
+                    tracing::warn!("ask_expert: general-model fallback failed: {e}");
+                    json!({ "answer": null, "expert": "no expert", "version": null, "error": e.to_string() })
+                }
+            };
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                payload, false,
+            ))?)
+        }
         Ok(outcome) => Ok(serde_json::to_value(MCPToolResult::structured(
             outcome_payload(&outcome),
             false,
@@ -114,7 +134,8 @@ mod tests {
         let res = run_ask_expert(&router, json!({"prompt": "hi"}))
             .await
             .unwrap();
-        assert_eq!(res["structuredContent"]["expert"], "no expert");
+        assert_eq!(res["structuredContent"]["expert"], "general");
+        assert_eq!(res["structuredContent"]["answer"], "42");
 
         store
             .add_version(
@@ -138,5 +159,65 @@ mod tests {
         assert!(run_ask_expert(&router, json!({"prompt": " "}))
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn test_ask_expert_no_expert_falls_back_to_general_model() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/chat")
+            .match_body(mockito::Matcher::PartialJson(
+                json!({"model": "qwen3-coder", "keep_alive": "5m"}),
+            ))
+            .with_status(200)
+            .with_body(r#"{"message":{"content":"general answer"}}"#)
+            .create_async()
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = ExpertStore::open(dir.path().join(ExpertStore::DB_FILE)).unwrap();
+        let cfg = ExpertRouterConfig {
+            ollama_base_url: server.url(),
+            general_model: "qwen3-coder".into(),
+            ..Default::default()
+        };
+        let router = ExpertRouter::new(store, None, cfg);
+
+        let res = run_ask_expert(&router, json!({"prompt": "what is 2+2"}))
+            .await
+            .unwrap();
+        mock.assert_async().await;
+        assert_eq!(res["isError"], false);
+        assert_eq!(res["structuredContent"]["answer"], "general answer");
+        assert_eq!(res["structuredContent"]["expert"], "general");
+        assert_eq!(res["structuredContent"]["fallback"], true);
+        assert!(res["structuredContent"]["error"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_ask_expert_general_model_failure_is_degraded_not_error() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("POST", "/api/chat")
+            .with_status(500)
+            .with_body("boom")
+            .create_async()
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = ExpertStore::open(dir.path().join(ExpertStore::DB_FILE)).unwrap();
+        let cfg = ExpertRouterConfig {
+            ollama_base_url: server.url(),
+            ..Default::default()
+        };
+        let router = ExpertRouter::new(store, None, cfg);
+
+        let res = run_ask_expert(&router, json!({"prompt": "hi"}))
+            .await
+            .unwrap();
+        assert_eq!(res["isError"], false);
+        assert!(res["structuredContent"]["answer"].is_null());
+        assert_eq!(res["structuredContent"]["expert"], "no expert");
+        assert!(res["structuredContent"]["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("500")));
     }
 }
