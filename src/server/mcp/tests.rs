@@ -1635,6 +1635,19 @@ async fn test_mcp_compact_outputs() {
     )
     .await;
 
+    // Restore only succeeds for sessions that exist, so save "s1" first.
+    post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {
+                "name": "xavier_context_save",
+                "arguments": { "session_id": "s1", "name": "checkpoint" }
+            }
+        }),
+    )
+    .await;
+
     // 2. Just verify restore (shallow)
     let response = post_json(
         router.clone(),
@@ -3175,4 +3188,122 @@ async fn mcp_memory_write_without_caller_clearance_fails_closed() {
     .await
     .expect_err("a call without a caller identity must not inherit the default ceiling");
     assert!(err.to_string().contains("clearance"), "{err}");
+}
+
+/// Full `result` object of a stdio `tools/call` (for `isError` and text).
+async fn stdio_tool_result(
+    state: &AppState,
+    workspace: &WorkspaceContext,
+    name: &str,
+    arguments: Value,
+) -> Value {
+    let response = crate::server::mcp_stdio::dispatch_stdio_value(
+        state.clone(),
+        workspace.clone(),
+        json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+            "name": name, "arguments": arguments
+        }}),
+    )
+    .await
+    .expect("stdio dispatch")
+    .expect("stdio response");
+    assert!(response.get("error").is_none(), "{response}");
+    response["result"].clone()
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn memoryfragment_delete_missing_id_is_tool_error() {
+    let (state, workspace) = test_state().await;
+
+    let missing = stdio_tool_result(
+        &state,
+        &workspace,
+        "memoryfragment_delete",
+        json!({"id": "no-such-fragment"}),
+    )
+    .await;
+    assert_eq!(missing["isError"], true, "{missing}");
+    assert_eq!(
+        missing["content"][0]["text"],
+        "memory fragment not found: no-such-fragment"
+    );
+
+    let saved = stdio_tool_result(
+        &state,
+        &workspace,
+        "memory_save",
+        json!({"text": "to be deleted"}),
+    )
+    .await;
+    let text = saved["content"][0]["text"].as_str().unwrap_or_default();
+    let id = text.rsplit("id=").next().unwrap_or_default().trim();
+    assert!(!id.is_empty(), "save must return an id: {saved}");
+
+    let deleted = stdio_tool_result(
+        &state,
+        &workspace,
+        "memoryfragment_delete",
+        json!({"id": id}),
+    )
+    .await;
+    assert_ne!(deleted["isError"], true, "{deleted}");
+    assert!(deleted["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Deleted memory fragment"));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn context_restore_unknown_session_is_fast_tool_error() {
+    let (state, workspace) = test_state().await;
+
+    let started = std::time::Instant::now();
+    let result = stdio_tool_result(
+        &state,
+        &workspace,
+        "xavier_context_restore",
+        json!({"session_id": "unknown-session-xyz"}),
+    )
+    .await;
+    let elapsed = started.elapsed();
+
+    assert_eq!(result["isError"], true, "{result}");
+    assert_eq!(
+        result["content"][0]["text"],
+        "no saved context for session unknown-session-xyz"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "unknown session restore took {elapsed:?}"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn context_restore_saved_session_still_succeeds() {
+    let (state, workspace) = test_state().await;
+
+    let saved = stdio_tool_result(
+        &state,
+        &workspace,
+        "xavier_context_save",
+        json!({"session_id": "saved-session-abc", "name": "checkpoint"}),
+    )
+    .await;
+    assert_ne!(saved["isError"], true, "{saved}");
+
+    let restored = stdio_tool_result(
+        &state,
+        &workspace,
+        "xavier_context_restore",
+        json!({"session_id": "saved-session-abc"}),
+    )
+    .await;
+    assert_ne!(restored["isError"], true, "{restored}");
+    assert!(restored["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("\"status\": \"ok\""));
 }

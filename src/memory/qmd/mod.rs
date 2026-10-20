@@ -297,6 +297,23 @@ impl QmdMemory {
         Ok(results)
     }
 
+    /// Cheap check (no search or embedding): whether any document was recorded
+    /// under this session id.
+    pub async fn has_session_document(&self, session_id: &str) -> Result<bool> {
+        self.ensure_loaded().await?;
+        let prefix = format!("sessions/{session_id}/");
+        let docs = self.docs.read().await;
+        Ok(docs.iter().any(|doc| {
+            doc.path.starts_with(&prefix)
+                || doc.metadata.get("session_id").and_then(|v| v.as_str()) == Some(session_id)
+                || doc
+                    .metadata
+                    .pointer("/namespace/session_id")
+                    .and_then(|v| v.as_str())
+                    == Some(session_id)
+        }))
+    }
+
     /// Search filtered.
     pub async fn search_filtered(
         &self,

@@ -1384,12 +1384,15 @@ pub async fn handle_memory_delete(
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
             let record = workspace.workspace.delete_memory_record(id).await?;
-            let message = if let Some(r) = record {
-                format!("Deleted memory fragment: {} (path: {})", r.id, r.path)
+            let (message, is_error) = if let Some(r) = record {
+                (
+                    format!("Deleted memory fragment: {} (path: {})", r.id, r.path),
+                    false,
+                )
             } else {
-                format!("Memory fragment not found: {}", id)
+                (format!("memory fragment not found: {}", id), true)
             };
-            super::server::mcp_text_result(message, false)
+            super::server::mcp_text_result(message, is_error)
         }
         "memory_context" | "mem_context" => {
             let query = arguments.get("query").and_then(|v| v.as_str());
