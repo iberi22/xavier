@@ -282,6 +282,7 @@ image = "0.25"
 tempfile = "3.27.0"
 
 [dev-dependencies]
+tokio = { version = "1.52.2", features = ["full", "test-util"] }
 serial_test = "3.2"
 mockito = "1.6"
 proptest = "1.11.0"
