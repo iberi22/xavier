@@ -2,6 +2,7 @@
 //!
 //! Aggregates and re-exports the sub-modules within this module,
 //! providing the public API surface for module consumers.
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
 use crate::domain::cycle_breaks::w30_04::SYSTEM_ALERTS;
@@ -777,6 +778,30 @@ pub async fn run_periodic_warmup(embedder: Arc<dyn Embedder>, period: std::time:
     }
 }
 
+/// Warmup only applies to remote/HTTP backends (Ollama, OpenAI-compatible). An
+/// in-process gllm model is loaded by the server itself; warming a chain that
+/// contains it would construct a second resident copy.
+pub(crate) fn warmup_supported(config: &EmbedderConfig) -> bool {
+    match config {
+        EmbedderConfig::Fallback(backends) => {
+            !backends.is_empty()
+                && backends
+                    .iter()
+                    .all(|b| !matches!(b, EmbedderBackendConfig::Gllm(_)))
+        }
+        EmbedderConfig::Noop | EmbedderConfig::Invalid(_) => false,
+    }
+}
+
+/// Process-wide one-shot guard for the boot warmup and its re-warm loop.
+static WARMUP_STARTED: AtomicBool = AtomicBool::new(false);
+
+/// Claims `flag` for one caller. Returns `true` only for the first claim.
+fn try_claim(flag: &AtomicBool) -> bool {
+    flag.compare_exchange(false, true, AtomicOrdering::AcqRel, AtomicOrdering::Acquire)
+        .is_ok()
+}
+
 /// Spawns the boot warmup without blocking startup, then the periodic re-warm
 /// unless `XAVIER_EMBED_WARMUP_INTERVAL_SECS=0`. Uses the same builder as the
 /// `/memory/search` path (`EmbeddingClient::from_env` -> `build_sync`).
@@ -789,15 +814,30 @@ pub fn spawn_embedder_warmup() {
     if !config.is_configured() {
         return;
     }
+    if !warmup_supported(&config) {
+        if matches!(config, EmbedderConfig::Fallback(_)) {
+            info!("embedder warmup skipped: in-process backend");
+        }
+        return;
+    }
+    if !try_claim(&WARMUP_STARTED) {
+        return;
+    }
     let period = embed_warmup_interval();
     tokio::spawn(async move {
-        let embedder: Arc<dyn Embedder> = match config.build_sync() {
-            Ok(embedder) => embedder,
-            Err(error) => {
-                tracing::warn!(%error, "embedder warmup skipped: build failed");
-                return;
-            }
-        };
+        // Building can probe Ollama synchronously, so keep it off the async workers.
+        let embedder: Arc<dyn Embedder> =
+            match tokio::task::spawn_blocking(move || config.build_sync()).await {
+                Ok(Ok(embedder)) => embedder,
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, "embedder warmup skipped: build failed");
+                    return;
+                }
+                Err(join_error) => {
+                    tracing::warn!(%join_error, "embedder warmup skipped: build task failed");
+                    return;
+                }
+            };
         warm_embedder(embedder.as_ref(), true).await;
         if let Some(period) = period {
             run_periodic_warmup(embedder, period).await;
@@ -1821,6 +1861,29 @@ mod embed_warmup_tests {
             embed_warmup_interval_from(Some(" 300 ")),
             Some(Duration::from_secs(300))
         );
+    }
+
+    #[test]
+    fn warmup_skipped_for_in_process_backends() {
+        let gllm = EmbedderBackendConfig::Gllm(gllm_config());
+        let ollama = EmbedderBackendConfig::Ollama(ollama_config());
+        assert!(!warmup_supported(&EmbedderConfig::Fallback(vec![
+            gllm.clone()
+        ])));
+        assert!(!warmup_supported(&EmbedderConfig::Fallback(vec![
+            ollama.clone(),
+            gllm
+        ])));
+        assert!(!warmup_supported(&EmbedderConfig::Noop));
+        assert!(warmup_supported(&EmbedderConfig::Fallback(vec![ollama])));
+    }
+
+    #[test]
+    fn warmup_guard_claims_once() {
+        let flag = AtomicBool::new(false);
+        assert!(try_claim(&flag));
+        assert!(!try_claim(&flag));
+        assert!(!try_claim(&flag));
     }
 
     #[tokio::test(start_paused = true)]
