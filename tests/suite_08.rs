@@ -29,6 +29,9 @@ mod notifications_stream;
 #[path = "observability_contract.rs"]
 mod observability_contract;
 
+#[path = "oss_scanner_config.rs"]
+mod oss_scanner_config;
+
 #[cfg(feature = "pageindex")]
 #[path = "pageindex_eval.rs"]
 mod pageindex_eval;
