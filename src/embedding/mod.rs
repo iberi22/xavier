@@ -697,6 +697,48 @@ pub fn embed_warmup_enabled() -> bool {
     )
 }
 
+/// Re-warm period used when `XAVIER_EMBED_WARMUP_INTERVAL_SECS` is unset or invalid.
+/// Chosen to sit under the production Ollama `OLLAMA_KEEP_ALIVE=30m` unload.
+const EMBED_WARMUP_DEFAULT_INTERVAL_SECS: u64 = 1200;
+/// Smallest accepted re-warm period; shorter values are clamped up to this.
+const EMBED_WARMUP_MIN_INTERVAL_SECS: u64 = 60;
+
+/// Re-warm period from `XAVIER_EMBED_WARMUP_INTERVAL_SECS`. `None` means boot
+/// only (`0`). Values below 60 s are clamped to 60 s.
+pub fn embed_warmup_interval() -> Option<std::time::Duration> {
+    embed_warmup_interval_from(
+        std::env::var("XAVIER_EMBED_WARMUP_INTERVAL_SECS")
+            .ok()
+            .as_deref(),
+    )
+}
+
+fn embed_warmup_interval_from(raw: Option<&str>) -> Option<std::time::Duration> {
+    let secs = raw
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(EMBED_WARMUP_DEFAULT_INTERVAL_SECS);
+    if secs == 0 {
+        return None;
+    }
+    Some(std::time::Duration::from_secs(
+        secs.max(EMBED_WARMUP_MIN_INTERVAL_SECS),
+    ))
+}
+
+/// One synthetic encode, bounded by `EMBED_WARMUP_TIMEOUT`. Returns the elapsed
+/// time and vector length, or the failure reason.
+async fn encode_warmup(embedder: &dyn Embedder) -> Result<(std::time::Duration, usize), String> {
+    let started = std::time::Instant::now();
+    match tokio::time::timeout(EMBED_WARMUP_TIMEOUT, embedder.encode(EMBED_WARMUP_TEXT)).await {
+        Ok(Ok(vector)) => Ok((started.elapsed(), vector.len())),
+        Ok(Err(error)) => Err(error.to_string()),
+        Err(_) => Err(format!(
+            "timed out after {}s",
+            EMBED_WARMUP_TIMEOUT.as_secs()
+        )),
+    }
+}
+
 /// Sends one synthetic embedding request through `embedder` so the model is
 /// loaded before the first real search. Never panics or propagates: success is
 /// logged at info with elapsed ms, failure at warn.
@@ -704,25 +746,39 @@ pub async fn warm_embedder(embedder: &dyn Embedder, enabled: bool) {
     if !enabled {
         return;
     }
-    let started = std::time::Instant::now();
-    match tokio::time::timeout(EMBED_WARMUP_TIMEOUT, embedder.encode(EMBED_WARMUP_TEXT)).await {
-        Ok(Ok(vector)) => info!(
-            elapsed_ms = started.elapsed().as_millis() as u64,
-            dimension = vector.len(),
-            "embedder warmup complete"
+    match encode_warmup(embedder).await {
+        Ok((elapsed, dimension)) => info!(
+            elapsed_ms = elapsed.as_millis() as u64,
+            dimension, "embedder warmup complete"
         ),
-        Ok(Err(error)) => tracing::warn!(
-            %error,
+        Err(reason) => tracing::warn!(
+            %reason,
             "embedder warmup failed; the first search may be slow"
-        ),
-        Err(_) => tracing::warn!(
-            timeout_secs = EMBED_WARMUP_TIMEOUT.as_secs(),
-            "embedder warmup timed out; the first search may be slow"
         ),
     }
 }
 
-/// Spawns the boot warmup without blocking startup. Uses the same builder as the
+/// Re-sends the warmup request every `period` on the same `embedder`, so the
+/// provider does not unload the model after its idle keep-alive. The first
+/// tick is consumed because the boot warmup has just run.
+pub async fn run_periodic_warmup(embedder: Arc<dyn Embedder>, period: std::time::Duration) {
+    let mut tick = tokio::time::interval(period);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    tick.tick().await;
+    loop {
+        tick.tick().await;
+        match encode_warmup(embedder.as_ref()).await {
+            Ok((elapsed, _)) => tracing::debug!(
+                elapsed_ms = elapsed.as_millis() as u64,
+                "embedder re-warm complete"
+            ),
+            Err(reason) => tracing::warn!(%reason, "embedder re-warm failed"),
+        }
+    }
+}
+
+/// Spawns the boot warmup without blocking startup, then the periodic re-warm
+/// unless `XAVIER_EMBED_WARMUP_INTERVAL_SECS=0`. Uses the same builder as the
 /// `/memory/search` path (`EmbeddingClient::from_env` -> `build_sync`).
 pub fn spawn_embedder_warmup() {
     if !embed_warmup_enabled() {
@@ -733,10 +789,18 @@ pub fn spawn_embedder_warmup() {
     if !config.is_configured() {
         return;
     }
+    let period = embed_warmup_interval();
     tokio::spawn(async move {
-        match config.build_sync() {
-            Ok(embedder) => warm_embedder(embedder.as_ref(), true).await,
-            Err(error) => tracing::warn!(%error, "embedder warmup skipped: build failed"),
+        let embedder: Arc<dyn Embedder> = match config.build_sync() {
+            Ok(embedder) => embedder,
+            Err(error) => {
+                tracing::warn!(%error, "embedder warmup skipped: build failed");
+                return;
+            }
+        };
+        warm_embedder(embedder.as_ref(), true).await;
+        if let Some(period) = period {
+            run_periodic_warmup(embedder, period).await;
         }
     });
 }
@@ -1728,6 +1792,65 @@ mod embed_warmup_tests {
         // Must return normally: no panic, no propagated error.
         warm_embedder(&embedder, true).await;
         assert_eq!(embedder.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn embed_warmup_interval_parsing() {
+        use std::time::Duration;
+        // Unset or invalid falls back to the 1200 s default.
+        assert_eq!(
+            embed_warmup_interval_from(None),
+            Some(Duration::from_secs(1200))
+        );
+        assert_eq!(
+            embed_warmup_interval_from(Some("soon")),
+            Some(Duration::from_secs(1200))
+        );
+        assert_eq!(
+            embed_warmup_interval_from(Some("-5")),
+            Some(Duration::from_secs(1200))
+        );
+        // 0 disables the periodic re-warm (boot only).
+        assert_eq!(embed_warmup_interval_from(Some("0")), None);
+        // Below the minimum is clamped up to 60 s.
+        assert_eq!(
+            embed_warmup_interval_from(Some("10")),
+            Some(Duration::from_secs(60))
+        );
+        assert_eq!(
+            embed_warmup_interval_from(Some(" 300 ")),
+            Some(Duration::from_secs(300))
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn periodic_warmup_reencodes_on_each_tick() {
+        let embedder = Arc::new(CountingEmbedder {
+            calls: AtomicUsize::new(0),
+            fail: false,
+        });
+        let handle = tokio::spawn(run_periodic_warmup(
+            embedder.clone(),
+            std::time::Duration::from_secs(60),
+        ));
+        // Yield so the task reaches its first tick; the boot tick is consumed.
+        for _ in 0..5 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 0);
+
+        tokio::time::advance(std::time::Duration::from_secs(60)).await;
+        for _ in 0..5 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 1);
+
+        tokio::time::advance(std::time::Duration::from_secs(60)).await;
+        for _ in 0..5 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 2);
+        handle.abort();
     }
 
     #[test]
