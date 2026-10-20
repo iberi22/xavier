@@ -198,32 +198,53 @@ pub async fn search_with_cache_filtered(
     }
 
     let include_activity = filters.and_then(|f| f.include_activity).unwrap_or(false);
-    let docs = memory.docs.read().await;
-    let mut scored: Vec<(f32, MemoryDocument)> = docs
-        .iter()
-        .filter_map(|doc| {
-            if !matches_filters(&doc.path, &doc.metadata, &memory.workspace_id, filters) {
-                return None;
-            }
-            if !include_activity && crate::memory::schema::is_noise_content(&doc.content) {
-                return None;
-            }
-            let score = lexical_score(doc, &normalized_query);
-            (score > 0.0).then(|| (score, doc.clone()))
-        })
-        .collect();
-    drop(docs);
-
-    scored.sort_by(|left, right| {
-        right
-            .0
-            .partial_cmp(&left.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| left.1.path.cmp(&right.1.path))
-    });
-
-    let documents: Vec<MemoryDocument> =
-        scored.into_iter().map(|(_, doc)| doc).take(limit).collect();
+    let docs = memory.docs.clone().read_owned().await;
+    let workspace_id = memory.workspace_id.clone();
+    let owned_filters = filters.cloned();
+    let scoring_query = normalized_query.clone();
+    let cancelled = tokio_util::sync::CancellationToken::new();
+    let _cancel_on_drop = cancelled.clone().drop_guard();
+    let documents = tokio::task::spawn_blocking(move || {
+        let mut scored: Vec<(f32, usize)> = docs
+            .iter()
+            .enumerate()
+            .take_while(|_| !cancelled.is_cancelled())
+            .filter_map(|(index, doc)| {
+                if !matches_filters(
+                    &doc.path,
+                    &doc.metadata,
+                    &workspace_id,
+                    owned_filters.as_ref(),
+                ) {
+                    return None;
+                }
+                if !include_activity && crate::memory::schema::is_noise_content(&doc.content) {
+                    return None;
+                }
+                let score = lexical_score(doc, &scoring_query);
+                (score > 0.0).then_some((score, index))
+            })
+            .collect();
+        let compare = |left: &(f32, usize), right: &(f32, usize)| {
+            right
+                .0
+                .partial_cmp(&left.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| docs[left.1].path.cmp(&docs[right.1].path))
+                .then_with(|| left.1.cmp(&right.1))
+        };
+        if scored.len() > limit {
+            scored.select_nth_unstable_by(limit, compare);
+            scored.truncate(limit);
+        }
+        scored.sort_unstable_by(compare);
+        // Copy only the selected documents, not the entire corpus.
+        scored
+            .into_iter()
+            .map(|(_, index)| docs[index].clone())
+            .collect::<Vec<_>>()
+    })
+    .await?;
 
     {
         let mut search_cache = memory.search_cache.write().await;
@@ -358,4 +379,50 @@ pub async fn export(memory: &QmdMemory, public_only: bool) -> Result<Vec<MemoryD
     }
 
     Ok(exported)
+}
+
+#[cfg(test)]
+mod latency_regression {
+    use super::*;
+    use std::future::Future;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    #[tokio::test]
+    async fn lexical_cache_miss_yields_and_preserves_ranking() {
+        let docs = (0..2000)
+            .map(|i| MemoryDocument {
+                id: Some(i.to_string()),
+                path: format!("docs/{i:04}"),
+                content: "runtime memoria rust ".repeat(100),
+                embedding: vec![0.5; 768],
+                ..Default::default()
+            })
+            .collect();
+        let memory = QmdMemory::new(Arc::new(RwLock::new(docs)));
+        let started = Instant::now();
+        let search =
+            memory.search_with_cache_filtered("como configurar runtime memoria en rust", 5, None);
+        tokio::pin!(search);
+        let yielded = std::future::poll_fn(|cx| {
+            std::task::Poll::Ready(search.as_mut().poll(cx).is_pending())
+        })
+        .await;
+        eprintln!("lexical first poll: {:?}", started.elapsed());
+        assert!(
+            yielded,
+            "lexical scoring blocked the Tokio worker until completion"
+        );
+        let result = search.await.unwrap();
+        eprintln!("lexical miss: {:?}", started.elapsed());
+        assert!(!result.cache_hit);
+        assert_eq!(result.documents.len(), 5);
+        assert_eq!(result.documents[0].path, "docs/0000");
+        let cached = memory
+            .search_with_cache_filtered("como configurar runtime memoria en rust", 5, None)
+            .await
+            .unwrap();
+        assert!(cached.cache_hit);
+        assert_eq!(cached.documents[0].path, "docs/0000");
+    }
 }
