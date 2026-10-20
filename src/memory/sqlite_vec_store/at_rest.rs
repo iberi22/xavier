@@ -1093,6 +1093,48 @@ pub fn decrypt_for(
     }
 }
 
+/// Open only metadata; callers do not need to load content, vectors or revisions.
+/// Authentication and locked-space rules are identical to full-record reads.
+pub(crate) fn decrypt_metadata_for(
+    crypto: Option<&SpaceCrypto>,
+    record: &mut crate::memory::store::MemoryRecord,
+    node_key: Option<&[u8; 32]>,
+) -> Result<()> {
+    if let Some(crypto) = crypto {
+        let wrapped = record.encrypted_dek.as_deref().unwrap_or_default();
+        anyhow::ensure!(is_space_row(wrapped), "row is not sealed under a space key");
+        let sealed = record
+            .metadata
+            .get("encrypted")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("sealed metadata column is not encrypted"))?;
+        record.metadata =
+            serde_json::from_str(&crypto.open_text(KIND_METADATA, &record.id, sealed)?)?;
+    } else if record
+        .encrypted_dek
+        .as_deref()
+        .is_some_and(is_default_space_row)
+    {
+        let sealed = record
+            .metadata
+            .get("encrypted")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("sealed metadata column is not encrypted"))?;
+        record.metadata = serde_json::from_str(&default_space_key()?.open_record(
+            DEFAULT_SPACE_ID,
+            KIND_METADATA,
+            &record.id,
+            sealed,
+        )?)?;
+    } else {
+        // The legacy/XRK1 decoder only opens columns carrying an IV.
+        record.content_iv = None;
+        record.revisions.clear();
+        decrypt_with_resolved_key(record, node_key)?;
+    }
+    Ok(())
+}
+
 /// Write-side dispatch. A space store seals with its own key, a repo store
 /// (XAV-REPO T8) with its record key, and the default store keeps
 /// [`encrypt_for_write`].
@@ -2917,6 +2959,34 @@ mod tests {
 
     fn test_key(fill: u8) -> [u8; 32] {
         [fill; 32]
+    }
+
+    #[test]
+    fn metadata_projection_authenticates_space_without_body() {
+        let temp = tempfile::tempdir().unwrap();
+        let ring = KeyRing::new(temp.path(), Arc::new(StaticNodeKek::new([0x42; 32])));
+        ring.create_keys("esp_metadata", UnlockMode::NodeUnlock, None)
+            .unwrap();
+        let crypto = SpaceCrypto::new("esp_metadata", ring.clone());
+        let mut record = test_record("content that is not loaded by project listing");
+        record.metadata = serde_json::json!({"project":"sealed-project"});
+        crypto.encrypt_for_write(&mut record).unwrap();
+        record.content.clear();
+        record.revisions.clear();
+        let sealed = record.clone();
+        decrypt_metadata_for(Some(&crypto), &mut record, None).unwrap();
+        assert_eq!(record.metadata["project"], "sealed-project");
+        let mut swapped = sealed.clone();
+        swapped.id = "different-row".into();
+        assert!(decrypt_metadata_for(Some(&crypto), &mut swapped, None).is_err());
+        let mut wrong_space = sealed.clone();
+        let other = SpaceCrypto::new("esp_other", ring.clone());
+        assert!(decrypt_metadata_for(Some(&other), &mut wrong_space, None).is_err());
+        ring.forget("esp_metadata");
+        let mut locked = sealed;
+        assert!(decrypt_metadata_for(Some(&crypto), &mut locked, None).is_err());
+        let mut forged = test_record("forged plain row");
+        assert!(decrypt_metadata_for(Some(&crypto), &mut forged, None).is_err());
     }
 
     #[test]

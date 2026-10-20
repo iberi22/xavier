@@ -1035,34 +1035,53 @@ async fn handle_create_memory(
         )
         .await?;
 
-    // Asynchronously compute embedding and update document in the background
+    // Fill the acknowledged row directly: identical-write dedup ignores vector changes.
     let ws_clone = workspace.workspace.clone();
-    let content_owned = content.to_string();
+    let workspace_id = workspace.workspace_id.clone();
+    let memory_id = doc_id.clone();
     let path_owned = path.to_string();
     tokio::spawn(async move {
-        // Stability: the bus auto-capture quota in `writer::add` would drop
-        // this re-ingest — skip the GPU embedding instead of wasting it.
         if crate::memory::qmd::writer::bus_quota_exhausted(&path_owned) {
-            tracing::debug!(
-                path = %path_owned,
-                "skipping background embedding: bus quota exhausted"
-            );
             return;
         }
-        if let Ok(vector) =
-            crate::memory::qmd_memory::reader::generate_embedding(&content_owned).await
-        {
+        let store = ws_clone.durable_store();
+        let Ok(Some(record)) = store.get(&workspace_id, &memory_id).await else {
+            return;
+        };
+        if !needs_background_embedding(&record) {
+            return;
+        }
+        let private = record
+            .encrypted_dek
+            .as_deref()
+            .is_some_and(crate::memory::sqlite_vec_store::at_rest::is_space_row)
+            || crate::memory::sqlite_vec_store::at_rest::is_private_record(
+                &record.metadata,
+                &record.path,
+            );
+        let vector = if private {
+            match crate::memory::embedder::EmbeddingClient::from_env_private_async().await {
+                Ok(client) => client.embed(&record.content).await,
+                Err(error) => Err(error),
+            }
+        } else {
+            crate::memory::qmd_memory::reader::generate_embedding(&record.content).await
+        };
+        if let Ok(vector) = vector {
             if !vector.is_empty() {
-                let _ = ws_clone
-                    .ingest_typed(
-                        path_owned,
-                        content_owned,
-                        metadata,
-                        typed_payload,
-                        Some(vector),
-                        false,
-                    )
-                    .await;
+                let Ok(Some(mut current)) = store.get(&workspace_id, &memory_id).await else {
+                    return;
+                };
+                if !needs_background_embedding(&current)
+                    || current.revision != record.revision
+                    || current.updated_at != record.updated_at
+                {
+                    return;
+                }
+                current.embedding = vector;
+                if let Err(error) = ws_clone.memory.update(current.to_document()).await {
+                    tracing::warn!(%error, memory_id = %memory_id, "background embedding update failed");
+                }
             }
         }
     });
@@ -1250,6 +1269,13 @@ async fn save_to_repo_store(
         .map_err(|e| anyhow::anyhow!("failed to put record into repo store: {e}"))?;
 
     Ok(doc_id)
+}
+
+/// A row read back as the locked placeholder must never be re-written: the
+/// update would re-seal the placeholder over the original ciphertext.
+fn needs_background_embedding(record: &crate::memory::store::MemoryRecord) -> bool {
+    record.embedding.is_empty()
+        && !crate::memory::sqlite_vec_store::at_rest::is_locked_placeholder(record)
 }
 
 /// Handles update/read/stats memory operations.
@@ -1922,6 +1948,28 @@ fn get_doc_last_accessed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_embedding_skips_locked_placeholder() {
+        let locked = crate::memory::store::MemoryRecord {
+            content: crate::memory::sqlite_vec_store::at_rest::LOCKED_PLACEHOLDER.to_string(),
+            metadata: serde_json::json!({ "locked": true }),
+            ..Default::default()
+        };
+        assert!(!needs_background_embedding(&locked));
+
+        let plain = crate::memory::store::MemoryRecord {
+            content: "hello".to_string(),
+            ..Default::default()
+        };
+        assert!(needs_background_embedding(&plain));
+
+        let embedded = crate::memory::store::MemoryRecord {
+            embedding: vec![0.1],
+            ..plain
+        };
+        assert!(!needs_background_embedding(&embedded));
+    }
 
     #[test]
     fn test_pagination_offset_calculation() {

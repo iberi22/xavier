@@ -123,6 +123,20 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn put(&self, record: MemoryRecord) -> Result<()> {
         let record = self.put_embed(record).await?;
+        self.put_without_embedding(record).await
+    }
+
+    async fn put_without_embedding(&self, mut record: MemoryRecord) -> Result<()> {
+        record.embedding_status = if record.embedding.is_empty() {
+            if record.embedding_attempts > 0 {
+                "retry"
+            } else {
+                "pending"
+            }
+        } else {
+            "completed"
+        }
+        .to_string();
         let record = self.put_validate(record).await?;
 
         let project_id = self.project_id.clone();
@@ -339,6 +353,58 @@ impl MemoryStore for VecSqliteMemoryStore {
             results.push(record);
         }
         Ok(results)
+    }
+
+    async fn project_counts(
+        &self,
+        workspace_id: &str,
+    ) -> Result<std::collections::BTreeMap<String, usize>> {
+        let workspace_id = workspace_id.to_string();
+        let crypto = self.crypto.clone();
+        let node_key = self.record_key;
+        self.conn_provider
+            .with_conn(&self.project_id, move |conn| {
+                let node_key = node_key.or_else(super::at_rest::resolve_record_key);
+                let mut stmt = conn.prepare(
+                    "SELECT id, path, metadata, encrypted_dek, metadata_iv
+                 FROM memory_records WHERE workspace_id = ?1",
+                )?;
+                let mut rows = stmt.query([&workspace_id])?;
+                let mut projects = std::collections::BTreeMap::new();
+                while let Some(row) = rows.next()? {
+                    let metadata: String = row.get(2).unwrap_or_else(|_| "{}".into());
+                    let mut record = MemoryRecord {
+                        id: row.get(0)?,
+                        path: row.get(1)?,
+                        workspace_id: workspace_id.clone(),
+                        metadata: serde_json::from_str(&metadata).unwrap_or_default(),
+                        encrypted_dek: row.get(3)?,
+                        metadata_iv: row.get(4)?,
+                        ..Default::default()
+                    };
+                    if super::at_rest::decrypt_metadata_for(
+                        crypto.as_ref(),
+                        &mut record,
+                        node_key.as_ref(),
+                    )
+                    .is_err()
+                    {
+                        continue;
+                    }
+                    if let Ok(resolved) = crate::memory::schema::resolve_metadata(
+                        &record.path,
+                        &record.metadata,
+                        &workspace_id,
+                        None,
+                    ) {
+                        if let Some(project) = resolved.namespace.project {
+                            *projects.entry(project).or_insert(0) += 1;
+                        }
+                    }
+                }
+                Ok(projects)
+            })
+            .await
     }
 
     /// Distinct workspace ids present in the store. The trait default returns
@@ -1554,7 +1620,7 @@ impl VecSqliteMemoryStore {
             .ok()
         };
 
-        let qjl_enabled = {
+        let qjl_enabled = !record.embedding.is_empty() && {
             let threshold = super::VecSqliteMemoryStore::configured_qjl_threshold();
             let current_vectors: usize = conn
                 .query_row(
@@ -1566,10 +1632,12 @@ impl VecSqliteMemoryStore {
             current_vectors >= threshold
         };
 
-        let embedding_blob = if !record.embedding.is_empty() && qjl_enabled {
-            vector::serialize_embedding_qjl(&record.embedding)
+        let embedding_blob = if record.embedding.is_empty() {
+            None
+        } else if qjl_enabled {
+            Some(vector::serialize_embedding_qjl(&record.embedding))
         } else {
-            vector::serialize_embedding(&record.embedding)
+            Some(vector::serialize_embedding(&record.embedding))
         };
 
         conn.execute(
@@ -1787,6 +1855,260 @@ mod tests {
     use rusqlite::Connection;
 
     xavier::isolate_test_process!();
+
+    async fn latency_store(temp: &tempfile::TempDir) -> VecSqliteMemoryStore {
+        VecSqliteMemoryStore::new_with_provider(
+            super::super::VecSqliteStoreConfig {
+                path: temp.path().join("latency.sqlite3"),
+                embedding_dimensions: 768,
+            },
+            std::sync::Arc::new(crate::memory::connection_provider::InMemoryProvider::new()),
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn project_counts_does_not_read_payload_columns() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = latency_store(&temp).await;
+        store.conn_provider.with_conn(&store.project_id, |conn| {
+            conn.execute_batch(
+                "INSERT INTO memory_records (id, workspace_id, path, content, metadata, created_at, updated_at)
+                 VALUES ('a', 'ws', 'a', 'large body', '{\"namespace\":{\"project\":\"alpha\"}}', '2026-01-01', '2026-01-01'),
+                        ('b', 'ws', 'b', 'large body', '{\"project\":\"beta\"}', '2026-01-01', '2026-01-01'),
+                        ('c', 'ws', 'c', 'large body', '{\"projects\":[\"alpha\",\"ignored\"]}', '2026-01-01', '2026-01-01'),
+                        ('d', 'other', 'd', 'large body', '{\"project\":\"other\"}', '2026-01-01', '2026-01-01');
+                 ALTER TABLE memory_records RENAME TO payload_records;
+                 CREATE VIEW memory_records AS SELECT id, workspace_id, path, metadata,
+                   encrypted_dek, metadata_iv, content_iv, created_at, updated_at, revision,
+                   primary_flag, parent_id, cluster_id, level, relation,
+                   json_extract('unreadable payload', '$') AS content,
+                   json_extract('unreadable vector', '$') AS embedding,
+                   json_extract('unreadable revisions', '$') AS revisions
+                 FROM payload_records;"
+            )?;
+            Ok(())
+        }).await.unwrap();
+        let counts = store.project_counts("ws").await.unwrap();
+        assert_eq!(
+            counts,
+            std::collections::BTreeMap::from([("alpha".to_string(), 2), ("beta".to_string(), 1),])
+        );
+        assert!(store.project_counts("missing").await.unwrap().is_empty());
+        let store = std::sync::Arc::new(store);
+        let memory = std::sync::Arc::new(crate::memory::qmd_memory::QmdMemory::new_lazy("ws"));
+        memory.set_store(store.clone()).await;
+        let ws = crate::workspace::WorkspaceState::new_minimal(
+            "ws".into(),
+            temp.path().into(),
+            memory,
+            store,
+        )
+        .await;
+        let (state, _) = crate::server::mcp::tests::test_state().await;
+        let result = crate::server::mcp::tools_core::handle_core_tool(
+            state,
+            crate::workspace::WorkspaceContext {
+                workspace_id: "ws".into(),
+                workspace: std::sync::Arc::new(ws),
+            },
+            None,
+            "list_projects",
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result["content"][0]["text"],
+            "alpha: 2 memories\nbeta: 1 memories"
+        );
+    }
+
+    #[tokio::test]
+    async fn project_counts_decrypts_metadata_without_content() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = latency_store(&temp).await;
+        let key = [7; 32];
+        store.record_key = Some(key);
+        let mut record = MemoryRecord {
+            id: "sealed".into(),
+            workspace_id: "ws".into(),
+            path: "sealed/path".into(),
+            content: "This body is not needed to count projects.".into(),
+            metadata: serde_json::json!({"namespace":{"project":"private-project"}}),
+            ..Default::default()
+        };
+        super::super::at_rest::encrypt_for_record_key(&mut record, &key).unwrap();
+        store.conn_provider.with_conn(&store.project_id, move |conn| {
+            conn.execute(
+                "INSERT INTO memory_records (id, workspace_id, path, content, metadata, encrypted_dek, metadata_iv, created_at, updated_at)
+                 VALUES (?1, 'ws', ?2, '', ?3, ?4, ?5, '2026-01-01', '2026-01-01')",
+                params![record.id, record.path, record.metadata.to_string(), record.encrypted_dek, record.metadata_iv],
+            )?;
+            conn.execute(
+                "INSERT INTO memory_records (id, workspace_id, path, content, metadata, encrypted_dek, created_at, updated_at)
+                 VALUES ('locked', 'ws', 'locked/path', '', '{\"project\":\"forged\"}', X'58534b31', '2026-01-01', '2026-01-01')", [],
+            )?;
+            Ok(())
+        }).await.unwrap();
+        assert_eq!(
+            store.project_counts("ws").await.unwrap(),
+            std::collections::BTreeMap::from([("private-project".into(), 1),])
+        );
+    }
+
+    #[tokio::test]
+    async fn project_counts_26000_records() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = latency_store(&temp).await;
+        store.conn_provider.with_conn(&store.project_id, |conn| {
+            conn.execute_batch(
+                "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x < 26000)
+                 INSERT INTO memory_records (id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revisions)
+                 SELECT 'bench-'||x, 'ws', 'bench/'||x, 'fixture', '{\"namespace\":{\"project\":\"bench-project\"}}', zeroblob(3072), '2026-01-01', '2026-01-01', '[]' FROM n;"
+            )?;
+            Ok(())
+        }).await.unwrap();
+        let start = std::time::Instant::now();
+        assert_eq!(
+            store.project_counts("ws").await.unwrap(),
+            std::collections::BTreeMap::from([("bench-project".into(), 26000),])
+        );
+        eprintln!("project_counts 26000 records: {:?}", start.elapsed());
+    }
+
+    struct EmbeddingEnv(Vec<(&'static str, Option<std::ffi::OsString>)>);
+    impl EmbeddingEnv {
+        fn set(values: &[(&'static str, &str)]) -> Self {
+            Self(
+                values
+                    .iter()
+                    .map(|(key, value)| {
+                        let previous = std::env::var_os(key);
+                        std::env::set_var(key, value);
+                        (*key, previous)
+                    })
+                    .collect(),
+            )
+        }
+    }
+    impl Drop for EmbeddingEnv {
+        fn drop(&mut self) {
+            for (key, value) in &self.0 {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn create_memory_returns_before_embedding_and_backfills_same_id() {
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+        let temp = tempfile::tempdir().unwrap();
+        let disabled = EmbeddingEnv::set(&[("XAVIER_EMBEDDER", "disabled")]);
+        let store = Arc::new(latency_store(&temp).await);
+        let memory = Arc::new(crate::memory::qmd_memory::QmdMemory::new_lazy("ws"));
+        memory.set_store(store.clone()).await;
+        memory.init().await.unwrap();
+        let ws = crate::workspace::WorkspaceState::new_minimal(
+            "ws".into(),
+            temp.path().into(),
+            memory,
+            store.clone(),
+        )
+        .await;
+        let (state, _) = crate::server::mcp::tests::test_state().await;
+        let workspace = crate::workspace::WorkspaceContext {
+            workspace_id: "ws".into(),
+            workspace: Arc::new(ws),
+        };
+        let release = Arc::new(tokio::sync::Notify::new());
+        let gate = release.clone();
+        let app = axum::Router::new().route(
+            "/v1/embeddings",
+            axum::routing::post(move || {
+                let gate = gate.clone();
+                async move {
+                    gate.notified().await;
+                    axum::Json(serde_json::json!({"data":[{"embedding": vec![0.25;768]}]}))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/v1/embeddings", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let env = EmbeddingEnv::set(&[
+            ("XAVIER_EMBEDDER", "openai"),
+            ("XAVIER_EMBEDDING_PROVIDER_MODE", "local"),
+            ("XAVIER_EMBEDDING_LOCAL_URL", &endpoint),
+        ]);
+        let start = Instant::now();
+        let result = tokio::time::timeout(Duration::from_secs(2),
+            crate::server::mcp::tools_memory::handle_memory_tool(
+                state, workspace.clone(), "create_memory", serde_json::json!({
+                    "path":"latency/create", "content":"Warm latency fixture for asynchronous vector persistence.",
+                    "metadata":{"clearance":"UNCLASSIFIED"}
+                }),
+            )
+        ).await;
+        eprintln!("create_memory acknowledgement: {:?}", start.elapsed());
+        let result = match result {
+            Ok(result) => result.unwrap(),
+            Err(error) => {
+                release.notify_one();
+                panic!("create_memory must not await the embedding provider: {error}");
+            }
+        };
+        let pending = store.get("ws", "latency/create").await.unwrap().unwrap();
+        assert!(pending.embedding.is_empty());
+        store.conn_provider.with_conn(&store.project_id, |conn| {
+            let pending: bool = conn.query_row(
+                "SELECT embedding IS NULL AND embedding_status = 'pending' AND embedding_attempts = 0
+                 FROM memory_records WHERE path = 'latency/create'", [], |row| row.get(0),
+            )?;
+            assert!(pending, "deferred writes must be eligible for the restart backfill worker");
+            Ok(())
+        }).await.unwrap();
+        release.notify_one();
+        assert!(result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains(&pending.id));
+        let id = pending.id.clone();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let record = store.get("ws", &id).await.unwrap().unwrap();
+                if !record.embedding.is_empty() {
+                    assert_eq!(record.embedding, vec![0.25; 768]);
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("background embedding must update the acknowledged row");
+        assert_eq!(store.list("ws").await.unwrap().len(), 1);
+        assert_eq!(
+            workspace
+                .workspace
+                .memory
+                .get(&id)
+                .await
+                .unwrap()
+                .unwrap()
+                .embedding,
+            vec![0.25; 768]
+        );
+        server.abort();
+        drop(env);
+        drop(disabled);
+    }
 
     #[tokio::test]
     async fn put_failure_in_index_leaves_no_orphan_record() {
