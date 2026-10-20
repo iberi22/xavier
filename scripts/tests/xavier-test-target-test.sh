@@ -136,6 +136,28 @@ if [ "$(xavier_test_suite ci_version_gate.test)" = "suite_01" ] \
 else
     fail "file basename ci_version_gate.test did not resolve to ci_version_gate"
 fi
+# #[path] file whose module is renamed: suite_03 has
+#   #[path = "embedding_fallback_resilience_test.rs"] mod embedding_fallback_resilience;
+if [ "$(xavier_test_suite embedding_fallback_resilience_test)" = "suite_03" ] \
+    && [ "$(xavier_test_module embedding_fallback_resilience_test)" = "embedding_fallback_resilience" ] \
+    && [ "$(xavier_test_filter embedding_fallback_resilience_test)" = "embedding_fallback_resilience::" ] \
+    && [ "$(xavier_test_filter embedding_fallback_resilience)" = "embedding_fallback_resilience::" ]; then
+    pass "renamed #[path] file embedding_fallback_resilience_test resolves to suite_03 and module embedding_fallback_resilience"
+else
+    fail "renamed #[path] file embedding_fallback_resilience_test did not resolve to its suite and module"
+fi
+# Subdirectory #[path] entry: suite_09 has #[path = "e2e/rbac_e2e.rs"] mod rbac_e2e;
+if [ "$(xavier_test_suite rbac_e2e)" = "suite_09" ] && [ "$(xavier_test_module rbac_e2e)" = "rbac_e2e" ]; then
+    pass "subdirectory #[path] module rbac_e2e resolves to suite_09"
+else
+    fail "subdirectory #[path] module rbac_e2e did not resolve to suite_09"
+fi
+# Standalone targets keep their own name as the module (no filter).
+if [ "$(xavier_test_module mcp_session_edge_test)" = "mcp_session_edge_test" ]; then
+    pass "standalone target module is its own name"
+else
+    fail "standalone target module is not its own name"
+fi
 if ! xavier_test_suite no_such_target >/dev/null 2>&1; then
     pass "unknown target name exits non-zero"
 else
