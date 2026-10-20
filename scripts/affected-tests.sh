@@ -155,7 +155,10 @@ get_slot_file() {
 }
 
 run_build() {
-    local cmd=(env TMPDIR=/tmp cargo "$@")
+    # Hooks export GIT_DIR/GIT_INDEX_FILE; a test that runs git in a tempdir would
+    # otherwise write to this repository (its config, index and branch).
+    local cmd=(env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR
+        -u GIT_OBJECT_DIRECTORY -u GIT_PREFIX TMPDIR=/tmp cargo "$@")
     if [ "$DRY" -eq 1 ]; then
         printf 'DRY: %s\n' "${cmd[*]}"
         return 0

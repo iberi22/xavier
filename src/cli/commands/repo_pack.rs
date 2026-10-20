@@ -1085,9 +1085,17 @@ mod tests {
     fn git_commit_tmp_repo(repo: &Path) -> String {
         std::fs::create_dir_all(repo).expect("mkdir repo");
         let run = |args: &[&str]| {
+            // Pin the repo explicitly: under a git hook GIT_DIR/GIT_INDEX_FILE point at
+            // the caller's repository and would redirect these writes there.
             std::process::Command::new("git")
                 .args(args)
                 .current_dir(repo)
+                .env("GIT_DIR", repo.join(".git"))
+                .env("GIT_WORK_TREE", repo)
+                .env_remove("GIT_INDEX_FILE")
+                .env_remove("GIT_COMMON_DIR")
+                .env_remove("GIT_OBJECT_DIRECTORY")
+                .env_remove("GIT_PREFIX")
                 .output()
                 .expect("git")
         };
