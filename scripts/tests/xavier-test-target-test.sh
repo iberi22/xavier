@@ -158,6 +158,12 @@ if [ "$(xavier_test_module mcp_session_edge_test)" = "mcp_session_edge_test" ]; 
 else
     fail "standalone target module is not its own name"
 fi
+# Under a git hook GIT_DIR is exported; the repo root must still resolve.
+if [ "$(GIT_DIR="$(git rev-parse --absolute-git-dir)" xavier_test_suite espacio_links 2>/dev/null)" = "suite_04" ]; then
+    pass "suite resolves with an inherited GIT_DIR (hook environment)"
+else
+    fail "suite does not resolve with an inherited GIT_DIR (hook environment)"
+fi
 if ! xavier_test_suite no_such_target >/dev/null 2>&1; then
     pass "unknown target name exits non-zero"
 else
