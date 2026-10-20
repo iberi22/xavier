@@ -16,6 +16,7 @@ use crate::embedding::Embedder;
 
 pub const DEFAULT_THRESHOLD: f32 = 0.6;
 pub const DEFAULT_KEEP_ALIVE: &str = "5m";
+pub const DEFAULT_FALLBACK_TIMEOUT_SECS: u64 = 60;
 
 /// Ollama base URL (no `/v1` suffix) from `XAVIER_LOCAL_LLM_URL`.
 pub fn ollama_base_url_from_env() -> String {
@@ -40,6 +41,10 @@ pub struct ExpertRouterConfig {
     pub ollama_base_url: String,
     /// Identifier of the embedding model; part of the centroid cache key.
     pub embedding_model: String,
+    /// General local model used when no expert is chosen.
+    pub general_model: String,
+    /// Upper bound for the general-model fallback call, in seconds.
+    pub fallback_timeout_secs: u64,
 }
 
 impl Default for ExpertRouterConfig {
@@ -49,8 +54,32 @@ impl Default for ExpertRouterConfig {
             keep_alive: DEFAULT_KEEP_ALIVE.to_string(),
             ollama_base_url: "http://localhost:11434".to_string(),
             embedding_model: String::new(),
+            general_model: crate::agents::provider::local::DEFAULT_LOCAL_MODEL.to_string(),
+            fallback_timeout_secs: DEFAULT_FALLBACK_TIMEOUT_SECS,
         }
     }
+}
+
+/// Parses the fallback timeout in seconds; missing, unparsable or zero input uses the default.
+pub fn parse_fallback_timeout(raw: Option<&str>) -> u64 {
+    raw.and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(DEFAULT_FALLBACK_TIMEOUT_SECS)
+}
+
+/// General local model: `XAVIER_LOCAL_LLM_MODEL`, then settings, then the crate default.
+fn general_model_from_env() -> String {
+    std::env::var("XAVIER_LOCAL_LLM_MODEL")
+        .ok()
+        .filter(|m| !m.trim().is_empty())
+        .unwrap_or_else(|| {
+            let settings = crate::settings::XavierSettings::current();
+            if settings.models.local_llm_model.trim().is_empty() {
+                crate::agents::provider::local::DEFAULT_LOCAL_MODEL.to_string()
+            } else {
+                settings.models.local_llm_model.clone()
+            }
+        })
 }
 
 /// Parses a threshold: finite values are clamped to [-1, 1] (cosine range); NaN,
@@ -78,7 +107,8 @@ fn embedding_model_from_env() -> String {
 }
 
 impl ExpertRouterConfig {
-    /// `XAVIER_EXPERT_THRESHOLD`, `XAVIER_EXPERT_KEEP_ALIVE`, `XAVIER_LOCAL_LLM_URL`.
+    /// `XAVIER_EXPERT_THRESHOLD`, `XAVIER_EXPERT_KEEP_ALIVE`, `XAVIER_LOCAL_LLM_URL`,
+    /// `XAVIER_LOCAL_LLM_MODEL`, `XAVIER_EXPERT_FALLBACK_TIMEOUT_SECS`.
     pub fn from_env() -> Self {
         let threshold = parse_threshold(std::env::var("XAVIER_EXPERT_THRESHOLD").ok().as_deref());
         let keep_alive = std::env::var("XAVIER_EXPERT_KEEP_ALIVE")
@@ -90,6 +120,12 @@ impl ExpertRouterConfig {
             keep_alive,
             ollama_base_url: ollama_base_url_from_env(),
             embedding_model: embedding_model_from_env(),
+            general_model: general_model_from_env(),
+            fallback_timeout_secs: parse_fallback_timeout(
+                std::env::var("XAVIER_EXPERT_FALLBACK_TIMEOUT_SECS")
+                    .ok()
+                    .as_deref(),
+            ),
         }
     }
 }
@@ -297,6 +333,26 @@ impl ExpertRouter {
         Ok(result?)
     }
 
+    /// Answers with the general local model (same Ollama client as experts, bounded by
+    /// `fallback_timeout_secs`). Not logged: the invocation log is keyed by expert.
+    pub async fn ask_general(&self, prompt: &str) -> Result<String> {
+        let timeout = std::time::Duration::from_secs(self.config.fallback_timeout_secs);
+        let call = self.provider.invoke_ollama_chat(
+            &self.config.ollama_base_url,
+            &self.config.general_model,
+            prompt,
+            &self.config.keep_alive,
+        );
+        match tokio::time::timeout(timeout, call).await {
+            Ok(answer) => Ok(answer?),
+            Err(_) => anyhow::bail!(
+                "general model '{}' timed out after {}s",
+                self.config.general_model,
+                self.config.fallback_timeout_secs
+            ),
+        }
+    }
+
     /// Routes `prompt` to an expert and answers; `AskOutcome::no_expert()` when none matches.
     pub async fn ask(&self, prompt: &str, domain: Option<&str>) -> Result<AskOutcome> {
         let Some(m) = self.select(prompt, domain).await? else {
@@ -360,6 +416,7 @@ mod tests {
             keep_alive: "5m".into(),
             ollama_base_url: base_url.into(),
             embedding_model: "axis".into(),
+            ..Default::default()
         };
         (
             dir,
@@ -427,6 +484,24 @@ mod tests {
         assert_eq!(parse_threshold(Some(" 0.75 ")), 0.75);
         assert_eq!(parse_threshold(Some("5")), 1.0);
         assert_eq!(parse_threshold(Some("-3")), -1.0);
+    }
+
+    #[test]
+    fn test_parse_fallback_timeout_defaults_on_bad_input() {
+        assert_eq!(parse_fallback_timeout(None), DEFAULT_FALLBACK_TIMEOUT_SECS);
+        assert_eq!(
+            parse_fallback_timeout(Some("0")),
+            DEFAULT_FALLBACK_TIMEOUT_SECS
+        );
+        assert_eq!(
+            parse_fallback_timeout(Some("-5")),
+            DEFAULT_FALLBACK_TIMEOUT_SECS
+        );
+        assert_eq!(
+            parse_fallback_timeout(Some("junk")),
+            DEFAULT_FALLBACK_TIMEOUT_SECS
+        );
+        assert_eq!(parse_fallback_timeout(Some(" 15 ")), 15);
     }
 
     /// Like `AxisEmbedder` but fails for any text containing "broken".
