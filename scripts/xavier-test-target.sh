@@ -4,11 +4,13 @@
 # Sourceable helper. Sourcing only defines functions (no options, no cwd change):
 #   source scripts/xavier-test-target.sh
 #   xavier_test_suite <old_name>               prints suite_NN, or <old_name> for a standalone target
-#   xavier_test_filter <old_name>              prints "<old_name>::" for a grouped module, nothing for standalone
+#   xavier_test_module <old_name>              prints the module name inside the suite (the name itself unless #[path] renames it)
+#   xavier_test_filter <old_name>              prints "<module>::" for a grouped module, nothing for standalone
 #   xavier_cargo_test <features> <old_name>... runs cargo test per target (CARGO env overrides "cargo")
 #
 # Sources of truth (read from the working tree, located via git from this file's directory):
-#   tests/suite_NN.rs   `mod <name>;` declarations preceded by #[path]  -> grouped targets
+#   tests/suite_NN.rs   `mod <name>;` declarations, or #[path = ".../<file>.rs"] + `mod <module>;`
+#                       when the module is renamed                        -> grouped targets
 #   Cargo.toml          [[test]] names other than suite_NN              -> standalone targets
 
 _xavier_test_root() {
@@ -64,7 +66,8 @@ xavier_test_suite() {
     root="$(_xavier_test_root)" || return 1
     for f in "$root"/tests/suite_[0-9][0-9].rs; do
         [ -f "$f" ] || continue
-        if grep -Eq "^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+${name}[[:space:]]*;" "$f"; then
+        if grep -Eq "^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+${name}[[:space:]]*;" "$f" \
+            || grep -Eq "^[[:space:]]*#\[path[[:space:]]*=[[:space:]]*\"([^\"]*/)?${name}\.rs\"[[:space:]]*\]" "$f"; then
             basename "$f" .rs
             return 0
         fi
@@ -77,13 +80,51 @@ xavier_test_suite() {
     return 1
 }
 
+# Prints the module name a target runs inside its suite. For a #[path = ".../<name>.rs"] entry
+# this is the module declared right after it (mod <module>;), which may differ from <name>.
+# Standalone targets print their own name.
+xavier_test_module() {
+    local name suite root f module
+    name="$(_xavier_test_canonical "${1:-}")"
+    suite="$(xavier_test_suite "$name")" || return 1
+    if [[ ! "$suite" =~ ^suite_[0-9]{2}$ ]]; then
+        printf '%s\n' "$name"
+        return 0
+    fi
+    root="$(_xavier_test_root)" || return 1
+    f="$root/tests/$suite.rs"
+    module="$(awk -v n="$name" '
+        function modname(s) {
+            sub(/^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+/, "", s)
+            sub(/[[:space:]]*;.*$/, "", s)
+            return s
+        }
+        /^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+/ {
+            m = modname($0)
+            if (m == n) { print n; exit }
+            if (want) { print m; exit }
+            next
+        }
+        /^[[:space:]]*#\[path[[:space:]]*=/ {
+            p = $0; sub(/^[^"]*"/, "", p); sub(/".*$/, "", p)
+            sub(/^.*\//, "", p); sub(/\.rs$/, "", p)
+            want = (p == n)
+            next
+        }
+        /^[[:space:]]*(#\[|$)/ { next }
+        { want = 0 }
+    ' "$f")"
+    printf '%s\n' "${module:-$name}"
+}
+
 # Prints the nextest/libtest name filter for a grouped module; prints nothing for a standalone target.
 xavier_test_filter() {
-    local name resolved
+    local name resolved module
     name="$(_xavier_test_canonical "${1:-}")"
     resolved="$(xavier_test_suite "$name")" || return 1
     if [[ "$resolved" =~ ^suite_[0-9]{2}$ ]]; then
-        printf '%s::\n' "$name"
+        module="$(xavier_test_module "$name")" || return 1
+        printf '%s::\n' "$module"
     fi
     return 0
 }
