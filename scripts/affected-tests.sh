@@ -77,7 +77,13 @@ for f in "${FILES[@]}"; do
     case "$f" in
         Cargo.toml|Cargo.lock|*/Cargo.toml) CHECK_ONLY=1 ;;
         tests/*.rs)
-            TEST_TARGETS["$(basename "$f" .rs)"]=1
+            # A file inside a directory module (tests/<dir>/mod.rs) belongs to <dir>.
+            sub="${f#tests/}"; top="${sub%%/*}"
+            if [ "$sub" != "$top" ] && [ -f "tests/$top/mod.rs" ]; then
+                TEST_TARGETS["$top"]=1
+            else
+                TEST_TARGETS["$(basename "$f" .rs)"]=1
+            fi
             RS_CHANGED+=("$f") ;;
         src/*.rs)
             rel="${f#src/}"; rel="${rel%.rs}"; rel="${rel%/mod}"
