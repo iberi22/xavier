@@ -177,6 +177,26 @@ pub async fn handle_context_tool(
                 _ => (ContextLevel::Medium, 800),
             };
 
+            // Cheap existence check first: unknown sessions must not reach the
+            // expensive fallback below.
+            if !(workspace
+                .workspace
+                .conversations_db
+                .session_exists(session_id)
+                .await?
+                || workspace
+                    .workspace
+                    .memory
+                    .has_session_document(session_id)
+                    .await?
+                || workspace.workspace.has_session_records(session_id).await?)
+            {
+                return super::server::mcp_text_result(
+                    format!("no saved context for session {}", session_id),
+                    true,
+                );
+            }
+
             // Fetch session history
             let messages = workspace
                 .workspace

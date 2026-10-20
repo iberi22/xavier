@@ -986,6 +986,25 @@ impl WorkspaceState {
             .list_filtered(&self.config.id, &filters, limit)
             .await
     }
+    /// Whether the persistent store holds any record for this session id.
+    pub async fn has_session_records(&self, session_id: &str) -> Result<bool> {
+        let filters = crate::memory::schema::MemoryQueryFilters {
+            session_id: Some(session_id.to_owned()),
+            ..Default::default()
+        };
+        Ok(!self
+            .store
+            .list_filtered(&self.config.id, &filters, 1)
+            .await?
+            .is_empty())
+    }
+
+    /// Test helper: write a record straight into the persistent store.
+    #[cfg(test)]
+    pub async fn put_store_record_for_tests(&self, record: MemoryRecord) -> Result<()> {
+        self.store.put(record).await
+    }
+
     /// Get memory record.
     pub async fn get_memory_record(&self, id_or_path: &str) -> Result<Option<MemoryRecord>> {
         self.store.get(&self.config.id, id_or_path).await

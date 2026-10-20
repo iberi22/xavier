@@ -555,6 +555,25 @@ impl ConversationsDb {
         }).await
     }
 
+    /// Whether a thread, its messages, or a checkpoint exists for this session id.
+    pub async fn session_exists(&self, session_id: &str) -> Result<bool> {
+        self.ensure_schema().await?;
+        let sid = session_id.to_string();
+        let pid = self.project_id.clone();
+        ConnectionManager::global()
+            .with_conn(&self.full_project_id, move |conn| {
+                let exists: bool = conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM conversation_threads WHERE id = ?1)
+                     OR EXISTS(SELECT 1 FROM conversation_messages WHERE thread_id = ?1)
+                     OR EXISTS(SELECT 1 FROM checkpoints WHERE session_id = ?1 AND project_id = ?2)",
+                    params![sid, pid],
+                    |row| row.get(0),
+                )?;
+                Ok(exists)
+            })
+            .await
+    }
+
     // ------------------------------------------------------------------
     // Deduction CRUD
     // ------------------------------------------------------------------
