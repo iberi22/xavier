@@ -2093,7 +2093,7 @@ async fn start_http_server_inner(
     let sync_service = Arc::new(
         xavier::memory::sync::PeerMemorySync::with_peer_token(
             state.store.clone(),
-            node_id,
+            node_id.clone(),
             mesh_token,
         )
         .with_search_index(Arc::clone(&state.qmd_memory)),
@@ -2514,6 +2514,18 @@ async fn start_http_server_inner(
         let workspace_registry = Arc::new(xavier::workspace::WorkspaceRegistry::new());
         let _ = workspace_registry.insert_arc(workspace_state.clone()).await;
 
+        // Telecom MCP backend: persistent store under the daemon data dir.
+        let telecom = match xavier::telecom::mcp_tools::build_telecom_registry(
+            &state.workspace_dir.clone().join("data"),
+            &node_id,
+        ) {
+            Ok(registry) => Some(Arc::new(RwLock::new(registry))),
+            Err(error) => {
+                tracing::error!("telecom MCP backend unavailable: {error:#}");
+                None
+            }
+        };
+
         let mcp_app_state = xavier::AppState {
             workspace_registry,
             code_indexer: Arc::clone(&code_indexer),
@@ -2533,6 +2545,7 @@ async fn start_http_server_inner(
             code_graph_dump_path: Some(xavier::codebase::codegraph_paths::codegraph_dump_path_for(
                 &state.workspace_dir,
             )),
+            telecom,
         };
 
         let bind_host = resolve_http_bind_host();

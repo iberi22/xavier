@@ -143,6 +143,7 @@ pub async fn test_state() -> (AppState, WorkspaceContext, mockito::ServerGuard) 
             code_db,
             security_service: Arc::new(xavier::app::security_service::SecurityService::new()),
             code_graph_dump_path: None,
+            telecom: None,
         },
         workspace,
         server,

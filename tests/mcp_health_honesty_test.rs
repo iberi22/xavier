@@ -107,6 +107,7 @@ async fn router(root: &std::path::Path) -> Router {
         code_db,
         security_service: Arc::new(xavier::app::security_service::SecurityService::new()),
         code_graph_dump_path: None,
+        telecom: None,
     };
     Router::new()
         .route("/mcp", post(xavier::server::mcp::session::mcp_post_handler))

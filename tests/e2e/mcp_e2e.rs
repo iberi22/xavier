@@ -77,6 +77,7 @@ async fn test_state() -> (AppState, WorkspaceContext) {
             code_db,
             security_service: Arc::new(xavier::app::security_service::SecurityService::new()),
             code_graph_dump_path: None,
+            telecom: None,
         },
         workspace,
     )

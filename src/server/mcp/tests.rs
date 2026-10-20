@@ -89,6 +89,7 @@ pub async fn test_state() -> (AppState, WorkspaceContext) {
             code_db,
             security_service: Arc::new(crate::app::security_service::SecurityService::new()),
             code_graph_dump_path: None,
+            telecom: None,
         },
         workspace,
     )
@@ -2528,6 +2529,61 @@ fn step_two() {}
     if dir.exists() {
         std::fs::remove_dir_all(&dir).ok();
     }
+}
+
+/// Same constructor the daemon boot path uses, wired into the MCP state.
+#[tokio::test]
+async fn telecom_tools_round_trip_through_boot_built_registry() {
+    crate::isolate_test_process!();
+    let (mut state, workspace) = test_state().await;
+    let data_dir = tempfile::tempdir().expect("tempdir");
+    let registry =
+        crate::telecom::mcp_tools::build_telecom_registry(data_dir.path(), "node-local-test")
+            .expect("telecom registry builds");
+    state.telecom = Some(Arc::new(tokio::sync::RwLock::new(registry)));
+    let claims = crate::security::auth::Claims::new(
+        "stdio_local".into(),
+        "local@xavier".into(),
+        crate::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    );
+    let call = |name: &'static str, args: Value| {
+        super::server::handle_tool_call(state.clone(), workspace.clone(), Some(&claims), name, args)
+    };
+
+    let peers = call("telecom_list_peers", json!({}))
+        .await
+        .expect("list_peers must not fail with backend unavailable");
+    assert!(peers["structuredContent"]["peers"]
+        .as_array()
+        .expect("peers array")
+        .iter()
+        .any(|p| p["node_id"] == "node-local-test"));
+
+    call(
+        "telecom_create_group",
+        json!({"group_name": "ops-room", "clearance": "Confidential"}),
+    )
+    .await
+    .expect("create_group must not fail with backend unavailable");
+
+    let sent = call(
+        "telecom_send_packet",
+        json!({"room_id": "ops-room", "payload": "hello from mcp"}),
+    )
+    .await
+    .expect("send_packet must not fail with backend unavailable");
+    assert_eq!(sent["structuredContent"]["status"], "sent");
+
+    let history = call("telecom_get_chat_history", json!({"room_id": "ops-room"}))
+        .await
+        .expect("get_chat_history must not fail with backend unavailable");
+    let messages = history["structuredContent"]["messages"]
+        .as_array()
+        .expect("messages array");
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["payload"], "hello from mcp");
+    assert_eq!(messages[0]["sender"], "node-local-test");
 }
 
 #[tokio::test]

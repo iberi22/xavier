@@ -92,6 +92,7 @@ pub async fn mcp_tools_call_handler(
         ),
         security_service: Arc::new(xavier::app::security_service::SecurityService::new()),
         code_graph_dump_path: None,
+        telecom: None,
     };
 
     let claims_ref = claims.as_ref().map(|c| &c.0);

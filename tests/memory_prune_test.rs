@@ -92,6 +92,7 @@ async fn create_test_app() -> (Router, WorkspaceContext) {
         code_db,
         security_service: Arc::new(SecurityService::new()),
         code_graph_dump_path: None,
+        telecom: None,
     };
 
     let router = Router::new()
