@@ -143,16 +143,19 @@ impl TelecomMcpRegistry {
         Ok(reg)
     }
 
-    fn insert_room(&self, room_id: &str, clearance: &str) -> Result<(), TelecomMcpError> {
-        let conn = self.store.connection();
-        let conn = conn.lock().unwrap();
-        conn.execute(
-            "INSERT OR IGNORE INTO telecom_rooms (room_id, name, clearance, is_group, created_at)
-             VALUES (?1, ?1, ?2, 1, ?3)",
-            params![room_id, clearance, Utc::now().to_rfc3339()],
-        )
-        .map_err(exec_err)?;
-        Ok(())
+    /// Runs SQLite work on the blocking pool so it never stalls a Tokio worker
+    /// (busy_timeout can wait several seconds on a locked database).
+    async fn blocking_store<T, F>(&self, f: F) -> Result<T, TelecomMcpError>
+    where
+        F: FnOnce(TelecomStore) -> Result<T, TelecomMcpError> + Send + 'static,
+        T: Send + 'static,
+    {
+        let store = self.store.clone();
+        tokio::task::spawn_blocking(move || f(store))
+            .await
+            .map_err(|e| {
+                TelecomMcpError::ExecutionError(format!("telecom store task failed: {e}"))
+            })?
     }
 
     pub fn register_telecom_tools(&mut self) {
@@ -275,20 +278,26 @@ impl TelecomMcpRegistry {
                 let args: SendPacketArgs = serde_json::from_value(arguments)
                     .map_err(|e| TelecomMcpError::InvalidArguments(e.to_string()))?;
                 let message_id = format!("pkt-{}", uuid::Uuid::new_v4());
-                {
-                    let conn = self.store.connection();
+                let local_node_id = self.local_node_id.clone();
+                let (room_id, payload, msg_id) = (
+                    args.room_id.clone(),
+                    args.payload.clone(),
+                    message_id.clone(),
+                );
+                self.blocking_store(move |store| {
+                    let conn = store.connection();
                     let conn = conn.lock().unwrap();
                     let exists: bool = conn
                         .query_row(
                             "SELECT EXISTS(SELECT 1 FROM telecom_rooms WHERE room_id = ?1)",
-                            params![args.room_id],
+                            params![room_id],
                             |row| row.get(0),
                         )
                         .map_err(exec_err)?;
                     if !exists {
                         return Err(TelecomMcpError::ExecutionError(format!(
                             "unknown room: {}",
-                            args.room_id
+                            room_id
                         )));
                     }
                     // Sequence is computed inside the INSERT, under the connection lock.
@@ -299,15 +308,17 @@ impl TelecomMcpRegistry {
                                  (SELECT COALESCE(MAX(sequence), 0) + 1 FROM telecom_messages WHERE room_id = ?2),
                                  0, ?5)",
                         params![
-                            message_id,
-                            args.room_id,
-                            self.local_node_id,
-                            args.payload.as_bytes(),
+                            msg_id,
+                            room_id,
+                            local_node_id,
+                            payload.as_bytes(),
                             Utc::now().to_rfc3339()
                         ],
                     )
                     .map_err(exec_err)?;
-                }
+                    Ok(())
+                })
+                .await?;
                 Ok(serde_json::json!({
                     "status": "sent",
                     "message_id": message_id,
@@ -324,20 +335,23 @@ impl TelecomMcpRegistry {
                     "status": "online",
                     "is_local": true
                 })];
-                let discovered: Vec<String> = {
-                    let conn = self.store.connection();
-                    let conn = conn.lock().unwrap();
-                    let mut stmt = conn
-                        .prepare(
-                            "SELECT peer_node_id, MAX(last_active) FROM telecom_sessions
-                             WHERE peer_node_id != ?1 GROUP BY peer_node_id ORDER BY 2 DESC",
-                        )
-                        .map_err(exec_err)?;
-                    let rows = stmt
-                        .query_map(params![self.local_node_id], |row| row.get::<_, String>(0))
-                        .map_err(exec_err)?;
-                    rows.collect::<Result<_, _>>().map_err(exec_err)?
-                };
+                let local = self.local_node_id.clone();
+                let discovered: Vec<String> = self
+                    .blocking_store(move |store| {
+                        let conn = store.connection();
+                        let conn = conn.lock().unwrap();
+                        let mut stmt = conn
+                            .prepare(
+                                "SELECT peer_node_id, MAX(last_active) FROM telecom_sessions
+                                 WHERE peer_node_id != ?1 GROUP BY peer_node_id ORDER BY 2 DESC",
+                            )
+                            .map_err(exec_err)?;
+                        let rows = stmt
+                            .query_map(params![local], |row| row.get::<_, String>(0))
+                            .map_err(exec_err)?;
+                        rows.collect::<Result<_, _>>().map_err(exec_err)
+                    })
+                    .await?;
                 for node_id in discovered {
                     peers.push(serde_json::json!({
                         "node_id": node_id,
@@ -352,10 +366,12 @@ impl TelecomMcpRegistry {
             "telecom_get_chat_history" => {
                 let args: ChatHistoryArgs = serde_json::from_value(arguments)
                     .map_err(|e| TelecomMcpError::InvalidArguments(e.to_string()))?;
+                let (room_id, limit) = (args.room_id.clone(), args.limit.unwrap_or(50));
                 let messages = self
-                    .store
-                    .fetch_room_history(&args.room_id, args.limit.unwrap_or(50))
-                    .map_err(exec_err)?;
+                    .blocking_store(move |store| {
+                        store.fetch_room_history(&room_id, limit).map_err(exec_err)
+                    })
+                    .await?;
                 let items: Vec<Value> = messages
                     .iter()
                     .map(|m| {
@@ -378,7 +394,19 @@ impl TelecomMcpRegistry {
             "telecom_create_group" => {
                 let args: CreateGroupArgs = serde_json::from_value(arguments)
                     .map_err(|e| TelecomMcpError::InvalidArguments(e.to_string()))?;
-                self.insert_room(&args.group_name, &args.clearance)?;
+                let (room, clearance) = (args.group_name.clone(), args.clearance.clone());
+                self.blocking_store(move |store| {
+                    let conn = store.connection();
+                    let conn = conn.lock().unwrap();
+                    conn.execute(
+                        "INSERT OR IGNORE INTO telecom_rooms (room_id, name, clearance, is_group, created_at)
+                         VALUES (?1, ?1, ?2, 1, ?3)",
+                        params![room, clearance, Utc::now().to_rfc3339()],
+                    )
+                    .map_err(exec_err)?;
+                    Ok(())
+                })
+                .await?;
                 let mut rooms = self.active_rooms.write().await;
                 if !rooms.contains(&args.group_name) {
                     rooms.push(args.group_name.clone());

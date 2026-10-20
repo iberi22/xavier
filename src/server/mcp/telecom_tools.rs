@@ -13,7 +13,7 @@ pub fn register_telecom_mcp_tools() -> Vec<MCPTool> {
         MCPTool {
             name: "telecom_send_packet".to_string(),
             description:
-                "Send an encrypted wire packet or direct message to a telecom room or node"
+                "Store a text message for a telecom room on this node. Payloads are saved as plain text locally; no end-to-end encryption is applied on this path"
                     .to_string(),
             input_schema: json!({
                 "type": "object",

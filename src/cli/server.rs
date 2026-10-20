@@ -2514,18 +2514,6 @@ async fn start_http_server_inner(
         let workspace_registry = Arc::new(xavier::workspace::WorkspaceRegistry::new());
         let _ = workspace_registry.insert_arc(workspace_state.clone()).await;
 
-        // Telecom MCP backend: persistent store under the daemon data dir.
-        let telecom = match xavier::telecom::mcp_tools::build_telecom_registry(
-            &state.workspace_dir.clone().join("data"),
-            &node_id,
-        ) {
-            Ok(registry) => Some(Arc::new(RwLock::new(registry))),
-            Err(error) => {
-                tracing::error!("telecom MCP backend unavailable: {error:#}");
-                None
-            }
-        };
-
         let mcp_app_state = xavier::AppState {
             workspace_registry,
             code_indexer: Arc::clone(&code_indexer),
@@ -2545,14 +2533,37 @@ async fn start_http_server_inner(
             code_graph_dump_path: Some(xavier::codebase::codegraph_paths::codegraph_dump_path_for(
                 &state.workspace_dir,
             )),
-            telecom,
+            telecom: None,
         };
+        let telecom_data_dir = state.workspace_dir.clone().join("data");
+        let telecom_node_id = node_id.clone();
 
         let bind_host = resolve_http_bind_host();
         let mcp_bind_addr = format!("{}:{}", bind_host, mcp_port);
         info!("Starting MCP HTTP+SSE server on {}", mcp_bind_addr);
         let mcp_workspace_ctx = workspace_ctx.clone();
         tokio::spawn(async move {
+            // SQLite open/schema work runs on the blocking pool inside this
+            // independent MCP task, so it never delays the main API loop.
+            let mut mcp_app_state = mcp_app_state;
+            mcp_app_state.telecom = match tokio::task::spawn_blocking(move || {
+                xavier::telecom::mcp_tools::build_telecom_registry(
+                    &telecom_data_dir,
+                    &telecom_node_id,
+                )
+            })
+            .await
+            {
+                Ok(Ok(registry)) => Some(Arc::new(RwLock::new(registry))),
+                Ok(Err(error)) => {
+                    tracing::error!("telecom MCP backend unavailable: {error:#}");
+                    None
+                }
+                Err(error) => {
+                    tracing::error!("telecom MCP backend init task failed: {error}");
+                    None
+                }
+            };
             if let Err(error) = xavier::server::mcp::transport::start_mcp_http_server(
                 mcp_app_state,
                 mcp_workspace_ctx,
