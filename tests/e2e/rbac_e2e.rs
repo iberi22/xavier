@@ -218,6 +218,7 @@ async fn test_rbac_mcp_mutative_tools_readonly_blocked() {
         code_db,
         security_service: std::sync::Arc::new(xavier::app::security_service::SecurityService::new()),
         code_graph_dump_path: None,
+        telecom: None,
     };
 
     let workspace_state = xavier::workspace::WorkspaceState::new(

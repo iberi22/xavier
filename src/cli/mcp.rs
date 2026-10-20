@@ -84,6 +84,7 @@ pub async fn build_mcp_state() -> Result<(AppState, xavier::workspace::Workspace
         code_graph_dump_path: Some(xavier::codebase::codegraph_paths::codegraph_dump_path_for(
             &cwd,
         )),
+        telecom: None,
     };
 
     let workspace = WorkspaceState::new(

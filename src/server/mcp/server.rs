@@ -181,7 +181,7 @@ pub async fn handle_tool_call(
     } else if super::tools_expert::is_expert_tool(name) {
         super::tools_expert::handle_expert_tool(name, arguments).await
     } else if name.starts_with("telecom_") {
-        super::telecom_tools::handle_telecom_tool(name, arguments, None).await
+        super::telecom_tools::handle_telecom_tool(name, arguments, state.telecom.clone()).await
     } else {
         super::tools_memory::handle_memory_tool(state, workspace, name, arguments).await
     }

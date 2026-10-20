@@ -67,7 +67,7 @@ impl TelecomStore {
     /// Open or create a telecom SQLite database at the target path.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, TelecomStoreError> {
         let conn = Connection::open(path.as_ref())?;
-        let _ = apply_pragmas(&conn);
+        apply_pragmas(&conn)?;
         let store = Self {
             conn: Arc::new(Mutex::new(conn)),
             db_path: path.as_ref().to_path_buf(),
@@ -79,7 +79,7 @@ impl TelecomStore {
     /// Open in-memory store for isolated testing.
     pub fn open_in_memory() -> Result<Self, TelecomStoreError> {
         let conn = Connection::open_in_memory()?;
-        let _ = apply_pragmas(&conn);
+        apply_pragmas(&conn)?;
         let store = Self {
             conn: Arc::new(Mutex::new(conn)),
             db_path: PathBuf::from(":memory:"),

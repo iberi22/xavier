@@ -81,6 +81,7 @@ fn bench_mcp_ops(c: &mut Criterion) {
             code_db,
             security_service: Arc::new(xavier::app::security_service::SecurityService::new()),
             code_graph_dump_path: None,
+            telecom: None,
         };
 
         (state, context)
