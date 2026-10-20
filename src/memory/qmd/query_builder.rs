@@ -81,22 +81,6 @@ pub fn build_query_bundle_internal(query_text: &str) -> QueryBundle {
         }
     }
 
-    if variants.len() == 1 {
-        for token in query_text.split_whitespace().take(MAX_EXPANSIONS) {
-            let cleaned = normalize_token(token);
-            if cleaned.len() < 3 || cleaned == normalized_query {
-                continue;
-            }
-            if let std::collections::hash_map::Entry::Vacant(entry) =
-                weights.entry(format!("{normalized_query} {cleaned}"))
-            {
-                let expanded = entry.key().clone();
-                variants.push(expanded.clone());
-                entry.insert(0.8);
-            }
-        }
-    }
-
     variants.truncate(5);
 
     QueryBundle {
@@ -129,4 +113,28 @@ pub fn extract_candidate_terms_internal(text: &str) -> Vec<String> {
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod latency_regression {
+    use super::*;
+
+    #[test]
+    fn natural_language_does_not_repeat_existing_terms_as_variants() {
+        let bundle =
+            build_query_bundle_internal("como configurar el runtime de memoria cognitiva en rust");
+        assert_eq!(
+            bundle.variants,
+            ["como configurar el runtime de memoria cognitiva en rust"]
+        );
+    }
+
+    #[test]
+    fn synonym_expansion_still_adds_new_terms() {
+        let bundle = build_query_bundle_internal("fast runtime");
+        assert_eq!(
+            bundle.variants,
+            ["fast runtime", "fast runtime quick", "fast runtime speed"]
+        );
+    }
 }

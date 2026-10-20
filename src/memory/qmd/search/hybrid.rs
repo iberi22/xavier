@@ -69,15 +69,35 @@ pub async fn search_hybrid_optimized_with_mode(
     limit: usize,
     filters: Option<&MemoryQueryFilters>,
 ) -> Result<(Vec<MemoryDocument>, bool)> {
+    let deadline_ms = std::env::var("XAVIER_SEARCH_DEADLINE_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(2000);
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(deadline_ms);
+    let expansion_budget_ms = std::env::var("XAVIER_SEARCH_EXPANSION_BUDGET_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(250);
+    let expansion_budget = std::time::Duration::from_millis(expansion_budget_ms);
+    let variants_deadline = deadline.min(tokio::time::Instant::now() + expansion_budget);
     let query_bundle = query_builder::build_query_bundle_internal(query_text);
     let mut candidate_scores: HashMap<String, ScoredCandidate> = HashMap::new();
     let mut vector_used = false;
 
-    // 1. Lexical retrieval across query variants
-    for expanded_query in &query_bundle.variants {
-        let cache_hit = memory
-            .search_with_cache_filtered(expanded_query, limit.max(3), filters)
-            .await?;
+    // Keep the direct lexical pass; additional variants share the optional-work budget.
+    for (index, expanded_query) in query_bundle.variants.iter().enumerate() {
+        if index > 0 && tokio::time::Instant::now() >= variants_deadline {
+            break;
+        }
+        let retrieval = memory.search_with_cache_filtered(expanded_query, limit.max(3), filters);
+        let cache_hit = if index == 0 {
+            retrieval.await?
+        } else {
+            match tokio::time::timeout_at(variants_deadline, retrieval).await {
+                Ok(result) => result?,
+                Err(_) => break,
+            }
+        };
         merge_ranked_candidates(
             &mut candidate_scores,
             cache_hit.documents,
@@ -95,10 +115,12 @@ pub async fn search_hybrid_optimized_with_mode(
     // `mem_search`/`memory_search` hang well past client/middleware
     // timeouts instead of degrading to the lexical results already
     // gathered above.
-    if crate::memory::embedder::EmbeddingClient::is_configured_from_env()
-        || std::env::var("XAVIER_EMBEDDING_URL").is_ok()
+    if tokio::time::Instant::now() < deadline
+        && (crate::memory::embedder::EmbeddingClient::is_configured_from_env()
+            || std::env::var("XAVIER_EMBEDDING_URL").is_ok())
     {
-        let embed_budget = crate::memory::embedder::embedding_fallback_budget();
+        let embed_budget = crate::memory::embedder::embedding_fallback_budget()
+            .min(deadline.saturating_duration_since(tokio::time::Instant::now()));
         match tokio::time::timeout(
             embed_budget,
             crate::memory::qmd_memory::reader::generate_embedding(&query_bundle.normalized_query),
@@ -106,8 +128,11 @@ pub async fn search_hybrid_optimized_with_mode(
         .await
         {
             Ok(Ok(vector)) if !vector.is_empty() => {
-                if let Ok(filtered_hits) =
-                    vsearch_filtered(memory, vector, limit.max(5), filters).await
+                if let Ok(Ok(filtered_hits)) = tokio::time::timeout_at(
+                    deadline,
+                    vsearch_filtered(memory, vector, limit.max(5), filters),
+                )
+                .await
                 {
                     vector_used = true;
                     merge_ranked_candidates(
@@ -154,9 +179,16 @@ pub async fn search_hybrid_optimized_with_mode(
         .map(|candidate| candidate.doc.clone())
         .collect();
 
-    let multi_hop_docs = memory
-        .multi_hop_context(query_text, &seed_docs, filters)
-        .await;
+    let multi_hop_docs = if tokio::time::Instant::now() < deadline {
+        tokio::time::timeout_at(
+            deadline.min(tokio::time::Instant::now() + expansion_budget),
+            memory.multi_hop_context(query_text, &seed_docs, filters),
+        )
+        .await
+        .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
     for doc in multi_hop_docs {
         let score = contextual_boost(&query_bundle.normalized_query, &doc, 0.45);
@@ -995,5 +1027,124 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&data_dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod latency_regression {
+    use super::*;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::sync::RwLock;
+
+    #[tokio::test]
+    async fn optional_expansion_deadline_preserves_direct_hits() {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
+        for (global_ms, expansion_ms) in [("10", "1000"), ("1000", "10")] {
+            std::env::set_var("XAVIER_SEARCH_DEADLINE_MS", global_ms);
+            std::env::set_var("XAVIER_SEARCH_EXPANSION_BUDGET_MS", expansion_ms);
+            for query in ["xavier", "fast runtime"] {
+                let memory = QmdMemory::new(Arc::new(RwLock::new(vec![MemoryDocument {
+                    id: Some("direct".into()),
+                    path: "docs/runtime".into(),
+                    content: "xavier fast runtime startup".into(),
+                    ..Default::default()
+                }])));
+                memory
+                    .search_with_cache_filtered(query, 5, None)
+                    .await
+                    .unwrap();
+                // Direct hits are cached; uncached variants/context must wait for this writer.
+                let _writer = memory.docs.write().await;
+                let (hits, vector_used) = tokio::time::timeout(
+                    Duration::from_millis(250),
+                    search_hybrid_optimized_with_mode(&memory, query, 5, None),
+                )
+                .await
+                .expect("optional expansion ignored the search deadline")
+                .unwrap();
+                assert!(!vector_used);
+                assert_eq!(hits.len(), 1);
+                assert_eq!(hits[0].id.as_deref(), Some("direct"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "manual latency profile with a production-sized synthetic corpus"]
+    async fn latency_profile() {
+        use crate::memory::qmd_memory::{
+            config::EMBEDDING_CACHE, reader, types::EmbeddingCacheEntry,
+        };
+        use crate::memory::query_engine::{MemoryQueryEngine, SearchQuery};
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER");
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "local");
+        std::env::set_var("XAVIER_EMBEDDER", "openai-compatible");
+        std::env::set_var("XAVIER_EMBEDDING_URL", "http://127.0.0.1:0/v1/embeddings");
+        std::env::set_var("XAVIER_SEARCH_DEADLINE_MS", "2000");
+        std::env::set_var("XAVIER_SEARCH_EXPANSION_BUDGET_MS", "250");
+        let content = "goal governance consensus tokenomics mesh como configurar el runtime de memoria cognitiva en rust ".repeat(50);
+        let memory = QmdMemory::new(Arc::new(RwLock::new(
+            (0..26_107)
+                .map(|i| MemoryDocument {
+                    id: Some(i.to_string()),
+                    path: format!("docs/{i:05}"),
+                    content: content.clone(),
+                    embedding: vec![0.5; 768],
+                    ..Default::default()
+                })
+                .collect(),
+        )));
+        let engine = MemoryQueryEngine::new();
+        for query in [
+            "goal",
+            "governance consensus tokenomics mesh",
+            "como configurar el runtime de memoria cognitiva en rust",
+        ] {
+            let normalized = query_builder::normalize_query(query);
+            let key = reader::embedding_cache_key(&reader::preprocess_for_embedding(&normalized));
+            let previous = EMBEDDING_CACHE.write().await.insert(
+                key.clone(),
+                EmbeddingCacheEntry {
+                    vector: vec![0.5; 768],
+                    cached_at: std::time::Instant::now(),
+                },
+            );
+            assert_eq!(
+                reader::generate_embedding(&normalized).await.unwrap().len(),
+                768
+            );
+            for pass in 0..2 {
+                let started = std::time::Instant::now();
+                let result = engine
+                    .search(
+                        &memory,
+                        SearchQuery {
+                            query: query.into(),
+                            limit: 5,
+                            filters: Some(MemoryQueryFilters {
+                                zones: Some(crate::memory::schema::parse_zones_from_prompt(query)),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap();
+                eprintln!(
+                    "profile query={query:?} pass={pass} elapsed_ms={}",
+                    started.elapsed().as_millis()
+                );
+                assert_eq!(result.results.len(), 5);
+            }
+            let mut cache = EMBEDDING_CACHE.write().await;
+            if let Some(previous) = previous {
+                cache.insert(key, previous);
+            } else {
+                cache.remove(&key);
+            }
+        }
     }
 }
