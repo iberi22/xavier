@@ -32,6 +32,16 @@ pub struct ScoredCandidate {
     pub doc: MemoryDocument,
 }
 
+/// Test-only delay injected before the direct lexical pass (ms).
+#[cfg(test)]
+pub(crate) static TEST_DIRECT_PASS_DELAY_MS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Test-only: set when the multi-hop stage was admitted by the deadline.
+#[cfg(test)]
+pub(crate) static TEST_MULTI_HOP_RAN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Which retrieval leg produced a ranked document list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetrievalLeg {
@@ -73,29 +83,63 @@ pub async fn search_hybrid_optimized_with_mode(
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(2000);
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(deadline_ms);
     let expansion_budget_ms = std::env::var("XAVIER_SEARCH_EXPANSION_BUDGET_MS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(250);
     let expansion_budget = std::time::Duration::from_millis(expansion_budget_ms);
-    let variants_deadline = deadline.min(tokio::time::Instant::now() + expansion_budget);
+    let total_budget = std::time::Duration::from_millis(deadline_ms);
     let query_bundle = query_builder::build_query_bundle_internal(query_text);
     let mut candidate_scores: HashMap<String, ScoredCandidate> = HashMap::new();
     let mut vector_used = false;
 
-    // Keep the direct lexical pass; additional variants share the optional-work budget.
-    for (index, expanded_query) in query_bundle.variants.iter().enumerate() {
-        if index > 0 && tokio::time::Instant::now() >= variants_deadline {
+    // The direct lexical pass (variant 0) is mandatory and never budgeted:
+    // the clocks for optional stages start only after it returns.
+    if let Some(direct_query) = query_bundle.variants.first() {
+        #[cfg(test)]
+        {
+            let delay = TEST_DIRECT_PASS_DELAY_MS.load(std::sync::atomic::Ordering::SeqCst);
+            if delay > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+            }
+        }
+        let cache_hit = memory
+            .search_with_cache_filtered(direct_query, limit.max(3), filters)
+            .await?;
+        merge_ranked_candidates(
+            &mut candidate_scores,
+            cache_hit.documents,
+            direct_query,
+            query_bundle.weight_for(direct_query) * KEYWORD_WEIGHT,
+            RetrievalLeg::Lexical,
+        );
+    }
+
+    let deadline = tokio::time::Instant::now() + total_budget;
+    let variants_deadline = deadline.min(tokio::time::Instant::now() + expansion_budget);
+
+    // Additional variants share the optional-work budget.
+    for (index, expanded_query) in query_bundle.variants.iter().enumerate().skip(1) {
+        if tokio::time::Instant::now() >= variants_deadline {
+            tracing::debug!(
+                stage = "variants",
+                skipped_from = index,
+                budget_ms = expansion_budget_ms,
+                "hybrid search: remaining variants dropped by budget"
+            );
             break;
         }
         let retrieval = memory.search_with_cache_filtered(expanded_query, limit.max(3), filters);
-        let cache_hit = if index == 0 {
-            retrieval.await?
-        } else {
-            match tokio::time::timeout_at(variants_deadline, retrieval).await {
-                Ok(result) => result?,
-                Err(_) => break,
+        let cache_hit = match tokio::time::timeout_at(variants_deadline, retrieval).await {
+            Ok(result) => result?,
+            Err(_) => {
+                tracing::debug!(
+                    stage = "variants",
+                    variant_index = index,
+                    budget_ms = expansion_budget_ms,
+                    "hybrid search: variant timed out, dropped by budget"
+                );
+                break;
             }
         };
         merge_ranked_candidates(
@@ -128,31 +172,48 @@ pub async fn search_hybrid_optimized_with_mode(
         .await
         {
             Ok(Ok(vector)) if !vector.is_empty() => {
-                if let Ok(Ok(filtered_hits)) = tokio::time::timeout_at(
+                match tokio::time::timeout_at(
                     deadline,
                     vsearch_filtered(memory, vector, limit.max(5), filters),
                 )
                 .await
                 {
-                    vector_used = true;
-                    merge_ranked_candidates(
-                        &mut candidate_scores,
-                        filtered_hits,
-                        &query_bundle.normalized_query,
-                        SEMANTIC_WEIGHT,
-                        RetrievalLeg::Vector,
-                    );
+                    Ok(Ok(filtered_hits)) => {
+                        vector_used = true;
+                        merge_ranked_candidates(
+                            &mut candidate_scores,
+                            filtered_hits,
+                            &query_bundle.normalized_query,
+                            SEMANTIC_WEIGHT,
+                            RetrievalLeg::Vector,
+                        );
+                    }
+                    Ok(Err(error)) => {
+                        tracing::warn!(
+                            stage = "vector_search",
+                            error = %error,
+                            "hybrid search: vector search failed, degrading to lexical-only"
+                        );
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            stage = "vector_search",
+                            "hybrid search: vector search hit the deadline, dropped by budget"
+                        );
+                    }
                 }
             }
             Ok(Ok(_)) => {}
             Ok(Err(error)) => {
                 tracing::warn!(
+                    stage = "vector_embedding",
                     error = %error,
                     "hybrid search: embedding generation failed, degrading to lexical-only"
                 );
             }
             Err(_) => {
                 tracing::warn!(
+                    stage = "vector_embedding",
                     budget_ms = embed_budget.as_millis() as u64,
                     "hybrid search: embedding generation timed out, degrading to lexical-only"
                 );
@@ -180,13 +241,19 @@ pub async fn search_hybrid_optimized_with_mode(
         .collect();
 
     let multi_hop_docs = if tokio::time::Instant::now() < deadline {
-        tokio::time::timeout_at(
-            deadline.min(tokio::time::Instant::now() + expansion_budget),
-            memory.multi_hop_context(query_text, &seed_docs, filters),
-        )
-        .await
-        .unwrap_or_default()
+        // multi_hop_context honours the deadline itself and returns the
+        // partial expansion gathered so far.
+        #[cfg(test)]
+        TEST_MULTI_HOP_RAN.store(true, std::sync::atomic::Ordering::SeqCst);
+        let hop_deadline = deadline.min(tokio::time::Instant::now() + expansion_budget);
+        memory
+            .multi_hop_context(query_text, &seed_docs, filters, hop_deadline)
+            .await
     } else {
+        tracing::debug!(
+            stage = "multi_hop",
+            "hybrid search: multi-hop skipped, deadline already reached"
+        );
         Vec::new()
     };
 
@@ -568,6 +635,7 @@ pub async fn multi_hop_context(
     query_text: &str,
     seed_docs: &[MemoryDocument],
     filters: Option<&MemoryQueryFilters>,
+    deadline: tokio::time::Instant,
 ) -> Vec<MemoryDocument> {
     let mut expanded = Vec::new();
     let query_terms = normalize_query(query_text);
@@ -581,8 +649,30 @@ pub async fn multi_hop_context(
             if query_terms.contains(&term) {
                 continue;
             }
-            if let Ok(results) = memory.search_with_cache_filtered(&term, 2, filters).await {
-                expanded.extend(results.documents);
+            if tokio::time::Instant::now() >= deadline {
+                tracing::debug!(
+                    stage = "multi_hop",
+                    gathered = expanded.len(),
+                    "hybrid search: multi-hop hit the deadline, returning partial results"
+                );
+                return expanded;
+            }
+            match tokio::time::timeout_at(
+                deadline,
+                memory.search_with_cache_filtered(&term, 2, filters),
+            )
+            .await
+            {
+                Ok(Ok(results)) => expanded.extend(results.documents),
+                Ok(Err(_)) => {}
+                Err(_) => {
+                    tracing::debug!(
+                        stage = "multi_hop",
+                        gathered = expanded.len(),
+                        "hybrid search: multi-hop hit the deadline, returning partial results"
+                    );
+                    return expanded;
+                }
             }
         }
     }
@@ -1069,6 +1159,92 @@ mod latency_regression {
                 assert_eq!(hits[0].id.as_deref(), Some("direct"));
             }
         }
+    }
+
+    #[tokio::test]
+    async fn slow_direct_pass_does_not_consume_optional_budgets() {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
+        std::env::set_var("XAVIER_SEARCH_DEADLINE_MS", "2000");
+        std::env::set_var("XAVIER_SEARCH_EXPANSION_BUDGET_MS", "2000");
+        let docs = vec![
+            MemoryDocument {
+                id: Some("a".into()),
+                path: "docs/a".into(),
+                content: "xavier fast runtime startup".into(),
+                ..Default::default()
+            },
+            MemoryDocument {
+                id: Some("b".into()),
+                path: "docs/b".into(),
+                content: "runtime only note".into(),
+                ..Default::default()
+            },
+        ];
+        let run = |delay: u64, deadline: &'static str, expansion: &'static str| {
+            let docs = docs.clone();
+            async move {
+                std::env::set_var("XAVIER_SEARCH_DEADLINE_MS", deadline);
+                std::env::set_var("XAVIER_SEARCH_EXPANSION_BUDGET_MS", expansion);
+                TEST_DIRECT_PASS_DELAY_MS.store(delay, std::sync::atomic::Ordering::SeqCst);
+                TEST_MULTI_HOP_RAN.store(false, std::sync::atomic::Ordering::SeqCst);
+                let memory = QmdMemory::new(Arc::new(RwLock::new(docs)));
+                let (hits, _) = search_hybrid_optimized_with_mode(&memory, "fast runtime", 5, None)
+                    .await
+                    .unwrap();
+                TEST_DIRECT_PASS_DELAY_MS.store(0, std::sync::atomic::Ordering::SeqCst);
+                (
+                    hits.len(),
+                    TEST_MULTI_HOP_RAN.load(std::sync::atomic::Ordering::SeqCst),
+                )
+            }
+        };
+        let (baseline, _) = run(0, "2000", "2000").await;
+        // Direct pass is slower than both budgets; optional stages must still run.
+        let (slow, hop_ran) = run(400, "150", "150").await;
+        assert!(
+            hop_ran,
+            "multi-hop skipped: budget started before direct pass"
+        );
+        assert_eq!(slow, baseline, "slow direct pass starved optional stages");
+    }
+
+    #[tokio::test]
+    async fn multi_hop_returns_partial_results_at_deadline() {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
+        let docs = vec![
+            MemoryDocument {
+                id: Some("seed".into()),
+                path: "docs/seed".into(),
+                content: "alphaterm betaterm".into(),
+                ..Default::default()
+            },
+            MemoryDocument {
+                id: Some("rel".into()),
+                path: "docs/rel".into(),
+                content: "alphaterm related".into(),
+                ..Default::default()
+            },
+        ];
+        let memory = QmdMemory::new(Arc::new(RwLock::new(docs.clone())));
+        let far = tokio::time::Instant::now() + Duration::from_secs(5);
+        let full = multi_hop_context(&memory, "zzz", &docs[..1], None, far).await;
+        assert!(!full.is_empty(), "fixture must yield multi-hop docs");
+
+        // Hold the write lock so uncached searches block: deadline must return
+        // what was gathered (no panic, no hang) instead of discarding it.
+        let _writer = memory.docs.write().await;
+        let soon = tokio::time::Instant::now() + Duration::from_millis(100);
+        let started = std::time::Instant::now();
+        let partial = tokio::time::timeout(
+            Duration::from_secs(2),
+            multi_hop_context(&memory, "zzz", &docs[..1], None, soon),
+        )
+        .await
+        .expect("multi_hop_context ignored its deadline");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(partial.len() <= full.len());
     }
 
     #[tokio::test]

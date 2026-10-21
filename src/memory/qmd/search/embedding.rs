@@ -104,23 +104,27 @@ async fn query_with_embedding_filtered_inner(
             || q_lower.contains("him")
     };
 
-    let docs = memory.docs.read().await;
-    let locomo_only = !docs.is_empty()
-        && docs
-            .iter()
-            .all(|doc| is_locomo_document(&doc.path, &doc.metadata));
-
-    let mut speakers_list = Vec::new();
-    if query_has_pronoun {
-        let mut all_speakers = std::collections::HashSet::new();
-        for doc in docs.iter() {
-            for speaker in extract_speakers(&doc.content) {
-                all_speakers.insert(speaker);
+    // Full-corpus scans are CPU-bound: keep them off the Tokio workers.
+    let docs = std::sync::Arc::clone(&memory.docs).read_owned().await;
+    let (locomo_only, speakers_list) = tokio::task::spawn_blocking(move || {
+        let locomo_only = !docs.is_empty()
+            && docs
+                .iter()
+                .all(|doc| is_locomo_document(&doc.path, &doc.metadata));
+        let mut speakers_list = Vec::new();
+        if query_has_pronoun {
+            let mut all_speakers = std::collections::HashSet::new();
+            for doc in docs.iter() {
+                for speaker in extract_speakers(&doc.content) {
+                    all_speakers.insert(speaker);
+                }
             }
+            speakers_list = all_speakers.into_iter().collect::<Vec<_>>();
         }
-        speakers_list = all_speakers.into_iter().collect();
-    }
-    drop(docs);
+        (locomo_only, speakers_list)
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("corpus scan task failed: {e}"))?;
 
     if !speakers_list.is_empty() {
         processed_query = resolve_pronouns(&processed_query, &speakers_list);
