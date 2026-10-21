@@ -37,13 +37,83 @@ pub async fn run_space_command(cmd: SpaceCommand, base_url: &str, token: &str) -
                 bail!("Failed to list spaces: {}", resp.text().await?);
             }
         }
-        SpaceCommand::Unlock { id: _, mode: _ } => {
-            println!("not available on this daemon version");
-            std::process::exit(2);
+        SpaceCommand::Unlock { id, mode } => {
+            let (password, recovery_code) = match mode {
+                UnlockMode::Node => (None, None),
+                UnlockMode::Password => {
+                    let pw = match std::env::var("XAVIER_SPACE_PASSWORD") {
+                        Ok(val) => val,
+                        Err(_) => {
+                            let mut line = String::new();
+                            std::io::stdin().read_line(&mut line)?;
+                            line.trim_end_matches(&['\r', '\n'][..]).to_string()
+                        }
+                    };
+                    (Some(pw), None)
+                }
+                UnlockMode::Recovery => {
+                    let code = match std::env::var("XAVIER_SPACE_RECOVERY_CODE") {
+                        Ok(val) => val,
+                        Err(_) => {
+                            let mut line = String::new();
+                            std::io::stdin().read_line(&mut line)?;
+                            line.trim_end_matches(&['\r', '\n'][..]).to_string()
+                        }
+                    };
+                    (None, Some(code))
+                }
+            };
+
+            let resp = client
+                .post(format!("{}/api/v1/espacio/spaces/{}/unlock", base_url, id))
+                .header("X-Xavier-Token", token)
+                .json(&serde_json::json!({
+                    "mode": mode,
+                    "password": password,
+                    "recovery_code": recovery_code,
+                }))
+                .send()
+                .await?;
+
+            if resp.status().is_success() {
+                println!("Unlocked space {}", id);
+            } else {
+                bail!("Failed to unlock space {}: {}", id, resp.text().await?);
+            }
         }
-        SpaceCommand::Status { id: _ } => {
-            println!("not available on this daemon version");
-            std::process::exit(2);
+        SpaceCommand::Status { id, json } => {
+            let resp = client
+                .get(format!("{}/api/v1/espacio/admin/spaces/{}", base_url, id))
+                .header("X-Xavier-Token", token)
+                .send()
+                .await?;
+
+            if !resp.status().is_success() {
+                bail!("Failed to get space status {}: {}", id, resp.text().await?);
+            }
+
+            let val: serde_json::Value = resp.json().await?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&val)?);
+            } else {
+                let is_locked = val["locked"].as_bool().unwrap_or(false);
+                let status_str = if is_locked { "locked" } else { "unlocked" };
+                let members_display = match val["member_count"].as_u64() {
+                    Some(count) => count.to_string(),
+                    None => "unavailable (locked)".to_string(),
+                };
+                let retention_display = match val["retention_days"].as_u64() {
+                    Some(days) => format!("{} days", days),
+                    None => "none".to_string(),
+                };
+                println!(
+                    "Space: {}
+Status: {}
+Members: {}
+Retention: {}",
+                    id, status_str, members_display, retention_display
+                );
+            }
         }
         SpaceCommand::Members { id, action } => {
             if let Some(action) = action {
@@ -195,5 +265,14 @@ mod tests {
             label: vec!["a".to_string()],
         };
         assert!(matches!(cmd, SpaceCommand::Create { .. }));
+    }
+
+    #[test]
+    fn test_status_command() {
+        let cmd = SpaceCommand::Status {
+            id: "test".to_string(),
+            json: true,
+        };
+        assert!(matches!(cmd, SpaceCommand::Status { json: true, .. }));
     }
 }

@@ -59,8 +59,18 @@ const ROOT_ONLY_PREFIXES: &[&str] = &[
 /// POST routes that only read, so they need `read` and not `write`.
 const READ_ONLY_POST_PREFIXES: &[&str] = &["/memory/search", "/v1/memories/search"];
 
+fn is_space_unlock_path(path: &str) -> bool {
+    if let Some(rest) = path.strip_prefix("/api/v1/espacio/spaces/") {
+        let trimmed = rest.trim_end_matches('/');
+        if let Some((_id, tail)) = trimmed.split_once('/') {
+            return tail == "unlock" || tail.starts_with("unlock/");
+        }
+    }
+    false
+}
+
 pub(crate) fn required_scope(method: &Method, path: &str) -> RequiredScope {
-    if ROOT_ONLY_PREFIXES.iter().any(|p| path.starts_with(p)) {
+    if ROOT_ONLY_PREFIXES.iter().any(|p| path.starts_with(p)) || is_space_unlock_path(path) {
         return RequiredScope::RootOnly;
     }
     if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
@@ -993,6 +1003,28 @@ mod scope_policy_tests {
     /// scope the old `_ => true` arm granted everywhere — therefore cleared
     /// the scope layer and only the role gate stood in front of the vault,
     /// where `/secrets/*` has to agree on three layers.
+    #[test]
+    fn space_unlock_is_root_only_and_never_a_space_token_path() {
+        let path = "/api/v1/espacio/spaces/esp_a/unlock";
+        assert_eq!(required_scope(&Method::POST, path), RequiredScope::RootOnly);
+        assert!(!token_satisfies(
+            &scopes(&["all"]),
+            &RequiredScope::RootOnly
+        ));
+        assert!(!space_token_may_access(
+            path,
+            "esp_a",
+            SpaceRole::Admin,
+            &Method::POST
+        ));
+        assert!(!space_token_may_access(
+            path,
+            "esp_a",
+            SpaceRole::Member,
+            &Method::POST
+        ));
+    }
+
     #[test]
     fn invite_accept_is_root_only_and_never_a_space_token_path() {
         let path = "/api/v1/espacio/invites/01ABC/accept";
@@ -2413,6 +2445,7 @@ name = "demo"
             ("GET", "/api/v1/espacio/spaces/esp_a/tokens"),
             ("GET", "/api/v1/espacio/spaces/esp_a/keys"),
             ("POST", "/api/v1/espacio/spaces/esp_a/messages"),
+            ("POST", "/api/v1/espacio/spaces/esp_a/unlock"),
             ("GET", "/api/v1/espacio/spaces/esp_a/isolation/esp_b"),
             ("GET", "/api/v1/espacio/spaces/esp_a/whatever/deep/path"),
             // Verbs without a route.

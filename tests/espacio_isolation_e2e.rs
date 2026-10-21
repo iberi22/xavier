@@ -659,5 +659,151 @@ async fn spaces_off_leaves_the_legacy_path_unchanged() {
     assert_eq!(st, StatusCode::UNAUTHORIZED);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn password_space_starts_locked_and_unlocks_over_http() {
+    let (_keep, home, bin) = scratch();
+    let d = Daemon::spawn(&bin.0, &home, false).await;
+
+    let space_id = "esp_pw";
+    let password = "correct-horse-battery-staple";
+
+    // 1. Create a password-protected space
+    let mut proto =
+        serde_json::to_value(xavier::workspace::protocol::SpaceProtocol::default()).unwrap();
+    proto["retention_days"] = json!(30);
+
+    let (st, b) = d
+        .call(
+            Method::POST,
+            "/api/v1/espacio/admin/spaces",
+            Some(ROOT),
+            Some(json!({
+                "id": space_id,
+                "name": "Password Protected Space",
+                "description": "e2e unlock test",
+                "owner_node": "owner-esp_pw",
+                "unlock_mode": "password_required",
+                "password": password,
+                "encrypt_records": true,
+                "protocol": proto
+            })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "create password space: {b}");
+    let owner_token = b["owner_token"].as_str().expect("owner token").to_string();
+
+    // 2. Restart the daemon so the space starts locked
+    drop(d);
+    let d = Daemon::spawn(&bin.0, &home, false).await;
+
+    // 3. GET status says locked
+    let (st, status_val) = d
+        .call(
+            Method::GET,
+            &format!("/api/v1/espacio/admin/spaces/{space_id}"),
+            Some(ROOT),
+            None,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "get space status: {status_val}");
+    assert_eq!(status_val["locked"], true, "space must start locked");
+    assert_eq!(status_val["status"], "locked");
+    assert_eq!(status_val["retention_days"], 30);
+    assert!(status_val["member_count"].is_null());
+
+    let unlock_path = format!("/api/v1/espacio/spaces/{space_id}/unlock");
+
+    // 4. Unlock with a wrong password fails (401)
+    let (st, err_b) = d
+        .call(
+            Method::POST,
+            &unlock_path,
+            Some(ROOT),
+            Some(json!({
+                "mode": "password",
+                "password": "wrong-password"
+            })),
+        )
+        .await;
+    assert_eq!(
+        st,
+        StatusCode::UNAUTHORIZED,
+        "wrong password must return 401: {err_b}"
+    );
+    assert!(err_b["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("wrong password"));
+
+    // 5. Unlock with the right password succeeds
+    let (st, ok_b) = d
+        .call(
+            Method::POST,
+            &unlock_path,
+            Some(ROOT),
+            Some(json!({
+                "mode": "password",
+                "password": password
+            })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "right password must unlock: {ok_b}");
+
+    // 6. Status says unlocked
+    let (st, status_val2) = d
+        .call(
+            Method::GET,
+            &format!("/api/v1/espacio/admin/spaces/{space_id}"),
+            Some(ROOT),
+            None,
+        )
+        .await;
+    assert_eq!(
+        st,
+        StatusCode::OK,
+        "get space status after unlock: {status_val2}"
+    );
+    assert_eq!(status_val2["locked"], false, "space must be unlocked");
+    assert_eq!(status_val2["status"], "unlocked");
+    assert_eq!(status_val2["member_count"], 1);
+    assert_eq!(status_val2["retention_days"], 30);
+
+    // 7. Space token cannot call unlock (403)
+    let (st, _) = d
+        .call(
+            Method::POST,
+            &unlock_path,
+            Some(&owner_token),
+            Some(json!({
+                "mode": "password",
+                "password": password
+            })),
+        )
+        .await;
+    assert_eq!(
+        st,
+        StatusCode::FORBIDDEN,
+        "space token must not reach unlock route"
+    );
+
+    // 8. Unknown space fails with 404
+    let (st, err_404) = d
+        .call(
+            Method::POST,
+            "/api/v1/espacio/spaces/esp_nonexistent/unlock",
+            Some(ROOT),
+            Some(json!({
+                "mode": "password",
+                "password": password
+            })),
+        )
+        .await;
+    assert_eq!(
+        st,
+        StatusCode::NOT_FOUND,
+        "unknown space must return 404: {err_404}"
+    );
+}
+
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
 xavier::isolate_test_process!();
