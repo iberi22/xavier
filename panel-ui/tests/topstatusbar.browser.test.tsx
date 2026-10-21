@@ -1,6 +1,7 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, vi, test } from "vitest";
+import { getRemoteUrl } from "../src/api/client";
 import TopStatusBar from "../src/components/TopStatusBar";
 
 describe("TopStatusBar Browser Compatibility & Guards", () => {
@@ -206,13 +207,19 @@ describe("TopStatusBar Browser Compatibility & Guards", () => {
 
     const input = screen.getByLabelText(/Remote Node Endpoint/) as HTMLInputElement;
     expect(input).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "http://10.0.0.5:8006" } });
 
     const saveButton = screen.getByRole("button", { name: "Save Remote Node" });
     await act(async () => {
       saveButton.click();
     });
 
-    expect(saveButton).toBeInTheDocument();
+    // Saving closes the modal; the exit animation may keep it mounted briefly.
+    await waitFor(() => {
+      expect(saveButton).not.toBeInTheDocument();
+    });
+    expect(getRemoteUrl()).toBe("http://10.0.0.5:8006");
+    localStorage.clear();
   });
 
   test("opens sync popover, triggers manual sync push & pull cycle on Sync Now click, and dispatches toast event", async () => {
