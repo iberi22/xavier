@@ -388,10 +388,17 @@ async fn collect_health_blocking() -> crate::health::HealthResponse {
 /// One embedding probe shared by `health_check` and `xavier_local_status`.
 async fn shared_embedding_probe() -> bool {
     let health = crate::observability::health::HEALTH.get_status().await;
-    !matches!(
-        health.embedding.status,
-        crate::observability::health::HealthLevel::Unhealthy
-    )
+    embedding_probe_ok(&health.embedding)
+}
+
+/// An embedder that was never probed (default `provider: "unknown"`) is not OK.
+fn embedding_probe_ok(embedding: &crate::observability::health::EmbeddingHealth) -> bool {
+    embedding.provider != "unknown"
+        && embedding.available
+        && !matches!(
+            embedding.status,
+            crate::observability::health::HealthLevel::Unhealthy
+        )
 }
 
 /// Serialize components; an unmeasured database (empty path) is `unknown`, not zeros.
@@ -1517,6 +1524,22 @@ pub(crate) mod tests {
             + crate::server::mcp::tools_memory::get_xavier_memory_tools().len()
             + super::super::tools_context::get_xavier_context_tools().len();
         assert!(served_tools_count() > partial);
+    }
+
+    #[test]
+    fn health_check_unprobed_embedding_is_not_ok() {
+        let mut e = crate::observability::health::HealthStatus::default().embedding;
+        assert!(
+            !embedding_probe_ok(&e),
+            "default (never probed) must not be OK"
+        );
+        e.provider = "ollama".into();
+        assert!(embedding_probe_ok(&e));
+        e.available = false;
+        assert!(!embedding_probe_ok(&e));
+        e.available = true;
+        e.status = crate::observability::health::HealthLevel::Unhealthy;
+        assert!(!embedding_probe_ok(&e));
     }
 
     #[test]
