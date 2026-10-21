@@ -11,6 +11,8 @@ use xavier::context::skill_controller::manifest::PlacementRecord;
 use xavier::context::skill_controller::plan::ResolvedRoots;
 use xavier::context::skill_controller::policy::FsPolicy;
 
+xavier::isolate_test_process!();
+
 /// Fake credential assembled at runtime so no fixture holds secret bytes.
 fn fake_key() -> String {
     format!("AIza{}", "SyD".repeat(10))
