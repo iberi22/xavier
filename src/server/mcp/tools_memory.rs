@@ -451,6 +451,18 @@ fn require_str_arg<'a>(arguments: &'a Value, arg: &str) -> anyhow::Result<&'a st
     }
 }
 
+/// Optional positive integer `limit`; absent or null yields `default`.
+fn limit_arg(arguments: &Value, default: usize) -> anyhow::Result<usize> {
+    match arguments.get("limit") {
+        None | Some(Value::Null) => Ok(default),
+        Some(v) => v
+            .as_u64()
+            .filter(|n| *n >= 1)
+            .map(|n| usize::try_from(n).unwrap_or(usize::MAX))
+            .ok_or_else(|| anyhow::anyhow!("Invalid argument 'limit': must be a positive integer")),
+    }
+}
+
 fn validate_create_path(path: &str) -> anyhow::Result<()> {
     let n = path.chars().count();
     if n > MCP_CREATE_PATH_MAX_CHARS {
@@ -904,27 +916,42 @@ async fn handle_get_recent_fragments(
     workspace: &WorkspaceContext,
     arguments: &Value,
 ) -> anyhow::Result<Value> {
-    let limit = arguments
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(10)
-        .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+    let limit = limit_arg(arguments, 10)?.min(MEMORYFRAGMENT_MAX_LIMIT);
 
     let agent_id = optional_memoryfragment_component(arguments, "agent_id", None)?;
     let context = optional_memoryfragment_component(arguments, "context", None)?;
 
     let mut filters = MemoryQueryFilters::default();
-    if let Some(aid) = agent_id {
-        filters.agent_id = Some(aid);
+    if let Some(aid) = &agent_id {
+        filters.agent_id = Some(aid.clone());
     }
     if let Some(ctx) = context {
         filters.scope = Some(ctx);
     }
 
-    let records = workspace
+    // Some backends cannot enforce agent_id before decryption; over-fetch and
+    // keep only rows whose resolved namespace names the requested agent.
+    let fetch_limit = if agent_id.is_some() {
+        limit.saturating_mul(4)
+    } else {
+        limit
+    };
+    let mut records = workspace
         .workspace
-        .list_memory_records_filtered(filters, limit)
+        .list_memory_records_filtered(filters, fetch_limit)
         .await?;
+    if let Some(aid) = &agent_id {
+        records.retain(|rec| {
+            crate::memory::schema::resolve_metadata(
+                &rec.path,
+                &rec.metadata,
+                &workspace.workspace_id,
+                None,
+            )
+            .is_ok_and(|resolved| resolved.namespace.agent_id.as_deref() == Some(aid.as_str()))
+        });
+    }
+    records.truncate(limit);
 
     let candidates: Vec<Value> = records
         .into_iter()
@@ -1102,14 +1129,40 @@ async fn handle_create_memory(
 
     validate_memory_write_clearance(workspace, path, &metadata, typed_payload.as_ref())?;
 
-    // Ingest immediately with an empty vector (fast path response under 500ms)
+    let doc_id = ingest_with_background_embedding(
+        workspace,
+        path.to_string(),
+        content.to_string(),
+        metadata,
+        typed_payload,
+    )
+    .await?;
+
+    super::server::mcp_text_result(
+        format!(
+            "Memory created successfully at path: {} (id: {})",
+            path, doc_id
+        ),
+        false,
+    )
+}
+
+/// Store with an empty vector so the call returns without waiting on the
+/// embedder, then fill the embedding in the background.
+async fn ingest_with_background_embedding(
+    workspace: &WorkspaceContext,
+    path: String,
+    content: String,
+    metadata: Value,
+    typed: Option<TypedMemoryPayload>,
+) -> anyhow::Result<String> {
     let doc_id = workspace
         .workspace
         .ingest_typed(
-            path.to_string(),
-            content.to_string(),
-            metadata.clone(),
-            typed_payload.clone(),
+            path.clone(),
+            content,
+            metadata,
+            typed,
             Some(Vec::new()),
             false,
         )
@@ -1119,9 +1172,8 @@ async fn handle_create_memory(
     let ws_clone = workspace.workspace.clone();
     let workspace_id = workspace.workspace_id.clone();
     let memory_id = doc_id.clone();
-    let path_owned = path.to_string();
     tokio::spawn(async move {
-        if crate::memory::qmd::writer::bus_quota_exhausted(&path_owned) {
+        if crate::memory::qmd::writer::bus_quota_exhausted(&path) {
             return;
         }
         let store = ws_clone.durable_store();
@@ -1152,13 +1204,7 @@ async fn handle_create_memory(
         }
     });
 
-    super::server::mcp_text_result(
-        format!(
-            "Memory created successfully at path: {} (id: {})",
-            path, doc_id
-        ),
-        false,
-    )
+    Ok(doc_id)
 }
 
 async fn handle_save_fragment(
@@ -1221,10 +1267,7 @@ async fn handle_save_fragment(
     });
 
     validate_memory_write_clearance(workspace, &path, &metadata, typed.as_ref())?;
-    workspace
-        .workspace
-        .ingest_typed(path, content, metadata, typed, None, false)
-        .await?;
+    ingest_with_background_embedding(workspace, path, content, metadata, typed).await?;
     super::server::mcp_text_result(
         format!("MemoryFragment saved successfully for agent {}", agent_id),
         false,
@@ -1287,10 +1330,9 @@ async fn handle_memory_save(
         return super::server::mcp_text_result(format!("Memory saved. id={doc_id}"), false);
     }
 
-    let doc_id = workspace
-        .workspace
-        .ingest_typed(path, text.to_string(), metadata, typed, None, false)
-        .await?;
+    let doc_id =
+        ingest_with_background_embedding(workspace, path, text.to_string(), metadata, typed)
+            .await?;
     super::server::mcp_text_result(format!("Memory saved. id={doc_id}"), false)
 }
 
@@ -1640,50 +1682,43 @@ pub async fn handle_memory_delete(
                 return Err(anyhow::anyhow!("At least one filter required"));
             }
 
-            // Retrieve all documents
-            let docs = workspace.workspace.memory.all_documents().await;
-            let mut matched_docs = Vec::new();
+            // The full-store scan is CPU-bound: run it off the Tokio workers
+            // and keep only the ids of the matches.
+            let memory = &workspace.workspace.memory;
+            memory.ensure_loaded().await?;
+            let docs = std::sync::Arc::clone(&memory.docs).read_owned().await;
+            let matched_ids = tokio::task::spawn_blocking(move || {
+                let threshold = chrono::Duration::try_days(older_than_days.max(0))
+                    .and_then(|age| chrono::Utc::now().checked_sub_signed(age))
+                    .unwrap_or(chrono::DateTime::<chrono::Utc>::MIN_UTC);
+                docs.iter()
+                    .filter(|doc| {
+                        kind.as_ref().is_none_or(|k| {
+                            doc.metadata
+                                .get("kind")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .eq_ignore_ascii_case(k)
+                        })
+                    })
+                    .filter(|doc| {
+                        path_prefix
+                            .as_ref()
+                            .is_none_or(|prefix| doc.path.starts_with(prefix))
+                    })
+                    .filter(|doc| older_than_days <= 0 || get_doc_last_accessed(doc) < threshold)
+                    .map(|doc| doc.id.clone().unwrap_or_else(|| doc.path.clone()))
+                    .collect::<Vec<String>>()
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("memory_prune scan task failed: {e}"))?;
 
-            let now = chrono::Utc::now();
-            for doc in docs {
-                // 1. Filter by kind
-                if let Some(ref k) = kind {
-                    let doc_kind = doc
-                        .metadata
-                        .get("kind")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    if !doc_kind.eq_ignore_ascii_case(k) {
-                        continue;
-                    }
-                }
-
-                // 2. Filter by path_prefix
-                if let Some(ref prefix) = path_prefix {
-                    if !doc.path.starts_with(prefix) {
-                        continue;
-                    }
-                }
-
-                // 3. Filter by older_than_days
-                if older_than_days > 0 {
-                    let last_accessed = get_doc_last_accessed(&doc);
-                    let threshold = now - chrono::Duration::days(older_than_days);
-                    if last_accessed >= threshold {
-                        continue;
-                    }
-                }
-
-                matched_docs.push(doc);
-            }
-
-            let matched = matched_docs.len();
+            let matched = matched_ids.len();
             let mut deleted = 0;
 
             if !dry_run {
-                for doc in matched_docs {
-                    let id = doc.id.clone().unwrap_or_else(|| doc.path.clone());
-                    if let Ok(Some(_)) = workspace.workspace.memory.delete(&id).await {
+                for id in matched_ids {
+                    if let Ok(Some(_)) = memory.delete(&id).await {
                         deleted += 1;
                     }
                 }
@@ -1701,6 +1736,31 @@ pub async fn handle_memory_delete(
         }
         _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
     }
+}
+
+/// Upper bound on the hybrid (embedding) part of a memory_context query.
+const CONTEXT_EMBED_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+fn embedder_configured() -> bool {
+    crate::memory::embedder::EmbeddingClient::is_configured_from_env()
+        || std::env::var("XAVIER_EMBEDDING_URL").is_ok()
+}
+
+/// memory_context payload plus the retrieval mode of a query lookup
+/// (`mode` is absent for an ids page-in).
+fn context_payload(
+    payload: MCPContextResult,
+    search_mode: Option<crate::memory::qmd_memory::SearchMode>,
+    degraded: bool,
+) -> anyhow::Result<Value> {
+    let mut value = serde_json::to_value(payload)?;
+    if let Some(obj) = value.as_object_mut() {
+        if let Some(mode) = search_mode {
+            obj.insert("mode".to_string(), json!(mode.as_str()));
+        }
+        obj.insert("degraded".to_string(), json!(degraded));
+    }
+    Ok(value)
 }
 
 /// Handles context assembly operations.
@@ -1741,6 +1801,8 @@ pub async fn handle_memory_context(
                 .clamp(0, 2) as usize;
 
             let mut results = Vec::new();
+            let mut degraded = false;
+            let mut search_mode = None;
 
             if let Some(ids) = ids {
                 for id_val in ids {
@@ -1761,11 +1823,32 @@ pub async fn handle_memory_context(
                         include_activity: Some(include_activity),
                         ..Default::default()
                     });
-                results = workspace
-                    .workspace
-                    .memory
-                    .search_filtered(q, limit, context_filters.as_ref())
-                    .await?;
+                let memory = &workspace.workspace.memory;
+                match tokio::time::timeout(
+                    CONTEXT_EMBED_TIMEOUT,
+                    memory.search_filtered_with_mode(q, limit, context_filters.as_ref()),
+                )
+                .await
+                {
+                    Ok(searched) => {
+                        let (docs, mode) = searched?;
+                        degraded = mode == crate::memory::qmd_memory::SearchMode::Lexical
+                            && embedder_configured();
+                        search_mode = Some(mode);
+                        results = docs;
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            timeout_secs = CONTEXT_EMBED_TIMEOUT.as_secs(),
+                            "memory_context: hybrid search timed out, using lexical results"
+                        );
+                        results = memory
+                            .bm25_search(q, limit, context_filters.as_ref())
+                            .await?;
+                        degraded = true;
+                        search_mode = Some(crate::memory::qmd_memory::SearchMode::Lexical);
+                    }
+                }
             }
 
             if results.is_empty() {
@@ -1783,7 +1866,7 @@ pub async fn handle_memory_context(
                     has_more: Some(false),
                 };
                 return Ok(serde_json::to_value(MCPToolResult::structured(
-                    serde_json::to_value(payload)?,
+                    context_payload(payload, search_mode, degraded)?,
                     false,
                 ))?);
             }
@@ -1883,7 +1966,7 @@ pub async fn handle_memory_context(
                 has_more: None,
             };
             Ok(serde_json::to_value(MCPToolResult::structured(
-                serde_json::to_value(payload)?,
+                context_payload(payload, search_mode, degraded)?,
                 false,
             ))?)
         }
@@ -2365,6 +2448,238 @@ mod tests {
         assert!(res2.is_err());
         let err2 = res2.unwrap_err().to_string();
         assert!(err2.contains("'dry_run' must be a boolean"), "got: {err2}");
+    }
+
+    /// Local embedding endpoint that accepts requests and never answers.
+    async fn stalled_embedder() -> (String, tokio::task::JoinHandle<()>) {
+        let app = axum::Router::new().route(
+            "/v1/embeddings",
+            axum::routing::post(|| async {
+                std::future::pending::<()>().await;
+                axum::Json(json!({}))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/v1/embeddings", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (endpoint, server)
+    }
+
+    fn unclassified() -> Value {
+        json!({ "clearance": "UNCLASSIFIED" })
+    }
+
+    fn use_embedder(endpoint: &str) {
+        std::env::set_var("XAVIER_EMBEDDER", "openai");
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "local");
+        std::env::set_var("XAVIER_EMBEDDING_LOCAL_URL", endpoint);
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn memory_save_returns_without_embedder() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let (endpoint, server) = stalled_embedder().await;
+        use_embedder(&endpoint);
+        assert!(crate::memory::embedder::EmbeddingClient::is_configured_from_env());
+
+        let calls = [
+            (
+                "memory_save",
+                json!({ "text": "fast write fixture one", "metadata": unclassified() }),
+            ),
+            (
+                "save_fragment",
+                json!({ "agent_id": "fast", "content": "fast write fixture two", "context": "obs", "metadata": unclassified() }),
+            ),
+            (
+                "memoryfragment_save",
+                json!({ "agent_id": "fast", "content": "fast write fixture three", "context": "obs", "metadata": unclassified() }),
+            ),
+        ];
+        for (tool, args) in calls {
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                handle_memory_create(&state, &workspace, tool, &args),
+            )
+            .await
+            .unwrap_or_else(|_| panic!("{tool} must not wait on the embedder"))
+            .unwrap_or_else(|e| panic!("{tool} failed: {e}"));
+            assert_eq!(result["isError"], json!(false), "{tool}: {result}");
+        }
+
+        let records = workspace.workspace.list_memory_records().await.unwrap();
+        for text in [
+            "fast write fixture one",
+            "fast write fixture two",
+            "fast write fixture three",
+        ] {
+            assert!(
+                records.iter().any(|r| r.content == text),
+                "missing stored record for {text}"
+            );
+        }
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn memory_context_falls_back_when_embedder_stalls() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        workspace
+            .workspace
+            .ingest_typed(
+                "notes/context_fallback".to_string(),
+                "quartz ledger reconciliation procedure".to_string(),
+                json!({}),
+                None,
+                Some(Vec::new()),
+                false,
+            )
+            .await
+            .unwrap();
+        let (endpoint, server) = stalled_embedder().await;
+        use_embedder(&endpoint);
+        // Keep the inner search budgets out of the way so only the handler
+        // bound can end the wait.
+        for key in [
+            "XAVIER_EMBEDDING_TIMEOUT_MS",
+            "XAVIER_EMBEDDING_FALLBACK_BUDGET_MS",
+            "XAVIER_SEARCH_DEADLINE_MS",
+        ] {
+            std::env::set_var(key, "60000");
+        }
+
+        for tool in ["memory_context", "mem_context"] {
+            let started = std::time::Instant::now();
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                handle_memory_context(
+                    &state,
+                    &workspace,
+                    tool,
+                    &json!({ "query": "quartz ledger reconciliation" }),
+                ),
+            )
+            .await
+            .unwrap_or_else(|_| panic!("{tool} must not wait on a stalled embedder"))
+            .unwrap();
+            assert!(started.elapsed() < std::time::Duration::from_secs(8));
+            let payload = &result["structuredContent"];
+            assert_eq!(payload["degraded"], json!(true), "{tool}: {payload}");
+            assert_eq!(payload["mode"], json!("lexical"), "{tool}: {payload}");
+            assert!(
+                payload["content"]
+                    .as_str()
+                    .unwrap()
+                    .contains("quartz ledger reconciliation"),
+                "{tool}: lexical results must still be returned: {payload}"
+            );
+        }
+        server.abort();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn recent_fragments_agent_filter_excludes_other_agents() {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        for (agent, n) in [("alpha", 0), ("beta", 1), ("alpha", 2), ("beta", 3)] {
+            handle_memory_create(
+                &state,
+                &workspace,
+                "save_fragment",
+                &json!({
+                    "agent_id": agent,
+                    "content": format!("recent fragment {n}"),
+                    "context": "obs",
+                    "metadata": unclassified(),
+                }),
+            )
+            .await
+            .unwrap();
+        }
+        workspace
+            .workspace
+            .ingest_typed(
+                "notes/no_agent".to_string(),
+                "recent fragment without agent".to_string(),
+                json!({}),
+                None,
+                Some(Vec::new()),
+                false,
+            )
+            .await
+            .unwrap();
+
+        for tool in ["get_recent_fragments", "memoryfragment_recent"] {
+            let result = handle_memory_search(
+                &state,
+                &workspace,
+                tool,
+                &json!({ "agent_id": "alpha", "limit": 10 }),
+            )
+            .await
+            .unwrap();
+            let candidates = result["structuredContent"]["candidates"]
+                .as_array()
+                .unwrap();
+            let paths: Vec<&str> = candidates
+                .iter()
+                .map(|c| c["path"].as_str().unwrap())
+                .collect();
+            assert_eq!(paths.len(), 2, "{tool}: {paths:?}");
+            assert!(
+                paths.iter().all(|p| p.starts_with("gestalt/alpha/")),
+                "{tool}: {paths:?}"
+            );
+
+            let limited = handle_memory_search(
+                &state,
+                &workspace,
+                tool,
+                &json!({ "agent_id": "alpha", "limit": 1 }),
+            )
+            .await
+            .unwrap();
+            let limited = limited["structuredContent"]["candidates"]
+                .as_array()
+                .unwrap();
+            assert_eq!(limited.len(), 1);
+            assert!(limited[0]["path"]
+                .as_str()
+                .unwrap()
+                .starts_with("gestalt/alpha/"));
+        }
+    }
+
+    #[tokio::test]
+    async fn recent_fragments_rejects_non_string_agent_id() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let cases = [
+            (json!({ "agent_id": 123 }), "'agent_id' must be a string"),
+            (
+                json!({ "agent_id": ["alpha"] }),
+                "'agent_id' must be a string",
+            ),
+            (json!({ "agent_id": "alpha", "limit": "5" }), "'limit'"),
+            (json!({ "agent_id": "alpha", "limit": -1 }), "'limit'"),
+            (json!({ "agent_id": "alpha", "limit": 2.5 }), "'limit'"),
+        ];
+        for tool in ["get_recent_fragments", "memoryfragment_recent"] {
+            for (args, expected) in &cases {
+                let err = handle_memory_search(&state, &workspace, tool, args)
+                    .await
+                    .expect_err("invalid arguments must be rejected")
+                    .to_string();
+                assert!(err.contains(expected), "{tool} {args}: {err}");
+            }
+        }
     }
 
     #[test]
