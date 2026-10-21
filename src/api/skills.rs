@@ -1228,4 +1228,58 @@ name = "demo"
         let (parts_not_found, _) = resp_not_found.into_parts();
         assert_eq!(parts_not_found.status, StatusCode::NOT_FOUND);
     }
+
+    #[tokio::test]
+    async fn test_projector_mutation_is_cli_only() {
+        use axum::http::Method;
+        let status = |method: Method, uri: &str| {
+            let app = skill_api_routes::<()>();
+            let uri = uri.to_string();
+            async move {
+                app.oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(uri)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .status()
+            }
+        };
+        // Read routes reject every write verb.
+        for uri in [
+            "/api/skill/list",
+            "/skills",
+            "/api/skill/usage",
+            "/api/skill/audit",
+        ] {
+            for m in [Method::POST, Method::PUT, Method::PATCH, Method::DELETE] {
+                assert_eq!(
+                    status(m.clone(), uri).await,
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    "{m} {uri}"
+                );
+            }
+        }
+        // No projector mutation route exists under any verb.
+        for name in ["apply", "rollback", "plan", "project", "gc", "publish"] {
+            let uri = format!("/api/skill/{name}");
+            for m in [Method::GET, Method::POST, Method::PUT, Method::DELETE] {
+                assert_eq!(
+                    status(m.clone(), &uri).await,
+                    StatusCode::NOT_FOUND,
+                    "{m} {uri}"
+                );
+            }
+        }
+        // No MCP tool exposes projector mutation.
+        let tools = crate::server::mcp::tools_context::get_xavier_context_tools();
+        for t in tools.iter().filter(|t| t.name.contains("skill")) {
+            for bad in ["apply", "rollback", "project", "publish", "install", "gc"] {
+                assert!(!t.name.contains(bad), "mutating skill tool {}", t.name);
+            }
+        }
+    }
 }

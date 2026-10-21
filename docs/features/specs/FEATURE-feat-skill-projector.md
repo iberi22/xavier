@@ -30,15 +30,13 @@ Current skill discovery relies on fixed directory structures without selective p
 - **`rollback_engine`:** Safe restoration of backed-up links or removal of orphaned controller-owned links.
 
 ## Test References
-- `test_manifest_parses_toml_v1_and_rejects_unknown_fields`.
-- `test_manifest_rejects_globs_and_whole_directory_links`.
-- `test_projector_mutation_is_cli_only` (no mutating REST route or MCP tool is registered).
-- `test_projector_cycle_fixture_terminates` (reusing `src/context/skill_registry.rs:185-241`).
-- `test_projector_idempotence_second_run_zero_changes`.
-- `test_projector_dry_run_writes_nothing`.
-- `test_projector_backup_and_atomic_swap`.
-- `test_projector_unmanaged_regular_file_never_deleted`.
-- `test_projector_write_outside_allowlist_rejected`.
+- `test_accepts_minimal_valid_manifest`, `test_accepts_full_valid_manifest`, `test_manifest_rejections` (`manifest.rs`; TOML v1, rejects unknown fields, globs and whole-directory links).
+- `test_projector_mutation_is_cli_only` (`src/api/skills.rs`; no mutating REST route or MCP tool is registered).
+- `test_apply_plan_publishes_symlinks_and_second_apply_is_idempotent` (`projector.rs`).
+- `test_dry_run_apply_reports_without_touching_disk`, `test_dry_run_is_default_and_reports_without_touching_disk` (`projector.rs`, `policy.rs`).
+- `test_symlink_backup_preserves_readlink_without_dereferencing`, `test_atomic_write_creates_and_overwrites` (`backup.rs`).
+- `test_apply_rejects_unmanaged_regular_file_collision_without_touching_it` (`projector.rs`).
+- `test_rejects_root_escape_traversal_and_package_member_escape`, `test_rejects_empty_allowlist_and_unauthorized_target` (`policy.rs`).
 
 ## Known Issues & Notes
 - Depends on `feat-skill-store-config` and `feat-skill-registry-unify`. Requires acceptance of ADR-034.
