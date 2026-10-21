@@ -7,6 +7,7 @@
 pub mod db;
 pub mod google_oauth;
 pub mod jwt;
+pub mod login_code;
 pub mod middleware;
 pub mod oauth;
 pub mod password;
@@ -157,6 +158,7 @@ where
     Router::new()
         .route("/register", post(register_handler::<S>))
         .route("/login", post(login_handler::<S>))
+        .route("/exchange", post(exchange_handler::<S>))
         .route("/refresh", post(refresh_handler::<S>))
         .route("/logout", post(logout_handler::<S>))
         .route("/check-users", get(check_users_handler::<S>))
@@ -578,6 +580,112 @@ where
         refresh_token,
         user: UserResponse::from(user),
         requires_2fa,
+    })
+    .into_response()
+}
+
+#[derive(Deserialize)]
+pub struct ExchangeRequest {
+    pub email: String,
+    pub code: String,
+}
+
+/// `POST /auth/exchange` — redeem a one-time login code for a session.
+///
+/// Deliberately skips TOTP: a code can only be minted by someone with local node
+/// access (CLI) or an allow-listed Telegram admin, which is already a stronger
+/// factor than the authenticator. Every failure returns the same 401 body so
+/// callers cannot tell unknown email, wrong, expired or burned codes apart.
+async fn exchange_handler<S>(
+    State(state): State<S>,
+    axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<ExchangeRequest>,
+) -> axum::response::Response
+where
+    S: HasAuthDb + Clone + Send + Sync + 'static,
+{
+    use crate::auth2::middleware::RateLimiter;
+    // Max 10 attempts/min per client key.
+    static EXCHANGE_LIMITER: std::sync::LazyLock<RateLimiter> =
+        std::sync::LazyLock::new(|| RateLimiter::new(10, 60));
+    let client_key = headers
+        .get("x-forwarded-for")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+    if !EXCHANGE_LIMITER.check(client_key).await {
+        return json_err(
+            StatusCode::TOO_MANY_REQUESTS,
+            serde_json::json!({ "error": "rate_limited" }),
+        );
+    }
+
+    let auth_db_lock = match state.auth_db() {
+        Some(db) => db,
+        None => match AuthDb::new(std::path::Path::new(&format!(
+            "{}/.xavier/auth.db",
+            base_path
+        ))) {
+            Ok(db) => std::sync::Arc::new(parking_lot::Mutex::new(db)),
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        },
+    };
+    let auth_db = auth_db_lock.lock();
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let user = match crate::auth2::login_code::redeem_login_code(
+        &auth_db,
+        &payload.email,
+        &payload.code,
+        now,
+    ) {
+        Ok(Some(u)) => u,
+        Ok(None) => {
+            return json_err(
+                StatusCode::UNAUTHORIZED,
+                serde_json::json!({ "error": "invalid_code" }),
+            )
+        }
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+
+    let jwt_manager = match JwtManager::new() {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::error!(error = %e, "exchange_handler: JwtManager::new() failed");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    let access_token = match jwt_manager.create_token(&user.id, &user.email, &user.role) {
+        Ok(t) => t,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let refresh_manager = RefreshTokenManager::new(&auth_db);
+    let refresh_token = match refresh_manager.generate_token(&user.id, None) {
+        Ok(t) => t,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+
+    auth_db
+        .log_audit(&AuditLog {
+            id: ulid::Ulid::new().to_string(),
+            user_id: Some(user.id.clone()),
+            action: "login_code_exchange".to_string(),
+            ip_address: None,
+            details: None,
+            created_at: now,
+        })
+        .ok();
+
+    Json(LoginResponse {
+        access_token,
+        refresh_token,
+        user: UserResponse::from(user),
+        requires_2fa: false,
     })
     .into_response()
 }
