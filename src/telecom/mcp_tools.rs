@@ -1,7 +1,7 @@
 //! MCP tool suite for AI agent interaction with telecom mesh (Issue #2373 / WAVE-26.11)
 
 use chrono::Utc;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -10,6 +10,8 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
 
+use crate::security::clearance::ClearanceLevel;
+use crate::telecom::clearance_gate::ChannelClearanceLevel;
 use crate::telecom::store::{TelecomStore, TelecomStoreError};
 
 /// Rooms that exist on every node from first boot.
@@ -68,7 +70,7 @@ pub struct SendPacketArgs {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ListPeersArgs {
-    pub limit: Option<usize>,
+    pub limit: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +91,31 @@ pub struct TelecomMcpRegistry {
     active_rooms: Arc<RwLock<Vec<String>>>,
     store: TelecomStore,
     local_node_id: String,
+}
+
+fn parse_clearance(raw: &str) -> Result<ChannelClearanceLevel, TelecomMcpError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(TelecomMcpError::InvalidArguments(
+            "clearance must not be empty or whitespace".to_string(),
+        ));
+    }
+    // Room vocabulary (Public..TopSecret), plus the memory clearance names it maps from.
+    let level = match trimmed.to_ascii_lowercase().replace(['_', '-', ' '], "").as_str() {
+        "public" => ChannelClearanceLevel::Public,
+        "internal" => ChannelClearanceLevel::Internal,
+        "confidential" => ChannelClearanceLevel::Confidential,
+        "secret" => ChannelClearanceLevel::Secret,
+        "topsecret" => ChannelClearanceLevel::TopSecret,
+        "unclassified" => ClearanceLevel::Unclassified.into(),
+        "restricted" => ClearanceLevel::Restricted.into(),
+        _ => {
+            return Err(TelecomMcpError::InvalidArguments(format!(
+                "unknown clearance: '{raw}' (expected Public, Internal, Confidential, Secret or TopSecret)"
+            )))
+        }
+    };
+    Ok(level)
 }
 
 fn exec_err(e: impl std::fmt::Display) -> TelecomMcpError {
@@ -329,7 +356,22 @@ impl TelecomMcpRegistry {
                 }))
             }
             "telecom_list_peers" => {
-                let args: ListPeersArgs = serde_json::from_value(arguments).unwrap_or_default();
+                let args: ListPeersArgs = if arguments.is_null() {
+                    ListPeersArgs::default()
+                } else {
+                    serde_json::from_value(arguments)
+                        .map_err(|e| TelecomMcpError::InvalidArguments(e.to_string()))?
+                };
+
+                if let Some(limit) = args.limit {
+                    if limit < 0 {
+                        return Err(TelecomMcpError::InvalidArguments(format!(
+                            "limit must not be negative: got {}",
+                            limit
+                        )));
+                    }
+                }
+
                 let mut peers = vec![serde_json::json!({
                     "node_id": self.local_node_id,
                     "status": "online",
@@ -360,31 +402,70 @@ impl TelecomMcpRegistry {
                     }));
                 }
                 let total = peers.len();
-                peers.truncate(args.limit.unwrap_or(20));
+                let limit = args.limit.map(|l| l as usize).unwrap_or(20);
+                peers.truncate(limit);
                 Ok(serde_json::json!({ "peers": peers, "total": total }))
             }
             "telecom_get_chat_history" => {
                 let args: ChatHistoryArgs = serde_json::from_value(arguments)
                     .map_err(|e| TelecomMcpError::InvalidArguments(e.to_string()))?;
                 let (room_id, limit) = (args.room_id.clone(), args.limit.unwrap_or(50));
-                let messages = self
+                let items: Vec<Value> = self
                     .blocking_store(move |store| {
-                        store.fetch_room_history(&room_id, limit).map_err(exec_err)
+                        let conn = store.connection();
+                        let conn = conn.lock().unwrap();
+
+                        let exists: bool = conn
+                            .query_row(
+                                "SELECT EXISTS(SELECT 1 FROM telecom_rooms WHERE room_id = ?1)",
+                                params![room_id],
+                                |row| row.get(0),
+                            )
+                            .map_err(exec_err)?;
+                        if !exists {
+                            return Err(TelecomMcpError::ExecutionError(format!(
+                                "unknown room: {}",
+                                room_id
+                            )));
+                        }
+
+                        let mut stmt = conn
+                            .prepare(
+                                "SELECT message_id, room_id, sender_node_id, encrypted_payload, sequence, sent_at
+                                 FROM telecom_messages
+                                 WHERE room_id = ?1
+                                 ORDER BY sequence DESC
+                                 LIMIT ?2",
+                            )
+                            .map_err(exec_err)?;
+
+                        let rows = stmt
+                            .query_map(params![room_id, limit as i64], |row| {
+                                let payload: Vec<u8> = row.get(3)?;
+                                let sent_at_str: String = row.get(5)?;
+                                let sent_at = chrono::DateTime::parse_from_rfc3339(&sent_at_str)
+                                    .map(|dt| dt.with_timezone(&Utc))
+                                    .unwrap_or_else(|_| Utc::now());
+                                Ok(serde_json::json!({
+                                    "message_id": row.get::<_, String>(0)?,
+                                    "room_id": row.get::<_, String>(1)?,
+                                    "sender": row.get::<_, String>(2)?,
+                                    "sequence": row.get::<_, i64>(4)?,
+                                    "sent_at": sent_at.to_rfc3339(),
+                                    "payload": String::from_utf8_lossy(&payload)
+                                }))
+                            })
+                            .map_err(exec_err)?;
+
+                        let mut msgs = Vec::new();
+                        for r in rows {
+                            msgs.push(r.map_err(exec_err)?);
+                        }
+                        msgs.reverse();
+                        Ok(msgs)
                     })
                     .await?;
-                let items: Vec<Value> = messages
-                    .iter()
-                    .map(|m| {
-                        serde_json::json!({
-                            "message_id": m.message_id,
-                            "room_id": m.room_id,
-                            "sender": m.sender_node_id,
-                            "sequence": m.sequence,
-                            "sent_at": m.sent_at.to_rfc3339(),
-                            "payload": String::from_utf8_lossy(&m.encrypted_payload)
-                        })
-                    })
-                    .collect();
+
                 Ok(serde_json::json!({
                     "room_id": args.room_id,
                     "total": items.len(),
@@ -394,27 +475,59 @@ impl TelecomMcpRegistry {
             "telecom_create_group" => {
                 let args: CreateGroupArgs = serde_json::from_value(arguments)
                     .map_err(|e| TelecomMcpError::InvalidArguments(e.to_string()))?;
-                let (room, clearance) = (args.group_name.clone(), args.clearance.clone());
-                self.blocking_store(move |store| {
-                    let conn = store.connection();
-                    let conn = conn.lock().unwrap();
-                    conn.execute(
-                        "INSERT OR IGNORE INTO telecom_rooms (room_id, name, clearance, is_group, created_at)
-                         VALUES (?1, ?1, ?2, 1, ?3)",
-                        params![room, clearance, Utc::now().to_rfc3339()],
-                    )
-                    .map_err(exec_err)?;
-                    Ok(())
-                })
-                .await?;
+                let _ = args.initial_members;
+
+                let trimmed_name = args.group_name.trim();
+                if trimmed_name.is_empty() {
+                    return Err(TelecomMcpError::InvalidArguments(
+                        "group_name must not be empty or whitespace".to_string(),
+                    ));
+                }
+
+                // Store the canonical spelling, whatever casing the caller used.
+                let canonical = serde_json::to_value(parse_clearance(&args.clearance)?)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .unwrap_or_else(|| args.clearance.trim().to_string());
+
+                let (room, requested_clearance) = (args.group_name.clone(), canonical);
+                let (created, stored_clearance) = self
+                    .blocking_store(move |store| {
+                        let conn = store.connection();
+                        let conn = conn.lock().unwrap();
+
+                        let existing_clearance: Option<String> = conn
+                            .query_row(
+                                "SELECT clearance FROM telecom_rooms WHERE room_id = ?1",
+                                params![room],
+                                |row| row.get(0),
+                            )
+                            .optional()
+                            .map_err(exec_err)?;
+
+                        if let Some(existing) = existing_clearance {
+                            Ok((false, existing))
+                        } else {
+                            conn.execute(
+                                "INSERT INTO telecom_rooms (room_id, name, clearance, is_group, created_at)
+                                 VALUES (?1, ?1, ?2, 1, ?3)",
+                                params![room, requested_clearance, Utc::now().to_rfc3339()],
+                            )
+                            .map_err(exec_err)?;
+                            Ok((true, requested_clearance))
+                        }
+                    })
+                    .await?;
+
                 let mut rooms = self.active_rooms.write().await;
                 if !rooms.contains(&args.group_name) {
                     rooms.push(args.group_name.clone());
                 }
+
                 Ok(serde_json::json!({
                     "room_id": args.group_name,
-                    "clearance": args.clearance,
-                    "members": args.initial_members
+                    "clearance": stored_clearance,
+                    "created": created
                 }))
             }
             _ => Err(TelecomMcpError::UnknownTool(tool_name.to_string())),
@@ -526,5 +639,229 @@ mod tests {
             .execute_telecom_tool("invalid_nonexistent_tool", serde_json::json!({}))
             .await;
         assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_group_rejects_empty_name_and_bad_clearance() {
+        let reg = TelecomMcpRegistry::new();
+
+        // Empty group_name
+        let err_empty = reg
+            .execute_telecom_tool(
+                "telecom_create_group",
+                serde_json::json!({ "group_name": "", "clearance": "Internal" }),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            err_empty.to_string().contains("group_name"),
+            "Error must name group_name: {}",
+            err_empty
+        );
+
+        // Whitespace group_name
+        let err_ws = reg
+            .execute_telecom_tool(
+                "telecom_create_group",
+                serde_json::json!({ "group_name": "   \t\n", "clearance": "Internal" }),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            err_ws.to_string().contains("group_name"),
+            "Error must name group_name: {}",
+            err_ws
+        );
+
+        // Bad clearance
+        let err_bad_clearance = reg
+            .execute_telecom_tool(
+                "telecom_create_group",
+                serde_json::json!({ "group_name": "valid-name", "clearance": "Bogus" }),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            err_bad_clearance.to_string().contains("clearance"),
+            "Error must name clearance: {}",
+            err_bad_clearance
+        );
+
+        // Empty clearance
+        let err_empty_clearance = reg
+            .execute_telecom_tool(
+                "telecom_create_group",
+                serde_json::json!({ "group_name": "valid-name", "clearance": "" }),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            err_empty_clearance.to_string().contains("clearance"),
+            "Error must name clearance: {}",
+            err_empty_clearance
+        );
+    }
+
+    #[tokio::test]
+    async fn create_group_reports_existing() {
+        let reg = TelecomMcpRegistry::new();
+
+        let res1 = reg
+            .execute_telecom_tool(
+                "telecom_create_group",
+                serde_json::json!({
+                    "group_name": "alpha-room",
+                    "clearance": "Internal",
+                    "initial_members": ["peer-1", "peer-2"]
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res1["room_id"], "alpha-room");
+        assert_eq!(res1["clearance"], "Internal");
+        assert_eq!(res1["created"], true);
+        assert!(res1.get("members").is_none());
+
+        // Re-creating the existing room with a different clearance reports created: false and the stored clearance
+        let res2 = reg
+            .execute_telecom_tool(
+                "telecom_create_group",
+                serde_json::json!({
+                    "group_name": "alpha-room",
+                    "clearance": "Secret"
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res2["room_id"], "alpha-room");
+        assert_eq!(res2["created"], false);
+        assert_eq!(res2["clearance"], "Internal");
+
+        let res3 = reg
+            .execute_telecom_tool(
+                "telecom_create_group",
+                serde_json::json!({ "group_name": "beta-room", "clearance": "top_secret" }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res3["clearance"], "TopSecret");
+
+        // The default rooms' own vocabulary stays valid.
+        let res4 = reg
+            .execute_telecom_tool(
+                "telecom_create_group",
+                serde_json::json!({ "group_name": "open-room", "clearance": "Public" }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res4["clearance"], "Public");
+    }
+
+    #[tokio::test]
+    async fn history_limit_returns_latest() {
+        let reg = TelecomMcpRegistry::new();
+
+        // Create a test group
+        reg.execute_telecom_tool(
+            "telecom_create_group",
+            serde_json::json!({ "group_name": "history-test", "clearance": "Internal" }),
+        )
+        .await
+        .unwrap();
+
+        // Send 4 packets in order
+        for i in 1..=4 {
+            reg.execute_telecom_tool(
+                "telecom_send_packet",
+                serde_json::json!({
+                    "room_id": "history-test",
+                    "payload": format!("msg-{}", i)
+                }),
+            )
+            .await
+            .unwrap();
+        }
+
+        // Fetch with limit 2: must return the latest 2 messages in ascending sequence order
+        let history = reg
+            .execute_telecom_tool(
+                "telecom_get_chat_history",
+                serde_json::json!({ "room_id": "history-test", "limit": 2 }),
+            )
+            .await
+            .unwrap();
+
+        let msgs = history["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0]["payload"], "msg-3");
+        assert_eq!(msgs[1]["payload"], "msg-4");
+        assert!(msgs[0]["sequence"].as_i64().unwrap() < msgs[1]["sequence"].as_i64().unwrap());
+
+        // Fetch with limit 3: latest 3 in ascending order
+        let history3 = reg
+            .execute_telecom_tool(
+                "telecom_get_chat_history",
+                serde_json::json!({ "room_id": "history-test", "limit": 3 }),
+            )
+            .await
+            .unwrap();
+        let msgs3 = history3["messages"].as_array().unwrap();
+        assert_eq!(msgs3.len(), 3);
+        assert_eq!(msgs3[0]["payload"], "msg-2");
+        assert_eq!(msgs3[1]["payload"], "msg-3");
+        assert_eq!(msgs3[2]["payload"], "msg-4");
+
+        // Fetch with limit 0
+        let history0 = reg
+            .execute_telecom_tool(
+                "telecom_get_chat_history",
+                serde_json::json!({ "room_id": "history-test", "limit": 0 }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(history0["messages"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn history_unknown_room_errors() {
+        let reg = TelecomMcpRegistry::new();
+
+        let res = reg
+            .execute_telecom_tool(
+                "telecom_get_chat_history",
+                serde_json::json!({ "room_id": "does-not-exist" }),
+            )
+            .await;
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(
+            err.to_string().contains("unknown room"),
+            "Error must mention 'unknown room': {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn list_peers_negative_limit_rejected() {
+        let reg = TelecomMcpRegistry::new();
+
+        let res_neg = reg
+            .execute_telecom_tool("telecom_list_peers", serde_json::json!({ "limit": -1 }))
+            .await;
+        assert!(res_neg.is_err());
+        let err = res_neg.unwrap_err();
+        assert!(
+            err.to_string().contains("limit"),
+            "Error must name limit: {}",
+            err
+        );
+
+        // Valid limit 0 should succeed
+        let res_zero = reg
+            .execute_telecom_tool("telecom_list_peers", serde_json::json!({ "limit": 0 }))
+            .await
+            .unwrap();
+        assert_eq!(res_zero["peers"].as_array().unwrap().len(), 0);
+        assert_eq!(res_zero["total"], 1);
     }
 }
