@@ -18,6 +18,8 @@ pub type ReleaseReport = RollbackReport;
 pub enum LeaseError {
     #[error("invalid task id")]
     InvalidTaskId,
+    #[error("task skill is {tokens} tokens, over the {max} token budget")]
+    TokenBudget { tokens: usize, max: usize },
     #[error("task skill destination is already occupied or ownership is invalid")]
     Conflict,
     #[error(transparent)]
@@ -97,6 +99,24 @@ fn lock(journal: &Journal, worktree: &Path) -> Result<RootLock, LeaseError> {
         &journal.base_dir().join(LOCKS_SUBDIR),
         &fs::canonicalize(worktree)?,
     )?)
+}
+
+/// Publication bounded by the ephemeral token budget; nothing is written when exceeded.
+pub fn publish_task_skill_bounded(
+    journal: &Journal,
+    worktree: &Path,
+    task_id: &str,
+    content: &str,
+    max_tokens: usize,
+) -> Result<PublishedSkill, LeaseError> {
+    let tokens = crate::context::token_estimate::estimate_tokens(content);
+    if tokens > max_tokens {
+        return Err(LeaseError::TokenBudget {
+            tokens,
+            max: max_tokens,
+        });
+    }
+    publish_task_skill(journal, worktree, task_id, content)
 }
 
 /// Explicit publication: refuses all pre-existing task directories and link objects.
@@ -376,6 +396,17 @@ mod tests {
         assert_eq!(transactions[0].entries.len(), 2);
         assert!(out.skill_path.starts_with(w.path()));
         assert!(out.link_path.starts_with(w.path()));
+    }
+
+    #[test]
+    fn bounded_publish_rejects_over_budget_without_writes() {
+        let (w, _s, j) = fixture();
+        let err =
+            publish_task_skill_bounded(&j, w.path(), "task", &"word ".repeat(400), 10).unwrap_err();
+        assert!(matches!(err, LeaseError::TokenBudget { max: 10, .. }));
+        assert_eq!(fs::read_dir(w.path()).unwrap().count(), 0);
+        assert!(j.list_transactions().unwrap().is_empty());
+        publish_task_skill_bounded(&j, w.path(), "task", "body", 10).unwrap();
     }
 
     #[test]

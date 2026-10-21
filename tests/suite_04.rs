@@ -49,3 +49,6 @@ mod hormer_e2e;
 
 #[path = "hormer_integration.rs"]
 mod hormer_integration;
+
+#[path = "skill_ephemeral_lifecycle.rs"]
+mod skill_ephemeral_lifecycle;

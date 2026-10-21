@@ -13,6 +13,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use xavier::agents::{Agent, AgentConfig};
+use xavier::context::skill_controller::composer::{
+    compose, CompositionInput, CompositionScope, SkillEntry,
+};
 use xavier::context::skill_controller::{lease, state::Journal};
 use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
 use xavier::memory::sqlite_vec_store::VecSqliteMemoryStore;
@@ -40,9 +43,7 @@ pub async fn spawn_agents(
 
     let mut agents = Vec::with_capacity(count);
     let task_id = uuid::Uuid::new_v4().simple().to_string();
-    let mut task_content = format!(
-        "---\nname: eph-{task_id}\ndescription: Selected skills for an authorized task\n---\n\n"
-    );
+    let mut skill_bodies: Vec<(String, String)> = Vec::new();
     for i in 0..count {
         let name = format!("agent-{}", i + 1);
         let provider_name = available_providers
@@ -82,8 +83,9 @@ pub async fn spawn_agents(
         for skill_name in &effective_skills {
             let skill = skill_name.clone();
             if let Some(content) = tokio::task::spawn_blocking(move || load_skill(&skill)).await? {
-                task_content.push_str(&content);
-                task_content.push_str("\n\n");
+                if !skill_bodies.iter().any(|(n, _)| n == skill_name) {
+                    skill_bodies.push((skill_name.clone(), content.clone()));
+                }
                 context.insert(format!("skill_{}", skill_name), content);
                 loaded_skills.push(skill_name.clone());
             } else {
@@ -116,6 +118,7 @@ pub async fn spawn_agents(
     if let Some(task) = task {
         println!("Executing task across spawned agents: {}", task);
         let worktree = std::env::current_dir()?;
+        let task_content = compose_task_content(&task_id, task, &skill_bodies)?;
         let journal = tokio::task::spawn_blocking(Journal::from_settings).await??;
         with_task_skill(journal, worktree, task_id, task_content, || async move {
             let memory = load_spawn_memory().await?;
@@ -145,6 +148,41 @@ pub async fn spawn_agents(
     Ok(())
 }
 
+/// Compose the bounded task pack, then append the selected skill bodies.
+fn compose_task_content(
+    task_id: &str,
+    task: &str,
+    skill_bodies: &[(String, String)],
+) -> Result<String> {
+    let workspace_id =
+        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
+    let scope = CompositionScope::new(&workspace_id, None)?;
+    let input = CompositionInput {
+        task_id: task_id.to_string(),
+        task: task.to_string(),
+        skills: skill_bodies
+            .iter()
+            .map(|(name, body)| SkillEntry {
+                name: name.clone(),
+                content_hash: xavier::crypto::hex_encode(<sha2::Sha256 as sha2::Digest>::digest(
+                    body.as_bytes(),
+                )),
+            })
+            .collect(),
+        evidence: Vec::new(),
+        memory_available: false,
+        graph_revision: None,
+    };
+    let max = xavier::settings::ephemeral_max_tokens();
+    let mut content = compose(&scope, &input, max)?.markdown;
+    for (_, body) in skill_bodies {
+        content.push('\n');
+        content.push_str(body);
+        content.push('\n');
+    }
+    Ok(content)
+}
+
 /// Publication is a prerequisite for running; cleanup preserves the runner's result.
 async fn with_task_skill<F, Fut>(
     journal: Journal,
@@ -158,7 +196,16 @@ where
     Fut: std::future::Future<Output = Result<()>>,
 {
     let (j, w, id) = (journal.clone(), worktree.clone(), task_id.clone());
-    tokio::task::spawn_blocking(move || lease::publish_task_skill(&j, &w, &id, &content)).await??;
+    tokio::task::spawn_blocking(move || {
+        lease::publish_task_skill_bounded(
+            &j,
+            &w,
+            &id,
+            &content,
+            xavier::settings::ephemeral_max_tokens(),
+        )
+    })
+    .await??;
     let (j, w, id) = (journal.clone(), worktree.clone(), task_id.clone());
     let (stop, mut stopped) = tokio::sync::oneshot::channel();
     let mut renew = tokio::spawn(async move {
@@ -443,6 +490,39 @@ mod tests {
             .path()
             .join(".agents/skills/eph-task/SKILL.md")
             .exists());
+    }
+
+    #[test]
+    fn compose_task_content_uses_composer_and_appends_skills() {
+        let bodies = vec![("alpha".to_string(), "ALPHA BODY".to_string())];
+        let out = compose_task_content("t1", "do the thing", &bodies).unwrap();
+        assert!(out.starts_with("---\nname: eph-t1\n"));
+        assert!(out.contains("## Task (untrusted, quoted)"));
+        assert!(out.contains("- alpha ("));
+        assert!(out.contains("ALPHA BODY"));
+    }
+
+    #[tokio::test]
+    async fn spawn_publication_enforces_token_budget() {
+        let worktree = tempdir().unwrap();
+        let state = tempdir().unwrap();
+        let journal = Journal::new(state.path().join("journal")).unwrap();
+        let big = "word ".repeat(xavier::settings::ephemeral_max_tokens() * 2);
+        let ran = std::sync::atomic::AtomicBool::new(false);
+        let result = with_task_skill(
+            journal,
+            worktree.path().into(),
+            "task".into(),
+            big,
+            || async {
+                ran.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(!ran.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!worktree.path().join(".agents").exists());
     }
 
     #[test]
