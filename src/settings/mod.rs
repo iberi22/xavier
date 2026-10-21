@@ -140,6 +140,21 @@ async fn watch_config_changes_impl(paths: Vec<std::path::PathBuf>) -> Result<()>
     Ok(())
 }
 
+/// Env var holding the ephemeral task-skill token budget.
+pub const EPHEMERAL_MAX_TOKENS_ENV: &str = "XAVIER_EPHEMERAL_MAX_TOKENS";
+
+/// Positive integer or the composer default (unset, 0 or invalid).
+pub fn parse_ephemeral_max_tokens(raw: Option<&str>) -> usize {
+    raw.and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(crate::context::skill_controller::composer::DEFAULT_MAX_TOKENS)
+}
+
+/// `ephemeral.max_tokens`: token budget for task-scoped skill packs.
+pub fn ephemeral_max_tokens() -> usize {
+    parse_ephemeral_max_tokens(std::env::var(EPHEMERAL_MAX_TOKENS_ENV).ok().as_deref())
+}
+
 impl XavierSettings {
     #[cfg_attr(not(test), allow(dead_code))]
     /// Resolve config path.
@@ -210,6 +225,15 @@ pub mod tests {
     use super::validation::non_empty;
     use super::*;
     use std::sync::{LazyLock, Mutex};
+
+    #[test]
+    fn ephemeral_max_tokens_parses_with_default() {
+        use crate::context::skill_controller::composer::DEFAULT_MAX_TOKENS as D;
+        assert_eq!(parse_ephemeral_max_tokens(None), D);
+        assert_eq!(parse_ephemeral_max_tokens(Some("0")), D);
+        assert_eq!(parse_ephemeral_max_tokens(Some("abc")), D);
+        assert_eq!(parse_ephemeral_max_tokens(Some(" 123 ")), 123);
+    }
 
     pub static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
