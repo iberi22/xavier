@@ -564,12 +564,14 @@ jobs:
           fi
           echo "OK: no token leak in panel-ui/build/assets/*.js"
 
+      - name: Run Vitest component tests (panel-ui)
+        run: pnpm --filter xavier-panel-ui run test
+
       - name: panel-browser-smoke
         env:
           PANEL_UI_BASE_URL: http://127.0.0.1:4174
         run: |
           pnpm --filter xavier-panel-ui run build
-          pnpm --filter xavier-panel-ui run test
           pnpm --filter xavier-panel-ui exec playwright install --with-deps chromium
           pnpm --filter xavier-panel-ui exec playwright test --project=chromium
 
