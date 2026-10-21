@@ -5,6 +5,8 @@ use std::ffi::OsString;
 use std::path::Path;
 use xavier::context::SkillRegistry;
 
+xavier::isolate_test_process!();
+
 static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 struct EnvGuard(Vec<(&'static str, Option<OsString>)>);
