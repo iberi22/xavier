@@ -229,6 +229,25 @@ pub fn record_ack(db_path: &Path, event: &UsageEvent) -> Result<Outcome, SkillUs
     Ok(writer.record(event, false)?)
 }
 
+/// Last prune per telemetry DB in this process; retention runs at most daily.
+static LAST_PRUNE: std::sync::Mutex<
+    Option<std::collections::HashMap<PathBuf, chrono::DateTime<chrono::Utc>>>,
+> = std::sync::Mutex::new(None);
+
+fn prune_due(db: &Path, now: chrono::DateTime<chrono::Utc>) -> bool {
+    let Ok(mut guard) = LAST_PRUNE.lock() else {
+        return false;
+    };
+    let map = guard.get_or_insert_with(Default::default);
+    match map.get(db) {
+        Some(last) if now.signed_duration_since(*last) < chrono::TimeDelta::days(1) => false,
+        _ => {
+            map.insert(db.to_path_buf(), now);
+            true
+        }
+    }
+}
+
 fn emit_events(db: PathBuf, events: Vec<UsageEvent>) -> tokio::task::JoinHandle<()> {
     tokio::task::spawn_blocking(move || {
         if let Some(parent) = db.parent() {
@@ -238,13 +257,18 @@ fn emit_events(db: PathBuf, events: Vec<UsageEvent>) -> tokio::task::JoinHandle<
             }
         }
         let write = || -> Result<(), SkillUsageError> {
-            let conn = rusqlite::Connection::open(db)?;
+            let conn = rusqlite::Connection::open(&db)?;
             crate::storage::pragma::apply_acquire_pragmas(&conn)?;
             let writer = TelemetryWriter::new(&conn);
             writer.ensure_schema()?;
             for event in events {
                 if let Err(error) = writer.record(&event, false) {
                     tracing::debug!(%error, "skill dispatch: telemetry event dropped");
+                }
+            }
+            if prune_due(&db, chrono::Utc::now()) {
+                if let Err(error) = writer.prune(chrono::Utc::now(), false) {
+                    tracing::debug!(%error, "skill dispatch: telemetry prune failed");
                 }
             }
             Ok(())
@@ -766,6 +790,39 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[tokio::test]
+    async fn emit_prunes_expired_events_at_most_once_per_day() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("usage.db");
+        let old = |id: &str| {
+            let mut event =
+                UsageEvent::new(id, "ws", "task", "harness", "demo", SkillStage::Invoked);
+            event.observed_at = chrono::Utc::now() - chrono::TimeDelta::days(45);
+            event
+        };
+        let fresh =
+            |id: &str| UsageEvent::new(id, "ws", "task", "harness", "demo", SkillStage::Selected);
+        emit_events(db.clone(), vec![old("evt-old-1"), fresh("evt-fresh-1")])
+            .await
+            .unwrap();
+        let count = || {
+            let conn = rusqlite::Connection::open(&db).unwrap();
+            TelemetryWriter::new(&conn).count().unwrap()
+        };
+        // First emit pruned the expired event it just wrote.
+        assert_eq!(count(), 1);
+        // Second emit within a day does not prune again.
+        emit_events(db.clone(), vec![old("evt-old-2")])
+            .await
+            .unwrap();
+        assert_eq!(count(), 2);
+        assert!(!prune_due(&db, chrono::Utc::now()));
+        assert!(prune_due(
+            &db,
+            chrono::Utc::now() + chrono::TimeDelta::days(2)
+        ));
     }
 
     #[test]

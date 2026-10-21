@@ -176,6 +176,7 @@ pub async fn handle_tool_call(
         || name == "xavier_dispatch_skill"
         || name == "xavier_skill_list"
         || name == "xavier_skill_usage"
+        || name == "xavier_skill_ack"
     {
         super::tools_context::handle_context_tool(state, workspace, name, arguments).await
     } else if super::tools_expert::is_expert_tool(name) {

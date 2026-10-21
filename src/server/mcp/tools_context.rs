@@ -6,6 +6,7 @@
 use super::types::*;
 use crate::codebase::issue_context::assemble_package;
 use crate::codebase::snapshot::SnapshotManager;
+use crate::context::skill_controller::telemetry::{SkillStage, UsageEvent};
 use crate::context::skill_registry::build_skill_registry;
 use crate::context::{
     ContextBudgetConfig, ContextBuilder, ContextBuilderConfig, ContextDocument, ContextLevel,
@@ -123,7 +124,76 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
             description: "Read skill lifecycle counts and harness acknowledgment coverage".to_string(),
             input_schema: json!({"type": "object", "properties": {}}),
         },
+        MCPTool {
+            name: "xavier_skill_ack".to_string(),
+            description: "Acknowledge that a delivered skill was invoked or completed (idempotent)".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "skill_name": { "type": "string", "description": "Skill name from the registry" },
+                    "stage": { "type": "string", "enum": ["invoked", "completed"] },
+                    "task_id": { "type": "string", "description": "Opaque task identifier, never task text" },
+                    "tool": { "type": "string", "description": "Harness identifier" },
+                    "project": { "type": "string", "description": "Optional opaque project id, default 'default'" },
+                    "outcome": { "type": "string", "description": "Bounded outcome label, default ok" }
+                },
+                "required": ["skill_name", "stage", "task_id"]
+            }),
+        },
     ]
+}
+
+/// Build an invoked/completed ack event from MCP arguments (opaque ids only).
+fn build_ack_event(arguments: &Value) -> Result<UsageEvent, String> {
+    use sha2::Digest;
+    let text = |key: &str| {
+        arguments
+            .get(key)
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    };
+    let stage = match text("stage").as_deref() {
+        Some("invoked") => SkillStage::Invoked,
+        Some("completed") => SkillStage::Completed,
+        _ => return Err("'stage' must be 'invoked' or 'completed'".to_string()),
+    };
+    let (Some(skill_name), Some(task_id)) = (text("skill_name"), text("task_id")) else {
+        return Err("'skill_name' and 'task_id' are required".to_string());
+    };
+    // D12: opaque, bounded identifiers only; no free text reaches the telemetry DB.
+    let opaque = |v: &str, max: usize| {
+        !v.is_empty()
+            && v.len() <= max
+            && v.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_.:/".contains(c))
+    };
+    if !opaque(&skill_name, 128) || !opaque(&task_id, 128) {
+        return Err(
+            "'skill_name' and 'task_id' must be opaque ids ([A-Za-z0-9-_.:/], max 128)".to_string(),
+        );
+    }
+    if let Some(outcome) = text("outcome") {
+        if !(1..=32).contains(&outcome.len())
+            || !outcome.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+        {
+            return Err("'outcome' must be a short label ([a-z_], max 32)".to_string());
+        }
+    }
+    let event_id = crate::crypto::hex_encode(sha2::Sha256::digest(
+        format!("{task_id}:{skill_name}:{}", stage.as_str()).as_bytes(),
+    ));
+    let mut event = UsageEvent::new(
+        event_id,
+        text("project").unwrap_or_else(|| "default".to_string()),
+        task_id,
+        text("tool").unwrap_or_else(|| "mcp-harness".to_string()),
+        skill_name,
+        stage,
+    );
+    if let Some(outcome) = text("outcome") {
+        event.outcome = outcome;
+    }
+    Ok(event)
 }
 
 /// Handle context tool.
@@ -518,6 +588,39 @@ pub async fn handle_context_tool(
                 }
                 Err(error) => super::server::mcp_text_result(
                     serde_json::to_string(&json!({"error": error}))?,
+                    true,
+                ),
+            }
+        }
+        "xavier_skill_ack" => {
+            let event = match build_ack_event(&arguments) {
+                Ok(event) => event,
+                Err(error) => {
+                    return super::server::mcp_text_result(
+                        serde_json::to_string(&json!({"ok": false, "error": error}))?,
+                        true,
+                    )
+                }
+            };
+            let outcome = tokio::task::spawn_blocking(move || {
+                if let Some(parent) = crate::api::skills::skill_usage_db_path().parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                crate::context::skill_dispatcher::record_ack(
+                    &crate::api::skills::skill_usage_db_path(),
+                    &event,
+                )
+            })
+            .await?;
+            match outcome {
+                Ok(outcome) => super::server::mcp_text_result(
+                    serde_json::to_string(
+                        &json!({"ok": true, "recorded": outcome.applied, "affected": outcome.affected}),
+                    )?,
+                    false,
+                ),
+                Err(error) => super::server::mcp_text_result(
+                    serde_json::to_string(&json!({"ok": false, "error": error.to_string()}))?,
                     true,
                 ),
             }
@@ -1097,5 +1200,24 @@ mod tests {
             production.contains("skill_registry::build_skill_registry"),
             "MCP must build the registry through the shared constructor"
         );
+    }
+
+    #[test]
+    fn skill_ack_rejects_free_text_and_unknown_stage() {
+        use super::build_ack_event;
+        let ok = json!({"skill_name": "trace-audit", "stage": "invoked", "task_id": "t-1"});
+        let first = build_ack_event(&ok).expect("valid ack");
+        assert_eq!(first.event_id, build_ack_event(&ok).unwrap().event_id);
+        assert_eq!(first.workspace_id, "default");
+
+        for bad in [
+            json!({"skill_name": "trace-audit", "stage": "selected", "task_id": "t-1"}),
+            json!({"skill_name": "trace-audit", "stage": "invoked"}),
+            json!({"skill_name": "trace-audit", "stage": "invoked", "task_id": "fix the login bug please"}),
+            json!({"skill_name": "", "stage": "invoked", "task_id": "t-1"}),
+            json!({"skill_name": "trace-audit", "stage": "invoked", "task_id": "t-1", "outcome": "Free Text!"}),
+        ] {
+            assert!(build_ack_event(&bad).is_err(), "accepted {bad}");
+        }
     }
 }
