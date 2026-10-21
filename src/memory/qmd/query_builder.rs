@@ -53,6 +53,13 @@ pub fn normalize_token(token: &str) -> String {
         .to_lowercase()
 }
 
+/// Natural-language question heuristic: stop words were stripped or the query is long.
+/// Keyword/identifier queries are short and keep every token.
+fn is_natural_language_query(query_text: &str) -> bool {
+    let raw = query_text.split_whitespace().count();
+    raw > 4 || normalize_query(query_text).split_whitespace().count() < raw
+}
+
 /// Build a QueryBundle with expanded variants and weights.
 pub fn build_query_bundle_internal(query_text: &str) -> QueryBundle {
     let normalized_query = normalize_query(query_text);
@@ -77,6 +84,22 @@ pub fn build_query_bundle_internal(query_text: &str) -> QueryBundle {
                 }
                 variants.push(expanded.clone());
                 weights.insert(expanded, 0.85);
+            }
+        }
+    }
+
+    if variants.len() == 1 && !is_natural_language_query(query_text) {
+        for token in query_text.split_whitespace().take(MAX_EXPANSIONS) {
+            let cleaned = normalize_token(token);
+            if cleaned.len() < 3 || cleaned == normalized_query {
+                continue;
+            }
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                weights.entry(format!("{normalized_query} {cleaned}"))
+            {
+                let expanded = entry.key().clone();
+                variants.push(expanded.clone());
+                entry.insert(0.8);
             }
         }
     }
@@ -136,5 +159,21 @@ mod latency_regression {
             bundle.variants,
             ["fast runtime", "fast runtime quick", "fast runtime speed"]
         );
+    }
+
+    #[test]
+    fn natural_language_question_keeps_reduced_variant_set() {
+        let bundle = build_query_bundle_internal("what does the registry handle");
+        assert_eq!(bundle.variants, ["registry handle"]);
+    }
+
+    #[test]
+    fn keyword_query_gets_token_append_variants() {
+        let bundle = build_query_bundle_internal("TelecomMcpRegistry handle_tool_call");
+        assert_eq!(bundle.variants.len(), 3);
+        assert_eq!(bundle.variants[0], "telecommcpregistry handletoolcall");
+        assert!(bundle
+            .variants
+            .contains(&"telecommcpregistry handletoolcall handletoolcall".to_string()));
     }
 }
