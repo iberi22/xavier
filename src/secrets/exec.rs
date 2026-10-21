@@ -35,6 +35,30 @@ pub enum ExecSecretError {
 
 pub type ExecSecretResult<T> = Result<T, ExecSecretError>;
 
+/// Environment variable names disallowed for secret injection to protect child process execution.
+pub const DISALLOWED_ENV_VARS: &[&str] =
+    &["PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "HOME", "SHELL"];
+
+/// Validate that an environment variable name matches `^[A-Za-z_][A-Za-z0-9_]*$`
+/// and is not one of [`DISALLOWED_ENV_VARS`].
+pub fn is_valid_env_var(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let bytes = name.as_bytes();
+    let first = bytes[0];
+    if !first.is_ascii_alphabetic() && first != b'_' {
+        return false;
+    }
+    if !bytes[1..]
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || b == b'_')
+    {
+        return false;
+    }
+    !DISALLOWED_ENV_VARS.contains(&name)
+}
+
 /// Specification for executing a command with an injected secret.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SecretExecSpec {
@@ -183,6 +207,13 @@ pub async fn run_with_secret(
     engine: Arc<KeyLendingEngine>,
     vault: &HardwareVault,
 ) -> Result<SecretExecOutcome, ExecSecretError> {
+    if !is_valid_env_var(&spec.env_var) {
+        return Err(ExecSecretError::Io(format!(
+            "Invalid env_var '{}': must match ^[A-Za-z_][A-Za-z0-9_]*$ and must not be one of {:?}",
+            spec.env_var, DISALLOWED_ENV_VARS
+        )));
+    }
+
     let lease = {
         let value = vault
             .get_secret(&spec.secret_name)
@@ -298,6 +329,21 @@ async fn run_child_with_lease(spec: &SecretExecSpec, lease: SecretLease) -> Chil
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_is_valid_env_var() {
+        assert!(is_valid_env_var("XAVIER_SECRET"));
+        assert!(is_valid_env_var("_VALID_VAR_123"));
+        assert!(!is_valid_env_var("PATH"));
+        assert!(!is_valid_env_var("LD_PRELOAD"));
+        assert!(!is_valid_env_var("LD_LIBRARY_PATH"));
+        assert!(!is_valid_env_var("HOME"));
+        assert!(!is_valid_env_var("SHELL"));
+        assert!(!is_valid_env_var("1INVALID"));
+        assert!(!is_valid_env_var("INVALID-VAR"));
+        assert!(!is_valid_env_var("INVALID=VAR"));
+        assert!(!is_valid_env_var(""));
+    }
     use crate::codebase::connection_manager::ConnectionManager;
     use crate::secrets::audit::QmdAuditLogger;
     use rusqlite::params;
