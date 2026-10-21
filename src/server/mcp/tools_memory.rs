@@ -426,7 +426,66 @@ pub async fn handle_memory_search(
     }
 }
 
+const MCP_SEARCH_QUERY_MAX_BYTES: usize = 8 * 1024;
+const MCP_CREATE_PATH_MAX_CHARS: usize = 1024;
+const MCP_SEARCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn validate_search_query(query: &str) -> anyhow::Result<()> {
+    if query.len() > MCP_SEARCH_QUERY_MAX_BYTES {
+        anyhow::bail!(
+            "Invalid argument 'query': {} bytes exceeds the {} byte limit",
+            query.len(),
+            MCP_SEARCH_QUERY_MAX_BYTES
+        );
+    }
+    Ok(())
+}
+
+fn validate_create_path(path: &str) -> anyhow::Result<()> {
+    let n = path.chars().count();
+    if n > MCP_CREATE_PATH_MAX_CHARS {
+        anyhow::bail!(
+            "Invalid argument 'path': {} chars exceeds the {} char limit",
+            n,
+            MCP_CREATE_PATH_MAX_CHARS
+        );
+    }
+    Ok(())
+}
+
+async fn with_tool_timeout<T>(
+    limit: std::time::Duration,
+    what: &str,
+    fut: impl std::future::Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    match tokio::time::timeout(limit, fut).await {
+        Ok(r) => r,
+        Err(_) => Err(anyhow::anyhow!(
+            "{what} timed out after {}s",
+            limit.as_secs()
+        )),
+    }
+}
+
 async fn handle_mem_search(
+    workspace: &WorkspaceContext,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    validate_search_query(
+        arguments
+            .get("query")
+            .and_then(|v| v.as_str())
+            .unwrap_or(""),
+    )?;
+    with_tool_timeout(
+        MCP_SEARCH_TIMEOUT,
+        "search_memory",
+        handle_mem_search_inner(workspace, arguments),
+    )
+    .await
+}
+
+async fn handle_mem_search_inner(
     workspace: &WorkspaceContext,
     arguments: &Value,
 ) -> anyhow::Result<Value> {
@@ -982,6 +1041,7 @@ async fn handle_create_memory(
         .get("path")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("Missing path"))?;
+    validate_create_path(path)?;
     let content = arguments
         .get("content")
         .and_then(|v| v.as_str())
@@ -2156,6 +2216,34 @@ mod tests {
 #[cfg(test)]
 mod tests_federated {
     use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn mcp_search_timeout_returns_error() {
+        let r = with_tool_timeout(
+            std::time::Duration::from_millis(20),
+            "search_memory",
+            async {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                Ok(())
+            },
+        )
+        .await;
+        assert!(r.unwrap_err().to_string().contains("timed out"));
+    }
+
+    #[test]
+    fn mcp_search_rejects_oversize_query() {
+        assert!(validate_search_query(&"a".repeat(8 * 1024)).is_ok());
+        let e = validate_search_query(&"a".repeat(8 * 1024 + 1)).unwrap_err();
+        assert!(e.to_string().contains("'query'"));
+    }
+
+    #[test]
+    fn mcp_create_rejects_oversize_path() {
+        assert!(validate_create_path(&"p".repeat(1024)).is_ok());
+        let e = validate_create_path(&"p".repeat(1025)).unwrap_err();
+        assert!(e.to_string().contains("'path'"));
+    }
 
     #[tokio::test(flavor = "current_thread")]
     async fn mcp_search_repos_is_read_only() {
