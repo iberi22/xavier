@@ -4,6 +4,7 @@
 //! broadcast bus into SQLite so agents can replay what they missed after a
 //! restart. Publishers are unchanged. Retention is bounded by age and rows.
 use crate::coordination::events::{XavierEvent, XavierEventBus};
+use crate::espacio::keys::{KeyHandle, DEFAULT_SPACE_ID};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tokio::sync::broadcast::error::RecvError;
+
+/// Associated data kind string bound into the payload seal.
+pub const EVENT_PAYLOAD_KIND: &str = "bus.event.payload";
 
 /// Default retention: 7 days.
 pub const DEFAULT_MAX_AGE_DAYS: i64 = 7;
@@ -71,6 +75,7 @@ pub struct LoggedEvent {
 pub struct EventLog {
     conn: Mutex<Connection>,
     retention: RetentionConfig,
+    injected_key: Option<KeyHandle>,
 }
 
 impl EventLog {
@@ -81,6 +86,15 @@ impl EventLog {
 
     /// Open (creating if needed) the log in `state_dir`.
     pub fn open(state_dir: &Path, retention: RetentionConfig) -> rusqlite::Result<Arc<Self>> {
+        Self::open_with_key(state_dir, retention, None)
+    }
+
+    /// Open (creating if needed) the log in `state_dir` with an injected key handle.
+    pub fn open_with_key(
+        state_dir: &Path,
+        retention: RetentionConfig,
+        key: Option<KeyHandle>,
+    ) -> rusqlite::Result<Arc<Self>> {
         let path = Self::db_path(state_dir);
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -102,7 +116,32 @@ impl EventLog {
         Ok(Arc::new(Self {
             conn: Mutex::new(conn),
             retention,
+            injected_key: key,
         }))
+    }
+
+    /// Attach an explicit key handle to this event log.
+    pub fn with_key(mut self, key: KeyHandle) -> Self {
+        self.injected_key = Some(key);
+        self
+    }
+
+    /// Resolve the sealing key: injected key if set, then default-space key if keystore exists,
+    /// or None if no keystore exists. Fails closed if keystore exists but cannot be opened.
+    fn resolve_key(&self) -> rusqlite::Result<Option<KeyHandle>> {
+        if let Some(ref k) = self.injected_key {
+            return Ok(Some(k.clone()));
+        }
+        use crate::memory::sqlite_vec_store::at_rest;
+        if !at_rest::default_keystore_exists() {
+            return Ok(None);
+        }
+        at_rest::default_space_key().map(Some).map_err(|e| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("event log: default-space key unavailable: {e}"),
+            )))
+        })
     }
 
     fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -116,17 +155,59 @@ impl EventLog {
         session_id: Option<&str>,
         payload: &serde_json::Value,
     ) -> rusqlite::Result<i64> {
-        let conn = self.conn();
-        conn.execute(
-            "INSERT INTO bus_events (ts, kind, session_id, payload_json) VALUES (?1, ?2, ?3, ?4)",
-            params![
-                Utc::now().timestamp_millis(),
-                kind,
-                session_id,
-                payload.to_string()
-            ],
-        )?;
-        Ok(conn.last_insert_rowid())
+        let key = self.resolve_key()?;
+        self.append_with_key(kind, session_id, payload, key.as_ref())
+    }
+
+    /// Append one event with an explicit key (`None` writes legacy clear).
+    pub fn append_with_key(
+        &self,
+        kind: &str,
+        session_id: Option<&str>,
+        payload: &serde_json::Value,
+        key: Option<&KeyHandle>,
+    ) -> rusqlite::Result<i64> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let now_ms = Utc::now().timestamp_millis();
+        let payload_str = payload.to_string();
+
+        let id = match key {
+            Some(dek) => {
+                tx.execute(
+                    "INSERT INTO bus_events (ts, kind, session_id, payload_json) VALUES (?1, ?2, ?3, '')",
+                    params![now_ms, kind, session_id],
+                )?;
+                let row_id = tx.last_insert_rowid();
+                let sealed = dek
+                    .seal_record(
+                        DEFAULT_SPACE_ID,
+                        EVENT_PAYLOAD_KIND,
+                        &row_id.to_string(),
+                        &payload_str,
+                    )
+                    .map_err(|e| {
+                        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
+                            format!("failed to seal event payload: {e}"),
+                        )))
+                    })?;
+                tx.execute(
+                    "UPDATE bus_events SET payload_json = ?1 WHERE id = ?2",
+                    params![sealed, row_id],
+                )?;
+                row_id
+            }
+            None => {
+                tx.execute(
+                    "INSERT INTO bus_events (ts, kind, session_id, payload_json) VALUES (?1, ?2, ?3, ?4)",
+                    params![now_ms, kind, session_id, payload_str],
+                )?;
+                tx.last_insert_rowid()
+            }
+        };
+
+        tx.commit()?;
+        Ok(id)
     }
 
     fn query(
@@ -134,6 +215,18 @@ impl EventLog {
         where_clause: &str,
         bound: i64,
         limit: usize,
+    ) -> rusqlite::Result<Vec<LoggedEvent>> {
+        let key = self.resolve_key()?;
+        self.query_with_key(where_clause, bound, limit, key.as_ref())
+    }
+
+    /// Query events with an explicit key (`None` opens clear rows only).
+    pub fn query_with_key(
+        &self,
+        where_clause: &str,
+        bound: i64,
+        limit: usize,
+        key: Option<&KeyHandle>,
     ) -> rusqlite::Result<Vec<LoggedEvent>> {
         let limit = limit.clamp(1, MAX_REPLAY_LIMIT) as i64;
         let conn = self.conn();
@@ -143,13 +236,45 @@ impl EventLog {
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![bound, limit], |row| {
+            let id: i64 = row.get(0)?;
+            let ts: i64 = row.get(1)?;
+            let kind: String = row.get(2)?;
+            let session_id: Option<String> = row.get(3)?;
             let raw: String = row.get(4)?;
+
+            let plain = if crate::espacio::keys::looks_encrypted(&raw) {
+                let dek = key.ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        4,
+                        rusqlite::types::Type::Text,
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::PermissionDenied,
+                            format!("event {id} is sealed but no decryption key is available"),
+                        )),
+                    )
+                })?;
+                dek.open_record(DEFAULT_SPACE_ID, EVENT_PAYLOAD_KIND, &id.to_string(), &raw)
+                    .map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("failed to open sealed event {id}: {e}"),
+                            )),
+                        )
+                    })?
+            } else {
+                raw
+            };
+
+            let payload = serde_json::from_str(&plain).unwrap_or(serde_json::Value::Null);
             Ok(LoggedEvent {
-                id: row.get(0)?,
-                ts: row.get(1)?,
-                kind: row.get(2)?,
-                session_id: row.get(3)?,
-                payload: serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null),
+                id,
+                ts,
+                kind,
+                session_id,
+                payload,
             })
         })?;
         rows.collect()
@@ -157,12 +282,34 @@ impl EventLog {
 
     /// Events with `id > since_id`, oldest first.
     pub fn since_id(&self, since_id: i64, limit: usize) -> rusqlite::Result<Vec<LoggedEvent>> {
-        self.query("id", since_id, limit)
+        let key = self.resolve_key()?;
+        self.since_id_with_key(since_id, limit, key.as_ref())
+    }
+
+    /// Events with `id > since_id` with an explicit key, oldest first.
+    pub fn since_id_with_key(
+        &self,
+        since_id: i64,
+        limit: usize,
+        key: Option<&KeyHandle>,
+    ) -> rusqlite::Result<Vec<LoggedEvent>> {
+        self.query_with_key("id", since_id, limit, key)
     }
 
     /// Events with `ts > since_ms` (unix milliseconds), oldest first.
     pub fn since_ts(&self, since_ms: i64, limit: usize) -> rusqlite::Result<Vec<LoggedEvent>> {
-        self.query("ts", since_ms, limit)
+        let key = self.resolve_key()?;
+        self.since_ts_with_key(since_ms, limit, key.as_ref())
+    }
+
+    /// Events with `ts > since_ms` (unix milliseconds) with an explicit key, oldest first.
+    pub fn since_ts_with_key(
+        &self,
+        since_ms: i64,
+        limit: usize,
+        key: Option<&KeyHandle>,
+    ) -> rusqlite::Result<Vec<LoggedEvent>> {
+        self.query_with_key("ts", since_ms, limit, key)
     }
 
     /// Total rows currently stored.
@@ -196,14 +343,40 @@ pub fn replay(
     since: Option<&str>,
     limit: usize,
 ) -> Result<Vec<LoggedEvent>, String> {
+    replay_with_key(log, since, limit, None)
+}
+
+/// Parse the `since` query value with an explicit key override.
+pub fn replay_with_key(
+    log: &EventLog,
+    since: Option<&str>,
+    limit: usize,
+    key: Option<&KeyHandle>,
+) -> Result<Vec<LoggedEvent>, String> {
     match since.map(str::trim).filter(|s| !s.is_empty()) {
-        None => log.since_id(0, limit).map_err(|e| e.to_string()),
+        None => match key {
+            Some(k) => log
+                .since_id_with_key(0, limit, Some(k))
+                .map_err(|e| e.to_string()),
+            None => log.since_id(0, limit).map_err(|e| e.to_string()),
+        },
         Some(raw) => {
             if let Ok(id) = raw.parse::<i64>() {
-                log.since_id(id, limit).map_err(|e| e.to_string())
+                match key {
+                    Some(k) => log
+                        .since_id_with_key(id, limit, Some(k))
+                        .map_err(|e| e.to_string()),
+                    None => log.since_id(id, limit).map_err(|e| e.to_string()),
+                }
             } else if let Ok(ts) = DateTime::parse_from_rfc3339(raw) {
-                log.since_ts(ts.timestamp_millis(), limit)
-                    .map_err(|e| e.to_string())
+                match key {
+                    Some(k) => log
+                        .since_ts_with_key(ts.timestamp_millis(), limit, Some(k))
+                        .map_err(|e| e.to_string()),
+                    None => log
+                        .since_ts(ts.timestamp_millis(), limit)
+                        .map_err(|e| e.to_string()),
+                }
             } else {
                 Err("since must be an event id or an RFC 3339 timestamp".to_string())
             }
@@ -315,6 +488,14 @@ mod tests {
     use super::*;
     use crate::domain::cycle_breaks::w30_09::{SessionEvent, SessionEventType};
 
+    fn test_key_handle(dir: &std::path::Path) -> KeyHandle {
+        use crate::espacio::keys::{KeyRing, StaticNodeKek, UnlockMode};
+        let ring = KeyRing::new(dir, std::sync::Arc::new(StaticNodeKek::new([0x42; 32])));
+        ring.create_keys("default", UnlockMode::NodeUnlock, None)
+            .expect("keys")
+            .0
+    }
+
     fn agent_event(n: u32) -> XavierEvent {
         XavierEvent::AgentTaskStarted {
             agent_id: format!("agent-{n}"),
@@ -330,6 +511,138 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         panic!("event log never reached {want} rows");
+    }
+
+    #[test]
+    fn test_adversary_event_payload_encrypted_at_rest_and_legacy_clear_readable() {
+        const CANARY: &str = "CANARY-BUS-EVENT-PAYLOAD-9f3b7c";
+        let dir = tempfile::tempdir().expect("tempdir");
+        let keys_dir = tempfile::tempdir().expect("tempdir");
+        let dek = test_key_handle(keys_dir.path());
+
+        let log =
+            EventLog::open_with_key(dir.path(), RetentionConfig::default(), Some(dek.clone()))
+                .expect("open with key");
+
+        // Real write function
+        let payload = serde_json::json!({
+            "marker": CANARY,
+            "secret_field": 12345
+        });
+        let (kind, session_id, _) = describe(&XavierEvent::AgentTaskStarted {
+            agent_id: "agent-canary".into(),
+            task_id: "task-canary".into(),
+        });
+        let event_id = log
+            .append(&kind, session_id.as_deref(), &payload)
+            .expect("append");
+
+        // Read raw sqlite file bytes and wal file bytes if present, assert canary is absent
+        let db_path = EventLog::db_path(dir.path());
+        let db_bytes = std::fs::read(&db_path).expect("read db bytes");
+        assert!(
+            db_bytes
+                .windows(CANARY.len())
+                .all(|w| w != CANARY.as_bytes()),
+            "plaintext canary found in sqlite db file"
+        );
+
+        let wal_path = dir.path().join("events").join("bus_events.sqlite3-wal");
+        if wal_path.exists() {
+            let wal_bytes = std::fs::read(&wal_path).expect("read wal bytes");
+            assert!(
+                wal_bytes
+                    .windows(CANARY.len())
+                    .all(|w| w != CANARY.as_bytes()),
+                "plaintext canary found in sqlite wal file"
+            );
+        }
+
+        // Checkpoint WAL and verify main db file still has no canary
+        let _ = log.conn().execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+        let db_bytes_post = std::fs::read(&db_path).expect("read db bytes post checkpoint");
+        assert!(
+            db_bytes_post
+                .windows(CANARY.len())
+                .all(|w| w != CANARY.as_bytes()),
+            "plaintext canary found in sqlite db file after checkpoint"
+        );
+
+        // Read it back through real read path and get the plaintext
+        let events = log.since_id(0, 10).expect("read back");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].id, event_id);
+        assert_eq!(events[0].payload["marker"], CANARY);
+
+        // Insert a legacy clear row by raw SQL and read it back
+        const LEGACY_CANARY: &str = "LEGACY-CLEAR-PAYLOAD-8a1e2d";
+        let legacy_json = serde_json::json!({ "legacy": LEGACY_CANARY }).to_string();
+        log.conn()
+            .execute(
+                "INSERT INTO bus_events (ts, kind, session_id, payload_json) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    Utc::now().timestamp_millis(),
+                    "LegacyEvent",
+                    Some("sess-legacy"),
+                    legacy_json
+                ],
+            )
+            .expect("raw sql insert legacy clear row");
+
+        let all_events = log.since_id(0, 10).expect("read back including legacy");
+        assert_eq!(all_events.len(), 2);
+        let sealed_ev = all_events
+            .iter()
+            .find(|e| e.id == event_id)
+            .expect("found sealed");
+        assert_eq!(sealed_ev.payload["marker"], CANARY);
+        let legacy_ev = all_events
+            .iter()
+            .find(|e| e.kind == "LegacyEvent")
+            .expect("found legacy");
+        assert_eq!(legacy_ev.payload["legacy"], LEGACY_CANARY);
+
+        // Read sealed row without key: must be an error, not a panic
+        let locked_log = EventLog::open_with_key(dir.path(), RetentionConfig::default(), None)
+            .expect("open without key");
+        assert!(
+            locked_log.since_id(0, 10).is_err(),
+            "reading sealed row without key must be an error"
+        );
+
+        // Anti-swap verification: if row ID is tampered, authentication must fail
+        log.conn()
+            .execute(
+                "UPDATE bus_events SET id = 9999 WHERE id = ?1",
+                params![event_id],
+            )
+            .expect("swap row id");
+        assert!(
+            log.since_id(0, 10).is_err(),
+            "opening sealed row with mismatched id must fail authentication"
+        );
+    }
+
+    #[tokio::test]
+    async fn published_event_with_encryption_is_logged_and_readable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let keys_dir = tempfile::tempdir().expect("tempdir");
+        let dek = test_key_handle(keys_dir.path());
+        let bus = XavierEventBus::new(16);
+        {
+            let log =
+                EventLog::open_with_key(dir.path(), RetentionConfig::default(), Some(dek.clone()))
+                    .expect("open");
+            spawn_subscriber(&bus, Arc::clone(&log));
+            bus.publish(agent_event(1)).expect("publish");
+            wait_for_count(&log, 1).await;
+        }
+        let reopened = EventLog::open_with_key(dir.path(), RetentionConfig::default(), Some(dek))
+            .expect("reopen");
+        let events = reopened.since_id(0, 10).expect("query");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, "AgentTaskStarted");
+        assert_eq!(events[0].session_id.as_deref(), Some("agent-1"));
     }
 
     #[tokio::test]
