@@ -543,11 +543,35 @@ async fn test_e2e_publish_non_internal_rejected_live() {
     let (url, _dir, _state) = start_f12_server().await;
     let client = reqwest::Client::new();
 
+    // Publishes must carry a proof signed by the publishing node's key.
+    let publisher = NodeIdentity::generate();
+    let challenge: xavier::mesh::wallet_ownership::WalletChallenge = client
+        .get(format!(
+            "{}/v1/f12/service-network/challenge?public_key_hex={}",
+            url,
+            xavier::crypto::hex_encode(&publisher.public_key)
+        ))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let raw_payload = "memory_count=user@example.com index_files=/home/user/secret.txt";
+    let scope = xavier::mesh::service_network::telemetry_publish_scope(
+        &publisher.node_id,
+        &ServiceKind::Custom("ops".to_string()),
+        raw_payload,
+        0,
+    );
+    let proof =
+        xavier::mesh::service_network::sign_telemetry_publish(&publisher, &challenge, &scope);
     let pub_res = client
         .post(format!("{}/v1/f12/service-network/telemetry", url))
         .json(&serde_json::json!({
-            "node_id": "node-pub",
-            "payload": "user user@example.com path /home/user/secret.txt"
+            "node_id": publisher.node_id.as_str(),
+            "payload": raw_payload,
+            "proof": proof,
         }))
         .send()
         .await

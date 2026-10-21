@@ -32,7 +32,10 @@ use crate::mesh::private_mesh::{
 };
 use crate::mesh::public_directory::PublicDirectory;
 use crate::mesh::public_rag::{search_public, PublicRagResult};
-use crate::mesh::service_network::{ServiceKind, ServiceRegistry, TelemetrySample};
+use crate::mesh::service_network::{
+    apply_metric_whitelist, node_proof_subject, telemetry_publish_scope, verify_telemetry_publish,
+    ServiceKind, ServiceRegistry, TelemetryLimits, TelemetrySample, TELEMETRY_METRIC_WHITELIST,
+};
 use crate::mesh::visibility::Visibility;
 use crate::mesh::wallet_ownership::{
     issue_wallet_challenge, verify_wallet_action, verify_wallet_registration,
@@ -125,7 +128,14 @@ impl F12State {
     fn service_network_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
         let mut reg = self.registry.lock();
         if reg.service_network.is_none() {
-            reg.service_network = Some(ServiceRegistry::new());
+            let path = self.data_dir.join("mesh/service-telemetry.db");
+            reg.service_network = Some(
+                ServiceRegistry::open_with_telemetry_store(&path, TelemetryLimits::default())
+                    .unwrap_or_else(|e| {
+                        tracing::warn!(error = %e, "service telemetry store unavailable");
+                        ServiceRegistry::new()
+                    }),
+            );
         }
         reg
     }
@@ -227,6 +237,9 @@ pub struct PublishTelemetryRequest {
     pub kind: Option<ServiceKind>,
     pub payload: String,
     pub ts: Option<i64>,
+    /// Node proof: a challenge for the node key, signed for action
+    /// "telemetry-publish" and scope `telemetry_publish_scope(..)` of this request.
+    pub proof: Option<WalletRegistrationProof>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -669,32 +682,63 @@ pub async fn reject_curation_review(
 
 pub async fn telemetry_metrics() -> impl IntoResponse {
     // Safe telemetry metric names (whitelist for the service network).
-    let safe: Vec<String> = [
-        "search_latency_ms",
-        "index_files",
-        "embedding_ok",
-        "memory_count",
-        "mesh_peers",
-        "cpu_pct",
-        "ram_mb",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
+    let safe: Vec<String> = TELEMETRY_METRIC_WHITELIST
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     Json(safe).into_response()
 }
 
+/// Issues a one-shot challenge for the node key `public_key_hex`, to be signed
+/// for a telemetry publish (same mechanism as the wallet node registry).
+pub async fn service_network_challenge(
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let Some(public_key) = params
+        .get("public_key_hex")
+        .and_then(|hex| crate::crypto::hex_decode(hex).ok())
+        .filter(|pk| pk.len() == 32)
+    else {
+        return (StatusCode::BAD_REQUEST, "public_key_hex is required").into_response();
+    };
+    match issue_wallet_challenge(&node_proof_subject(&public_key)) {
+        Ok(challenge) => Json(challenge).into_response(),
+        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "challenge unavailable").into_response(),
+    }
+}
+
+/// Publishes a telemetry sample signed by the publishing node. Only whitelisted
+/// `key=value` metrics are kept; the rest of the payload is dropped.
 pub async fn publish_service_telemetry(
     State(state): State<F12State>,
     Json(req): Json<PublishTelemetryRequest>,
 ) -> impl IntoResponse {
+    let node_id = NodeId(req.node_id);
+    let kind = req
+        .kind
+        .unwrap_or_else(|| ServiceKind::Custom("ops".to_string()));
+    let ts = req.ts.unwrap_or(0);
+    let Some(proof) = req.proof.as_ref() else {
+        return (StatusCode::UNAUTHORIZED, "node proof required").into_response();
+    };
+    let scope = telemetry_publish_scope(&node_id, &kind, &req.payload, ts);
+    if let Err(e) = verify_telemetry_publish(proof, &node_id, &scope) {
+        tracing::debug!(error = %e, "telemetry node proof rejected");
+        return (StatusCode::UNAUTHORIZED, "node proof rejected").into_response();
+    }
+    let Some(payload) = apply_metric_whitelist(&req.payload) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            "payload carries no whitelisted metric keys",
+        )
+            .into_response();
+    };
+
     let sample = TelemetrySample {
-        node_id: NodeId(req.node_id),
-        kind: req
-            .kind
-            .unwrap_or_else(|| ServiceKind::Custom("ops".to_string())),
-        payload: req.payload,
-        ts: req.ts.unwrap_or(0),
+        node_id,
+        kind,
+        payload,
+        ts,
         classification: "INTERNAL".to_string(),
     };
     let mut reg = state.service_network_mut();
@@ -1110,6 +1154,10 @@ pub fn router(state: F12State) -> Router {
             post(reject_curation_review),
         )
         .route("/v1/f12/telemetry/metrics", get(telemetry_metrics))
+        .route(
+            "/v1/f12/service-network/challenge",
+            get(service_network_challenge),
+        )
         .route(
             "/v1/f12/service-network/telemetry",
             post(publish_service_telemetry),
@@ -1684,37 +1732,65 @@ mod tests {
         assert!(v.as_array().unwrap().len() >= 3);
     }
 
-    #[tokio::test]
-    async fn test_service_network_telemetry_publish_and_consume_endpoints() {
-        let state = test_state();
-        let app = router(state.clone());
+    /// Builds a publish body for `node`, signed over `payload` by `signer` when given.
+    async fn telemetry_publish_body(
+        app: &Router,
+        node: &NodeIdentity,
+        payload: &str,
+        signer: Option<&NodeIdentity>,
+    ) -> serde_json::Value {
+        let mut body = serde_json::json!({
+            "node_id": node.node_id.as_str(),
+            "payload": payload,
+            "ts": 1_000,
+        });
+        if let Some(signer) = signer {
+            let resp = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!(
+                            "/v1/f12/service-network/challenge?public_key_hex={}",
+                            crate::crypto::hex_encode(&signer.public_key)
+                        ))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+            let challenge: WalletChallenge = serde_json::from_slice(&bytes).unwrap();
+            let scope = telemetry_publish_scope(
+                &node.node_id,
+                &ServiceKind::Custom("ops".to_string()),
+                payload,
+                1_000,
+            );
+            let proof =
+                crate::mesh::service_network::sign_telemetry_publish(signer, &challenge, &scope);
+            body["proof"] = serde_json::to_value(proof).unwrap();
+        }
+        body
+    }
 
-        // Publish endpoint POST /v1/f12/service-network/telemetry with PII email & phone
-        let req_body = r#"{"node_id": "xv1", "payload": "bench test user user@example.com phone +1-555-123-4567"}"#;
-        let resp = app
-            .clone()
+    async fn post_telemetry(app: &Router, body: &serde_json::Value) -> axum::response::Response {
+        app.clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
                     .uri("/v1/f12/service-network/telemetry")
                     .header("content-type", "application/json")
-                    .body(Body::from(req_body))
+                    .body(Body::from(body.to_string()))
                     .unwrap(),
             )
             .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let body = resp.into_body().collect().await.unwrap().to_bytes();
-        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v["classification"].as_str().unwrap(), "INTERNAL");
-        let payload = v["payload"].as_str().unwrap();
-        assert!(!payload.contains("user@example.com"));
-        assert!(!payload.contains("+1-555-123-4567"));
-        assert!(payload.contains("[EMAIL]"));
-        assert!(payload.contains("[PHONE]"));
+            .unwrap()
+    }
 
-        // Consume endpoint GET /v1/f12/service-network/telemetry?since=0
+    async fn consumed_telemetry(app: &Router) -> Vec<serde_json::Value> {
         let resp = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .uri("/v1/f12/service-network/telemetry?since=0")
@@ -1725,9 +1801,105 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
-        let samples: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_service_network_telemetry_publish_and_consume_endpoints() {
+        let state = test_state();
+        let app = router(state.clone());
+        let node = NodeIdentity::generate();
+
+        // PII in whitelisted metric values is scrubbed and the sample forced INTERNAL.
+        let payload = "memory_count=user@example.com mesh_peers=+1-555-123-4567";
+        let body = telemetry_publish_body(&app, &node, payload, Some(&node)).await;
+        let resp = post_telemetry(&app, &body).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["classification"].as_str().unwrap(), "INTERNAL");
+        let payload = v["payload"].as_str().unwrap();
+        assert!(!payload.contains("user@example.com"));
+        assert!(!payload.contains("+1-555-123-4567"));
+        assert!(payload.contains("[EMAIL]"));
+        assert!(payload.contains("[PHONE]"));
+
+        let samples = consumed_telemetry(&app).await;
         assert_eq!(samples.len(), 1);
-        assert_eq!(samples[0]["node_id"].as_str().unwrap(), "xv1");
+        assert_eq!(
+            samples[0]["node_id"].as_str().unwrap(),
+            node.node_id.as_str()
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_rejects_missing_or_bad_node_proof() {
+        let app = router(test_state());
+        let node = NodeIdentity::generate();
+        let other = NodeIdentity::generate();
+        let payload = "cpu_pct=12";
+
+        let unsigned = telemetry_publish_body(&app, &node, payload, None).await;
+        assert_eq!(
+            post_telemetry(&app, &unsigned).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        // Signed by a key that is not the publishing node's.
+        let wrong_key = telemetry_publish_body(&app, &node, payload, Some(&other)).await;
+        assert_eq!(
+            post_telemetry(&app, &wrong_key).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        // Valid signature, but the payload was changed after signing.
+        let mut tampered = telemetry_publish_body(&app, &node, payload, Some(&node)).await;
+        tampered["payload"] = serde_json::json!("cpu_pct=99");
+        assert_eq!(
+            post_telemetry(&app, &tampered).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        // A proof is one-shot: replaying an accepted body is refused.
+        let valid = telemetry_publish_body(&app, &node, payload, Some(&node)).await;
+        assert_eq!(post_telemetry(&app, &valid).await.status(), StatusCode::OK);
+        assert_eq!(
+            post_telemetry(&app, &valid).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        assert_eq!(consumed_telemetry(&app).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn publish_applies_key_whitelist() {
+        let state = test_state();
+        let app = router(state.clone());
+        let node = NodeIdentity::generate();
+
+        let payload = "cpu_pct=12.5 hostname=box ram_mb=512 api_key=abc free text";
+        let body = telemetry_publish_body(&app, &node, payload, Some(&node)).await;
+        let resp = post_telemetry(&app, &body).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(v["payload"], "cpu_pct=12.5 ram_mb=512");
+
+        let none_listed = telemetry_publish_body(&app, &node, "hostname=box", Some(&node)).await;
+        assert_eq!(
+            post_telemetry(&app, &none_listed).await.status(),
+            StatusCode::BAD_REQUEST
+        );
+
+        // The accepted sample is persisted under the node's data dir.
+        let reopened = ServiceRegistry::open_with_telemetry_store(
+            state.data_dir.join("mesh/service-telemetry.db"),
+            TelemetryLimits::default(),
+        )
+        .unwrap();
+        let persisted = reopened.consume_telemetry(0);
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].payload, "cpu_pct=12.5 ram_mb=512");
     }
 
     #[tokio::test]
