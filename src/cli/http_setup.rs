@@ -52,6 +52,8 @@ const ROOT_ONLY_PREFIXES: &[&str] = &[
     // tokens only pass the narrow own-space allowlist in
     // `space_token_may_access`, which also refuses these paths.
     "/api/v1/espacio/admin",
+    // Invite redemption issues a member token: root only.
+    "/api/v1/espacio/invites",
 ];
 
 /// POST routes that only read, so they need `read` and not `write`.
@@ -888,7 +890,10 @@ mod auth_limit_tests {
 
 #[cfg(test)]
 mod scope_policy_tests {
-    use super::{lease_may_access, required_scope, token_satisfies, RequiredScope};
+    use super::{
+        lease_may_access, required_scope, space_token_may_access, token_satisfies, RequiredScope,
+        SpaceRole,
+    };
     use axum::http::Method;
 
     fn scopes(list: &[&str]) -> Vec<String> {
@@ -988,6 +993,22 @@ mod scope_policy_tests {
     /// scope the old `_ => true` arm granted everywhere — therefore cleared
     /// the scope layer and only the role gate stood in front of the vault,
     /// where `/secrets/*` has to agree on three layers.
+    #[test]
+    fn invite_accept_is_root_only_and_never_a_space_token_path() {
+        let path = "/api/v1/espacio/invites/01ABC/accept";
+        assert_eq!(required_scope(&Method::POST, path), RequiredScope::RootOnly);
+        assert!(!token_satisfies(
+            &scopes(&["all"]),
+            &RequiredScope::RootOnly
+        ));
+        assert!(!space_token_may_access(
+            path,
+            "esp_a",
+            SpaceRole::Admin,
+            &Method::POST
+        ));
+    }
+
     #[test]
     fn clavis_es_root_only_para_todos_los_scopes() {
         for scope_list in [

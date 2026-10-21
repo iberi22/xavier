@@ -553,6 +553,79 @@ async fn isolation_matrix_over_real_http_and_across_restart() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn invites_are_single_use_admin_gated_and_grant_read() {
+    let (_keep, home, bin) = scratch();
+    let d = Daemon::spawn(&bin.0, &home, false).await;
+    let ta = create_space(&d, "esp_a", false).await;
+    d.add(&ta, "notes/a", "inviteonly platypus").await;
+    let inv = "/api/v1/espacio/spaces/esp_a/invites";
+
+    // A reader (non-admin) cannot create invites.
+    let (st, m) = d
+        .call(
+            Method::POST,
+            "/api/v1/espacio/spaces/esp_a/members",
+            Some(&ta),
+            Some(json!({"node_id": "reader-1", "role": "reader"})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{m}");
+    let (st, t) = d
+        .call(
+            Method::POST,
+            "/api/v1/espacio/spaces/esp_a/members/reader-1/token",
+            Some(&ta),
+            None,
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{t}");
+    let reader = t["token"].as_str().unwrap().to_string();
+    let body = json!({"target_node": "bob", "role": "reader"});
+    let (st, _) = d
+        .call(Method::POST, inv, Some(&reader), Some(body.clone()))
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, _) = d.call(Method::POST, inv, None, Some(body.clone())).await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+
+    // Root creates and lists; space tokens (even the owner's) are refused.
+    let (st, _) = d
+        .call(Method::POST, inv, Some(&ta), Some(body.clone()))
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, c) = d
+        .call(Method::POST, inv, Some(ROOT), Some(body.clone()))
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{c}");
+    let id = c["id"].as_str().unwrap().to_string();
+    let (st, l) = d.call(Method::GET, inv, Some(ROOT), None).await;
+    assert_eq!(st, StatusCode::OK, "{l}");
+    assert_eq!(l.as_array().unwrap().len(), 1, "{l}");
+    let (st, _) = d.call(Method::GET, inv, Some(&reader), None).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+
+    // Accept: not by a space token, once by root, never twice.
+    let acc = format!("/api/v1/espacio/invites/{id}/accept");
+    let who = json!({"member_display": "bob"});
+    let (st, _) = d
+        .call(Method::POST, &acc, Some(&ta), Some(who.clone()))
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, a) = d
+        .call(Method::POST, &acc, Some(ROOT), Some(who.clone()))
+        .await;
+    assert_eq!(st, StatusCode::OK, "{a}");
+    let bob = a["token"].as_str().unwrap().to_string();
+    let (st, a2) = d.call(Method::POST, &acc, Some(ROOT), Some(who)).await;
+    assert!(st.is_client_error(), "second accept must fail: {st} {a2}");
+    assert!(a2.get("token").is_none(), "{a2}");
+
+    // The accepted member can read the space.
+    let r = d.search(&bob, "inviteonly platypus", false).await;
+    assert!(results(&r).contains("platypus"), "{r}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spaces_off_leaves_the_legacy_path_unchanged() {
     let (_keep, home, bin) = scratch();
     let d = Daemon::spawn(&bin.0, &home, true).await;
