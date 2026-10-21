@@ -499,6 +499,54 @@ fn significant_hubs(hubs: Vec<HubNode>, limit: usize) -> Vec<HubNode> {
     out
 }
 
+/// Returns true if the symbol kind represents a definition (as opposed to an import, variable, etc.).
+fn is_definition_kind(kind: &SymbolKind) -> bool {
+    matches!(
+        kind,
+        SymbolKind::Function
+            | SymbolKind::Method
+            | SymbolKind::Struct
+            | SymbolKind::Enum
+            | SymbolKind::Trait
+            | SymbolKind::Impl
+            | SymbolKind::Class
+            | SymbolKind::Module
+            | SymbolKind::Route
+            | SymbolKind::Component
+            | SymbolKind::TypeAlias
+            | SymbolKind::Namespace
+            | SymbolKind::Constant
+    )
+}
+
+/// Rank priority for symbol kinds (lower number = higher preference on ties).
+/// Definition kinds are preferred over Import and Variable.
+fn kind_priority(kind: &SymbolKind) -> u8 {
+    match kind {
+        SymbolKind::Function
+        | SymbolKind::Method
+        | SymbolKind::Struct
+        | SymbolKind::Enum
+        | SymbolKind::Trait
+        | SymbolKind::Impl
+        | SymbolKind::Class
+        | SymbolKind::Module
+        | SymbolKind::Route
+        | SymbolKind::Component
+        | SymbolKind::TypeAlias
+        | SymbolKind::Namespace => 0,
+        SymbolKind::Constant => 1,
+        SymbolKind::Property
+        | SymbolKind::Field
+        | SymbolKind::Parameter
+        | SymbolKind::File
+        | SymbolKind::Symbol => 2,
+        SymbolKind::Variable => 3,
+        SymbolKind::Export => 4,
+        SymbolKind::Import => 5,
+    }
+}
+
 impl QueryEngine {
     pub fn new(db: Arc<CodeGraphDB>) -> Self {
         Self { db, cache: None }
@@ -685,12 +733,19 @@ impl QueryEngine {
                 }
             }
         } else {
-            let matches = self.db.find_by_name(symbol_name, 10)?;
-            let matches = if matches.is_empty() {
-                self.db.find_symbols(symbol_name, 10)?.symbols
-            } else {
-                matches
-            };
+            let mut matches = self.db.find_by_name(symbol_name, 50)?;
+            if matches.is_empty() {
+                matches = self.db.find_symbols(symbol_name, 50)?.symbols;
+            }
+            if matches.iter().any(|s| is_definition_kind(&s.kind)) {
+                matches.retain(|s| is_definition_kind(&s.kind));
+            }
+            matches.sort_by(|a, b| {
+                kind_priority(&a.kind)
+                    .cmp(&kind_priority(&b.kind))
+                    .then_with(|| a.file_path.cmp(&b.file_path))
+                    .then_with(|| a.start_line.cmp(&b.start_line))
+            });
             for sym in matches {
                 if let Some(id) = sym.stable_id {
                     if !start_ids.contains(&id) {
@@ -1217,8 +1272,14 @@ impl QueryEngine {
         use crate::rank::ranking_margin;
         let limit = limit.clamp(1, 200);
 
-        let exact = self.db.find_by_name(query_text, limit)?;
+        let mut exact = self.db.find_by_name(query_text, limit.max(50))?;
         if !exact.is_empty() {
+            exact.sort_by(|a, b| {
+                kind_priority(&a.kind)
+                    .cmp(&kind_priority(&b.kind))
+                    .then_with(|| a.file_path.cmp(&b.file_path))
+                    .then_with(|| a.start_line.cmp(&b.start_line))
+            });
             let hits: Vec<RankedSymbol> = exact
                 .into_iter()
                 .take(limit)
@@ -1263,6 +1324,7 @@ impl QueryEngine {
             b.score
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| kind_priority(&a.symbol.kind).cmp(&kind_priority(&b.symbol.kind)))
                 .then_with(|| a.symbol.name.cmp(&b.symbol.name))
         });
         hits.truncate(limit);
@@ -1359,10 +1421,34 @@ impl QueryEngine {
         if query.len() == 64 && query.chars().all(|ch| ch.is_ascii_hexdigit()) {
             return Ok(Some(query.to_string()));
         }
-        if let Some(symbol) = self.db.find_symbols(query, 1)?.symbols.into_iter().next() {
-            return Ok(symbol.stable_id);
+
+        let exact = self.db.find_by_name(query, 50)?;
+        let mut candidates = exact;
+        if candidates.is_empty() || !candidates.iter().any(|s| is_definition_kind(&s.kind)) {
+            let fts_matches = self.db.find_symbols(query, 50)?.symbols;
+            if candidates.is_empty() {
+                candidates = fts_matches;
+            } else {
+                for s in fts_matches {
+                    if !candidates.iter().any(|c| c.stable_id == s.stable_id) {
+                        candidates.push(s);
+                    }
+                }
+            }
         }
-        Ok(None)
+
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+
+        candidates.sort_by(|a, b| {
+            kind_priority(&a.kind)
+                .cmp(&kind_priority(&b.kind))
+                .then_with(|| a.file_path.cmp(&b.file_path))
+                .then_with(|| a.start_line.cmp(&b.start_line))
+        });
+
+        Ok(candidates.into_iter().find_map(|s| s.stable_id))
     }
 
     /// Find by file
@@ -1793,5 +1879,169 @@ mod inline_typed_cycle_tests {
         // Single-token behaviour unchanged.
         let res = query.search("calculate", 10).expect("search");
         assert_eq!(res.symbols.len(), 2);
+    }
+    #[test]
+    fn route_prefers_definition_over_import() {
+        let db = CodeGraphDB::in_memory().expect("in-memory db");
+        let import_sym = Symbol {
+            name: "handle_tool_call".to_string(),
+            kind: SymbolKind::Import,
+            lang: crate::types::Language::Rust,
+            file_path: "/src/client.rs".to_string(),
+            start_line: 1,
+            end_line: 1,
+            ..Default::default()
+        };
+        let fn_sym = Symbol {
+            name: "handle_tool_call".to_string(),
+            kind: SymbolKind::Function,
+            lang: crate::types::Language::Rust,
+            file_path: "/src/server.rs".to_string(),
+            start_line: 10,
+            end_line: 30,
+            ..Default::default()
+        };
+        let var_sym = Symbol {
+            name: "handle_tool_call".to_string(),
+            kind: SymbolKind::Variable,
+            lang: crate::types::Language::Rust,
+            file_path: "/src/local.rs".to_string(),
+            start_line: 5,
+            end_line: 5,
+            ..Default::default()
+        };
+        db.insert_symbol(&import_sym).expect("insert import");
+        db.insert_symbol(&fn_sym).expect("insert fn");
+        db.insert_symbol(&var_sym).expect("insert var");
+
+        let query = QueryEngine::new(Arc::new(db));
+        let report = query
+            .route_query("handle_tool_call", 10)
+            .expect("route query");
+
+        assert!(!report.hits.is_empty(), "expected hits for exact query");
+        assert_eq!(
+            report.hits[0].symbol.kind,
+            SymbolKind::Function,
+            "definition kind must be ranked above Import and Variable on ties"
+        );
+        assert_eq!(report.hits[0].symbol.file_path, "/src/server.rs");
+
+        // Verify limit=1 also returns the definition rather than the first inserted Import
+        let report_1 = query
+            .route_query("handle_tool_call", 1)
+            .expect("route query limit 1");
+        assert_eq!(report_1.hits.len(), 1);
+        assert_eq!(report_1.hits[0].symbol.kind, SymbolKind::Function);
+    }
+
+    #[test]
+    fn trace_resolves_definition() {
+        let db = Arc::new(CodeGraphDB::in_memory().expect("in-memory db"));
+        let import_sym = Symbol {
+            name: "target_fn".to_string(),
+            kind: SymbolKind::Import,
+            lang: crate::types::Language::Rust,
+            file_path: "/src/main.rs".to_string(),
+            start_line: 2,
+            end_line: 2,
+            ..Default::default()
+        };
+        let fn_sym = Symbol {
+            name: "target_fn".to_string(),
+            kind: SymbolKind::Function,
+            lang: crate::types::Language::Rust,
+            file_path: "/src/service.rs".to_string(),
+            start_line: 20,
+            end_line: 40,
+            ..Default::default()
+        };
+        let callee_sym = Symbol {
+            name: "callee_fn".to_string(),
+            kind: SymbolKind::Function,
+            lang: crate::types::Language::Rust,
+            file_path: "/src/service.rs".to_string(),
+            start_line: 50,
+            end_line: 60,
+            ..Default::default()
+        };
+        db.insert_symbol(&import_sym).expect("insert import");
+        db.insert_symbol(&fn_sym).expect("insert fn");
+        db.insert_symbol(&callee_sym).expect("insert callee");
+
+        let target_syms = db.find_by_name("target_fn", 10).expect("find target_fn");
+        let fn_id = target_syms
+            .iter()
+            .find(|s| s.kind == SymbolKind::Function)
+            .and_then(|s| s.stable_id.clone())
+            .expect("fn stable id");
+        let callee_id = db.find_by_name("callee_fn", 1).expect("find callee_fn")[0]
+            .stable_id
+            .clone()
+            .expect("callee stable id");
+
+        // Edge exists only from the defining Function, NOT from the Import
+        db.insert_edge(&CodeEdge {
+            id: None,
+            from_symbol: fn_id.clone(),
+            to_symbol: callee_id.clone(),
+            edge_type: EdgeType::Calls,
+            file_path: "/src/service.rs".to_string(),
+            line: 25,
+            confidence: 1.0,
+            metadata: None,
+        })
+        .expect("insert edge");
+
+        let query = QueryEngine::new(db.clone());
+        let deps = query
+            .dependencies("target_fn", Some(EdgeType::Calls), 2, 10)
+            .expect("query dependencies");
+
+        assert_eq!(
+            deps.len(),
+            1,
+            "forward trace of existing function must resolve to definition and find outgoing calls"
+        );
+        assert_eq!(deps[0].from_symbol, fn_id);
+        assert_eq!(deps[0].to_symbol, callee_id);
+
+        // Fallback: if only import exists, it should still resolve to import
+        let fallback_sym = Symbol {
+            name: "only_import".to_string(),
+            kind: SymbolKind::Import,
+            lang: crate::types::Language::Rust,
+            file_path: "/src/fallback.rs".to_string(),
+            start_line: 1,
+            end_line: 1,
+            ..Default::default()
+        };
+        db.insert_symbol(&fallback_sym)
+            .expect("insert fallback_sym");
+        let fallback_id = db.find_by_name("only_import", 1).expect("find fallback")[0]
+            .stable_id
+            .clone()
+            .expect("fallback id");
+        db.insert_edge(&CodeEdge {
+            id: None,
+            from_symbol: fallback_id.clone(),
+            to_symbol: callee_id.clone(),
+            edge_type: EdgeType::Calls,
+            file_path: "/src/fallback.rs".to_string(),
+            line: 1,
+            confidence: 1.0,
+            metadata: None,
+        })
+        .expect("insert fallback edge");
+
+        let fallback_deps = query
+            .dependencies("only_import", Some(EdgeType::Calls), 2, 10)
+            .expect("query fallback deps");
+        assert_eq!(
+            fallback_deps.len(),
+            1,
+            "must fall back to other kinds if no definition exists"
+        );
+        assert_eq!(fallback_deps[0].from_symbol, fallback_id);
     }
 }
