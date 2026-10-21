@@ -51,6 +51,20 @@ async fn ticket_create_tool(
     }
 }
 
+/// Reads an optional string argument, rejecting a present value of another type.
+fn optional_str_arg<'a>(arguments: &'a Value, key: &str) -> Result<Option<&'a str>, String> {
+    match arguments.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) => Ok(Some(s.as_str())),
+        Some(_) => Err(format!("Invalid argument '{key}': expected string")),
+    }
+}
+
+/// Reads a required string argument, telling a missing value from a wrong type.
+fn required_str_arg<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, String> {
+    optional_str_arg(arguments, key)?.ok_or_else(|| format!("Missing required parameter: {key}"))
+}
+
 /// Get xavier core tools.
 pub fn get_xavier_core_tools() -> Vec<MCPTool> {
     vec![
@@ -999,42 +1013,34 @@ pub async fn handle_core_tool(
             ))?)
         }
         "ticket_create" => {
-            let title = arguments
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let body = arguments
-                .get("body")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let labels = arguments.get("labels").and_then(|v| {
-                v.as_array().map(|arr| {
-                    arr.iter()
-                        .filter_map(|item| item.as_str().map(|s| s.to_string()))
-                        .collect::<Vec<String>>()
-                })
-            });
-            let severity = arguments
-                .get("severity")
-                .and_then(|v| v.as_str())
-                .unwrap_or("warn")
-                .to_string();
-            let fingerprint = arguments
-                .get("fingerprint")
-                .and_then(|v| v.as_str().map(|s| s.to_string()));
-            let backend = arguments
-                .get("backend")
-                .and_then(|v| v.as_str().map(|s| s.to_string()));
-
-            let args = TicketCreateArgs {
-                title,
-                body,
-                labels,
-                severity,
-                fingerprint,
-                backend,
+            let parsed = (|| -> Result<TicketCreateArgs, String> {
+                let labels = match arguments.get("labels") {
+                    None | Some(Value::Null) => None,
+                    Some(Value::Array(items)) => Some(
+                        items
+                            .iter()
+                            .map(|item| item.as_str().map(str::to_string))
+                            .collect::<Option<Vec<String>>>()
+                            .ok_or("Invalid argument 'labels': expected array of strings")?,
+                    ),
+                    Some(_) => {
+                        return Err("Invalid argument 'labels': expected array of strings".into())
+                    }
+                };
+                let args = TicketCreateArgs {
+                    title: required_str_arg(&arguments, "title")?.to_string(),
+                    body: required_str_arg(&arguments, "body")?.to_string(),
+                    labels,
+                    severity: required_str_arg(&arguments, "severity")?.to_string(),
+                    fingerprint: optional_str_arg(&arguments, "fingerprint")?.map(str::to_string),
+                    backend: optional_str_arg(&arguments, "backend")?.map(str::to_string),
+                };
+                crate::self_manage::validate_ticket_args(&args)?;
+                Ok(args)
+            })();
+            let args = match parsed {
+                Ok(args) => args,
+                Err(msg) => return Ok(serde_json::to_value(MCPToolResult::text(msg, true))?),
             };
 
             let vault = HardwareVault::new(PRODUCTION_VAULT_SERVICE);
@@ -1751,6 +1757,56 @@ pub(crate) mod tests {
             severity: "warn".to_string(),
             fingerprint: Some(format!("v6c-test-{suffix}")),
             backend: Some(backend.to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn ticket_create_rejects_invalid_args() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let claims = admin_claims();
+        let valid = json!({"title": "t", "body": "b", "severity": "warn"});
+        let with = |key: &str, value: Value| {
+            let mut args = valid.clone();
+            args[key] = value;
+            args
+        };
+        let mut no_title = valid.clone();
+        no_title.as_object_mut().unwrap().remove("title");
+        let cases = vec![
+            (no_title, "Missing required parameter: title"),
+            (with("title", json!(7)), "'title': expected string"),
+            (with("title", json!("  ")), "'title': must not be empty"),
+            (with("title", json!("t".repeat(121))), "'title': exceeds"),
+            (with("body", json!(["b"])), "'body': expected string"),
+            (
+                with("body", json!("b".repeat(8 * 1024 + 1))),
+                "'body': exceeds",
+            ),
+            (with("severity", json!("info")), "'severity'"),
+            (with("severity", json!(1)), "'severity': expected string"),
+            (with("backend", json!("jira")), "'backend'"),
+            (with("backend", json!(true)), "'backend': expected string"),
+            (with("labels", json!("x")), "'labels'"),
+            (with("labels", json!(["a", 1])), "'labels'"),
+            (with("fingerprint", json!(3)), "'fingerprint'"),
+        ];
+        for (args, needle) in cases {
+            let res = handle_core_tool(
+                state.clone(),
+                workspace.clone(),
+                Some(&claims),
+                "ticket_create",
+                args.clone(),
+            )
+            .await
+            .expect("validation failures are tool results");
+            assert_eq!(res["isError"], true, "{args} -> {res}");
+            let text = res["content"][0]["text"].as_str().unwrap();
+            assert!(
+                text.contains(needle),
+                "{args}: expected {needle:?}, got {text}"
+            );
         }
     }
 

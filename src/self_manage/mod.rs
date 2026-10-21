@@ -1528,12 +1528,89 @@ pub struct TicketCreateResult {
     pub url: String,
     pub deduplicated: bool,
     pub backend: String,
+    /// True when the requested backend failed and the ticket was stored elsewhere.
+    #[serde(default)]
+    pub fallback: bool,
+}
+
+/// Maximum title length of a ticket, in characters.
+pub const TICKET_TITLE_MAX_CHARS: usize = 120;
+/// Maximum body size of a ticket, in bytes.
+pub const TICKET_BODY_MAX_BYTES: usize = 8 * 1024;
+const TICKET_SEVERITIES: [&str; 2] = ["critical", "warn"];
+const TICKET_BACKENDS: [&str; 2] = ["github", "maloca"];
+
+/// Checks ticket arguments, naming the offending argument on failure.
+pub fn validate_ticket_args(args: &TicketCreateArgs) -> Result<(), String> {
+    if args.title.trim().is_empty() {
+        return Err("Invalid argument 'title': must not be empty".into());
+    }
+    if args.title.chars().count() > TICKET_TITLE_MAX_CHARS {
+        return Err(format!(
+            "Invalid argument 'title': exceeds {TICKET_TITLE_MAX_CHARS} characters"
+        ));
+    }
+    if args.body.len() > TICKET_BODY_MAX_BYTES {
+        return Err(format!(
+            "Invalid argument 'body': exceeds {TICKET_BODY_MAX_BYTES} bytes"
+        ));
+    }
+    if !TICKET_SEVERITIES.contains(&args.severity.as_str()) {
+        return Err("Invalid argument 'severity': expected one of critical, warn".into());
+    }
+    if let Some(backend) = &args.backend {
+        if !TICKET_BACKENDS.contains(&backend.as_str()) {
+            return Err("Invalid argument 'backend': expected one of github, maloca".into());
+        }
+    }
+    Ok(())
+}
+
+/// Ticket sinks used by [`ticket_create`]; tests inject their own.
+pub trait TicketBackends {
+    /// Opens a GitHub issue and returns its URL.
+    fn github(&self, args: &TicketCreateArgs) -> anyhow::Result<String>;
+    /// Stores a Maloca support ticket and returns its id.
+    fn maloca(&self, args: &TicketCreateArgs) -> String;
+}
+
+struct DefaultTicketBackends;
+
+impl TicketBackends for DefaultTicketBackends {
+    fn github(&self, args: &TicketCreateArgs) -> anyhow::Result<String> {
+        use std::process::Command;
+        let mut cmd = Command::new("gh");
+        cmd.args(["issue", "create", "-t", &args.title, "-b", &args.body]);
+        if let Some(lbls) = &args.labels {
+            for l in lbls {
+                cmd.args(["-l", l]);
+            }
+        }
+        let output = cmd.output()?;
+        if !output.status.success() {
+            anyhow::bail!("gh issue create exited with {}", output.status);
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    fn maloca(&self, args: &TicketCreateArgs) -> String {
+        let store = crate::maloca::MalocaStore::open_default();
+        store
+            .create_support(crate::maloca::types::CreateSupportBody {
+                title: args.title.clone(),
+                body: args.body.clone(),
+                feature_id: None,
+            })
+            .id
+    }
 }
 
 /// Created tickets tracker registry for deduplication and sliding rate limit
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CreatedTicketsRegistry {
     pub fingerprints: HashMap<String, String>, // fingerprint -> ticket_id
+    #[serde(default)]
+    pub backends: HashMap<String, String>, // fingerprint -> backend that stored it
     #[serde(default)]
     pub creation_timestamps: Vec<u64>, // timestamp of ticket creations (seconds since epoch)
 }
@@ -1553,8 +1630,12 @@ fn tickets_registry_path() -> Option<std::path::PathBuf> {
 }
 
 pub fn load_tickets_registry() -> CreatedTicketsRegistry {
-    if let Some(p) = tickets_registry_path() {
-        if let Ok(content) = std::fs::read_to_string(&p) {
+    load_tickets_registry_from(tickets_registry_path().as_deref())
+}
+
+fn load_tickets_registry_from(path: Option<&std::path::Path>) -> CreatedTicketsRegistry {
+    if let Some(p) = path {
+        if let Ok(content) = std::fs::read_to_string(p) {
             if let Ok(registry) = serde_json::from_str(&content) {
                 return registry;
             }
@@ -1565,18 +1646,37 @@ pub fn load_tickets_registry() -> CreatedTicketsRegistry {
 
 /// Saves the tickets registry to ~/.xavier/state/tickets.json
 pub fn save_tickets_registry(reg: &CreatedTicketsRegistry) {
-    if let Some(p) = tickets_registry_path() {
+    save_tickets_registry_to(reg, tickets_registry_path().as_deref())
+}
+
+fn save_tickets_registry_to(reg: &CreatedTicketsRegistry, path: Option<&std::path::Path>) {
+    if let Some(p) = path {
         if let Some(parent) = p.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Ok(content) = serde_json::to_string_pretty(reg) {
-            let _ = std::fs::write(&p, content);
+            let _ = std::fs::write(p, content);
         }
     }
 }
 
 /// Create GitHub issue or Maloca backlog entry, preventing duplicates via fingerprint
 pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResult> {
+    ticket_create_with(
+        args,
+        tickets_registry_path().as_deref(),
+        &DefaultTicketBackends,
+    )
+}
+
+/// [`ticket_create`] over an explicit registry path and backend set.
+pub fn ticket_create_with(
+    args: TicketCreateArgs,
+    registry_path: Option<&std::path::Path>,
+    backends: &dyn TicketBackends,
+) -> anyhow::Result<TicketCreateResult> {
+    validate_ticket_args(&args).map_err(anyhow::Error::msg)?;
+
     let computed_fingerprint = args.fingerprint.clone().unwrap_or_else(|| {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
@@ -1585,7 +1685,7 @@ pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResul
         crate::crypto::hex_encode(hasher.finalize())
     });
 
-    let mut reg = load_tickets_registry();
+    let mut reg = load_tickets_registry_from(registry_path);
     let now = chrono::Utc::now().timestamp() as u64;
 
     // Prune timestamps older than 1 hour (3600s) for rate limit check
@@ -1593,17 +1693,19 @@ pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResul
         .retain(|&ts| now.saturating_sub(ts) < 3600);
 
     // 1. Strict Deduplication Check
-    if reg.fingerprints.contains_key(&computed_fingerprint) {
-        let id = reg
-            .fingerprints
+    if let Some(id) = reg.fingerprints.get(&computed_fingerprint).cloned() {
+        // Entries recorded before backends were tracked report "unknown".
+        let backend = reg
+            .backends
             .get(&computed_fingerprint)
             .cloned()
-            .unwrap_or_default();
+            .unwrap_or_else(|| "unknown".to_string());
         return Ok(TicketCreateResult {
             id,
             url: "".into(),
             deduplicated: true,
-            backend: args.backend.unwrap_or_else(|| "none".to_string()),
+            backend,
+            fallback: false,
         });
     }
 
@@ -1613,60 +1715,48 @@ pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResul
     }
 
     // 3. Create Ticket using specified/detected backend
-    let backend_selected = args.backend.unwrap_or_else(|| "maloca".to_string());
-    let mut ticket_id = format!("t-{}", &uuid::Uuid::new_v4().to_string()[..8]);
+    let mut backend_used = args.backend.clone().unwrap_or_else(|| "maloca".to_string());
+    let mut fallback = false;
     let mut url = "".to_string();
 
-    match backend_selected.as_str() {
-        "github" => {
-            use std::process::Command;
-            let mut cmd = Command::new("gh");
-            cmd.args(["issue", "create", "-t", &args.title, "-b", &args.body]);
-            if let Some(lbls) = &args.labels {
-                for l in lbls {
-                    cmd.args(["-l", l]);
-                }
+    let ticket_id = if backend_used == "github" {
+        match backends.github(&args) {
+            Ok(issue_url) => {
+                let id = issue_url
+                    .split('/')
+                    .next_back()
+                    .unwrap_or("issue")
+                    .to_string();
+                url = issue_url;
+                id
             }
-            match cmd.output() {
-                Ok(output) if output.status.success() => {
-                    url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    ticket_id = url.split('/').next_back().unwrap_or("issue").to_string();
-                }
-                _ => {
-                    // Fallback to maloca if gh command fails or is missing
-                    let store = crate::maloca::MalocaStore::open_default();
-                    let ticket = store.create_support(crate::maloca::types::CreateSupportBody {
-                        title: args.title.clone(),
-                        body: args.body.clone(),
-                        feature_id: None,
-                    });
-                    ticket_id = ticket.id;
-                }
+            Err(e) => {
+                // Fallback to maloca if gh command fails or is missing
+                tracing::warn!("ticket_create: github backend failed, using maloca: {e}");
+                backend_used = "maloca".to_string();
+                fallback = true;
+                backends.maloca(&args)
             }
         }
-        _ => {
-            // Drop a support ticket into Maloca
-            let store = crate::maloca::MalocaStore::open_default();
-            let ticket = store.create_support(crate::maloca::types::CreateSupportBody {
-                title: args.title.clone(),
-                body: args.body.clone(),
-                feature_id: None,
-            });
-            ticket_id = ticket.id;
-        }
-    }
+    } else {
+        // Drop a support ticket into Maloca
+        backends.maloca(&args)
+    };
 
     // Record and Save tracking state
     reg.fingerprints
-        .insert(computed_fingerprint, ticket_id.clone());
+        .insert(computed_fingerprint.clone(), ticket_id.clone());
+    reg.backends
+        .insert(computed_fingerprint, backend_used.clone());
     reg.creation_timestamps.push(now);
-    save_tickets_registry(&reg);
+    save_tickets_registry_to(&reg, registry_path);
 
     Ok(TicketCreateResult {
         id: ticket_id,
         url,
         deduplicated: false,
-        backend: backend_selected,
+        backend: backend_used,
+        fallback,
     })
 }
 
@@ -1737,5 +1827,136 @@ mod ticket_create_tests {
 
         // Clean up tickets registry
         save_tickets_registry(&CreatedTicketsRegistry::default());
+    }
+
+    /// Records calls instead of reaching GitHub or the real Maloca store.
+    struct FakeBackends {
+        github_ok: bool,
+        github_calls: std::cell::Cell<usize>,
+        maloca_calls: std::cell::Cell<usize>,
+    }
+
+    impl FakeBackends {
+        fn new(github_ok: bool) -> Self {
+            Self {
+                github_ok,
+                github_calls: std::cell::Cell::new(0),
+                maloca_calls: std::cell::Cell::new(0),
+            }
+        }
+    }
+
+    impl TicketBackends for FakeBackends {
+        fn github(&self, _args: &TicketCreateArgs) -> anyhow::Result<String> {
+            self.github_calls.set(self.github_calls.get() + 1);
+            if self.github_ok {
+                Ok("https://example.invalid/issues/42".to_string())
+            } else {
+                anyhow::bail!("github unavailable")
+            }
+        }
+
+        fn maloca(&self, _args: &TicketCreateArgs) -> String {
+            self.maloca_calls.set(self.maloca_calls.get() + 1);
+            "sup-fake".to_string()
+        }
+    }
+
+    fn args(title: &str, backend: Option<&str>) -> TicketCreateArgs {
+        TicketCreateArgs {
+            title: title.into(),
+            body: "evidence".into(),
+            labels: None,
+            severity: "warn".into(),
+            fingerprint: None,
+            backend: backend.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn ticket_dedupe_reports_original_backend() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = dir.path().join("tickets.json");
+        let fake = FakeBackends::new(true);
+
+        let first = ticket_create_with(args("dup", Some("github")), Some(&reg), &fake).unwrap();
+        assert!(!first.deduplicated);
+        assert_eq!(first.backend, "github");
+        assert_eq!(first.id, "42");
+
+        // Same fingerprint, no backend requested: the original backend is reported.
+        let again = ticket_create_with(args("dup", None), Some(&reg), &fake).unwrap();
+        assert!(again.deduplicated);
+        assert_eq!(again.id, "42");
+        assert_eq!(again.backend, "github");
+        assert!(!again.fallback);
+        assert_eq!(fake.github_calls.get(), 1);
+
+        // A different requested backend does not change the stored one.
+        let other = ticket_create_with(args("dup", Some("maloca")), Some(&reg), &fake).unwrap();
+        assert!(other.deduplicated);
+        assert_eq!(other.backend, "github");
+        assert_eq!(fake.maloca_calls.get(), 0);
+    }
+
+    #[test]
+    fn ticket_github_fallback_reports_maloca() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = dir.path().join("tickets.json");
+        let fake = FakeBackends::new(false);
+
+        let res = ticket_create_with(args("fb", Some("github")), Some(&reg), &fake).unwrap();
+        assert_eq!(fake.github_calls.get(), 1);
+        assert_eq!(fake.maloca_calls.get(), 1);
+        assert_eq!(res.backend, "maloca");
+        assert!(res.fallback);
+        assert_eq!(res.id, "sup-fake");
+        assert!(res.url.is_empty());
+
+        let again = ticket_create_with(args("fb", Some("github")), Some(&reg), &fake).unwrap();
+        assert!(again.deduplicated);
+        assert_eq!(again.backend, "maloca");
+    }
+
+    #[test]
+    fn ticket_create_validation_rejects_bad_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = dir.path().join("tickets.json");
+        let fake = FakeBackends::new(true);
+        let cases: Vec<(TicketCreateArgs, &str)> = vec![
+            (args("   ", None), "'title'"),
+            (
+                args(&"t".repeat(TICKET_TITLE_MAX_CHARS + 1), None),
+                "'title'",
+            ),
+            (
+                TicketCreateArgs {
+                    body: "b".repeat(TICKET_BODY_MAX_BYTES + 1),
+                    ..args("ok", None)
+                },
+                "'body'",
+            ),
+            (
+                TicketCreateArgs {
+                    severity: "info".into(),
+                    ..args("ok", None)
+                },
+                "'severity'",
+            ),
+            (args("ok", Some("jira")), "'backend'"),
+        ];
+        for (bad, needle) in cases {
+            let err = ticket_create_with(bad, Some(&reg), &fake).unwrap_err();
+            assert!(err.to_string().contains(needle), "{err}");
+        }
+        assert!(!reg.exists());
+        assert_eq!(fake.github_calls.get() + fake.maloca_calls.get(), 0);
+
+        // Limits are inclusive.
+        let edge = TicketCreateArgs {
+            body: "b".repeat(TICKET_BODY_MAX_BYTES),
+            ..args(&"t".repeat(TICKET_TITLE_MAX_CHARS), None)
+        };
+        assert!(validate_ticket_args(&edge).is_ok());
     }
 }
