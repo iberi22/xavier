@@ -16,6 +16,9 @@ use xavier::enterprise::rbac::Role;
 use xavier::memory::qmd_memory::MemoryDocument;
 use xavier::memory::schema::ClearanceLevel;
 use xavier::memory::store::MemoryBackend;
+use xavier::mesh::data_consent::{ConsentLevel, DataConsentManager};
+use xavier::mesh::data_sanitizer::DataSanitizer;
+use xavier::mesh::node::NodeId;
 use xavier::mesh::pairing_registry::PairingSecretRegistry;
 use xavier::mesh::service_network::{ServiceKind, ServiceRegistry, TelemetrySample};
 use xavier::mesh::{MeshTransport, NodeIdentity, PeerInfo};
@@ -639,6 +642,129 @@ async fn test_e2e_join_roundtrip_live() {
     assert_eq!(list_pub.status(), reqwest::StatusCode::OK);
     let pub_nets: Vec<serde_json::Value> = list_pub.json().await.unwrap();
     assert!(pub_nets.is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn test_e2e_data_commons() {
+    let (_url, _token, ws) = start_test_server().await;
+
+    // Export record containing a fake secret (sk-...) and fake PII (email, phone number)
+    let fake_secret = "sk-fake-not-a-real-key";
+    let fake_email = "alice.smith@example.org";
+    let fake_phone = "+1-555-019-2834";
+
+    let raw_record = serde_json::json!({
+        "metric_name": "data_commons_export",
+        "api_key": fake_secret,
+        "email": fake_email,
+        "phone": fake_phone,
+        "payload": "node-diagnostics-public-sample",
+        "timestamp": 1700000000
+    });
+
+    // Store in workspace memory to demonstrate real export from node memory
+    ws.memory
+        .add(MemoryDocument {
+            id: Some("data-commons-rec-1".to_string()),
+            path: "commons/export/sample".to_string(),
+            content: "Telemetry diagnostic record for Data Commons".to_string(),
+            metadata: raw_record.clone(),
+            ..Default::default()
+        })
+        .await
+        .expect("Failed to store export document");
+
+    let all_docs = ws.memory.all_documents().await;
+    let doc = all_docs
+        .iter()
+        .find(|d| d.id.as_deref() == Some("data-commons-rec-1"))
+        .expect("Document must exist in memory");
+    let record_to_export = &doc.metadata;
+
+    let raw_str = serde_json::to_string(record_to_export).unwrap();
+    assert!(raw_str.contains("sk-"));
+    assert!(raw_str.contains(fake_email));
+    assert!(raw_str.contains(fake_phone));
+
+    // Run through Data Commons export/sanitize path
+    let mut sanitizer = DataSanitizer::new();
+    // Default rules only: the test must not configure its own protection.
+    sanitizer.add_default_rules();
+
+    let sanitized_payload = sanitizer
+        .sanitize(record_to_export)
+        .expect("Data Commons sanitization must succeed");
+
+    let sanitized_str = serde_json::to_string(&sanitized_payload).unwrap();
+    assert!(
+        !sanitized_str.contains("sk-"),
+        "Sanitized payload must not contain secret key"
+    );
+    assert!(
+        !sanitized_str.contains(fake_email),
+        "Sanitized payload must not contain email"
+    );
+    assert!(
+        !sanitized_str.contains(fake_phone),
+        "Sanitized payload must not contain phone number"
+    );
+
+    // Consent enforcement via DataConsentManager
+    let node_id = NodeId("node-commons-exporter".to_string());
+    let mut consent_mgr = DataConsentManager::new(node_id);
+
+    // 1. Without consent nothing is shared
+    assert_eq!(
+        consent_mgr.get_consent("data_commons_export"),
+        ConsentLevel::None
+    );
+    let unconsented_share = consent_mgr
+        .sanitize_payload("data_commons_export", &sanitized_payload)
+        .expect("Consent check must succeed");
+    assert!(
+        unconsented_share.is_none(),
+        "Without consent nothing is shared"
+    );
+
+    // 2. With consent the sanitized payload is shared
+    consent_mgr.set_consent("data_commons_export", ConsentLevel::Full);
+    assert_eq!(
+        consent_mgr.get_consent("data_commons_export"),
+        ConsentLevel::Full
+    );
+    let consented_share = consent_mgr
+        .sanitize_payload("data_commons_export", &sanitized_payload)
+        .expect("Consent check must succeed");
+    assert!(
+        consented_share.is_some(),
+        "With consent the sanitized payload is shared"
+    );
+
+    let shared_payload = consented_share.unwrap();
+    let shared_str = serde_json::to_string(&shared_payload).unwrap();
+    assert!(
+        !shared_str.contains("sk-"),
+        "Shared payload must not contain secret key"
+    );
+    assert!(
+        !shared_str.contains(fake_email),
+        "Shared payload must not contain email"
+    );
+    assert!(
+        !shared_str.contains(fake_phone),
+        "Shared payload must not contain phone number"
+    );
+    assert!(
+        shared_str.contains("node-diagnostics-public-sample"),
+        "Shared payload must contain sanitized non-PII data"
+    );
+
+    // Verify P2P SyncFilter honors the granted consent
+    let peer_id = NodeId("node-peer-consumer".to_string());
+    let filter = xavier::mesh::p2p::SyncFilter::new(consent_mgr);
+    assert!(filter.is_allowed("data_commons_export", &peer_id));
+    assert!(!filter.is_allowed("unconsented_data_type", &peer_id));
 }
 
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
