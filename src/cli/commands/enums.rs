@@ -4,6 +4,7 @@
 //! used for parsing CLI arguments via clap.
 
 use clap::{Args, Subcommand, ValueEnum};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -537,6 +538,9 @@ pub enum SpaceCommand {
     Status {
         /// The space ID
         id: String,
+        /// Output in JSON format
+        #[arg(long, default_value_t = false)]
+        json: bool,
     },
     /// Manage space members
     Members {
@@ -566,7 +570,8 @@ pub enum SpaceCommand {
     },
 }
 
-#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UnlockMode {
     Node,
     Password,

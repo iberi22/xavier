@@ -1077,6 +1077,7 @@ where
             "/spaces/{id}",
             get(espacio_get_handler).delete(espacio_delete_handler),
         )
+        .route("/spaces/{id}/unlock", post(espacio_unlock_handler))
         .route(
             "/spaces/{id}/isolation/{other}",
             get(espacio_isolation_handler),
@@ -1115,6 +1116,7 @@ where
             "/admin/spaces/{id}",
             get(espacio_get_handler).delete(espacio_delete_handler),
         )
+        .route("/spaces/{id}/unlock", post(espacio_unlock_handler))
         .route_layer(axum::middleware::from_fn(require_root_credential));
     Router::new()
         .merge(admin)
@@ -1778,6 +1780,211 @@ pub async fn espacio_admin_list_handler(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnlockSpaceMode {
+    Node,
+    Password,
+    Recovery,
+}
+
+#[derive(Deserialize)]
+pub struct UnlockSpaceRequest {
+    pub mode: UnlockSpaceMode,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub recovery_code: Option<String>,
+}
+
+impl std::fmt::Debug for UnlockSpaceRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UnlockSpaceRequest")
+            .field("mode", &self.mode)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
+            .field(
+                "recovery_code",
+                &self.recovery_code.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
+/// POST /api/v1/espacio/spaces/{id}/unlock - unlock a space in the daemon space manager key ring
+pub async fn espacio_unlock_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(payload): Json<UnlockSpaceRequest>,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+
+    if manager.get(&id).await.is_err() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": format!("Space '{}' not found", id)
+            })),
+        )
+            .into_response();
+    }
+
+    let Some(ring) = manager.key_ring() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": "Key ring is not available"
+            })),
+        )
+            .into_response();
+    };
+
+    if !ring.has_keys(&id) {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": format!("Space '{}' has no keystore", id)
+            })),
+        )
+            .into_response();
+    }
+
+    let res = match payload.mode {
+        UnlockSpaceMode::Node => {
+            let ring_clone = ring.clone();
+            let id_clone = id.clone();
+            let outcome = run_blocking(async move { ring_clone.unlock_with_node(&id_clone) }).await;
+            match outcome {
+                Some(Ok(_)) => Ok(()),
+                Some(Err(e)) => {
+                    if let Some(crate::espacio::KeysError::AuthFailed) =
+                        e.downcast_ref::<crate::espacio::KeysError>()
+                    {
+                        Err((
+                            StatusCode::UNAUTHORIZED,
+                            "Unlock failed: node key mismatch".to_string(),
+                        ))
+                    } else if let Some(crate::espacio::KeysError::NoWrapper(_)) =
+                        e.downcast_ref::<crate::espacio::KeysError>()
+                    {
+                        Err((
+                            StatusCode::BAD_REQUEST,
+                            "Space does not support node unlock mode".to_string(),
+                        ))
+                    } else {
+                        Err((StatusCode::BAD_REQUEST, format!("Unlock failed: {e}")))
+                    }
+                }
+                None => Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Blocking task failure".to_string(),
+                )),
+            }
+        }
+        UnlockSpaceMode::Password => {
+            let Some(pw) = payload.password else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "status": "error",
+                        "message": "Password is required for password unlock mode"
+                    })),
+                )
+                    .into_response();
+            };
+            let ring_clone = ring.clone();
+            let id_clone = id.clone();
+            let outcome =
+                run_blocking(async move { ring_clone.unlock_with_password(&id_clone, &pw) }).await;
+            match outcome {
+                Some(Ok(_)) => Ok(()),
+                Some(Err(e)) => {
+                    if let Some(crate::espacio::KeysError::AuthFailed) =
+                        e.downcast_ref::<crate::espacio::KeysError>()
+                    {
+                        Err((StatusCode::UNAUTHORIZED, "wrong password".to_string()))
+                    } else if let Some(crate::espacio::KeysError::NoWrapper(_)) =
+                        e.downcast_ref::<crate::espacio::KeysError>()
+                    {
+                        Err((
+                            StatusCode::BAD_REQUEST,
+                            "Space has no password unlock wrapper".to_string(),
+                        ))
+                    } else {
+                        Err((StatusCode::BAD_REQUEST, format!("Unlock failed: {e}")))
+                    }
+                }
+                None => Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Blocking task failure".to_string(),
+                )),
+            }
+        }
+        UnlockSpaceMode::Recovery => {
+            let Some(code) = payload.recovery_code else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "status": "error",
+                        "message": "Recovery code is required for recovery unlock mode"
+                    })),
+                )
+                    .into_response();
+            };
+            let ring_clone = ring.clone();
+            let id_clone = id.clone();
+            let outcome =
+                run_blocking(async move { ring_clone.unlock_with_recovery(&id_clone, &code) })
+                    .await;
+            match outcome {
+                Some(Ok(_)) => Ok(()),
+                Some(Err(e)) => {
+                    if let Some(
+                        crate::espacio::KeysError::AuthFailed
+                        | crate::espacio::KeysError::BadRecoveryCode,
+                    ) = e.downcast_ref::<crate::espacio::KeysError>()
+                    {
+                        Err((
+                            StatusCode::UNAUTHORIZED,
+                            "invalid recovery code".to_string(),
+                        ))
+                    } else {
+                        Err((StatusCode::BAD_REQUEST, format!("Unlock failed: {e}")))
+                    }
+                }
+                None => Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Blocking task failure".to_string(),
+                )),
+            }
+        }
+    };
+
+    match res {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "status": "ok",
+                "message": format!("Unlocked space {}", id)
+            })),
+        )
+            .into_response(),
+        Err((code, msg)) => (
+            code,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": msg
+            })),
+        )
+            .into_response(),
+    }
+}
+
 /// GET /api/v1/espacio/spaces/{id} - get space details by ID
 pub async fn espacio_get_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
@@ -1788,7 +1995,32 @@ pub async fn espacio_get_handler(
         return espacio_disabled();
     };
     match manager.get(&id).await {
-        Ok(info) => Json(serde_json::to_value(info).unwrap_or_default()).into_response(),
+        Ok(info) => {
+            let mut val = serde_json::to_value(info).unwrap_or_default();
+            let is_locked = manager
+                .key_ring()
+                .map(|r| r.is_locked(&id))
+                .unwrap_or(false);
+            let member_count = manager.members(&id).await.ok().map(|m| m.len());
+            let protocol = manager.protocol(&id).await;
+            let retention_days = protocol.retention_days;
+            if let Some(obj) = val.as_object_mut() {
+                obj.insert("locked".to_string(), serde_json::json!(is_locked));
+                obj.insert(
+                    "status".to_string(),
+                    serde_json::json!(if is_locked { "locked" } else { "unlocked" }),
+                );
+                obj.insert(
+                    "member_count".to_string(),
+                    serde_json::to_value(member_count).unwrap_or(serde_json::Value::Null),
+                );
+                obj.insert(
+                    "retention_days".to_string(),
+                    serde_json::to_value(retention_days).unwrap_or(serde_json::Value::Null),
+                );
+            }
+            Json(val).into_response()
+        }
         Err(err) => {
             if let Some(space_err) = err.downcast_ref::<crate::espacio::SpaceError>() {
                 match space_err {
