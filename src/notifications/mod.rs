@@ -9,6 +9,7 @@ pub mod dispatcher;
 use crate::codebase::connection_manager::ConnectionManager;
 use crate::domain::cycle_breaks::w30_04::SYSTEM_ALERTS;
 use crate::domain::cycle_breaks::w30_09::SyncNotifier;
+use crate::espacio::keys::KeyHandle;
 use crate::memory::sqlite_store::TABLE_NOTIFICATIONS;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -72,7 +73,26 @@ pub trait NotificationProvider: Send + Sync {
     fn is_enabled(&self) -> bool;
 }
 
-pub struct InAppProvider;
+#[derive(Default, Clone)]
+pub struct InAppProvider {
+    injected_key: Option<KeyHandle>,
+}
+
+impl InAppProvider {
+    pub fn new() -> Self {
+        Self { injected_key: None }
+    }
+
+    pub fn with_key(key: KeyHandle) -> Self {
+        Self {
+            injected_key: Some(key),
+        }
+    }
+
+    pub fn new_with_key(key: Option<KeyHandle>) -> Self {
+        Self { injected_key: key }
+    }
+}
 
 /// Lazily ensures that the SQLite "memory" pool is connected in ConnectionManager and the schema is initialized.
 pub async fn ensure_memory_pool() -> Result<()> {
@@ -95,16 +115,30 @@ impl NotificationProvider for InAppProvider {
         let read = if notification.read { 1 } else { 0 };
         let severity = notification.severity.clone();
 
-        match ConnectionManager::global().with_conn("memory", move |conn| {
-            conn.execute(
-                &format!("INSERT INTO {} (id, island_id, title, body, timestamp, read, severity) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", TABLE_NOTIFICATIONS),
-                params![id, island_id, title, body, timestamp, read, severity],
-            )?;
-            Ok(())
-        }).await {
+        let dek = db::resolve_key(self.injected_key.as_ref())?;
+
+        match ConnectionManager::global()
+            .with_conn("memory", move |conn| {
+                db::insert_notification_sealed(
+                    conn,
+                    dek.as_ref(),
+                    &id,
+                    &island_id,
+                    &title,
+                    &body,
+                    &timestamp,
+                    read,
+                    &severity,
+                )
+            })
+            .await
+        {
             Ok(_) => Ok(()),
             Err(e) => {
-                tracing::warn!("InAppProvider: failed to insert notification into SQLite: {}", e);
+                tracing::warn!(
+                    "InAppProvider: failed to insert notification into SQLite: {}",
+                    e
+                );
                 Ok(())
             }
         }
@@ -255,15 +289,26 @@ impl NotificationProvider for EmailProvider {
 pub struct NotificationManager {
     event_tx: broadcast::Sender<Notification>,
     pub providers: Vec<Arc<dyn NotificationProvider>>,
+    injected_key: Option<KeyHandle>,
 }
 
 impl NotificationManager {
     /// New.
     pub fn new() -> Self {
+        Self::new_with_key(None)
+    }
+
+    /// Construct with an explicit key handle.
+    pub fn with_key(key: KeyHandle) -> Self {
+        Self::new_with_key(Some(key))
+    }
+
+    /// Construct with an optional key handle.
+    pub fn new_with_key(key: Option<KeyHandle>) -> Self {
         let (tx, _) = broadcast::channel(100);
         let mut providers: Vec<Arc<dyn NotificationProvider>> = Vec::new();
 
-        let in_app = InAppProvider;
+        let in_app = InAppProvider::new_with_key(key.clone());
         if in_app.is_enabled() {
             providers.push(Arc::new(in_app));
         }
@@ -281,6 +326,7 @@ impl NotificationManager {
         Self {
             event_tx: tx,
             providers,
+            injected_key: key,
         }
     }
 
@@ -468,28 +514,22 @@ impl NotificationManager {
 
     /// List notifications.
     pub async fn list_notifications(&self) -> Result<Vec<Notification>> {
+        let key = db::resolve_key(self.injected_key.as_ref())?;
+        self.list_notifications_with_key(key.as_ref()).await
+    }
+
+    /// List notifications with an explicit key handle.
+    pub async fn list_notifications_with_key(
+        &self,
+        key: Option<&KeyHandle>,
+    ) -> Result<Vec<Notification>> {
         let _ = ensure_memory_pool().await;
-        ConnectionManager::global().with_conn("memory", move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, island_id, title, body, timestamp, read, severity FROM notifications ORDER BY timestamp DESC LIMIT 100",
-            )?;
-            let mut rows = stmt.query([])?;
-            let mut result = Vec::new();
-            while let Some(row) = rows.next()? {
-                let island_str: String = row.get(1)?;
-                let ts_str: String = row.get(4)?;
-                result.push(Notification {
-                    id: row.get(0)?,
-                    island_id: IslandId::from_str(&island_str),
-                    title: row.get(2)?,
-                    body: row.get(3)?,
-                    timestamp: ts_str.parse().unwrap_or_else(|_| Utc::now()),
-                    read: row.get::<_, i32>(5)? != 0,
-                    severity: row.get(6)?,
-                });
-            }
-            Ok(result)
-        }).await
+        let dek = key.cloned();
+        ConnectionManager::global()
+            .with_conn("memory", move |conn| {
+                db::load_notifications(conn, dek.as_ref())
+            })
+            .await
     }
 
     /// Mark as read.
@@ -733,7 +773,7 @@ mod tests {
 
     #[test]
     fn test_notification_provider_ids_and_is_enabled() {
-        let in_app = InAppProvider;
+        let in_app = InAppProvider::new();
         assert_eq!(in_app.id(), "in_app");
         assert!(in_app.is_enabled());
 
@@ -836,5 +876,106 @@ mod tests {
         let res2 = provider.send(&notification).await;
         assert!(res2.is_ok());
         assert_eq!(count_title().await, 1);
+    }
+
+    fn test_key_handle(dir: &std::path::Path) -> KeyHandle {
+        use crate::espacio::keys::{KeyRing, StaticNodeKek, UnlockMode};
+        let ring = KeyRing::new(dir, std::sync::Arc::new(StaticNodeKek::new([0x42; 32])));
+        ring.create_keys("default", UnlockMode::NodeUnlock, None)
+            .expect("keys")
+            .0
+    }
+
+    #[tokio::test]
+    async fn test_adversary_notification_encrypted_at_rest_and_legacy_clear_readable() {
+        const CANARY: &str = "NOTIF-CANARY-7f3a91c2-SECRET";
+        let dir = tempfile::tempdir().expect("tempdir");
+        let keys_dir = tempfile::tempdir().expect("tempdir");
+        let dek = test_key_handle(keys_dir.path());
+
+        let db_path = dir.path().join("notif_adv.sqlite3");
+        let cm = ConnectionManager::global();
+        cm.disconnect("memory");
+        cm.connect_with_path("memory", db_path.clone())
+            .expect("connect");
+        ensure_memory_pool().await.expect("ensure memory pool");
+
+        // 1. Real insert path with encryption
+        let in_app = InAppProvider::with_key(dek.clone());
+        let notif_sealed = Notification {
+            id: "sealed-notif-1".to_string(),
+            island_id: IslandId::System,
+            title: format!("Alert {}", CANARY),
+            body: format!("Payload details {}", CANARY),
+            timestamp: Utc::now(),
+            read: false,
+            severity: "error".to_string(),
+        };
+        in_app
+            .send(&notif_sealed)
+            .await
+            .expect("send via real insert path");
+
+        // Checkpoint to ensure WAL is merged into the main db file
+        cm.with_conn("memory", |conn| {
+            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+            Ok(())
+        })
+        .await
+        .expect("checkpoint");
+
+        let raw_db = std::fs::read(&db_path).expect("read raw db bytes");
+        assert!(
+            raw_db.windows(CANARY.len()).all(|w| w != CANARY.as_bytes()),
+            "plaintext canary found in sqlite db file"
+        );
+        let wal_path = dir.path().join("notif_adv.sqlite3-wal");
+        if wal_path.exists() {
+            let wal_bytes = std::fs::read(&wal_path).unwrap_or_default();
+            assert!(
+                wal_bytes
+                    .windows(CANARY.len())
+                    .all(|w| w != CANARY.as_bytes()),
+                "plaintext canary found in wal file"
+            );
+        }
+
+        // 2. Insert a legacy clear row directly
+        cm.with_conn("memory", |conn| {
+            conn.execute(
+                "INSERT INTO notifications (id, island_id, title, body, timestamp, read, severity) VALUES ('legacy-1', 'system', 'Legacy Title Clear', 'Legacy Body Clear', '2026-01-01T00:00:00Z', 0, 'info')",
+                [],
+            )?;
+            Ok(())
+        }).await.expect("insert legacy clear row");
+
+        // 3. Read back through list_notifications with key: both rows readable
+        let manager = NotificationManager::with_key(dek.clone());
+        let list = manager
+            .list_notifications()
+            .await
+            .expect("list_notifications with key");
+        let sealed_item = list
+            .iter()
+            .find(|n| n.id == "sealed-notif-1")
+            .expect("found sealed");
+        assert_eq!(sealed_item.title, format!("Alert {}", CANARY));
+        assert_eq!(sealed_item.body, format!("Payload details {}", CANARY));
+
+        let legacy_item = list
+            .iter()
+            .find(|n| n.id == "legacy-1")
+            .expect("found legacy");
+        assert_eq!(legacy_item.title, "Legacy Title Clear");
+        assert_eq!(legacy_item.body, "Legacy Body Clear");
+
+        // 4. Sealed row without key fails with error, not panic
+        let unkeyed_manager = NotificationManager::new_with_key(None);
+        assert!(
+            unkeyed_manager.list_notifications().await.is_err(),
+            "reading sealed row without key must be an error"
+        );
+
+        cm.disconnect("memory");
     }
 }

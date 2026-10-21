@@ -108,6 +108,19 @@ impl SystemAlertStore {
         exclude_id: &str,
         window_secs: u64,
     ) -> bool {
+        let key = crate::notifications::db::resolve_key(None).ok().flatten();
+        self.should_notify_email_async_with_key(alert_key, exclude_id, window_secs, key.as_ref())
+            .await
+    }
+
+    /// Check whether an email notification should be sent with an explicit key handle.
+    pub async fn should_notify_email_async_with_key(
+        &self,
+        alert_key: &str,
+        exclude_id: &str,
+        window_secs: u64,
+        key: Option<&crate::espacio::keys::KeyHandle>,
+    ) -> bool {
         let now = Utc::now();
         let window_duration = chrono::Duration::seconds(window_secs as i64);
 
@@ -122,18 +135,37 @@ impl SystemAlertStore {
         // Check SQLite notifications table if memory pool is available to persist window check across restarts
         let key_owned = alert_key.to_string();
         let exclude_owned = exclude_id.to_string();
+        let dek = key.cloned();
         let db_last_ts: Option<DateTime<Utc>> = crate::codebase::connection_manager::ConnectionManager::global()
             .with_conn("memory", move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT timestamp FROM notifications WHERE title = ?1 AND id != ?2 ORDER BY timestamp DESC LIMIT 1",
+                    "SELECT id, title, body, timestamp FROM notifications WHERE id != ?1 ORDER BY timestamp DESC LIMIT 200",
                 )?;
-                let mut rows = stmt.query([key_owned, exclude_owned])?;
-                if let Some(row) = rows.next()? {
-                    let ts_str: String = row.get(0)?;
-                    Ok(ts_str.parse::<DateTime<Utc>>().ok())
-                } else {
-                    Ok(None)
+                let mut rows = stmt.query([exclude_owned])?;
+                while let Some(row) = rows.next()? {
+                    let row_id: String = row.get(0)?;
+                    let raw_title: String = row.get(1)?;
+                    let raw_body: String = row.get(2)?;
+                    let ts_str: String = row.get(3)?;
+
+                    let opened_title = match crate::notifications::db::open_notification_text(
+                        dek.as_ref(),
+                        &row_id,
+                        &raw_title,
+                        &raw_body,
+                    ) {
+                        Ok((t, _)) => t,
+                        Err(e) => {
+                            tracing::debug!("failed to open notification for dedup check: {e}");
+                            continue;
+                        }
+                    };
+
+                    if opened_title == key_owned {
+                        return Ok(ts_str.parse::<DateTime<Utc>>().ok());
+                    }
                 }
+                Ok(None)
             })
             .await
             .unwrap_or(None);
@@ -335,5 +367,90 @@ mod tests {
             SystemAlertStore::derive_operational_mode(false, false, "disabled"),
             OperationalMode::Disabled
         );
+    }
+
+    #[tokio::test]
+    async fn test_alerts_dedupe_window_with_sealed_titles() {
+        use crate::espacio::keys::{KeyRing, StaticNodeKek, UnlockMode};
+        let dir = tempfile::tempdir().unwrap();
+        let keys_dir = tempfile::tempdir().unwrap();
+        let ring = KeyRing::new(
+            keys_dir.path(),
+            std::sync::Arc::new(StaticNodeKek::new([0x42; 32])),
+        );
+        let dek = ring
+            .create_keys("default", UnlockMode::NodeUnlock, None)
+            .unwrap()
+            .0;
+
+        let db_path = dir.path().join("alerts_test.sqlite3");
+        let cm = crate::codebase::connection_manager::ConnectionManager::global();
+        cm.disconnect("memory");
+        cm.connect_with_path("memory", db_path).unwrap();
+        crate::notifications::db::init_notifications_schema()
+            .await
+            .unwrap();
+
+        let store = SystemAlertStore::new();
+        let alert_title = "Sealed Storage Disk Failure";
+
+        let now_str = Utc::now().to_rfc3339();
+        let inserted_id = "alert-notif-1";
+        cm.with_conn("memory", {
+            let dek = dek.clone();
+            let now_str = now_str.clone();
+            move |conn| {
+                crate::notifications::db::insert_notification_sealed(
+                    conn,
+                    Some(&dek),
+                    inserted_id,
+                    "system",
+                    alert_title,
+                    "disk failure body",
+                    &now_str,
+                    0,
+                    "error",
+                )
+            }
+        })
+        .await
+        .unwrap();
+
+        // 1. Should dedupe when the title matches and id != exclude_id
+        let should_send = store
+            .should_notify_email_async_with_key(alert_title, "different-id", 300, Some(&dek))
+            .await;
+        assert!(
+            !should_send,
+            "sealed alert title within window must be deduplicated"
+        );
+
+        // 2. Self-notification (id == exclude_id) should not be self-suppressed
+        let should_send_self = store
+            .should_notify_email_async_with_key(alert_title, inserted_id, 300, Some(&dek))
+            .await;
+        assert!(
+            should_send_self,
+            "alert with own exclude_id must not self-suppress"
+        );
+
+        // 3. Different alert title should not be suppressed
+        let should_send_diff = store
+            .should_notify_email_async_with_key("Other Alert", "different-id", 300, Some(&dek))
+            .await;
+        assert!(
+            should_send_diff,
+            "different alert title must not be suppressed"
+        );
+
+        // 4. Also works via global injected key
+        crate::notifications::db::set_injected_key_for_test(Some(dek.clone()));
+        let should_send_injected = store
+            .should_notify_email_async(alert_title, "different-id", 300)
+            .await;
+        assert!(!should_send_injected, "dedupe should work via injected key");
+        crate::notifications::db::set_injected_key_for_test(None);
+
+        cm.disconnect("memory");
     }
 }
