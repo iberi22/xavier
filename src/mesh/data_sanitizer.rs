@@ -113,6 +113,13 @@ impl DataSanitizer {
             field_pattern: "phone".to_string(),
             action: SanitizationAction::Mask { prefix_visible: 4 },
         });
+        // Anchored so metrics such as `total_tokens` are not redacted.
+        self.rules.push(SanitizationRule {
+            field_pattern: "(?i)^(api_?key|secret|[a-z_]*_secret|token|access_token|auth_token|refresh_token|authorization|private_key)$".to_string(),
+            action: SanitizationAction::Redact {
+                replacement: "[REDACTED]".to_string(),
+            },
+        });
     }
 
     /// Apply sanitization rules recursively to a JSON value.
@@ -445,12 +452,30 @@ mod tests {
     }
 
     #[test]
+    fn test_default_rules_redact_secret_fields_but_not_metrics() {
+        let mut sanitizer = DataSanitizer::new();
+        sanitizer.add_default_rules();
+        let out = sanitizer
+            .sanitize(&serde_json::json!({
+                "api_key": "sk-fake-key", "client_secret": "s3", "Authorization": "Bearer x",
+                "total_tokens": 42, "name": "n"
+            }))
+            .unwrap();
+        let text = out.to_string();
+        assert!(
+            !text.contains("sk-fake-key") && !text.contains("s3") && !text.contains("Bearer x")
+        );
+        assert_eq!(out["total_tokens"], 42);
+        assert_eq!(out["name"], "n");
+    }
+
+    #[test]
     fn test_default_rule_set_length() {
         let mut sanitizer = DataSanitizer::new();
         sanitizer.add_default_rules();
 
         let rules = sanitizer.rules();
-        assert_eq!(rules.len(), 5);
+        assert_eq!(rules.len(), 6);
         assert_eq!(rules[0].field_pattern, "email");
     }
 
