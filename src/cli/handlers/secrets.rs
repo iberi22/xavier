@@ -219,9 +219,22 @@ pub async fn lend_handler(
     }
 }
 
+/// Project id override for `history_handler` in tests or custom deployments.
+#[derive(Clone, Debug)]
+pub struct HistoryProject(pub String);
+
 /// History handler.
-pub async fn history_handler() -> Response {
-    match history_rows("metrics").await {
+pub async fn history_handler(maybe_project: Option<Extension<HistoryProject>>) -> Response {
+    let project_id = match &maybe_project {
+        Some(Extension(HistoryProject(p))) => p.as_str(),
+        None => "metrics",
+    };
+    history_response(project_id).await
+}
+
+/// Helper that builds the history response for a given project id.
+pub(crate) async fn history_response(project_id: &str) -> Response {
+    match history_rows(project_id).await {
         Ok(logs) => json_response(
             StatusCode::OK,
             serde_json::to_value(logs).unwrap_or_default(),
@@ -359,4 +372,396 @@ pub(crate) fn secrets_routes() -> axum::Router<CliState> {
         .route_layer(middleware::from_fn(require_permission(
             secrets_permission_check,
         )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{to_bytes, Body};
+    use axum::http::Request;
+    use axum::routing::get;
+    use axum::Router;
+    use std::collections::BTreeSet;
+    use tower::ServiceExt;
+
+    use crate::cli::state::{CliState, CodeGraphState};
+    use crate::codebase::connection_manager::ConnectionManager;
+    use crate::secrets::audit::QmdAuditLogger;
+
+    const TEST_CANARY_SECRET: &str = "canary-secret-val-98234-xav-w2b";
+
+    struct TestFixture {
+        engine: Arc<KeyLendingEngine>,
+        vault: Arc<HardwareVault>,
+        project_id: String,
+        _dir: tempfile::TempDir,
+    }
+
+    async fn setup_fixture() -> TestFixture {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let vault =
+            Arc::new(HardwareVault::new("x").isolated(dir.path().join("secrets"), [9u8; 32]));
+        let project_id = format!("test_secrets_handler_{}", uuid::Uuid::new_v4());
+        ConnectionManager::global()
+            .connect_with_path(&project_id, dir.path().join("metrics.db"))
+            .expect("connect isolated metrics db");
+        let audit = Box::new(QmdAuditLogger::for_project(&project_id));
+        audit.init_schema_async().await.expect("audit schema");
+        let engine =
+            Arc::new(KeyLendingEngine::new(audit, None).with_leases_project(project_id.clone()));
+        TestFixture {
+            engine,
+            vault,
+            project_id,
+            _dir: dir,
+        }
+    }
+
+    async fn build_test_state(engine: Arc<KeyLendingEngine>, dir: &tempfile::TempDir) -> CliState {
+        use parking_lot::Mutex;
+        use tokio::sync::RwLock as AsyncRwLock;
+        use xavier::agents::provider::router::{ProviderKind, ProviderRouter};
+        use xavier::agents::rate_limit::RateLimitManager;
+        use xavier::app::proxy_use_case::ProxyUseCase;
+        use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
+        use xavier::app::security_service::SecurityService;
+        use xavier::codebase::conversations_db::ConversationsDb;
+        use xavier::coordination::{SimpleAgentRegistry, XavierEventBus};
+        use xavier::embedding::NoopEmbedder;
+        use xavier::memory::agent_indexer::AgentIndexer;
+        use xavier::memory::file_indexer::{FileIndexer, FileIndexerConfig};
+        use xavier::memory::openclaw_indexer::OpenClawAgentIndexer;
+        use xavier::memory::qmd_memory::QmdMemory;
+        use xavier::memory::sqlite_vec_store::{
+            VecSqliteMemoryStore, VecSqliteStoreConfig, DEFAULT_EMBEDDING_DIMENSIONS,
+        };
+        use xavier::observability::UsageCounters;
+        use xavier::security::sessions::SessionManager;
+        use xavier::tasks::store::{InMemoryTaskStore, TaskService};
+
+        let docs = Arc::new(AsyncRwLock::new(Vec::new()));
+        let qmd_memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-ws"));
+        let memory_port = Arc::new(QmdMemoryAdapter::new(Arc::clone(&qmd_memory)));
+
+        let store = Arc::new(
+            VecSqliteMemoryStore::new(VecSqliteStoreConfig {
+                path: dir.path().join("vec_store.db"),
+                embedding_dimensions: DEFAULT_EMBEDDING_DIMENSIONS,
+            })
+            .await
+            .expect("vec store"),
+        );
+
+        let cg_db = Arc::new(::code_graph::db::CodeGraphDB::in_memory().expect("code graph db"));
+        let cg_state = Arc::new(AsyncRwLock::new(CodeGraphState {
+            db: cg_db.clone(),
+            indexer: Arc::new(::code_graph::indexer::Indexer::new(cg_db.clone())),
+            query: Arc::new(::code_graph::query::QueryEngine::new(cg_db)),
+        }));
+
+        CliState {
+            memory: memory_port,
+            qmd_memory,
+            store,
+            workspace_id: "test-ws".to_string(),
+            workspace_dir: dir.path().to_path_buf(),
+            state_dir: dir.path().to_path_buf(),
+            auth_db: None,
+            code_graph: cg_state,
+            security: Arc::new(SecurityService::new()),
+            security_scan: Arc::new(SecurityService::new()),
+            _time_store: None,
+            agent_registry: SimpleAgentRegistry::new(None),
+            panel_store: Arc::new(
+                ConversationsDb::open_in_memory("test-project")
+                    .await
+                    .expect("panel store"),
+            ),
+            secrets_engine: engine,
+            event_bus: XavierEventBus::new(10),
+            tasks: Arc::new(TaskService::new(Arc::new(InMemoryTaskStore::new()))),
+            rate_manager: Arc::new(RateLimitManager::new()),
+            prompt_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            http_client: reqwest::Client::new(),
+            proxy_use_case: Arc::new(ProxyUseCase::new(
+                Arc::new(RateLimitManager::new()),
+                Arc::new(Mutex::new(std::collections::HashMap::new())),
+            )),
+            usage_counters: Arc::new(UsageCounters::new()),
+            session_manager: Arc::new(SessionManager::new(60)),
+            provider_router: Arc::new(AsyncRwLock::new(ProviderRouter::new(ProviderKind::OpenAI))),
+            embedder: Arc::new(NoopEmbedder),
+            agent_indexer: Arc::new(AgentIndexer::new(FileIndexer::new(
+                FileIndexerConfig::default(),
+                None,
+            ))),
+            auth_store: None,
+            openclaw_indexer: Arc::new(OpenClawAgentIndexer::new(Arc::new(NoopEmbedder))),
+            multi_db: xavier::storage::multi_db::MultiDbManager::new(),
+            system_scan_cache: Arc::new(AsyncRwLock::new(None)),
+            maloca: xavier::maloca::MalocaStore::open(&dir.path().join("maloca")),
+        }
+    }
+
+    async fn response_json(response: Response) -> serde_json::Value {
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        serde_json::from_slice(&bytes).expect("json body")
+    }
+
+    #[tokio::test]
+    async fn test_get_secrets_leases_never_leaks_token_or_secret_value() {
+        let f = setup_fixture().await;
+        let state = build_test_state(Arc::clone(&f.engine), &f._dir).await;
+
+        let secret_name = format!("K_{}", uuid::Uuid::new_v4());
+        let agent_id = format!("agent_{}", uuid::Uuid::new_v4());
+
+        f.vault
+            .store_secret(&secret_name, TEST_CANARY_SECRET)
+            .expect("store secret in isolated vault");
+        let lease = f
+            .engine
+            .lend(&secret_name, Some(TEST_CANARY_SECRET), &agent_id, 3600)
+            .await
+            .expect("lend secret");
+        let known_token = lease.token.clone();
+        assert!(!known_token.is_empty(), "lease must have a token");
+
+        // 1. Test via router GET /secrets/leases
+        let app = Router::new()
+            .route("/secrets/leases", get(leases_handler))
+            .with_state(state.clone());
+
+        let req = Request::builder()
+            .method("GET")
+            .uri("/secrets/leases")
+            .body(Body::empty())
+            .expect("build request");
+        let res = app.oneshot(req).await.expect("oneshot request");
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let body = response_json(res).await;
+        let body_str = serde_json::to_string(&body).expect("serialize body");
+
+        assert!(
+            !body_str.contains(TEST_CANARY_SECRET),
+            "leases response must NOT contain the canary secret value; got: {body_str}"
+        );
+        assert!(
+            !body_str.contains(&known_token),
+            "leases response must NOT contain the lease token; got: {body_str}"
+        );
+
+        let leases = body.as_array().expect("expected json array of leases");
+        assert!(!leases.is_empty(), "expected at least one lease");
+        let found = leases
+            .iter()
+            .find(|v| v.get("secret_name").and_then(|s| s.as_str()) == Some(&secret_name))
+            .expect("created lease must be present");
+
+        let obj = found.as_object().expect("lease must be a json object");
+        let actual_keys: BTreeSet<&str> = obj.keys().map(String::as_str).collect();
+        let expected_keys: BTreeSet<&str> = [
+            "agent_id",
+            "created_at",
+            "expires_at",
+            "lease_id",
+            "secret_name",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            actual_keys, expected_keys,
+            "lease view keys must match exactly"
+        );
+        assert!(!obj.contains_key("token"), "must not serialize 'token'");
+        assert!(
+            !obj.contains_key("secret_value"),
+            "must not serialize 'secret_value'"
+        );
+        assert!(!obj.contains_key("value"), "must not serialize 'value'");
+        assert!(
+            !obj.contains_key("session_token"),
+            "must not serialize 'session_token'"
+        );
+
+        let expected_lease_id = lease_id_for_token(&known_token);
+        assert_eq!(
+            found.get("lease_id").and_then(|v| v.as_str()),
+            Some(expected_lease_id.as_str())
+        );
+
+        // 2. Direct handler test: verify handler produces safe output
+        let direct_res = leases_handler(State(state)).await;
+        assert_eq!(direct_res.status(), StatusCode::OK);
+        let direct_body = response_json(direct_res).await;
+        let direct_body_str = serde_json::to_string(&direct_body).expect("serialize body");
+        assert!(!direct_body_str.contains(TEST_CANARY_SECRET));
+        assert!(!direct_body_str.contains(&known_token));
+    }
+
+    #[tokio::test]
+    async fn test_get_secrets_history_never_leaks_token_or_secret_value() {
+        let f = setup_fixture().await;
+        let state = build_test_state(Arc::clone(&f.engine), &f._dir).await;
+
+        let secret_name = format!("K_{}", uuid::Uuid::new_v4());
+        let agent_id = format!("agent_{}", uuid::Uuid::new_v4());
+
+        f.vault
+            .store_secret(&secret_name, TEST_CANARY_SECRET)
+            .expect("store secret in isolated vault");
+        let lease = f
+            .engine
+            .lend(&secret_name, Some(TEST_CANARY_SECRET), &agent_id, 3600)
+            .await
+            .expect("lend secret");
+        let known_token = lease.token.clone();
+        assert!(!known_token.is_empty(), "lease must have a token");
+
+        // Wait for async audit logger to commit row to sqlite
+        let mut row_committed = false;
+        for _ in 0..100 {
+            let rows = history_rows(&f.project_id).await.unwrap_or_default();
+            if rows
+                .iter()
+                .any(|r| r.get("secret_id").and_then(|s| s.as_str()) == Some(&secret_name))
+            {
+                row_committed = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert!(row_committed, "audit log was not committed in time");
+
+        // 1. Test via router GET /secrets/history with isolated project extension
+        let app = Router::new()
+            .route("/secrets/history", get(history_handler))
+            .layer(Extension(HistoryProject(f.project_id.clone())))
+            .with_state(state.clone());
+
+        let req = Request::builder()
+            .method("GET")
+            .uri("/secrets/history")
+            .body(Body::empty())
+            .expect("build request");
+        let res = app.oneshot(req).await.expect("oneshot request");
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let body = response_json(res).await;
+        let body_str = serde_json::to_string(&body).expect("serialize body");
+
+        assert!(
+            !body_str.contains(TEST_CANARY_SECRET),
+            "history response must NOT contain the canary secret value; got: {body_str}"
+        );
+        assert!(
+            !body_str.contains(&known_token),
+            "history response must NOT contain the lease token; got: {body_str}"
+        );
+
+        let history = body
+            .as_array()
+            .expect("expected json array of history logs");
+        assert!(!history.is_empty(), "expected at least one history row");
+        let found = history
+            .iter()
+            .find(|v| v.get("secret_id").and_then(|s| s.as_str()) == Some(&secret_name))
+            .expect("audit row for created lease must be present");
+
+        let obj = found
+            .as_object()
+            .expect("history row must be a json object");
+        let actual_keys: BTreeSet<&str> = obj.keys().map(String::as_str).collect();
+        let expected_keys: BTreeSet<&str> = [
+            "agent_id",
+            "event_type",
+            "id",
+            "lease_id",
+            "reason",
+            "secret_id",
+            "timestamp",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            actual_keys, expected_keys,
+            "history row keys must match exactly"
+        );
+        assert!(!obj.contains_key("token"), "must not serialize 'token'");
+        assert!(
+            !obj.contains_key("session_token"),
+            "must not serialize 'session_token'"
+        );
+        assert!(
+            !obj.contains_key("secret_value"),
+            "must not serialize 'secret_value'"
+        );
+        assert!(!obj.contains_key("value"), "must not serialize 'value'");
+
+        let expected_lease_id = lease_id_for_token(&known_token);
+        assert_eq!(
+            found.get("lease_id").and_then(|v| v.as_str()),
+            Some(expected_lease_id.as_str())
+        );
+
+        // 2. Direct handler test with HistoryProject extension
+        let direct_res =
+            history_handler(Some(Extension(HistoryProject(f.project_id.clone())))).await;
+        assert_eq!(direct_res.status(), StatusCode::OK);
+        let direct_body = response_json(direct_res).await;
+        let direct_body_str = serde_json::to_string(&direct_body).expect("serialize body");
+        assert!(!direct_body_str.contains(TEST_CANARY_SECRET));
+        assert!(!direct_body_str.contains(&known_token));
+    }
+
+    #[tokio::test]
+    async fn test_get_secrets_status_never_leaks_token_or_secret_value() {
+        let f = setup_fixture().await;
+        let state = build_test_state(Arc::clone(&f.engine), &f._dir).await;
+
+        let secret_name = format!("K_{}", uuid::Uuid::new_v4());
+        let agent_id = format!("agent_{}", uuid::Uuid::new_v4());
+
+        let lease = f
+            .engine
+            .lend(&secret_name, Some(TEST_CANARY_SECRET), &agent_id, 3600)
+            .await
+            .expect("lend secret");
+        let known_token = lease.token.clone();
+        let opaque_lease_id = lease_id_for_token(&known_token);
+
+        let app = Router::new()
+            .route("/secrets/status/{lease_id}", get(status_handler))
+            .with_state(state.clone());
+
+        let req = Request::builder()
+            .method("GET")
+            .uri(format!("/secrets/status/{opaque_lease_id}"))
+            .body(Body::empty())
+            .expect("build request");
+        let res = app.oneshot(req).await.expect("oneshot request");
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let body = response_json(res).await;
+        let body_str = serde_json::to_string(&body).expect("serialize body");
+
+        assert!(!body_str.contains(TEST_CANARY_SECRET));
+        assert!(!body_str.contains(&known_token));
+
+        let obj = body.as_object().expect("object");
+        let actual_keys: BTreeSet<&str> = obj.keys().map(String::as_str).collect();
+        let expected_keys: BTreeSet<&str> = [
+            "agent_id",
+            "created_at",
+            "expires_at",
+            "lease_id",
+            "secret_name",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(actual_keys, expected_keys);
+    }
 }
