@@ -49,3 +49,6 @@ mod ivn_verdict;
 
 #[path = "kernel_mcp_test.rs"]
 mod kernel_mcp_test;
+
+#[path = "skill_drift_audit.rs"]
+mod skill_drift_audit;
