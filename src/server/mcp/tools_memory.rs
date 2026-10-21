@@ -1068,21 +1068,7 @@ async fn handle_create_memory(
             crate::memory::qmd_memory::reader::generate_embedding(&record.content).await
         };
         if let Ok(vector) = vector {
-            if !vector.is_empty() {
-                let Ok(Some(mut current)) = store.get(&workspace_id, &memory_id).await else {
-                    return;
-                };
-                if !needs_background_embedding(&current)
-                    || current.revision != record.revision
-                    || current.updated_at != record.updated_at
-                {
-                    return;
-                }
-                current.embedding = vector;
-                if let Err(error) = ws_clone.memory.update(current.to_document()).await {
-                    tracing::warn!(%error, memory_id = %memory_id, "background embedding update failed");
-                }
-            }
+            apply_background_embedding(&ws_clone, &workspace_id, &record, vector).await;
         }
     });
 
@@ -1269,6 +1255,41 @@ async fn save_to_repo_store(
         .map_err(|e| anyhow::anyhow!("failed to put record into repo store: {e}"))?;
 
     Ok(doc_id)
+}
+
+/// Attach a background-computed vector to the row it was computed for. Skipped
+/// when the row changed meanwhile. Narrow write: no revision bump, history row,
+/// or update event; the in-memory index is refreshed without a store write.
+async fn apply_background_embedding(
+    ws: &crate::workspace::state::WorkspaceState,
+    workspace_id: &str,
+    computed_for: &crate::memory::store::MemoryRecord,
+    vector: Vec<f32>,
+) {
+    if vector.is_empty() {
+        return;
+    }
+    let store = ws.durable_store();
+    let Ok(Some(mut current)) = store.get(workspace_id, &computed_for.id).await else {
+        return;
+    };
+    if !needs_background_embedding(&current)
+        || current.revision != computed_for.revision
+        || current.updated_at != computed_for.updated_at
+    {
+        return;
+    }
+    if let Err(error) = store
+        .set_embedding(workspace_id, &current.id, vector.clone())
+        .await
+    {
+        tracing::warn!(%error, memory_id = %current.id, "background embedding update failed");
+        return;
+    }
+    current.embedding = vector;
+    if let Err(error) = ws.memory.index_upsert(current.to_document()).await {
+        tracing::warn!(%error, memory_id = %current.id, "background embedding index refresh failed");
+    }
 }
 
 /// A row read back as the locked placeholder must never be re-written: the
@@ -1969,6 +1990,71 @@ mod tests {
             ..plain
         };
         assert!(!needs_background_embedding(&embedded));
+    }
+
+    #[tokio::test]
+    async fn background_embedding_fill_keeps_revision_history_and_events() {
+        use crate::agents::RuntimeConfig;
+        use crate::memory::MemoryBackend;
+        use crate::workspace::state::WorkspaceState;
+        use crate::workspace::WorkspaceConfig;
+
+        let _env = crate::settings::tests::TempEnv::new();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::env::set_var("XAVIER_MEMORY_VEC_PATH", tmp.path().join("vec.sqlite3"));
+        let mut config = WorkspaceConfig::from_env();
+        config.id = "bg-embed-ws".to_string();
+        config.memory_backend = MemoryBackend::Vec;
+        let ws = Arc::new(
+            WorkspaceState::new(config, RuntimeConfig::default(), tmp.path().to_path_buf())
+                .await
+                .expect("workspace"),
+        );
+        let ctx = WorkspaceContext {
+            workspace_id: "bg-embed-ws".to_string(),
+            workspace: ws.clone(),
+        };
+
+        handle_create_memory(
+            &ctx,
+            &json!({"path": "notes/bg-embed", "content": "background fill", "clearance": "Unclassified"}),
+        )
+        .await
+        .expect("create");
+        // Wait for the spawned background fill (it may be a no-op without an embedder).
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+        let store = ws.durable_store();
+        let created = store
+            .get("bg-embed-ws", "notes/bg-embed")
+            .await
+            .unwrap()
+            .expect("created row");
+        let events_before = store
+            .list_timeline_events("bg-embed-ws", "")
+            .await
+            .unwrap()
+            .len();
+
+        apply_background_embedding(&ws, "bg-embed-ws", &created, vec![0.25, 0.5, 0.75]).await;
+
+        let after = store
+            .get("bg-embed-ws", &created.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!after.embedding.is_empty(), "vector must be present");
+        assert_eq!(after.revision, created.revision);
+        assert_eq!(after.revisions.len(), created.revisions.len());
+        assert_eq!(after.revisions.len(), 1, "exactly one history entry");
+        assert_eq!(after.revision, 1);
+        assert_eq!(after.updated_at, created.updated_at);
+        let events = store.list_timeline_events("bg-embed-ws", "").await.unwrap();
+        assert_eq!(events.len(), events_before, "no event for the fill");
+        assert!(
+            events.iter().all(|e| e.payload["operation"] != "update"),
+            "no update event"
+        );
     }
 
     #[test]

@@ -166,6 +166,80 @@ impl MemoryStore for VecSqliteMemoryStore {
             .await
     }
 
+    async fn set_embedding(
+        &self,
+        workspace_id: &str,
+        id_or_path: &str,
+        embedding: Vec<f32>,
+    ) -> Result<()> {
+        if embedding.is_empty() {
+            return Ok(());
+        }
+        let Some(record) = self.get(workspace_id, id_or_path).await? else {
+            anyhow::bail!("set_embedding: memory not found: {id_or_path}");
+        };
+        let record_id = record.id;
+        let workspace_id = record.workspace_id;
+        // Only the vector columns change: no revision, history, timeline or bus event.
+        self.conn_provider
+            .with_conn(&self.project_id, move |conn| {
+                let tx = rusqlite::Transaction::new_unchecked(
+                    conn,
+                    rusqlite::TransactionBehavior::Immediate,
+                )?;
+                let qjl_enabled = {
+                    let threshold = super::VecSqliteMemoryStore::configured_qjl_threshold();
+                    let current_vectors: usize = tx
+                        .query_row(
+                            "SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?",
+                            params![workspace_id],
+                            |row| row.get(0),
+                        )
+                        .unwrap_or(0);
+                    current_vectors >= threshold
+                };
+                let blob = if qjl_enabled {
+                    vector::serialize_embedding_qjl(&embedding)
+                } else {
+                    vector::serialize_embedding(&embedding)
+                };
+                tx.execute(
+                    &format!(
+                        "UPDATE {} SET embedding = ?1, embedding_status = 'completed', embedding_attempts = 0 WHERE id = ?2 AND workspace_id = ?3",
+                        TABLE_MEMORIES
+                    ),
+                    params![blob, record_id, workspace_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM memory_embeddings WHERE id = ?1",
+                    params![record_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM memory_embeddings_768 WHERE id = ?1",
+                    params![record_id],
+                )?;
+                let table_name = if embedding.len() == 768 {
+                    "memory_embeddings_768"
+                } else {
+                    "memory_embeddings"
+                };
+                tx.execute(
+                    &format!(
+                        "INSERT INTO {}(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
+                        table_name
+                    ),
+                    params![
+                        record_id,
+                        workspace_id,
+                        serde_json::to_string(&embedding).unwrap_or_default()
+                    ],
+                )?;
+                tx.commit()?;
+                Ok(())
+            })
+            .await
+    }
+
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>> {
         let workspace_id = workspace_id.to_string();
         let id_or_path = id_or_path.to_string();
@@ -1866,6 +1940,54 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn set_embedding_writes_vector_only() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = latency_store(&temp).await;
+        store
+            .put_without_embedding(MemoryRecord {
+                id: "m1".into(),
+                workspace_id: "ws".into(),
+                path: "p/m1".into(),
+                content: "body".into(),
+                metadata: serde_json::json!({}),
+                revision: 1,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let before = store.get("ws", "m1").await.unwrap().unwrap();
+        let events_before = store.list_timeline_events("ws", "").await.unwrap().len();
+
+        store
+            .set_embedding("ws", "m1", vec![0.1, 0.2, 0.3])
+            .await
+            .unwrap();
+
+        let after = store.get("ws", "m1").await.unwrap().unwrap();
+        assert_eq!(after.embedding.len(), 3);
+        assert_eq!(after.revision, before.revision);
+        assert_eq!(after.revisions.len(), before.revisions.len());
+        assert_eq!(after.updated_at, before.updated_at);
+        // get() does not project embedding_status, so read the column itself.
+        let status: String = store
+            .conn_provider
+            .with_conn(&store.project_id, |conn| {
+                Ok(conn.query_row(
+                    "SELECT embedding_status FROM memory_records WHERE id = 'm1'",
+                    [],
+                    |row| row.get(0),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(status, "completed");
+        assert_eq!(
+            store.list_timeline_events("ws", "").await.unwrap().len(),
+            events_before
+        );
     }
 
     #[tokio::test]
