@@ -67,6 +67,11 @@ fn delivery_runner_suite() {
 }
 
 #[test]
+fn delivery_pipeline_suite() {
+    run_delivery_suite("bash", "scripts/tests/delivery-pipeline-test.sh");
+}
+
+#[test]
 fn delivery_dag_check_suite() {
     run_delivery_suite("python3", "scripts/tests/test_delivery_dag_check.py");
 }
