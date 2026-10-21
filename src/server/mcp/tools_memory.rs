@@ -126,7 +126,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                     "page": { "type": "number", "description": "Page number (1-based, default: 1)", "default": 1 },
                     "limit": { "type": "number", "description": "Maximum results (default: 10, max: 100)", "default": 10 },
                     "include_content": { "type": "boolean", "description": "Include full document body in each candidate (default false — prefer memory_context page-in by ids)", "default": false },
-                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid BM25+vector+RRF pipeline. Kept for forward-compatibility.", "default": "hybrid" },
+                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "Validated against the enum. Search always runs the hybrid BM25+vector+RRF pipeline; the response reports the mode actually used in `mode` (hybrid or lexical) and echoes this value as `requested_search_mode`.", "default": "hybrid" },
                     "include_activity": { "type": "boolean", "description": "Include telemetry/noise namespaces (activity/*, gestalt/thinking/*, auto activity/insight records) that are excluded by default (default false)", "default": false },
                     "include_linked": { "type": "boolean", "description": "Also search (read-only) the spaces that granted this space a link; results carry source_space (default false)", "default": false },
                     "filters": { "type": "object", "description": "Optional filters" }
@@ -144,7 +144,19 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                     "page": { "type": "number", "description": "Page number (1-based, default: 1)", "default": 1 },
                     "limit": { "type": "number", "description": "Maximum results", "default": 10 },
                     "include_content": { "type": "boolean", "description": "Whether to include full content in results (default: false)", "default": false },
-                    "filters": { "type": "object", "description": "Optional filters" }
+                    "depth": { "type": "number", "description": "Relationship depth to explore (0=flat, 1=direct, 2=two-hop)", "default": 0 },
+                    "filters": { "type": "object", "description": "Optional filters" },
+                    "namespace": {
+                        "description": "Optional namespace filter: a project string or an object {project, agent_id, scope, session_id}",
+                        "oneOf": [
+                            { "type": "string" },
+                            { "type": "object" }
+                        ]
+                    },
+                    "include_activity": { "type": "boolean", "description": "Include telemetry/noise namespaces excluded by default (default false)", "default": false },
+                    "include_linked": { "type": "boolean", "description": "Also search (read-only) the spaces that granted this space a link (default false)", "default": false },
+                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "Validated against the enum; the response reports the mode actually used in `mode`.", "default": "hybrid" },
+                    "repos": { "type": "array", "items": { "type": "string" }, "description": "Optional repository roots to search read-only" }
                 },
                 "required": ["query"]
             }),
@@ -451,16 +463,57 @@ fn require_str_arg<'a>(arguments: &'a Value, arg: &str) -> anyhow::Result<&'a st
     }
 }
 
-/// Optional positive integer `limit`; absent or null yields `default`.
-fn limit_arg(arguments: &Value, default: usize) -> anyhow::Result<usize> {
-    match arguments.get("limit") {
+/// Optional positive integer argument; absent or null yields `default`.
+fn positive_int_arg(arguments: &Value, arg: &str, default: usize) -> anyhow::Result<usize> {
+    match arguments.get(arg) {
         None | Some(Value::Null) => Ok(default),
         Some(v) => v
             .as_u64()
             .filter(|n| *n >= 1)
             .map(|n| usize::try_from(n).unwrap_or(usize::MAX))
-            .ok_or_else(|| anyhow::anyhow!("Invalid argument 'limit': must be a positive integer")),
+            .ok_or_else(|| anyhow::anyhow!("Invalid argument '{arg}': must be a positive integer")),
     }
+}
+
+/// Optional string argument; absent or null yields `None`.
+fn optional_str_arg<'a>(arguments: &'a Value, arg: &str) -> anyhow::Result<Option<&'a str>> {
+    match arguments.get(arg) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v
+            .as_str()
+            .map(Some)
+            .ok_or_else(|| anyhow::anyhow!("Invalid argument '{arg}': must be a string")),
+    }
+}
+
+/// `filters` as [`MemoryQueryFilters`]; unknown keys and wrong-typed values
+/// are invalid arguments naming the offending field.
+fn parse_filters_arg(arguments: &Value) -> anyhow::Result<MemoryQueryFilters> {
+    let obj = match arguments.get("filters") {
+        None | Some(Value::Null) => return Ok(MemoryQueryFilters::default()),
+        Some(Value::Object(obj)) => obj,
+        Some(_) => anyhow::bail!("Invalid argument 'filters': must be an object"),
+    };
+    let known = serde_json::to_value(MemoryQueryFilters::default())?;
+    let unknown: Vec<&str> = obj
+        .keys()
+        .filter(|key| known.get(key.as_str()).is_none())
+        .map(String::as_str)
+        .collect();
+    if !unknown.is_empty() {
+        anyhow::bail!(
+            "Invalid argument 'filters': unknown field(s) {}",
+            unknown.join(", ")
+        );
+    }
+    for (key, value) in obj {
+        let single = Value::Object(serde_json::Map::from_iter([(key.clone(), value.clone())]));
+        if let Err(e) = serde_json::from_value::<MemoryQueryFilters>(single) {
+            anyhow::bail!("Invalid argument 'filters.{key}': {e}");
+        }
+    }
+    serde_json::from_value(Value::Object(obj.clone()))
+        .map_err(|e| anyhow::anyhow!("Invalid argument 'filters': {e}"))
 }
 
 fn validate_create_path(path: &str) -> anyhow::Result<()> {
@@ -492,16 +545,30 @@ async fn with_tool_timeout<T>(
     }
 }
 
+/// Search modes accepted by `search_mode`.
+const MEM_SEARCH_MODES: &[&str] = &["bm25", "semantic", "hybrid"];
+
+/// Every argument `handle_mem_search` reads; each search tool schema lists them.
+#[cfg(test)]
+const MEM_SEARCH_ARGS: &[&str] = &[
+    "query",
+    "page",
+    "limit",
+    "include_content",
+    "depth",
+    "filters",
+    "namespace",
+    "include_activity",
+    "include_linked",
+    "search_mode",
+    "repos",
+];
+
 async fn handle_mem_search(
     workspace: &WorkspaceContext,
     arguments: &Value,
 ) -> anyhow::Result<Value> {
-    validate_search_query(
-        arguments
-            .get("query")
-            .and_then(|v| v.as_str())
-            .unwrap_or(""),
-    )?;
+    validate_search_query(optional_str_arg(arguments, "query")?.unwrap_or(""))?;
     with_tool_timeout(
         MCP_SEARCH_TIMEOUT,
         "search_memory",
@@ -514,20 +581,17 @@ async fn handle_mem_search_inner(
     workspace: &WorkspaceContext,
     arguments: &Value,
 ) -> anyhow::Result<Value> {
-    let query = arguments
-        .get("query")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let page = arguments
-        .get("page")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(1)
-        .clamp(1, 1000) as usize;
-    let limit = arguments
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(10)
-        .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+    let query = optional_str_arg(arguments, "query")?.unwrap_or("");
+    let page = positive_int_arg(arguments, "page", 1)?.min(1000);
+    let limit = positive_int_arg(arguments, "limit", 10)?.min(MEMORYFRAGMENT_MAX_LIMIT);
+    let requested_search_mode = match optional_str_arg(arguments, "search_mode")? {
+        None => "hybrid",
+        Some(mode) if MEM_SEARCH_MODES.contains(&mode) => mode,
+        Some(mode) => anyhow::bail!(
+            "Invalid argument 'search_mode': '{mode}' is not one of {}",
+            MEM_SEARCH_MODES.join(", ")
+        ),
+    };
     let include_content = arguments
         .get("include_content")
         .and_then(|v| v.as_bool())
@@ -537,12 +601,7 @@ async fn handle_mem_search_inner(
         .and_then(|v| v.as_u64())
         .unwrap_or(0)
         .clamp(0, 2) as usize;
-    let mut filters = arguments
-        .get("filters")
-        .cloned()
-        .map(serde_json::from_value::<MemoryQueryFilters>)
-        .transpose()?
-        .unwrap_or_default();
+    let mut filters = parse_filters_arg(arguments)?;
 
     // memory_search compat: merge namespace into filters when provided
     if let Some(ns) = parse_namespace_arg(arguments)? {
@@ -699,6 +758,7 @@ async fn handle_mem_search_inner(
                 "count": candidates.len(),
                 "candidates": candidates,
                 "per_store": per_store,
+                "requested_search_mode": requested_search_mode,
             });
 
             return Ok(serde_json::to_value(
@@ -707,20 +767,29 @@ async fn handle_mem_search_inner(
         }
     }
 
-    let (results, search_mode) = workspace
-        .workspace
-        .memory
-        .search_filtered_with_mode(query, fetch_limit, filter_ref)
-        .await?;
-
-    let results = if depth > 0 {
-        workspace
-            .workspace
-            .memory
-            .expand_depth(&results, depth, filter_ref)
-            .await?
-    } else {
-        results
+    // Ranking and depth expansion are CPU-heavy: drive them from the blocking
+    // pool so the async worker stays free and the tool timeout can fire.
+    let (results, search_mode) = {
+        let memory = std::sync::Arc::clone(&workspace.workspace.memory);
+        let query = query.to_string();
+        let filters = filter_ref.cloned();
+        let runtime = tokio::runtime::Handle::current();
+        tokio::task::spawn_blocking(move || {
+            runtime.block_on(async move {
+                let filter_ref = filters.as_ref();
+                let (results, mode) = memory
+                    .search_filtered_with_mode(&query, fetch_limit, filter_ref)
+                    .await?;
+                let results = if depth > 0 {
+                    memory.expand_depth(&results, depth, filter_ref).await?
+                } else {
+                    results
+                };
+                anyhow::Ok((results, mode))
+            })
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("search task failed: {e}"))??
     };
 
     let offset = page.saturating_sub(1).saturating_mul(limit);
@@ -905,6 +974,7 @@ async fn handle_mem_search_inner(
         // results are FTS/BM25-only (no embedder configured, or it timed out /
         // failed and search degraded gracefully instead of hanging).
         "mode": search_mode.as_str(),
+        "requested_search_mode": requested_search_mode,
     });
 
     Ok(serde_json::to_value(MCPToolResult::structured(
@@ -916,7 +986,7 @@ async fn handle_get_recent_fragments(
     workspace: &WorkspaceContext,
     arguments: &Value,
 ) -> anyhow::Result<Value> {
-    let limit = limit_arg(arguments, 10)?.min(MEMORYFRAGMENT_MAX_LIMIT);
+    let limit = positive_int_arg(arguments, "limit", 10)?.min(MEMORYFRAGMENT_MAX_LIMIT);
 
     let agent_id = optional_memoryfragment_component(arguments, "agent_id", None)?;
     let context = optional_memoryfragment_component(arguments, "context", None)?;
@@ -2680,6 +2750,178 @@ mod tests {
                 assert!(err.contains(expected), "{tool} {args}: {err}");
             }
         }
+    }
+
+    const SEARCH_TOOLS: [&str; 3] = ["mem_search", "search_memory", "memory_search"];
+
+    #[tokio::test]
+    async fn search_tools_reject_wrong_typed_args() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let cases = [
+            (json!({ "query": 123 }), "'query'"),
+            (json!({ "query": ["a"] }), "'query'"),
+            (json!({ "query": "a", "limit": "5" }), "'limit'"),
+            (json!({ "query": "a", "limit": -1 }), "'limit'"),
+            (json!({ "query": "a", "limit": 0 }), "'limit'"),
+            (json!({ "query": "a", "page": "2" }), "'page'"),
+        ];
+        for tool in SEARCH_TOOLS {
+            for (args, expected) in &cases {
+                let err = handle_memory_search(&state, &workspace, tool, args)
+                    .await
+                    .expect_err("wrong-typed argument must be rejected")
+                    .to_string();
+                assert!(
+                    err.contains("Invalid argument") && err.contains(expected),
+                    "{tool} {args}: {err}"
+                );
+            }
+            handle_memory_search(
+                &state,
+                &workspace,
+                tool,
+                &json!({ "query": "a", "limit": 5, "page": 1 }),
+            )
+            .await
+            .unwrap_or_else(|e| panic!("{tool}: {e}"));
+        }
+    }
+
+    #[tokio::test]
+    async fn mem_search_bad_filters_is_invalid_params() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let cases = [
+            (json!("project-x"), "'filters'"),
+            (json!({ "kinds": "not-a-list" }), "'filters.kinds'"),
+            (json!({ "project": 7 }), "'filters.project'"),
+            (json!({ "bogus_key": 1 }), "bogus_key"),
+        ];
+        for tool in SEARCH_TOOLS {
+            for (filters, expected) in &cases {
+                let err = handle_memory_search(
+                    &state,
+                    &workspace,
+                    tool,
+                    &json!({ "query": "a", "filters": filters }),
+                )
+                .await
+                .expect_err("bad filters must be rejected")
+                .to_string();
+                assert!(
+                    err.starts_with("Invalid argument") && err.contains(expected),
+                    "{tool} {filters}: {err}"
+                );
+            }
+            handle_memory_search(
+                &state,
+                &workspace,
+                tool,
+                &json!({ "query": "a", "filters": { "project": "p", "include_activity": true } }),
+            )
+            .await
+            .unwrap_or_else(|e| panic!("{tool}: {e}"));
+        }
+    }
+
+    #[tokio::test]
+    async fn mem_search_search_mode_enum_validated() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        for tool in SEARCH_TOOLS {
+            for bad in [json!("fuzzy"), json!(""), json!(3)] {
+                let err = handle_memory_search(
+                    &state,
+                    &workspace,
+                    tool,
+                    &json!({ "query": "a", "search_mode": bad }),
+                )
+                .await
+                .expect_err("unsupported search_mode must be rejected")
+                .to_string();
+                assert!(
+                    err.contains("Invalid argument 'search_mode'"),
+                    "{tool} {bad}: {err}"
+                );
+            }
+            for mode in MEM_SEARCH_MODES {
+                let result = handle_memory_search(
+                    &state,
+                    &workspace,
+                    tool,
+                    &json!({ "query": "a", "search_mode": mode }),
+                )
+                .await
+                .unwrap();
+                let payload = &result["structuredContent"];
+                assert_eq!(payload["requested_search_mode"], json!(mode));
+                assert!(
+                    matches!(payload["mode"].as_str(), Some("hybrid" | "lexical")),
+                    "{tool}: {payload}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn search_memory_schema_matches_handler() {
+        let tools = get_xavier_memory_tools();
+        let schema = &tools
+            .iter()
+            .find(|t| t.name == "search_memory")
+            .expect("search_memory tool")
+            .input_schema;
+        let mut listed: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        listed.sort_unstable();
+        let mut read: Vec<&str> = MEM_SEARCH_ARGS.to_vec();
+        read.sort_unstable();
+        assert_eq!(listed, read);
+        for name in ["mem_search", "search_memory"] {
+            let schema = &tools.iter().find(|t| t.name == name).unwrap().input_schema;
+            assert_eq!(
+                schema["properties"]["search_mode"]["enum"],
+                json!(MEM_SEARCH_MODES),
+                "{name}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn search_handler_rejects_oversize_query() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let query = "q".repeat(MCP_SEARCH_QUERY_MAX_BYTES + 1);
+        for tool in SEARCH_TOOLS {
+            let err = handle_memory_search(&state, &workspace, tool, &json!({ "query": query }))
+                .await
+                .expect_err("oversize query must be rejected")
+                .to_string();
+            assert!(err.contains("Invalid argument 'query'"), "{tool}: {err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn create_memory_handler_rejects_oversize_path() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let path = format!("notes/{}", "p".repeat(MCP_CREATE_PATH_MAX_CHARS));
+        let err = handle_memory_create(
+            &state,
+            &workspace,
+            "create_memory",
+            &json!({ "path": path, "content": "body" }),
+        )
+        .await
+        .expect_err("oversize path must be rejected")
+        .to_string();
+        assert!(err.contains("Invalid argument 'path'"), "{err}");
+        assert!(workspace
+            .workspace
+            .list_memory_records()
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
