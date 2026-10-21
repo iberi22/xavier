@@ -113,6 +113,17 @@ impl AuthDb {
                 email TEXT,
                 created_at INTEGER NOT NULL,
                 PRIMARY KEY (provider, subject)
+            );
+
+            -- One-time login codes: only the SHA-256 hex of the code is stored.
+            CREATE TABLE IF NOT EXISTS login_codes (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id),
+                code_hash TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                used_at INTEGER,
+                failed_attempts INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
             );",
             )
             .map_err(|e| anyhow!("Failed to create tables: {}", e))?;
@@ -516,6 +527,78 @@ impl AuthDb {
         self.conn
             .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
             .map_err(|e| anyhow!("Failed to count users: {}", e))
+    }
+
+    // Login Code Operations
+    /// Store a login code hash, invalidating the user's older unused codes atomically.
+    pub fn insert_login_code(
+        &self,
+        id: &str,
+        user_id: &str,
+        code_hash: &str,
+        expires_at: i64,
+        created_at: i64,
+    ) -> AnyhowResult<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "UPDATE login_codes SET used_at = ?2 WHERE user_id = ?1 AND used_at IS NULL",
+            params![user_id, created_at],
+        )?;
+        tx.execute(
+            "INSERT INTO login_codes (id, user_id, code_hash, expires_at, used_at, failed_attempts, created_at)
+             VALUES (?1, ?2, ?3, ?4, NULL, 0, ?5)",
+            params![id, user_id, code_hash, expires_at, created_at],
+        )?;
+        tx.commit()
+            .map_err(|e| anyhow!("Failed to store login code: {}", e))
+    }
+
+    /// Newest unused, unexpired code with fewer than `max_failed` failures: `(id, code_hash)`.
+    pub fn get_active_login_code(
+        &self,
+        user_id: &str,
+        now: i64,
+        max_failed: i64,
+    ) -> AnyhowResult<Option<(String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, code_hash FROM login_codes
+             WHERE user_id = ?1 AND used_at IS NULL AND expires_at > ?2 AND failed_attempts < ?3
+             ORDER BY created_at DESC, rowid DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query(params![user_id, now, max_failed])?;
+        match rows.next()? {
+            Some(row) => Ok(Some((row.get(0)?, row.get(1)?))),
+            None => Ok(None),
+        }
+    }
+
+    /// Count one failed attempt against a login code.
+    pub fn record_login_code_failure(&self, id: &str) -> AnyhowResult<()> {
+        self.conn.execute(
+            "UPDATE login_codes SET failed_attempts = failed_attempts + 1 WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    /// Mark a code used; true only for the single caller that wins the race.
+    pub fn consume_login_code(&self, id: &str, now: i64) -> AnyhowResult<bool> {
+        let n = self.conn.execute(
+            "UPDATE login_codes SET used_at = ?2 WHERE id = ?1 AND used_at IS NULL",
+            params![id, now],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// Stored hash/attempts/used flag for a user's newest code (test helper).
+    #[cfg(test)]
+    pub fn latest_login_code_row(&self, user_id: &str) -> AnyhowResult<(String, i64, bool)> {
+        Ok(self.conn.query_row(
+            "SELECT code_hash, failed_attempts, used_at IS NOT NULL FROM login_codes
+             WHERE user_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            params![user_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?)
     }
 
     // Audit Log Operations
