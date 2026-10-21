@@ -91,6 +91,14 @@ export class AuthClient {
     });
   }
 
+  // One-time login code (6 digits, minted via CLI/Telegram); same payload as /auth/login.
+  async exchange(email: string, code: string): Promise<LoginResponse> {
+    return this.fetch<LoginResponse>("/auth/exchange", {
+      method: "POST",
+      body: JSON.stringify({ email, code }),
+    });
+  }
+
   async register(
     email: string,
     name: string,

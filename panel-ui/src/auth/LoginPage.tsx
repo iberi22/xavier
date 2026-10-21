@@ -1,10 +1,23 @@
 import { motion } from "motion/react";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ParticleBackground from "../components/ParticleBackground";
 import { PasswordInput } from "../components/PasswordInput";
 import { TwoFactorInput } from "../components/TwoFactorInput";
 import { useAuth } from "../hooks/useAuth";
+import { useAuthStore } from "./AuthProvider";
+
+/** Parse `#/login?email=..&code=123456`; null unless both are present and the code is 6 digits. */
+export const parseLoginHashQuery = (
+  hash: string,
+): { email: string; code: string } | null => {
+  const q = hash.indexOf("?");
+  if (q < 0) return null;
+  const params = new URLSearchParams(hash.slice(q + 1));
+  const email = params.get("email")?.trim() ?? "";
+  const code = params.get("code")?.trim() ?? "";
+  return email && /^\d{6}$/.test(code) ? { email, code } : null;
+};
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -13,7 +26,36 @@ export const LoginPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const [loginCode, setLoginCode] = useState("");
+
   const { login, requires2FA } = useAuth();
+  const loginWithCode = useAuthStore((state) => state.loginWithCode);
+  const autoTried = useRef(false);
+
+  const submitCode = async (mail: string, code: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await loginWithCode(mail, code);
+    } catch (_err) {
+      setError("Invalid or expired login code");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (autoTried.current) return;
+    autoTried.current = true;
+    const parsed = parseLoginHashQuery(window.location.hash);
+    if (!parsed) return;
+    setEmail(parsed.email);
+    setLoginCode(parsed.code);
+    // Drop the one-time code from the URL/history right away.
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/login`);
+    void submitCode(parsed.email, parsed.code);
+    // biome-ignore lint/correctness/useExhaustiveDependencies: run once on mount
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,6 +131,37 @@ export const LoginPage: React.FC = () => {
               </p>
             </motion.div>
           )}
+
+          <div className="flex flex-col gap-1 w-full">
+            <label
+              htmlFor="login-code-input"
+              className="text-xs text-white/60 uppercase tracking-widest"
+            >
+              Login code (optional)
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="login-code-input"
+                className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono tracking-[0.4em]"
+                value={loginCode}
+                onChange={(e) =>
+                  setLoginCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+                placeholder="123456"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+              />
+              <button
+                type="button"
+                disabled={isLoading || !email || loginCode.length !== 6}
+                onClick={() => void submitCode(email, loginCode)}
+                className="px-4 border border-[#39ff14]/50 text-[#39ff14] text-xs tracking-widest rounded-lg hover:bg-[#39ff14]/10 disabled:opacity-40"
+              >
+                USE CODE
+              </button>
+            </div>
+          </div>
 
           {error && (
             <div className="text-red-500 text-[10px] uppercase tracking-widest bg-red-500/10 border border-red-500/20 p-2 rounded-lg">
