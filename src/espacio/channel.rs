@@ -13,6 +13,9 @@ use std::sync::Arc;
 
 use super::store::SpaceStores;
 
+/// Maximum length of a channel message, in characters.
+pub const MAX_MESSAGE_CHARS: usize = 4096;
+
 /// A message in a Space channel
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChannelMessage {
@@ -54,13 +57,17 @@ impl ChannelManager {
     }
 
     /// Append a message, reporting storage failures (invalid space id, I/O).
+    /// Content longer than [`MAX_MESSAGE_CHARS`] is rejected, never truncated.
     pub async fn try_post(
         &self,
         space_id: String,
         author: String,
         content: String,
     ) -> Result<ChannelMessage> {
-        let content: String = content.chars().take(4096).collect();
+        let len = content.chars().count();
+        if len > MAX_MESSAGE_CHARS {
+            anyhow::bail!("channel message is {len} characters, limit is {MAX_MESSAGE_CHARS}");
+        }
         self.stores
             .get(&space_id)?
             .append_message(&space_id, &author, &content)
@@ -68,15 +75,17 @@ impl ChannelManager {
 
     /// Append a message to a Space channel. Returns the stored message with assigned seq.
     ///
-    /// Infallible for API compatibility: if the store rejects the write (invalid
+    /// Infallible for API compatibility: content is truncated to
+    /// [`MAX_MESSAGE_CHARS`], and if the store rejects the write (invalid
     /// space id, I/O error) the error is logged and an unpersisted message
     /// with `seq` 0 is returned. Use [`ChannelManager::try_post`] to observe errors.
     pub async fn post(&self, space_id: String, author: String, content: String) -> ChannelMessage {
+        let content: String = content.chars().take(MAX_MESSAGE_CHARS).collect();
         let fallback = ChannelMessage {
             seq: 0,
             space_id: space_id.clone(),
             author: author.clone(),
-            content: content.chars().take(4096).collect(),
+            content: content.clone(),
             created_at: Utc::now(),
         };
         match self.try_post(space_id, author, content).await {
@@ -208,6 +217,26 @@ mod tests {
         let since_zero = mgr.list_since("esp_boundary", 0).await;
         assert_eq!(since_zero.len(), 1);
         assert_eq!(since_zero[0].seq, 1);
+    }
+
+    #[tokio::test]
+    async fn channel_content_over_limit_rejected() {
+        let mgr = ChannelManager::new();
+        let too_long = "é".repeat(MAX_MESSAGE_CHARS + 1);
+        let err = mgr
+            .try_post("esp_lim".into(), "a".into(), too_long)
+            .await
+            .expect_err("over-limit content must be rejected");
+        assert!(err.to_string().contains("limit"), "{err}");
+        assert_eq!(mgr.len("esp_lim").await, 0);
+
+        let exact = "é".repeat(MAX_MESSAGE_CHARS);
+        let stored = mgr
+            .try_post("esp_lim".into(), "a".into(), exact.clone())
+            .await
+            .expect("content at the limit is accepted");
+        assert_eq!(stored.content, exact);
+        assert_eq!(mgr.list_all("esp_lim").await[0].content, exact);
     }
 
     #[tokio::test]

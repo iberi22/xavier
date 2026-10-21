@@ -51,6 +51,20 @@ async fn ticket_create_tool(
     }
 }
 
+/// Reads an optional string argument, rejecting a present value of another type.
+fn optional_str_arg<'a>(arguments: &'a Value, key: &str) -> Result<Option<&'a str>, String> {
+    match arguments.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) => Ok(Some(s.as_str())),
+        Some(_) => Err(format!("Invalid argument '{key}': expected string")),
+    }
+}
+
+/// Reads a required string argument, telling a missing value from a wrong type.
+fn required_str_arg<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, String> {
+    optional_str_arg(arguments, key)?.ok_or_else(|| format!("Missing required parameter: {key}"))
+}
+
 /// Get xavier core tools.
 pub fn get_xavier_core_tools() -> Vec<MCPTool> {
     vec![
@@ -289,7 +303,7 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
         },
         MCPTool {
             name: "espacio_channel_create".to_string(),
-            description: "Create a channel within a space".to_string(),
+            description: "Post a message to a space's channel. Each call appends a new message (identical calls are not deduplicated); content over 4096 characters is rejected.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -299,7 +313,7 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
                     },
                     "name": {
                         "type": "string",
-                        "description": "Channel name"
+                        "description": "Message text to post (max 4096 characters)"
                     }
                 },
                 "required": ["space_id", "name"]
@@ -950,29 +964,40 @@ pub async fn handle_core_tool(
             ))?)
         }
         "log_scan" => {
-            let since = arguments
-                .get("since")
-                .and_then(|v| v.as_str().map(|s| s.to_string()));
-            let level_min = arguments
-                .get("level_min")
-                .and_then(|v| v.as_str().map(|s| s.to_string()));
-            let pattern = arguments
-                .get("pattern")
-                .and_then(|v| v.as_str().map(|s| s.to_string()));
-            let source = arguments
-                .get("source")
-                .and_then(|v| v.as_str().map(|s| s.to_string()));
-            let max_entries = arguments
-                .get("max_entries")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(500) as usize;
-
-            let args = crate::self_manage::LogScanArgs {
-                since,
-                level_min,
-                pattern,
-                source,
-                max_entries,
+            let parsed = (|| -> Result<crate::self_manage::LogScanArgs, String> {
+                let since = optional_str_arg(&arguments, "since")?;
+                if let Some(since) = since {
+                    chrono::DateTime::parse_from_rfc3339(since).map_err(|e| {
+                        format!("Invalid argument 'since': expected RFC3339 timestamp ({e})")
+                    })?;
+                }
+                let pattern = optional_str_arg(&arguments, "pattern")?;
+                if let Some(pattern) = pattern {
+                    regex::Regex::new(pattern)
+                        .map_err(|e| format!("Invalid argument 'pattern': invalid regex ({e})"))?;
+                }
+                let max_entries = match arguments.get("max_entries") {
+                    None | Some(Value::Null) => 500,
+                    Some(v) => match v.as_u64() {
+                        Some(n) if n >= 1 => usize::try_from(n).unwrap_or(usize::MAX),
+                        _ => {
+                            return Err(
+                                "Invalid argument 'max_entries': expected integer >= 1".to_string()
+                            )
+                        }
+                    },
+                };
+                Ok(crate::self_manage::LogScanArgs {
+                    since: since.map(str::to_string),
+                    level_min: optional_str_arg(&arguments, "level_min")?.map(str::to_string),
+                    pattern: pattern.map(str::to_string),
+                    source: optional_str_arg(&arguments, "source")?.map(str::to_string),
+                    max_entries,
+                })
+            })();
+            let args = match parsed {
+                Ok(args) => args,
+                Err(msg) => return Ok(serde_json::to_value(MCPToolResult::text(msg, true))?),
             };
 
             let result = crate::self_manage::log_scan(args);
@@ -999,42 +1024,34 @@ pub async fn handle_core_tool(
             ))?)
         }
         "ticket_create" => {
-            let title = arguments
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let body = arguments
-                .get("body")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let labels = arguments.get("labels").and_then(|v| {
-                v.as_array().map(|arr| {
-                    arr.iter()
-                        .filter_map(|item| item.as_str().map(|s| s.to_string()))
-                        .collect::<Vec<String>>()
-                })
-            });
-            let severity = arguments
-                .get("severity")
-                .and_then(|v| v.as_str())
-                .unwrap_or("warn")
-                .to_string();
-            let fingerprint = arguments
-                .get("fingerprint")
-                .and_then(|v| v.as_str().map(|s| s.to_string()));
-            let backend = arguments
-                .get("backend")
-                .and_then(|v| v.as_str().map(|s| s.to_string()));
-
-            let args = TicketCreateArgs {
-                title,
-                body,
-                labels,
-                severity,
-                fingerprint,
-                backend,
+            let parsed = (|| -> Result<TicketCreateArgs, String> {
+                let labels = match arguments.get("labels") {
+                    None | Some(Value::Null) => None,
+                    Some(Value::Array(items)) => Some(
+                        items
+                            .iter()
+                            .map(|item| item.as_str().map(str::to_string))
+                            .collect::<Option<Vec<String>>>()
+                            .ok_or("Invalid argument 'labels': expected array of strings")?,
+                    ),
+                    Some(_) => {
+                        return Err("Invalid argument 'labels': expected array of strings".into())
+                    }
+                };
+                let args = TicketCreateArgs {
+                    title: required_str_arg(&arguments, "title")?.to_string(),
+                    body: required_str_arg(&arguments, "body")?.to_string(),
+                    labels,
+                    severity: required_str_arg(&arguments, "severity")?.to_string(),
+                    fingerprint: optional_str_arg(&arguments, "fingerprint")?.map(str::to_string),
+                    backend: optional_str_arg(&arguments, "backend")?.map(str::to_string),
+                };
+                crate::self_manage::validate_ticket_args(&args)?;
+                Ok(args)
+            })();
+            let args = match parsed {
+                Ok(args) => args,
+                Err(msg) => return Ok(serde_json::to_value(MCPToolResult::text(msg, true))?),
             };
 
             let vault = HardwareVault::new(PRODUCTION_VAULT_SERVICE);
@@ -1480,10 +1497,10 @@ pub async fn handle_core_tool(
         }
         "espacio_channel_list" => {
             let manager = espacio_manager_for_root()?;
-            let space_id = arguments
-                .get("space_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing space_id"))?;
+            let space_id = match required_str_arg(&arguments, "space_id") {
+                Ok(v) => v,
+                Err(msg) => return Ok(serde_json::to_value(MCPToolResult::text(msg, true))?),
+            };
             manager.get(space_id).await?;
 
             let channel_mgr = ChannelManager::with_stores(manager.stores());
@@ -1499,14 +1516,24 @@ pub async fn handle_core_tool(
         }
         "espacio_channel_create" => {
             let manager = espacio_manager_for_root()?;
-            let space_id = arguments
-                .get("space_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing space_id"))?;
-            let name = arguments
-                .get("name")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing name"))?;
+            let space_id = match required_str_arg(&arguments, "space_id") {
+                Ok(v) => v,
+                Err(msg) => return Ok(serde_json::to_value(MCPToolResult::text(msg, true))?),
+            };
+            let name = match required_str_arg(&arguments, "name") {
+                Ok(v) => v,
+                Err(msg) => return Ok(serde_json::to_value(MCPToolResult::text(msg, true))?),
+            };
+            let len = name.chars().count();
+            if len > crate::espacio::channel::MAX_MESSAGE_CHARS {
+                return Ok(serde_json::to_value(MCPToolResult::text(
+                    format!(
+                        "Invalid argument 'name': {len} characters exceeds the limit of {}",
+                        crate::espacio::channel::MAX_MESSAGE_CHARS
+                    ),
+                    true,
+                ))?);
+            }
             manager.get(space_id).await?;
 
             let channel_mgr = ChannelManager::with_stores(manager.stores());
@@ -1520,7 +1547,7 @@ pub async fn handle_core_tool(
 
             let val = json!({
                 "space_id": space_id,
-                "channel_name": name,
+                "channel_name": msg.content,
                 "status": "created",
                 "message": msg,
             });
@@ -1535,10 +1562,10 @@ pub async fn handle_core_tool(
         }
         "espacio_member_list" => {
             let manager = espacio_manager_for_root()?;
-            let space_id = arguments
-                .get("space_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing space_id"))?;
+            let space_id = match required_str_arg(&arguments, "space_id") {
+                Ok(v) => v,
+                Err(msg) => return Ok(serde_json::to_value(MCPToolResult::text(msg, true))?),
+            };
             let members = manager.members(space_id).await?;
             let val = json!({
                 "space_id": space_id,
@@ -1548,25 +1575,29 @@ pub async fn handle_core_tool(
         }
         "espacio_member_add" => {
             let manager = espacio_manager_for_root()?;
-            let space_id = arguments
-                .get("space_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing space_id"))?;
-            let node_id = arguments
-                .get("node_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing node_id"))?;
-            let role_str = arguments
-                .get("role")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing role"))?;
-            let role = match role_str {
-                "admin" => crate::espacio::invite::SpaceRole::Admin,
-                "moderator" => crate::espacio::invite::SpaceRole::Moderator,
-                "member" => crate::espacio::invite::SpaceRole::Member,
-                "reader" => crate::espacio::invite::SpaceRole::Reader,
-                _ => return Err(anyhow::anyhow!("Invalid role")),
+            let space_id = match required_str_arg(&arguments, "space_id") {
+                Ok(v) => v,
+                Err(msg) => return Ok(serde_json::to_value(MCPToolResult::text(msg, true))?),
             };
+            let node_id = match required_str_arg(&arguments, "node_id") {
+                Ok(v) => v,
+                Err(msg) => return Ok(serde_json::to_value(MCPToolResult::text(msg, true))?),
+            };
+            let role_str = match required_str_arg(&arguments, "role") {
+                Ok(v) => v,
+                Err(msg) => return Ok(serde_json::to_value(MCPToolResult::text(msg, true))?),
+            };
+            let role =
+                match role_str {
+                    "admin" => crate::espacio::invite::SpaceRole::Admin,
+                    "moderator" => crate::espacio::invite::SpaceRole::Moderator,
+                    "member" => crate::espacio::invite::SpaceRole::Member,
+                    "reader" => crate::espacio::invite::SpaceRole::Reader,
+                    _ => return Ok(serde_json::to_value(MCPToolResult::text(
+                        "Invalid argument 'role': expected one of admin, moderator, member, reader",
+                        true,
+                    ))?),
+                };
 
             match manager.add_member(space_id, node_id, role).await {
                 Ok(membership) => {
@@ -1592,14 +1623,14 @@ pub async fn handle_core_tool(
         }
         "espacio_member_remove" => {
             let manager = espacio_manager_for_root()?;
-            let space_id = arguments
-                .get("space_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing space_id"))?;
-            let node_id = arguments
-                .get("node_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing node_id"))?;
+            let space_id = match required_str_arg(&arguments, "space_id") {
+                Ok(v) => v,
+                Err(msg) => return Ok(serde_json::to_value(MCPToolResult::text(msg, true))?),
+            };
+            let node_id = match required_str_arg(&arguments, "node_id") {
+                Ok(v) => v,
+                Err(msg) => return Ok(serde_json::to_value(MCPToolResult::text(msg, true))?),
+            };
             let removed = manager.remove_member(space_id, node_id).await?;
             let val = json!({
                 "space_id": space_id,
@@ -1751,6 +1782,56 @@ pub(crate) mod tests {
             severity: "warn".to_string(),
             fingerprint: Some(format!("v6c-test-{suffix}")),
             backend: Some(backend.to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn ticket_create_rejects_invalid_args() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let claims = admin_claims();
+        let valid = json!({"title": "t", "body": "b", "severity": "warn"});
+        let with = |key: &str, value: Value| {
+            let mut args = valid.clone();
+            args[key] = value;
+            args
+        };
+        let mut no_title = valid.clone();
+        no_title.as_object_mut().unwrap().remove("title");
+        let cases = vec![
+            (no_title, "Missing required parameter: title"),
+            (with("title", json!(7)), "'title': expected string"),
+            (with("title", json!("  ")), "'title': must not be empty"),
+            (with("title", json!("t".repeat(121))), "'title': exceeds"),
+            (with("body", json!(["b"])), "'body': expected string"),
+            (
+                with("body", json!("b".repeat(8 * 1024 + 1))),
+                "'body': exceeds",
+            ),
+            (with("severity", json!("info")), "'severity'"),
+            (with("severity", json!(1)), "'severity': expected string"),
+            (with("backend", json!("jira")), "'backend'"),
+            (with("backend", json!(true)), "'backend': expected string"),
+            (with("labels", json!("x")), "'labels'"),
+            (with("labels", json!(["a", 1])), "'labels'"),
+            (with("fingerprint", json!(3)), "'fingerprint'"),
+        ];
+        for (args, needle) in cases {
+            let res = handle_core_tool(
+                state.clone(),
+                workspace.clone(),
+                Some(&claims),
+                "ticket_create",
+                args.clone(),
+            )
+            .await
+            .expect("validation failures are tool results");
+            assert_eq!(res["isError"], true, "{args} -> {res}");
+            let text = res["content"][0]["text"].as_str().unwrap();
+            assert!(
+                text.contains(needle),
+                "{args}: expected {needle:?}, got {text}"
+            );
         }
     }
 
@@ -2032,6 +2113,221 @@ pub(crate) mod tests {
             .list_all("esp_mcp")
             .await;
         assert_eq!(msgs.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn log_scan_rejects_invalid_args() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let claims = admin_claims();
+        let cases = [
+            (json!({"pattern": "(unclosed"}), "'pattern': invalid regex"),
+            (json!({"pattern": 5}), "'pattern': expected string"),
+            (json!({"since": "yesterday"}), "'since': expected RFC3339"),
+            (json!({"since": 1}), "'since': expected string"),
+            (json!({"max_entries": "10"}), "'max_entries'"),
+            (json!({"max_entries": -1}), "'max_entries'"),
+            (json!({"max_entries": 2.5}), "'max_entries'"),
+            (json!({"max_entries": 0}), "'max_entries'"),
+            (
+                json!({"level_min": ["warn"]}),
+                "'level_min': expected string",
+            ),
+            (json!({"source": false}), "'source': expected string"),
+        ];
+        for (args, needle) in cases {
+            let res = handle_core_tool(
+                state.clone(),
+                workspace.clone(),
+                Some(&claims),
+                "log_scan",
+                args.clone(),
+            )
+            .await
+            .expect("validation failures are tool results");
+            assert_eq!(res["isError"], true, "{args} -> {res}");
+            let text = res["content"][0]["text"].as_str().unwrap();
+            assert!(
+                text.contains(needle),
+                "{args}: expected {needle:?}, got {text}"
+            );
+        }
+    }
+
+    async fn espacio_root_call(
+        st: &(AppState, WorkspaceContext),
+        name: &str,
+        args: Value,
+    ) -> anyhow::Result<Value> {
+        let root = root_claims();
+        crate::server::mcp::server::with_root_credential(
+            true,
+            handle_core_tool(st.0.clone(), st.1.clone(), Some(&root), name, args),
+        )
+        .await
+    }
+
+    async fn espacio_fixture(space_id: &str) -> (tempfile::TempDir, (AppState, WorkspaceContext)) {
+        use crate::espacio::{SpaceManager, StaticNodeKek};
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let kek = std::sync::Arc::new(StaticNodeKek::new([7u8; 32]));
+        let manager = std::sync::Arc::new(SpaceManager::open_with_keys(tmp.path(), kek));
+        crate::adapters::inbound::http::routes::init_space_manager(manager.clone());
+        manager
+            .create(
+                space_id.into(),
+                "mcp".into(),
+                "".into(),
+                "owner".into(),
+                false,
+            )
+            .await
+            .expect("create space");
+        (tmp, crate::server::mcp::tests::test_state().await)
+    }
+
+    #[tokio::test]
+    async fn espacio_channel_wrong_type_message() {
+        let (_tmp, st) = espacio_fixture("esp_types").await;
+        let cases = [
+            (
+                "espacio_channel_list",
+                json!({}),
+                "Missing required parameter: space_id",
+            ),
+            (
+                "espacio_channel_list",
+                json!({"space_id": 3}),
+                "'space_id': expected string",
+            ),
+            (
+                "espacio_channel_create",
+                json!({"space_id": "esp_types"}),
+                "Missing required parameter: name",
+            ),
+            (
+                "espacio_channel_create",
+                json!({"space_id": "esp_types", "name": 9}),
+                "'name': expected string",
+            ),
+            (
+                "espacio_channel_create",
+                json!({"space_id": ["esp_types"], "name": "x"}),
+                "'space_id': expected string",
+            ),
+            (
+                "espacio_member_list",
+                json!({"space_id": {}}),
+                "'space_id': expected string",
+            ),
+            (
+                "espacio_member_add",
+                json!({"space_id": "esp_types", "node_id": 1, "role": "member"}),
+                "'node_id': expected string",
+            ),
+            (
+                "espacio_member_add",
+                json!({"space_id": "esp_types", "node_id": "n", "role": true}),
+                "'role': expected string",
+            ),
+            (
+                "espacio_member_add",
+                json!({"space_id": "esp_types", "node_id": "n", "role": "owner"}),
+                "'role': expected one of",
+            ),
+            (
+                "espacio_member_remove",
+                json!({"space_id": "esp_types"}),
+                "Missing required parameter: node_id",
+            ),
+        ];
+        for (tool, args, needle) in cases {
+            let res = espacio_root_call(&st, tool, args.clone())
+                .await
+                .expect("validation failures are tool results");
+            assert_eq!(res["isError"], true, "{tool} {args} -> {res}");
+            let text = res["content"][0]["text"].as_str().unwrap();
+            assert!(
+                text.contains(needle),
+                "{tool} {args}: expected {needle:?}, got {text}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn espacio_channel_create_rejects_over_limit_content() {
+        let (_tmp, st) = espacio_fixture("esp_limit").await;
+        let limit = crate::espacio::channel::MAX_MESSAGE_CHARS;
+        let res = espacio_root_call(
+            &st,
+            "espacio_channel_create",
+            json!({"space_id": "esp_limit", "name": "x".repeat(limit + 1)}),
+        )
+        .await
+        .expect("tool result");
+        assert_eq!(res["isError"], true, "{res}");
+        assert!(res["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("'name'"));
+
+        let exact = "y".repeat(limit);
+        let res = espacio_root_call(
+            &st,
+            "espacio_channel_create",
+            json!({"space_id": "esp_limit", "name": exact}),
+        )
+        .await
+        .expect("tool result");
+        assert_eq!(res["isError"], false, "{res}");
+        assert_eq!(res["structuredContent"]["channel_name"], exact);
+        assert_eq!(res["structuredContent"]["message"]["content"], exact);
+
+        let list = espacio_root_call(
+            &st,
+            "espacio_channel_list",
+            json!({"space_id": "esp_limit"}),
+        )
+        .await
+        .expect("list");
+        assert_eq!(list["structuredContent"]["count"], 1, "{list}");
+    }
+
+    #[tokio::test]
+    async fn channel_post_description_matches_behaviour() {
+        let tool = get_xavier_core_tools()
+            .into_iter()
+            .find(|t| t.name == "espacio_channel_create")
+            .expect("tool listed");
+        assert!(
+            tool.description.contains("Post a message"),
+            "{}",
+            tool.description
+        );
+        assert!(
+            tool.description.contains("not deduplicated"),
+            "{}",
+            tool.description
+        );
+
+        let (_tmp, st) = espacio_fixture("esp_post").await;
+        let mut seqs = Vec::new();
+        for _ in 0..2 {
+            let res = espacio_root_call(
+                &st,
+                "espacio_channel_create",
+                json!({"space_id": "esp_post", "name": "same"}),
+            )
+            .await
+            .expect("post");
+            assert_eq!(res["isError"], false, "{res}");
+            seqs.push(res["structuredContent"]["message"]["seq"].as_u64().unwrap());
+        }
+        assert_eq!(seqs, vec![0, 1], "each call appends a message");
+        let list = espacio_root_call(&st, "espacio_channel_list", json!({"space_id": "esp_post"}))
+            .await
+            .expect("list");
+        assert_eq!(list["structuredContent"]["count"], 2, "{list}");
     }
 
     #[tokio::test]
