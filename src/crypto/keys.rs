@@ -80,10 +80,10 @@ impl KEK {
     ///
     /// # Security Notes
     /// - Uses Argon2id (memory-hard, side-channel resistant)
-    /// - Default: 64MB memory, 3 iterations, 4 degree of parallelism
+    /// - Parameters: 4096 KiB (4 MiB) memory, 3 iterations, 4 lanes, 32-byte output
     /// - Adjust params based on your security/performance needs
     pub fn derive_from_password(password: &str, salt: &KeySalt) -> KeyResult<Self> {
-        // Argon2id with secure defaults (64MB memory)
+        // Argon2id: m = 4096 KiB (4 MiB), t = 3, p = 4
         let argon2 = Argon2::new(
             argon2::Algorithm::Argon2id,
             argon2::Version::V0x13,
