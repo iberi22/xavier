@@ -151,6 +151,38 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
     ]
 }
 
+/// Session ids: 1-128 chars of ASCII alnum . _ - : / with no `..`.
+fn validate_session_id(session_id: &str) -> Result<(), String> {
+    let ok = !session_id.is_empty()
+        && session_id.len() <= 128
+        && !session_id.contains("..")
+        && session_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':' | '/'));
+    if ok {
+        Ok(())
+    } else {
+        Err("session_id must be 1-128 chars of ASCII alphanumerics or . _ - : / and not contain '..'"
+            .to_string())
+    }
+}
+
+/// Checkpoints of one session, newest first.
+async fn session_checkpoints(
+    workspace: &WorkspaceContext,
+    session_id: &str,
+) -> anyhow::Result<Vec<crate::codebase::conversations_db::Checkpoint>> {
+    let all = workspace
+        .workspace
+        .conversations_db
+        .list_checkpoints(10_000)
+        .await?;
+    Ok(all
+        .into_iter()
+        .filter(|c| c.session_id.as_deref() == Some(session_id))
+        .collect())
+}
+
 /// Tool error for a rejected argument.
 fn invalid_argument(message: impl std::fmt::Display) -> anyhow::Result<Value> {
     super::server::mcp_text_result(format!("Error: invalid argument: {message}"), true)
@@ -256,7 +288,13 @@ pub async fn handle_context_tool(
                 Ok(session_id) => session_id,
                 Err(message) => return invalid_argument(message),
             };
+            if let Err(message) = validate_session_id(session_id) {
+                return invalid_argument(message);
+            }
             let name = arguments.get("name").and_then(|v| v.as_str());
+            if name.is_some_and(|n| n.chars().count() > 200) {
+                return invalid_argument("name must be at most 200 chars");
+            }
 
             let checkpoint = workspace
                 .workspace
@@ -283,6 +321,9 @@ pub async fn handle_context_tool(
                 Ok(session_id) => session_id,
                 Err(message) => return invalid_argument(message),
             };
+            if let Err(message) = validate_session_id(session_id) {
+                return invalid_argument(message);
+            }
             let depth = match arguments.get("depth") {
                 None | Some(Value::Null) => "medium",
                 Some(value) => match value.as_str() {
@@ -345,6 +386,19 @@ pub async fn handle_context_tool(
                 }
             };
 
+            let own_ids: std::collections::HashSet<String> =
+                messages.iter().map(|m| m.id.clone()).collect();
+            let has_messages = !messages.is_empty();
+            let checkpoints = match session_checkpoints(&workspace, session_id).await {
+                Ok(c) => c,
+                Err(e) => {
+                    return super::server::mcp_text_result(
+                        format!("Error: context store unavailable for session {session_id}: {e}"),
+                        true,
+                    );
+                }
+            };
+
             let original_token_count: usize = messages
                 .iter()
                 .map(|m| {
@@ -397,12 +451,18 @@ pub async fn handle_context_tool(
             let plan = orchestrator
                 .session_start(session_id, "restore context", &context_docs)
                 .await;
-            let selected_docs = orchestrator.execute(&plan, &context_docs, session_id).await;
+            let mut selected_docs = orchestrator.execute(&plan, &context_docs, session_id).await;
+            // Only the session's own messages count as its history.
+            selected_docs.retain(|d| own_ids.contains(&d.id));
 
             // Build optimized context
             let builder_config = ContextBuilderConfig::default();
             let builder = ContextBuilder::new(builder_config);
-            let context_string = builder.build(level, &selected_docs, &[], &[]);
+            let mut context_string = builder.build(level, &selected_docs, &[], &[]);
+            if !has_messages {
+                context_string
+                    .push_str("# Recent Messages\n(no messages recorded for this session)\n");
+            }
 
             // Use unified honest estimator
             let optimized_token_count = crate::context::estimate_tokens(&context_string);
@@ -429,6 +489,15 @@ pub async fn handle_context_tool(
                 "session_id": session_id,
                 "depth": depth,
                 "context": context_string,
+                "checkpoints": checkpoints
+                    .iter()
+                    .take(20)
+                    .map(|c| json!({
+                        "id": c.id,
+                        "name": c.name,
+                        "created_at": c.created_at.to_rfc3339(),
+                    }))
+                    .collect::<Vec<_>>(),
                 "token_usage": {
                     "original": original_token_count,
                     "optimized": optimized_token_count,
@@ -469,7 +538,28 @@ pub async fn handle_context_tool(
                 .search_filtered(query, limit as usize, filters.as_ref())
                 .await?;
 
-            if results.is_empty() {
+            let needle = query.trim().to_lowercase();
+            let checkpoint_hits: Vec<_> = if needle.is_empty() {
+                Vec::new()
+            } else {
+                workspace
+                    .workspace
+                    .conversations_db
+                    .list_checkpoints(10_000)
+                    .await?
+                    .into_iter()
+                    .filter(|c| session_id.is_none_or(|sid| c.session_id.as_deref() == Some(sid)))
+                    .filter(|c| {
+                        c.id.to_lowercase().contains(&needle)
+                            || c.name
+                                .as_deref()
+                                .is_some_and(|n| n.to_lowercase().contains(&needle))
+                    })
+                    .take(limit as usize)
+                    .collect()
+            };
+
+            if results.is_empty() && checkpoint_hits.is_empty() {
                 return super::server::mcp_text_result(
                     format!("No context found for query: {}", query),
                     false,
@@ -477,6 +567,15 @@ pub async fn handle_context_tool(
             }
 
             let mut output = String::new();
+            for c in &checkpoint_hits {
+                output.push_str(&format!(
+                    "--- Checkpoint ---\nID: {}\nName: {}\nSession: {}\nCreated: {}\n\n",
+                    c.id,
+                    c.name.as_deref().unwrap_or(""),
+                    c.session_id.as_deref().unwrap_or(""),
+                    c.created_at.to_rfc3339()
+                ));
+            }
             for (i, doc) in results.iter().enumerate() {
                 let snippet = if doc.content.len() > 200 {
                     format!(
@@ -1431,6 +1530,65 @@ mod tests {
         .await
         .expect("valid save");
         assert_eq!(out["isError"], false, "{out}");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn context_session_semantics_handler_level() {
+        crate::isolate_test_process!();
+        let (state, workspace, _work) = workspace_with_documents(Vec::new()).await;
+        let call = |name: &'static str, args: Value| {
+            let (s, w) = (state.clone(), workspace.clone());
+            async move {
+                handle_context_tool(s, w, name, args)
+                    .await
+                    .expect("tool result")
+            }
+        };
+        for bad in ["../../x", "a..b", &"s".repeat(129), "bad id"] {
+            let out = call("xavier_context_save", json!({"session_id": bad})).await;
+            assert_tool_error(&out, "invalid argument");
+            let out = call("xavier_context_restore", json!({"session_id": bad})).await;
+            assert_tool_error(&out, "invalid argument");
+        }
+        let out = call(
+            "xavier_context_save",
+            json!({"session_id": "s1", "name": "n".repeat(201)}),
+        )
+        .await;
+        assert_tool_error(&out, "name must be at most 200");
+
+        for (sid, name) in [("sess-a", "first"), ("sess-b", "second")] {
+            let out = call(
+                "xavier_context_save",
+                json!({"session_id": sid, "name": name}),
+            )
+            .await;
+            assert_eq!(out["isError"], false, "{out}");
+        }
+        for (sid, mine, other) in [("sess-a", "first", "second"), ("sess-b", "second", "first")] {
+            let out = call("xavier_context_restore", json!({"session_id": sid})).await;
+            assert_eq!(out["isError"], false, "{out}");
+            let payload: Value = serde_json::from_str(tool_text(&out)).expect("json");
+            let cps = payload["checkpoints"].as_array().expect("checkpoints");
+            assert_eq!(cps.len(), 1, "{payload}");
+            assert_eq!(cps[0]["name"], mine);
+            assert!(!payload.to_string().contains(other));
+            assert!(payload["context"]
+                .as_str()
+                .unwrap()
+                .contains("no messages recorded for this session"));
+        }
+
+        let out = call("xavier_context_search", json!({"query": "first"})).await;
+        assert_eq!(out["isError"], false, "{out}");
+        assert!(tool_text(&out).contains("Name: first"), "{out}");
+        let out = call(
+            "xavier_context_search",
+            json!({"query": "first", "session_id": "sess-b"}),
+        )
+        .await;
+        assert!(!tool_text(&out).contains("Name: first"), "{out}");
     }
 
     #[tokio::test]
