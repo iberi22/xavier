@@ -38,6 +38,9 @@ mod codegraph_scan_then_query;
 #[path = "codegraph_uds_ipc_e2e.rs"]
 mod codegraph_uds_ipc_e2e;
 
+#[path = "skill_registry_unify.rs"]
+mod skill_registry_unify;
+
 #[path = "e2e/context_regen_e2e.rs"]
 mod context_regen_e2e;
 
