@@ -677,8 +677,12 @@ async fn security_violation_returns_standard_code() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert_eq!(body["error"]["code"], super::types::XAVIER_ERROR_SECURITY);
-    assert!(body["error"]["message"]
+    assert_eq!(body["result"]["isError"], true, "{body}");
+    assert_eq!(
+        body["result"]["structuredContent"]["error"]["code"],
+        super::types::XAVIER_ERROR_SECURITY
+    );
+    assert!(body["result"]["content"][0]["text"]
         .as_str()
         .unwrap()
         .contains("Security policy violation"));
@@ -707,8 +711,12 @@ async fn adversarial_security_violation_returns_standard_code() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert_eq!(body["error"]["code"], super::types::XAVIER_ERROR_SECURITY);
-    assert!(body["error"]["message"]
+    assert_eq!(body["result"]["isError"], true, "{body}");
+    assert_eq!(
+        body["result"]["structuredContent"]["error"]["code"],
+        super::types::XAVIER_ERROR_SECURITY
+    );
+    assert!(body["result"]["content"][0]["text"]
         .as_str()
         .unwrap()
         .contains("Security policy violation"));
@@ -737,8 +745,12 @@ async fn validation_error_returns_standard_code() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert_eq!(body["error"]["code"], super::types::XAVIER_ERROR_VALIDATION);
-    assert!(body["error"]["message"]
+    assert_eq!(body["result"]["isError"], true, "{body}");
+    assert_eq!(
+        body["result"]["structuredContent"]["error"]["code"],
+        super::types::XAVIER_ERROR_VALIDATION
+    );
+    assert!(body["result"]["content"][0]["text"]
         .as_str()
         .unwrap()
         .contains("Missing required parameter: content"));
@@ -951,17 +963,13 @@ async fn error_handling_invalid_input() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(
-        body["error"].is_object(),
-        "missing project_id should return error, got: {:?}",
-        body["result"]
+    assert_eq!(
+        body["result"]["isError"], true,
+        "missing project_id should return a tool error, got: {body}"
     );
-    // Internal error (-32603) or validation error (-32001) are both acceptable
-    let error_code = body["error"]["code"].as_i64().unwrap_or(0);
-    assert!(
-        error_code == -32603 || error_code == -32001,
-        "expected internal or validation error, got {}",
-        error_code
+    assert_eq!(
+        body["result"]["structuredContent"]["error"]["code"],
+        super::types::XAVIER_ERROR_VALIDATION
     );
 
     // search_memory without query → should return validation error (query is required)
@@ -974,7 +982,11 @@ async fn error_handling_invalid_input() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert_eq!(body["error"]["code"], super::types::XAVIER_ERROR_VALIDATION);
+    assert_eq!(body["result"]["isError"], true, "{body}");
+    assert_eq!(
+        body["result"]["structuredContent"]["error"]["code"],
+        super::types::XAVIER_ERROR_VALIDATION
+    );
 
     // mem_search with valid input works
     let response = post_json(
@@ -3351,4 +3363,164 @@ async fn context_restore_finds_session_only_in_persistent_store() {
         .as_str()
         .unwrap_or_default()
         .contains("\"status\": \"ok\""));
+}
+
+async fn mcp_post_raw(
+    router: Router,
+    body: Vec<u8>,
+    session: Option<&str>,
+) -> axum::response::Response {
+    let mut req = Request::builder()
+        .method(Method::POST)
+        .uri("/mcp")
+        .header("content-type", "application/json")
+        .header("Origin", "http://localhost:8080");
+    if let Ok(t) = std::env::var("XAVIER_TOKEN") {
+        req = req.header("X-Xavier-Token", t);
+    }
+    if let Some(id) = session {
+        req = req.header(MCP_SESSION_HEADER, id);
+    }
+    router
+        .oneshot(req.body(Body::from(body)).expect("build raw request"))
+        .await
+        .expect("raw POST /mcp")
+}
+
+async fn mcp_call(body: Value) -> Value {
+    let (state, workspace) = test_state().await;
+    get_json_body(post_json(test_router(state, workspace), body).await).await
+}
+
+#[tokio::test]
+async fn mcp_ping_returns_empty_result() {
+    let body = mcp_call(json!({"jsonrpc": "2.0", "id": 7, "method": "ping"})).await;
+    assert_eq!(body["id"], 7, "{body}");
+    assert_eq!(body["result"], json!({}), "{body}");
+    assert!(body.get("error").is_none_or(Value::is_null), "{body}");
+}
+
+#[tokio::test]
+async fn mcp_unknown_tool_is_invalid_params() {
+    let body = mcp_call(json!({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "no_such_tool_xyz", "arguments": {}}
+    }))
+    .await;
+    assert_eq!(body["error"]["code"], -32602, "{body}");
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("no_such_tool_xyz"));
+}
+
+#[tokio::test]
+async fn mcp_tools_call_bad_params_is_invalid_params() {
+    for params in [
+        json!({"arguments": {}}),
+        json!({"name": "", "arguments": {}}),
+        json!({"name": 5}),
+        json!("not-an-object"),
+    ] {
+        let body = mcp_call(json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params
+        }))
+        .await;
+        assert_eq!(body["error"]["code"], -32602, "{params}: {body}");
+    }
+    let body = mcp_call(json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call"})).await;
+    assert_eq!(body["error"]["code"], -32602, "{body}");
+}
+
+#[tokio::test]
+async fn mcp_malformed_json_is_parse_error_body() {
+    let (state, workspace) = test_state().await;
+    let response = mcp_post_raw(test_router(state, workspace), b"{not json".to_vec(), None).await;
+    let body = get_json_body(response).await;
+    assert_eq!(body["error"]["code"], -32700, "{body}");
+    assert!(body["id"].is_null(), "{body}");
+    assert_eq!(body["jsonrpc"], "2.0");
+}
+
+#[tokio::test]
+async fn mcp_wrong_jsonrpc_version_is_invalid_request() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+    let payload = json!({"jsonrpc": "1.0", "id": 3, "method": "ping"});
+    let body = get_json_body(
+        mcp_post_raw(router.clone(), serde_json::to_vec(&payload).unwrap(), None).await,
+    )
+    .await;
+    assert_eq!(body["error"]["code"], -32600, "{body}");
+    assert_eq!(body["id"], 3, "{body}");
+
+    let payload = json!({"jsonrpc": "2.0", "id": 4});
+    let body =
+        get_json_body(mcp_post_raw(router, serde_json::to_vec(&payload).unwrap(), None).await)
+            .await;
+    assert_eq!(body["error"]["code"], -32600, "{body}");
+}
+
+#[tokio::test]
+async fn mcp_batch_is_rejected_with_invalid_request() {
+    let (state, workspace) = test_state().await;
+    let payload = json!([{"jsonrpc": "2.0", "id": 1, "method": "ping"}]);
+    let body = get_json_body(
+        mcp_post_raw(
+            test_router(state, workspace),
+            serde_json::to_vec(&payload).unwrap(),
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(body["error"]["code"], -32600, "{body}");
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("batch not supported"));
+}
+
+#[tokio::test]
+async fn mcp_null_id_is_a_request_not_a_notification() {
+    let body = mcp_call(json!({"jsonrpc": "2.0", "id": null, "method": "ping"})).await;
+    assert_eq!(body["result"], json!({}), "{body}");
+    assert!(body["id"].is_null(), "{body}");
+}
+
+#[tokio::test]
+async fn mcp_unknown_session_id_is_404() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+    let payload =
+        serde_json::to_vec(&json!({"jsonrpc": "2.0", "id": 1, "method": "ping"})).unwrap();
+    let response = mcp_post_raw(router.clone(), payload.clone(), Some("no-such-session")).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // A session id issued by the server is accepted on the next request.
+    let response = mcp_post_raw(router.clone(), payload.clone(), None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let issued = response
+        .headers()
+        .get(MCP_SESSION_HEADER)
+        .expect("session header")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let response = mcp_post_raw(router, payload, Some(&issued)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn mcp_missing_required_argument_sets_is_error() {
+    let body = mcp_call(json!({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "search_memory", "arguments": {}}
+    }))
+    .await;
+    assert_eq!(body["result"]["isError"], true, "{body}");
+    assert!(body["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("query"));
 }

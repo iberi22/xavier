@@ -326,12 +326,22 @@ pub async fn mcp_post_handler(
         manager.prune_stale_sessions(DEFAULT_TIMEOUT_DURATION);
     }
 
-    let session_id = headers
-        .get("mcp-session-id")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("default");
+    let header_session = headers.get("mcp-session-id").and_then(|v| v.to_str().ok());
+    let session_id = header_session.unwrap_or("default");
 
     if manager.get_session(session_id).is_none() {
+        // An explicit but unknown session id is a stale/forged session: 404 per spec.
+        if header_session.is_some() {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(error_response(
+                    None,
+                    XAVIER_ERROR_NOT_FOUND,
+                    format!("Unknown Mcp-Session-Id: {session_id}"),
+                )),
+            )
+                .into_response();
+        }
         if manager.active_session_count() > 10_000 {
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -363,11 +373,23 @@ pub async fn mcp_post_handler(
         Err(error) => {
             return (
                 StatusCode::BAD_REQUEST,
-                format!("Invalid JSON payload: {error}"),
+                Json(error_response(
+                    None,
+                    -32700,
+                    format!("Parse error: {error}"),
+                )),
             )
                 .into_response();
         }
     };
+
+    if let Some((id, message)) = framing_error(&payload) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(error_response(id, -32600, message)),
+        )
+            .into_response();
+    }
 
     // Spec 2026-07-28: Request Metadata Validation
     if let Err(mismatch) = validate_request_headers(&headers, &payload) {
@@ -405,7 +427,10 @@ pub async fn mcp_post_handler(
     let _ = manager.transition_state(session_id, McpSessionState::Connected);
 
     let active_session_id = if session_id == "default" {
-        ulid::Ulid::new().to_string()
+        let fresh = ulid::Ulid::new().to_string();
+        // Register it so the client can send it back without a 404.
+        manager.create_session(fresh.clone(), None, None);
+        fresh
     } else {
         session_id.to_string()
     };
@@ -424,6 +449,29 @@ pub async fn mcp_post_handler(
             .into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
     }
+}
+
+/// Cheap JSON-RPC framing checks done before dispatch. Returns the id to echo
+/// (when usable) and the message for a -32600 response.
+fn framing_error(payload: &Value) -> Option<(Option<Value>, String)> {
+    let object = match payload {
+        Value::Array(_) => return Some((None, "Invalid Request: batch not supported".to_string())),
+        Value::Object(object) => object,
+        _ => return Some((None, "Invalid Request: expected a JSON object".to_string())),
+    };
+    let id = object
+        .get("id")
+        .filter(|v| v.is_string() || v.is_number())
+        .cloned();
+    if object.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+        return Some((id, "Invalid Request: jsonrpc must be \"2.0\"".to_string()));
+    }
+    let has_method = object.get("method").is_some_and(Value::is_string);
+    let is_response = object.contains_key("result") || object.contains_key("error");
+    if !has_method && !is_response {
+        return Some((id, "Invalid Request: missing method".to_string()));
+    }
+    None
 }
 
 fn validate_request_headers(headers: &HeaderMap, body: &Value) -> Result<(), String> {
@@ -448,10 +496,10 @@ fn validate_request_headers(headers: &HeaderMap, body: &Value) -> Result<(), Str
     }
 
     // body method is mandatory regardless
-    let body_method = body
-        .get("method")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| "Missing 'method' in request body".to_string())?;
+    // Responses (no method) carry nothing to compare against the headers.
+    let Some(body_method) = body.get("method").and_then(|v| v.as_str()) else {
+        return Ok(());
+    };
 
     // 2. Method header (optional; reject only if present and mismatched)
     if let Some(header_method) = headers.get("mcp-method").and_then(|v| v.to_str().ok()) {
@@ -550,13 +598,34 @@ async fn dispatch_mcp_message(
     claims: Option<&crate::security::auth::Claims>,
     message: Value,
 ) -> Result<Option<MCPResponse>, String> {
-    let object = message
-        .as_object()
-        .ok_or_else(|| "Invalid JSON-RPC message: expected object or batch".to_string())?;
-    match classify_message(object)? {
+    let Some(object) = message.as_object() else {
+        return Ok(error_response(
+            None,
+            -32600,
+            "Invalid Request: expected object or batch".to_string(),
+        ));
+    };
+    let kind = match classify_message(object) {
+        Ok(kind) => kind,
+        Err(message) => return Ok(error_response(None, -32600, message)),
+    };
+    match kind {
         IncomingKind::Request => {
-            let request: MCPRequest =
-                serde_json::from_value(Value::Object(object.clone())).map_err(|e| e.to_string())?;
+            let mut request: MCPRequest =
+                match serde_json::from_value(Value::Object(object.clone())) {
+                    Ok(request) => request,
+                    Err(e) => {
+                        return Ok(error_response(
+                            None,
+                            -32600,
+                            format!("Invalid Request: {e}"),
+                        ))
+                    }
+                };
+            // `id: null` deserializes to None; it is a request, not a notification.
+            if request.id.is_none() && object.contains_key("id") {
+                request.id = Some(Value::Null);
+            }
             handle_mcp_request(state, workspace, claims, request).await
         }
         IncomingKind::Response => Ok(None),
@@ -582,13 +651,20 @@ fn classify_message(object: &serde_json::Map<String, Value>) -> Result<IncomingK
     Err("Invalid JSON-RPC message: missing method/result/error".to_string())
 }
 
-fn validate_tool_call_args(name: &str, arguments: &Value) -> Result<(), MCPError> {
+/// Failure of the generic argument validator. `Protocol` stays a JSON-RPC
+/// error; `Tool` is surfaced as a tool result with `isError: true`.
+enum ArgError {
+    Protocol(MCPError),
+    Tool(MCPError),
+}
+
+fn validate_tool_call_args(name: &str, arguments: &Value) -> Result<(), ArgError> {
     if !arguments.is_object() {
-        return Err(MCPError {
+        return Err(ArgError::Protocol(MCPError {
             code: XAVIER_ERROR_VALIDATION,
             message: "arguments must be a JSON object".to_string(),
             data: None,
-        });
+        }));
     }
 
     let tools = super::server::get_xavier_tools();
@@ -601,11 +677,11 @@ fn validate_tool_call_args(name: &str, arguments: &Value) -> Result<(), MCPError
                     if arguments.get(field_name).is_none()
                         || arguments.get(field_name) == Some(&Value::Null)
                     {
-                        return Err(MCPError {
+                        return Err(ArgError::Tool(MCPError {
                             code: XAVIER_ERROR_VALIDATION,
                             message: format!("Missing required parameter: {}", field_name),
                             data: None,
-                        });
+                        }));
                     }
                 }
             }
@@ -676,6 +752,12 @@ async fn handle_mcp_request(
             })
         }
         "notifications/initialized" => None,
+        "ping" => Some(MCPResponse {
+            jsonrpc: "2.0".to_string(),
+            id: request.id.unwrap_or(Value::Null),
+            result: Some(serde_json::json!({})),
+            error: None,
+        }),
         "resources/list" => Some(MCPResponse {
             jsonrpc: "2.0".to_string(),
             id: request.id.unwrap_or(Value::Null),
@@ -764,39 +846,68 @@ async fn handle_mcp_request(
             })
         }
         "tools/call" => {
-            let params = request.params.unwrap_or(serde_json::json!({}));
-            let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let params = match request.params {
+                Some(params) if params.is_object() => params,
+                _ => {
+                    return Ok(error_response(
+                        request_id,
+                        -32602,
+                        "Invalid params: params must be an object".to_string(),
+                    ))
+                }
+            };
+            let name = match params.get("name").and_then(|v| v.as_str()) {
+                Some(name) if !name.is_empty() => name,
+                _ => {
+                    return Ok(error_response(
+                        request_id,
+                        -32602,
+                        "Invalid params: missing or empty tool name".to_string(),
+                    ))
+                }
+            };
             let arguments = params
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| serde_json::json!({}));
+            let id = request_id.clone().unwrap_or(Value::Null);
 
-            if let Err(error) = validate_tool_call_args(name, &arguments) {
-                Some(MCPResponse {
+            match validate_tool_call_args(name, &arguments) {
+                Err(ArgError::Protocol(error)) => Some(MCPResponse {
                     jsonrpc: "2.0".to_string(),
-                    id: request.id.unwrap_or(Value::Null),
+                    id,
                     result: None,
                     error: Some(error),
-                })
-            } else {
-                Some(
+                }),
+                Err(ArgError::Tool(error)) => Some(tool_error_response(id, error)),
+                Ok(()) => Some(
                     match super::server::handle_tool_call(state, workspace, claims, name, arguments)
                         .await
                     {
                         Ok(result) => MCPResponse {
                             jsonrpc: "2.0".to_string(),
-                            id: request.id.unwrap_or(Value::Null),
+                            id,
                             result: Some(result),
                             error: None,
                         },
-                        Err(error) => MCPResponse {
-                            jsonrpc: "2.0".to_string(),
-                            id: request.id.unwrap_or(Value::Null),
-                            result: None,
-                            error: Some(classify_mcp_error(error)),
-                        },
+                        Err(error) => {
+                            let error = classify_mcp_error(error);
+                            if error.code == XAVIER_ERROR_SECURITY
+                                && (error.message.contains("Security policy violation")
+                                    || error.message.contains("blocked by security policy"))
+                            {
+                                tool_error_response(id, error)
+                            } else {
+                                MCPResponse {
+                                    jsonrpc: "2.0".to_string(),
+                                    id,
+                                    result: None,
+                                    error: Some(error),
+                                }
+                            }
+                        }
                     },
-                )
+                ),
             }
         }
         _ if is_notification => None,
@@ -810,6 +921,28 @@ async fn handle_mcp_request(
         Ok(None)
     } else {
         Ok(response)
+    }
+}
+
+/// Tool execution failure: a normal result with `isError: true` that keeps the
+/// JSON-RPC style error object under `structuredContent`.
+fn tool_error_response(id: Value, error: MCPError) -> MCPResponse {
+    let result = serde_json::to_value(MCPToolResult {
+        content: vec![MCPContent::Text(MCPTextContent {
+            content_type: "text".to_string(),
+            text: error.message.clone(),
+        })],
+        structured_content: Some(serde_json::json!({
+            "error": { "code": error.code, "message": error.message }
+        })),
+        is_error: Some(true),
+    })
+    .unwrap_or_else(|_| serde_json::json!({ "isError": true }));
+    MCPResponse {
+        jsonrpc: "2.0".to_string(),
+        id,
+        result: Some(result),
+        error: None,
     }
 }
 
@@ -827,8 +960,11 @@ fn error_response(id: Option<Value>, code: i32, message: String) -> Option<MCPRe
 }
 
 fn classify_mcp_error(err: anyhow::Error) -> MCPError {
-    let message = err.to_string();
-    let code = if message.contains("Memory clearance exceeds caller clearance")
+    let mut message = err.to_string();
+    let code = if let Some(tool) = message.strip_prefix("Tool not implemented: ") {
+        message = format!("Unknown tool: {tool}");
+        -32602
+    } else if message.contains("Memory clearance exceeds caller clearance")
         || message.contains("Security policy violation")
         || message.contains("blocked by security policy")
         || message.contains("Forbidden")
