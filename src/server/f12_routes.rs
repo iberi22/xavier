@@ -17,7 +17,7 @@ use axum::{
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 
 use crate::codebase::snapshot::{discover_swal_repo_roots, SnapshotManager};
@@ -51,6 +51,28 @@ pub struct F12State {
     pub registry: Arc<Mutex<F12Registries>>,
     /// Transport that delivers private mesh sync payloads to target nodes.
     pub private_sync: Option<Arc<SyncTransport>>,
+    /// This node, when the server runs with a node identity.
+    pub local_node: Option<LocalNode>,
+    receiver: tokio::sync::watch::Receiver<ReceiverStatus>,
+}
+
+/// Identity of the local node as advertised to same-wallet peers.
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalNode {
+    pub node_id: NodeId,
+    pub public_key_hex: String,
+}
+
+/// State of the local private sync receiver (Iroh accept loop).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReceiverStatus {
+    Disabled,
+    Starting,
+    /// Accepting sync at `addr`, a JSON-encoded Iroh endpoint address.
+    Listening {
+        addr: String,
+    },
+    Failed(String),
 }
 
 #[derive(Default)]
@@ -68,16 +90,41 @@ impl F12State {
             data_dir,
             registry: Arc::new(Mutex::new(F12Registries::default())),
             private_sync: None,
+            local_node: None,
+            receiver: tokio::sync::watch::channel(ReceiverStatus::Disabled).1,
         }
     }
 
-    /// State as the server builds it: private sync goes out over Iroh signed by
-    /// `identity`. Without the `mesh` feature or an identity, sync answers 503.
-    pub fn for_server(data_dir: PathBuf, identity: Option<Arc<NodeIdentity>>) -> Self {
+    /// State as the server builds it. With the `mesh` feature and an identity,
+    /// one Iroh endpoint backed by `store` sends private sync and also runs the
+    /// receiver, which accepts sync only from nodes registered under the same
+    /// wallet as this node. Without them, sync answers 503.
+    pub fn for_server(
+        data_dir: PathBuf,
+        identity: Option<Arc<NodeIdentity>>,
+        store: Arc<dyn crate::memory::store::MemoryStore>,
+    ) -> Self {
         let state = Self::new(data_dir);
-        match private_sync_transport(identity) {
-            Some(transport) => state.with_private_sync_transport(transport),
+        match identity {
+            Some(identity) => start_private_sync(state, identity, store),
             None => state,
+        }
+    }
+
+    /// Waits until the receiver has started (or failed) and returns its status.
+    pub async fn private_sync_receiver(&self) -> ReceiverStatus {
+        let mut rx = self.receiver.clone();
+        let status = rx
+            .wait_for(|s| *s != ReceiverStatus::Starting)
+            .await
+            .map(|s| s.clone());
+        status.unwrap_or_else(|_| rx.borrow().clone())
+    }
+
+    fn receiver_addr(&self) -> Option<String> {
+        match &*self.receiver.borrow() {
+            ReceiverStatus::Listening { addr } => Some(addr.clone()),
+            _ => None,
         }
     }
 
@@ -110,19 +157,7 @@ impl F12State {
     }
 
     fn private_mesh_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
-        let mut reg = self.registry.lock();
-        if reg.private_mesh.is_none() {
-            reg.private_mesh = Some(
-                PrivateMeshRegistry::load_or_create(self.data_dir.join("mesh/private-mesh.json"))
-                    .unwrap_or_else(|_| {
-                        PrivateMeshRegistry::load_or_create(
-                            self.data_dir.join("mesh/private-mesh.json"),
-                        )
-                        .expect("mesh")
-                    }),
-            );
-        }
-        reg
+        private_mesh_locked(&self.registry, &self.data_dir)
     }
 
     fn curation_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
@@ -151,17 +186,147 @@ impl F12State {
     }
 }
 
+fn private_mesh_locked<'a>(
+    registry: &'a Mutex<F12Registries>,
+    data_dir: &FsPath,
+) -> parking_lot::MutexGuard<'a, F12Registries> {
+    let mut reg = registry.lock();
+    if reg.private_mesh.is_none() {
+        let path = data_dir.join("mesh/private-mesh.json");
+        reg.private_mesh = Some(
+            PrivateMeshRegistry::load_or_create(path.clone())
+                .unwrap_or_else(|_| PrivateMeshRegistry::load_or_create(path).expect("mesh")),
+        );
+    }
+    reg
+}
+
+/// Accepts a sender only when both it and the local node are registered under
+/// the same wallet in the private mesh registry. Read on every request, so
+/// registrations take effect without a restart.
+pub struct SameWalletSenderPolicy {
+    registry: Arc<Mutex<F12Registries>>,
+    data_dir: PathBuf,
+    local_node: NodeId,
+}
+
+impl SameWalletSenderPolicy {
+    pub fn allows_sender(&self, sender: &str) -> bool {
+        let reg = private_mesh_locked(&self.registry, &self.data_dir);
+        let mesh = reg.private_mesh.as_ref().expect("mesh");
+        let wallet_of = |id: &str| {
+            mesh.all_nodes()
+                .iter()
+                .find(|n| n.node_id.as_str() == id)
+                .map(|n| n.wallet_id.clone())
+        };
+        match (wallet_of(self.local_node.as_str()), wallet_of(sender)) {
+            (Some(local), Some(remote)) => {
+                crate::mesh::private_mesh::is_same_wallet(&local, &remote)
+            }
+            _ => false,
+        }
+    }
+}
+
 #[cfg(feature = "mesh")]
-fn private_sync_transport(identity: Option<Arc<NodeIdentity>>) -> Option<Arc<SyncTransport>> {
-    // The sending side never accepts connections, so it needs no backing store.
-    let transport =
-        crate::mesh::iroh_transport::IrohTransport::new(identity?, crate::mesh::dummy_store());
-    Some(Arc::new(SyncTransport::P2pIroh(transport)))
+impl crate::mesh::iroh_transport::SenderPolicy for SameWalletSenderPolicy {
+    fn allows(&self, node_id: &str) -> bool {
+        self.allows_sender(node_id)
+    }
+}
+
+/// Whether the mesh endpoint binds to localhost only (no relays or discovery).
+#[cfg(feature = "mesh")]
+fn mesh_localhost_only() -> bool {
+    std::env::var("XAVIER_MESH_LOCALHOST_ONLY")
+        .map(|v| matches!(v.trim(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+}
+
+#[cfg(feature = "mesh")]
+fn start_private_sync(
+    mut state: F12State,
+    identity: Arc<NodeIdentity>,
+    store: Arc<dyn crate::memory::store::MemoryStore>,
+) -> F12State {
+    use crate::mesh::iroh_transport::IrohTransport;
+
+    let local_node = identity.node_id.clone();
+    state.local_node = Some(LocalNode {
+        node_id: local_node.clone(),
+        public_key_hex: crate::crypto::hex_encode(&identity.public_key),
+    });
+    let policy = Arc::new(SameWalletSenderPolicy {
+        registry: state.registry.clone(),
+        data_dir: state.data_dir.clone(),
+        local_node: local_node.clone(),
+    });
+    let mut iroh = IrohTransport::new(identity, store).with_sender_policy(policy);
+    if mesh_localhost_only() {
+        iroh = iroh.localhost_only();
+    }
+    let transport = Arc::new(SyncTransport::P2pIroh(iroh));
+    state.private_sync = Some(transport.clone());
+
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+        tracing::warn!("no async runtime: private sync receiver not started");
+        state.receiver =
+            tokio::sync::watch::channel(ReceiverStatus::Failed("no async runtime".into())).1;
+        return state;
+    };
+    let (tx, rx) = tokio::sync::watch::channel(ReceiverStatus::Starting);
+    state.receiver = rx;
+    let registry = state.registry.clone();
+    let data_dir = state.data_dir.clone();
+    runtime.spawn(async move {
+        let SyncTransport::P2pIroh(iroh) = &*transport else {
+            return;
+        };
+        let status = match iroh.direct_addr().await {
+            Ok(addr) => {
+                // Detached: the accept loop lives as long as the endpoint.
+                drop(iroh.spawn_accept_loop().await);
+                let addr = serde_json::to_string(&addr).unwrap_or_default();
+                advertise_receiver_addr(&registry, &data_dir, &local_node, &addr);
+                tracing::info!(node = %local_node.as_str(), "private sync receiver listening");
+                ReceiverStatus::Listening { addr }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "private sync receiver failed to start");
+                ReceiverStatus::Failed(e.to_string())
+            }
+        };
+        let _ = tx.send(status);
+    });
+    state
 }
 
 #[cfg(not(feature = "mesh"))]
-fn private_sync_transport(_identity: Option<Arc<NodeIdentity>>) -> Option<Arc<SyncTransport>> {
-    None
+fn start_private_sync(
+    state: F12State,
+    _identity: Arc<NodeIdentity>,
+    _store: Arc<dyn crate::memory::store::MemoryStore>,
+) -> F12State {
+    state
+}
+
+/// Records the receiver address on the local node's registry entry, if any, so
+/// the node list a peer reads points at the live endpoint.
+#[cfg_attr(not(feature = "mesh"), allow(dead_code))]
+fn advertise_receiver_addr(
+    registry: &Mutex<F12Registries>,
+    data_dir: &FsPath,
+    local_node: &NodeId,
+    addr: &str,
+) {
+    let mut reg = private_mesh_locked(registry, data_dir);
+    let mesh = reg.private_mesh.as_mut().expect("mesh");
+    if mesh.set_node_addr(local_node, addr) {
+        if let Err(e) = mesh.save() {
+            tracing::warn!(error = %e, "could not persist private sync receiver address");
+        }
+    }
 }
 
 // ---------- request/response types ----------
@@ -430,11 +595,21 @@ pub async fn register_wallet_node(
         return (StatusCode::UNAUTHORIZED, "wallet ownership proof rejected").into_response();
     }
 
+    // The local node advertises its own live receiver unless told otherwise.
+    let is_local = state
+        .local_node
+        .as_ref()
+        .is_some_and(|n| n.node_id.as_str() == req.node_id);
+    let iroh_addr = req
+        .iroh_addr
+        .filter(|a| !a.trim().is_empty())
+        .or_else(|| is_local.then(|| state.receiver_addr()).flatten())
+        .unwrap_or_default();
     let node = WalletNode {
         node_id: crate::mesh::node::NodeId(req.node_id),
         wallet_id: req.wallet_id.clone(),
         name: req.name,
-        iroh_addr: req.iroh_addr.unwrap_or_default(),
+        iroh_addr,
         last_seen: chrono::Utc::now(),
     };
     let public_key = match req.public_key_hex.as_deref() {
@@ -505,6 +680,23 @@ pub async fn list_wallet_nodes(
     let reg = state.private_mesh_mut();
     let mesh = reg.private_mesh.as_ref().expect("mesh");
     Json(mesh.get_nodes_by_wallet(wallet)).into_response()
+}
+
+/// Receiver advertisement of this node: id, key and dialable Iroh address.
+pub async fn private_sync_receiver_info(State(state): State<F12State>) -> impl IntoResponse {
+    match (&state.local_node, state.receiver_addr()) {
+        (Some(node), Some(addr)) => Json(serde_json::json!({
+            "node_id": node.node_id,
+            "public_key_hex": node.public_key_hex,
+            "iroh_addr": addr,
+        }))
+        .into_response(),
+        _ => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "private sync receiver not running",
+        )
+            .into_response(),
+    }
 }
 
 /// Syncs with a same-wallet target node. The body must carry `proof`, a challenge
@@ -1165,6 +1357,10 @@ pub fn router(state: F12State) -> Router {
             get(wallet_registration_challenge),
         )
         .route("/v1/f12/private-mesh/sync", post(private_mesh_sync))
+        .route(
+            "/v1/f12/private-mesh/receiver",
+            get(private_sync_receiver_info),
+        )
         .route("/v1/f12/redact", post(redact_document))
         .route("/v1/f12/curation", post(submit_curation))
         .route("/v1/f12/curation/approve", post(approve_curation))
@@ -2217,12 +2413,16 @@ mod tests {
     async fn server_state_installs_private_sync_transport() {
         let dir = test_state().data_dir;
         let identity = Arc::new(NodeIdentity::generate());
-        let state = F12State::for_server(dir.clone(), Some(identity));
+        let store: Arc<dyn crate::memory::store::MemoryStore> =
+            Arc::new(crate::memory::store::InMemoryMemoryStore::default());
+        let state = F12State::for_server(dir.clone(), Some(identity), store.clone());
         assert!(matches!(
             state.private_sync.as_deref(),
             Some(SyncTransport::P2pIroh(_))
         ));
-        assert!(F12State::for_server(dir, None).private_sync.is_none());
+        assert!(F12State::for_server(dir, None, store)
+            .private_sync
+            .is_none());
 
         let app = router(state);
         let owner = NodeIdentity::generate();
@@ -2242,6 +2442,129 @@ mod tests {
         // The transport is used: an undialable address fails delivery (502), not 503.
         let resp = sync_request(&app, &wallet, &owner, &target_id).await;
         assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    /// The production state runs a receiver on the same endpoint as the outbound
+    /// transport, backed by the given store, advertising its address and
+    /// accepting sealed sync only from nodes registered under the local wallet.
+    #[cfg(feature = "mesh")]
+    #[tokio::test]
+    async fn server_state_starts_same_wallet_receiver() {
+        use crate::mesh::iroh_transport::IrohTransport;
+
+        let previous = std::env::var("XAVIER_MESH_LOCALHOST_ONLY").ok();
+        std::env::set_var("XAVIER_MESH_LOCALHOST_ONLY", "1");
+        let dir = test_state().data_dir;
+        let identity = Arc::new(NodeIdentity::generate());
+        let store: Arc<dyn crate::memory::store::MemoryStore> =
+            Arc::new(crate::memory::store::InMemoryMemoryStore::default());
+        let state = F12State::for_server(dir, Some(identity.clone()), store.clone());
+        match previous {
+            Some(v) => std::env::set_var("XAVIER_MESH_LOCALHOST_ONLY", v),
+            None => std::env::remove_var("XAVIER_MESH_LOCALHOST_ONLY"),
+        }
+
+        let Some(SyncTransport::P2pIroh(outbound)) = state.private_sync.as_deref() else {
+            panic!("outbound Iroh transport not installed");
+        };
+        assert!(outbound.has_sender_policy(), "sender policy not installed");
+        let ReceiverStatus::Listening { addr } = state.private_sync_receiver().await else {
+            panic!("receiver not listening");
+        };
+        assert_eq!(
+            serde_json::to_string(&outbound.direct_addr().await.unwrap()).unwrap(),
+            addr,
+            "outbound and receiver share one endpoint"
+        );
+
+        let app = router(state.clone());
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/private-mesh/receiver")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let info: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(info["iroh_addr"], addr.as_str());
+        assert_eq!(info["node_id"], identity.node_id.as_str());
+
+        let sender = Arc::new(NodeIdentity::generate());
+        let sender_transport = IrohTransport::new_direct(
+            sender.clone(),
+            Arc::new(crate::memory::store::InMemoryMemoryStore::default()),
+            std::iter::empty(),
+        );
+        let target: iroh::EndpointAddr = serde_json::from_str(&addr).unwrap();
+        let payload = PrivateSyncPayload {
+            memories: vec![PrivateMemoryDelta {
+                path: "notes/receiver".into(),
+                content: "applied by the production receiver".into(),
+                metadata: serde_json::json!({}),
+                created_at: chrono::Utc::now().timestamp(),
+            }],
+            vectors: Vec::new(),
+            snapshots: Vec::new(),
+        };
+        let send =
+            || sender_transport.send_memory_sync(target.clone(), &identity.public_key, &payload);
+
+        // Unregistered sender: rejected.
+        let ack = send().await.unwrap();
+        assert!(!ack.accepted, "unregistered sender must be rejected");
+
+        // Sender registered under another wallet than the local node: rejected.
+        let node = |id: &NodeId, wallet: &str| WalletNode {
+            node_id: id.clone(),
+            wallet_id: wallet.to_string(),
+            name: "n".into(),
+            iroh_addr: String::new(),
+            last_seen: chrono::Utc::now(),
+        };
+        {
+            let mut reg = state.private_mesh_mut();
+            let mesh = reg.private_mesh.as_mut().unwrap();
+            mesh.register_wallet_node(node(&identity.node_id, "wallet-a"), "wallet-a")
+                .unwrap();
+            mesh.register_wallet_node(node(&sender.node_id, "wallet-b"), "wallet-b")
+                .unwrap();
+        }
+        let ack = send().await.unwrap();
+        assert!(!ack.accepted, "cross-wallet sender must be rejected");
+
+        // A sender registered under the local node's wallet: accepted and
+        // applied to the store passed to `for_server`.
+        let peer = Arc::new(NodeIdentity::generate());
+        {
+            let mut reg = state.private_mesh_mut();
+            let mesh = reg.private_mesh.as_mut().unwrap();
+            mesh.register_wallet_node(node(&peer.node_id, "wallet-a"), "wallet-a")
+                .unwrap();
+        }
+        let peer_transport = IrohTransport::new_direct(
+            peer,
+            Arc::new(crate::memory::store::InMemoryMemoryStore::default()),
+            std::iter::empty(),
+        );
+        let ack = peer_transport
+            .send_memory_sync(target.clone(), &identity.public_key, &payload)
+            .await
+            .unwrap();
+        assert!(ack.accepted, "same-wallet sync rejected: {:?}", ack.reason);
+        assert_eq!(ack.applied, 1);
+        let applied = store
+            .get("mesh-sync", "notes/receiver")
+            .await
+            .unwrap()
+            .expect("applied to the store passed to for_server");
+        assert_eq!(applied.content, "applied by the production receiver");
     }
 
     #[tokio::test]

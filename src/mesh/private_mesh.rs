@@ -376,6 +376,17 @@ impl PrivateMeshRegistry {
         self.save()
     }
 
+    /// Updates a registered node's Iroh address; returns whether it changed.
+    pub fn set_node_addr(&mut self, node_id: &NodeId, iroh_addr: &str) -> bool {
+        match self.nodes.iter_mut().find(|n| n.node_id == *node_id) {
+            Some(node) if node.iroh_addr != iroh_addr => {
+                node.iroh_addr = iroh_addr.to_string();
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// The registered Ed25519 public key of a node, if any.
     pub fn node_public_key(&self, node_id: &str) -> Option<[u8; 32]> {
         let hex = self.node_keys.get(node_id)?;

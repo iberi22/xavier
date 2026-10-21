@@ -458,6 +458,7 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
                     .map(Arc::new)
                     .map_err(|e| tracing::warn!(error = %e, "private mesh sync disabled"))
                     .ok(),
+                state.store.clone(),
             ))
             .with_state(()),
         )

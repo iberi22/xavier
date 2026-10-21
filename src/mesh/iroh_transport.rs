@@ -111,9 +111,20 @@ const MEMORY_SYNC_MAX_SKEW_SECS: i64 = 300;
 /// Workspace that receives synced memories lacking a `workspace_id` in metadata.
 const MESH_SYNC_DEFAULT_WORKSPACE: &str = "mesh-sync";
 
+/// Decides which sender node ids the accept loop serves.
+pub trait SenderPolicy: Send + Sync {
+    fn allows(&self, node_id: &str) -> bool;
+}
+
+impl SenderPolicy for HashSet<String> {
+    fn allows(&self, node_id: &str) -> bool {
+        self.contains(node_id)
+    }
+}
+
 /// Which peers the accept loop serves. `None` means no allowlist is enforced
-/// (handshakes only); sealed memory sync always requires an allowlisted sender.
-type PeerPolicy = Option<Arc<HashSet<String>>>;
+/// (handshakes only); sealed memory sync always requires an allowed sender.
+type PeerPolicy = Option<Arc<dyn SenderPolicy>>;
 
 fn memory_sync_message(
     timestamp: i64,
@@ -174,11 +185,26 @@ impl IrohTransport {
         allowed_peers: impl IntoIterator<Item = crate::mesh::node::NodeId>,
     ) -> Self {
         let allowed: HashSet<String> = allowed_peers.into_iter().map(|n| n.0).collect();
-        Self {
-            direct_only: true,
-            allowed_peers: Some(Arc::new(allowed)),
-            ..Self::new(identity, store)
-        }
+        Self::new(identity, store)
+            .localhost_only()
+            .with_sender_policy(Arc::new(allowed))
+    }
+
+    /// Binds to localhost with relays and discovery disabled.
+    pub fn localhost_only(mut self) -> Self {
+        self.direct_only = true;
+        self
+    }
+
+    /// Serves only senders that `policy` allows.
+    pub fn with_sender_policy(mut self, policy: Arc<dyn SenderPolicy>) -> Self {
+        self.allowed_peers = Some(policy);
+        self
+    }
+
+    /// Whether a sender policy is installed (sealed memory sync needs one).
+    pub fn has_sender_policy(&self) -> bool {
+        self.allowed_peers.is_some()
     }
 
     /// Full dialable address (id + bound direct sockets) of the local endpoint.
@@ -638,7 +664,7 @@ pub(crate) async fn handle_request(
 }
 
 /// Reject a handshake whose identity is forged or not allowlisted.
-fn check_handshake(body: &MeshHandshake, policy: &HashSet<String>) -> Result<(), String> {
+fn check_handshake(body: &MeshHandshake, policy: &dyn SenderPolicy) -> Result<(), String> {
     let pk = crate::crypto::hex_decode(&body.public_key_hex).map_err(|_| "bad public key")?;
     let sig = crate::crypto::hex_decode(&body.signature_hex).map_err(|_| "bad signature")?;
     if !NodeIdentity::verify(&pk, body.nonce.as_bytes(), &sig) {
@@ -647,7 +673,7 @@ fn check_handshake(body: &MeshHandshake, policy: &HashSet<String>) -> Result<(),
     if crate::mesh::node::NodeId::from_public_key_bytes(&pk) != body.node_id {
         return Err("node_id does not match public key".into());
     }
-    if !policy.contains(body.node_id.as_str()) {
+    if !policy.allows(body.node_id.as_str()) {
         return Err("unknown peer".into());
     }
     Ok(())
@@ -679,7 +705,7 @@ async fn apply_memory_sync(
     }
     let sender = crate::mesh::node::NodeId::from_public_key_bytes(&pk);
     match policy {
-        Some(allowed) if allowed.contains(sender.as_str()) => {}
+        Some(allowed) if allowed.allows(sender.as_str()) => {}
         _ => return Err("unknown peer".into()),
     }
     if (chrono::Utc::now().timestamp() - timestamp).abs() > MEMORY_SYNC_MAX_SKEW_SECS {
