@@ -264,37 +264,48 @@ impl QmdMemory {
     ) -> Result<Vec<MemoryDocument>> {
         let include_activity = filters.and_then(|f| f.include_activity).unwrap_or(false);
         let docs = self.all_documents().await;
-        let filtered_docs: Vec<MemoryDocument> = docs
-            .into_iter()
-            .filter(|doc| matches_filters(&doc.path, &doc.metadata, &self.workspace_id, filters))
-            .filter(|doc| {
-                include_activity || !crate::memory::schema::is_noise_content(&doc.content)
-            })
-            .collect();
+        let workspace_id = self.workspace_id.clone();
+        let filters = filters.cloned();
+        let query = query.to_string();
 
-        if filtered_docs.is_empty() {
-            return Ok(Vec::new());
-        }
+        // Full-corpus filtering + BM25 scoring is CPU-bound: run it off the
+        // Tokio workers.
+        tokio::task::spawn_blocking(move || {
+            let filtered_docs: Vec<MemoryDocument> = docs
+                .into_iter()
+                .filter(|doc| {
+                    matches_filters(&doc.path, &doc.metadata, &workspace_id, filters.as_ref())
+                })
+                .filter(|doc| {
+                    include_activity || !crate::memory::schema::is_noise_content(&doc.content)
+                })
+                .collect();
 
-        let scored = crate::search::bm25::score_documents(
-            query,
-            &filtered_docs,
-            crate::search::bm25::Bm25Params::default(),
-        );
-
-        let mut results = Vec::new();
-        for (score, id) in scored.into_iter().take(limit) {
-            if let Some(doc) = filtered_docs
-                .iter()
-                .find(|d| d.id.as_deref() == Some(&id) || d.path == id)
-            {
-                let mut d = doc.clone();
-                d.score = score;
-                results.push(d);
+            if filtered_docs.is_empty() {
+                return Vec::new();
             }
-        }
 
-        Ok(results)
+            let scored = crate::search::bm25::score_documents(
+                &query,
+                &filtered_docs,
+                crate::search::bm25::Bm25Params::default(),
+            );
+
+            let mut results = Vec::new();
+            for (score, id) in scored.into_iter().take(limit) {
+                if let Some(doc) = filtered_docs
+                    .iter()
+                    .find(|d| d.id.as_deref() == Some(&id) || d.path == id)
+                {
+                    let mut d = doc.clone();
+                    d.score = score;
+                    results.push(d);
+                }
+            }
+            results
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("bm25 scan task failed: {e}"))
     }
 
     /// Cheap check (no search or embedding): whether any document was recorded
@@ -346,12 +357,15 @@ impl QmdMemory {
             return Ok((optimized, SearchMode::from_vector_used(vector_used)));
         }
 
-        let docs = self.docs.read().await;
-        let locomo_only = !docs.is_empty()
-            && docs
-                .iter()
-                .all(|doc| is_locomo_document(&doc.path, &doc.metadata));
-        drop(docs);
+        let docs = Arc::clone(&self.docs).read_owned().await;
+        let locomo_only = tokio::task::spawn_blocking(move || {
+            !docs.is_empty()
+                && docs
+                    .iter()
+                    .all(|doc| is_locomo_document(&doc.path, &doc.metadata))
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("locomo scan task failed: {e}"))?;
 
         if locomo_only {
             return Ok((
@@ -671,8 +685,9 @@ impl QmdMemory {
         query: &str,
         seed_docs: &[MemoryDocument],
         filters: Option<&MemoryQueryFilters>,
+        deadline: tokio::time::Instant,
     ) -> Vec<MemoryDocument> {
-        search::multi_hop_context(self, query, seed_docs, filters).await
+        search::multi_hop_context(self, query, seed_docs, filters, deadline).await
     }
 
     /// Invalidate cache.
