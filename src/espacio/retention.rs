@@ -57,6 +57,21 @@ pub fn sweep_spaces(
     results
 }
 
+/// Sweeps spaces with their own retention_days; `None` uses `fallback_days`.
+pub fn sweep_spaces_per_space(
+    stores: &SpaceStores,
+    spaces: &[(String, Option<u64>)],
+    now: DateTime<Utc>,
+    fallback_days: u64,
+) -> Vec<(String, usize)> {
+    let mut results = Vec::new();
+    for (id, days) in spaces {
+        let days = days.unwrap_or(fallback_days);
+        results.extend(sweep_spaces(stores, std::slice::from_ref(id), now, days));
+    }
+    results
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,5 +175,78 @@ mod tests {
         // Should skip missing and succeed on existing
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, "sp_existing");
+    }
+
+    fn backdate(store: &SpaceStore, days: i64, upto_seq: i64) {
+        let ts = (Utc::now() - TimeDelta::try_days(days).unwrap())
+            .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+        let conn = store.lock();
+        conn.execute(
+            "UPDATE messages SET created_at = ?1 WHERE seq < ?2",
+            params![ts, upto_seq],
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_per_space_retention_sweeps_each_by_its_own_days() {
+        let stores = SpaceStores::in_memory();
+        for id in ["sp_a", "sp_b", "sp_c"] {
+            let s = stores.get(id).unwrap();
+            for m in ["1", "2", "3"] {
+                s.append_message(id, "alice", m).unwrap();
+            }
+            // Two rows are 10 days old, the head stays fresh.
+            backdate(&s, 10, 2);
+        }
+        let spaces = vec![
+            ("sp_a".to_string(), Some(5)),  // 10d > 5d: swept
+            ("sp_b".to_string(), Some(30)), // 10d < 30d: kept
+            ("sp_c".to_string(), None),     // fallback 0: disabled
+        ];
+        let res = sweep_spaces_per_space(&stores, &spaces, Utc::now(), 0);
+        let get = |id: &str| res.iter().find(|r| r.0 == id).map(|r| r.1);
+        assert_eq!(get("sp_a"), Some(2));
+        assert_eq!(get("sp_b"), Some(0));
+        assert_eq!(get("sp_c"), Some(0));
+        assert_eq!(
+            stores
+                .get("sp_a")
+                .unwrap()
+                .messages_since(None)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            stores
+                .get("sp_b")
+                .unwrap()
+                .messages_since(None)
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(
+            stores
+                .get("sp_c")
+                .unwrap()
+                .messages_since(None)
+                .unwrap()
+                .len(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn test_space_without_retention_uses_global_fallback() {
+        let stores = SpaceStores::in_memory();
+        let s = stores.get("sp_d").unwrap();
+        for m in ["1", "2", "3"] {
+            s.append_message("sp_d", "alice", m).unwrap();
+        }
+        backdate(&s, 10, 2);
+        let res = sweep_spaces_per_space(&stores, &[("sp_d".to_string(), None)], Utc::now(), 5);
+        assert_eq!(res, vec![("sp_d".to_string(), 2)]);
     }
 }
