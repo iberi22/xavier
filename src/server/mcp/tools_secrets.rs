@@ -17,7 +17,9 @@ use serde_json::{json, Value};
 use super::types::*;
 use crate::coordination::KeyLendingEngine;
 use crate::secrets::audit::QmdAuditLogger;
-use crate::secrets::exec::{run_with_secret, ExecSecretError, SecretExecSpec};
+use crate::secrets::exec::{
+    is_valid_env_var, run_with_secret, ExecSecretError, SecretExecSpec, DISALLOWED_ENV_VARS,
+};
 use crate::secrets::local_vault::LocalSecretsVault;
 use crate::secrets::vault::HardwareVault;
 use crate::secrets::{SecretError, SecretResult};
@@ -176,37 +178,97 @@ pub fn is_secrets_tool(name: &str) -> bool {
     matches!(name, "secret_lend" | "secret_exec")
 }
 
-fn required_str<'a>(arguments: &'a Value, key: &str) -> anyhow::Result<&'a str> {
-    arguments
-        .get(key)
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing required '{key}' argument"))
+fn tool_error(msg: impl Into<String>) -> anyhow::Result<Value> {
+    let payload = json!({
+        "error": msg.into(),
+        "lease_token": Value::Null,
+        "revoked": true
+    });
+    Ok(serde_json::to_value(MCPToolResult::structured(
+        payload, true,
+    ))?)
 }
 
-fn optional_str<'a>(arguments: &'a Value, key: &str, default: &'a str) -> &'a str {
-    arguments
-        .get(key)
-        .and_then(|v| v.as_str())
-        .unwrap_or(default)
+fn required_str<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, String> {
+    match arguments.get(key) {
+        None | Some(Value::Null) => Err(format!("Missing required parameter: {key}")),
+        Some(Value::String(s)) => Ok(s.as_str()),
+        Some(_) => Err(format!("Invalid argument '{key}': expected string")),
+    }
 }
 
-fn optional_u64(arguments: &Value, key: &str, default: u64) -> u64 {
-    arguments
-        .get(key)
-        .and_then(|v| v.as_u64())
-        .unwrap_or(default)
+fn optional_str<'a>(arguments: &'a Value, key: &str, default: &'a str) -> Result<&'a str, String> {
+    match arguments.get(key) {
+        None | Some(Value::Null) => Ok(default),
+        Some(Value::String(s)) => Ok(s.as_str()),
+        Some(_) => Err(format!("Invalid argument '{key}': expected string")),
+    }
 }
 
-fn string_args(arguments: &Value, key: &str) -> Vec<String> {
-    arguments
-        .get(key)
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|val| val.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
+/// Maximum TTL allowed for secrets leases (86400 seconds = 24 hours).
+pub const MAX_SECRET_TTL_SECONDS: u64 = 86400;
+
+fn optional_ttl(arguments: &Value, key: &str, default: u64) -> Result<u64, String> {
+    match arguments.get(key) {
+        None | Some(Value::Null) => Ok(default),
+        Some(Value::Number(n)) => {
+            if let Some(val) = n.as_u64() {
+                if val < 1 {
+                    Err(format!("Invalid argument '{key}': must be >= 1"))
+                } else {
+                    Ok(val.min(MAX_SECRET_TTL_SECONDS))
+                }
+            } else if let Some(val) = n.as_i64() {
+                if val < 1 {
+                    Err(format!("Invalid argument '{key}': must be >= 1"))
+                } else {
+                    Ok((val as u64).min(MAX_SECRET_TTL_SECONDS))
+                }
+            } else {
+                Err(format!("Invalid argument '{key}': expected integer"))
+            }
+        }
+        Some(_) => Err(format!("Invalid argument '{key}': expected integer")),
+    }
+}
+
+fn string_args(arguments: &Value, key: &str) -> Result<Vec<String>, String> {
+    match arguments.get(key) {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Array(arr)) => {
+            let mut result = Vec::with_capacity(arr.len());
+            for item in arr {
+                match item.as_str() {
+                    Some(s) => result.push(s.to_string()),
+                    None => {
+                        return Err(format!(
+                            "Invalid argument '{key}': expected array of strings"
+                        ))
+                    }
+                }
+            }
+            Ok(result)
+        }
+        Some(_) => Err(format!(
+            "Invalid argument '{key}': expected array of strings"
+        )),
+    }
+}
+
+fn parse_env_var<'a>(arguments: &'a Value, key: &str, default: &'a str) -> Result<&'a str, String> {
+    let var = optional_str(arguments, key, default)?;
+    if !is_valid_env_var(var) {
+        if DISALLOWED_ENV_VARS.contains(&var) {
+            return Err(format!(
+                "Invalid argument '{key}': disallowed environment variable name '{var}'"
+            ));
+        } else {
+            return Err(format!(
+                "Invalid argument '{key}': must match ^[A-Za-z_][A-Za-z0-9_]*$"
+            ));
+        }
+    }
+    Ok(var)
 }
 
 /// Maximum returned output size for secret_exec (64 KiB).
@@ -281,11 +343,89 @@ impl Drop for TempStdoutGuard {
     }
 }
 
-/// Redact occurrences of `secret_val` and truncate to [`MAX_SECRET_EXEC_OUTPUT_BYTES`].
+fn base64_encode_custom(data: &[u8], alphabet: &[u8; 64], padded: bool) -> String {
+    if data.is_empty() {
+        return String::new();
+    }
+    let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = chunk.get(1).copied().unwrap_or(0);
+        let b2 = chunk.get(2).copied().unwrap_or(0);
+        result.push(alphabet[((b0 >> 2) & 0x3f) as usize] as char);
+        result.push(alphabet[(((b0 << 4) | (b1 >> 4)) & 0x3f) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(alphabet[(((b1 << 2) | (b2 >> 6)) & 0x3f) as usize] as char);
+        } else if padded {
+            result.push('=');
+        }
+        if chunk.len() > 2 {
+            result.push(alphabet[(b2 & 0x3f) as usize] as char);
+        } else if padded {
+            result.push('=');
+        }
+    }
+    result
+}
+
+/// Generate all encoded representations of `secret` for redaction.
+pub(crate) fn secret_redaction_patterns(secret: &str) -> Vec<String> {
+    if secret.is_empty() {
+        return Vec::new();
+    }
+    const STD_ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const URL_ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+    let bytes = secret.as_bytes();
+    let mut patterns = Vec::with_capacity(10);
+    patterns.push(secret.to_string());
+    patterns.push(base64_encode_custom(bytes, STD_ALPHABET, true));
+    patterns.push(base64_encode_custom(bytes, STD_ALPHABET, false));
+    patterns.push(base64_encode_custom(bytes, URL_ALPHABET, true));
+    patterns.push(base64_encode_custom(bytes, URL_ALPHABET, false));
+
+    let hex_lower: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+    let hex_upper: String = bytes.iter().map(|b| format!("{:02X}", b)).collect();
+    patterns.push(hex_lower);
+    patterns.push(hex_upper);
+
+    let url_enc = urlencoding::encode(secret).to_string();
+    patterns.push(url_enc.clone());
+    if url_enc.contains('%') {
+        let mut url_enc_lower = String::with_capacity(url_enc.len());
+        let mut chars = url_enc.chars();
+        while let Some(c) = chars.next() {
+            if c == '%' {
+                url_enc_lower.push('%');
+                if let Some(h1) = chars.next() {
+                    url_enc_lower.push(h1.to_ascii_lowercase());
+                }
+                if let Some(h2) = chars.next() {
+                    url_enc_lower.push(h2.to_ascii_lowercase());
+                }
+            } else {
+                url_enc_lower.push(c);
+            }
+        }
+        patterns.push(url_enc_lower);
+    }
+
+    patterns.retain(|p| !p.is_empty());
+    // Sort descending by length so longer substrings are matched and redacted first
+    patterns.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+    patterns.dedup();
+    patterns
+}
+
+/// Redact occurrences of `secret_val` and its encoded forms, and truncate to [`MAX_SECRET_EXEC_OUTPUT_BYTES`].
 pub(crate) fn redact_and_truncate(mut text: String, secret_val: Option<&str>) -> (String, bool) {
     if let Some(secret) = secret_val {
         if !secret.is_empty() {
-            text = text.replace(secret, "[REDACTED]");
+            for pattern in secret_redaction_patterns(secret) {
+                text = text.replace(&pattern, "[REDACTED]");
+            }
         }
     }
 
@@ -309,20 +449,44 @@ pub async fn handle_secrets_tool(
     name: &str,
     arguments: Value,
 ) -> anyhow::Result<Value> {
+    if !arguments.is_object() {
+        return tool_error("Invalid arguments: expected JSON object");
+    }
+
     match name {
         "secret_lend" => {
-            let secret_name = required_str(&arguments, "secret_name")?;
-            let agent_id = required_str(&arguments, "agent_id")?;
-            let ttl_seconds = optional_u64(&arguments, "ttl_seconds", 60);
+            let secret_name = match required_str(&arguments, "secret_name") {
+                Ok(s) => s,
+                Err(e) => return tool_error(e),
+            };
+            let agent_id = match required_str(&arguments, "agent_id") {
+                Ok(s) => s,
+                Err(e) => return tool_error(e),
+            };
+            let ttl_seconds = match optional_ttl(&arguments, "ttl_seconds", 60) {
+                Ok(t) => t,
+                Err(e) => return tool_error(e),
+            };
 
-            let secret_val = ctx.vault.resolve_secret(secret_name).map_err(|e| {
-                anyhow::anyhow!("Failed to resolve secret '{secret_name}' from vault: {e}")
-            })?;
+            let secret_val = match ctx.vault.resolve_secret(secret_name) {
+                Ok(val) => val,
+                Err(e) => {
+                    return tool_error(format!(
+                        "Failed to resolve secret '{secret_name}' from vault: {e}"
+                    ));
+                }
+            };
 
-            let lease = ctx
+            let lease = match ctx
                 .engine
                 .lend(secret_name, Some(&secret_val), agent_id, ttl_seconds)
-                .await?;
+                .await
+            {
+                Ok(l) => l,
+                Err(e) => {
+                    return tool_error(format!("Failed to lend secret '{secret_name}': {e}"));
+                }
+            };
 
             let payload = json!({
                 "lease_token": lease.token,
@@ -337,22 +501,45 @@ pub async fn handle_secrets_tool(
             ))?)
         }
         "secret_exec" => {
-            let secret_name = required_str(&arguments, "secret_name")?;
-            let command = required_str(&arguments, "command")?;
-            let args = string_args(&arguments, "args");
-            let env_var = optional_str(&arguments, "env_var", "XAVIER_SECRET");
-            let ttl_seconds = optional_u64(&arguments, "ttl_seconds", 3600);
-            let agent_id = optional_str(&arguments, "agent_id", "mcp_secret_exec");
+            let secret_name = match required_str(&arguments, "secret_name") {
+                Ok(s) => s,
+                Err(e) => return tool_error(e),
+            };
+            let command = match required_str(&arguments, "command") {
+                Ok(s) => s,
+                Err(e) => return tool_error(e),
+            };
+            let args = match string_args(&arguments, "args") {
+                Ok(a) => a,
+                Err(e) => return tool_error(e),
+            };
+            let env_var = match parse_env_var(&arguments, "env_var", "XAVIER_SECRET") {
+                Ok(v) => v,
+                Err(e) => return tool_error(e),
+            };
+            let ttl_seconds = match optional_ttl(&arguments, "ttl_seconds", 3600) {
+                Ok(t) => t,
+                Err(e) => return tool_error(e),
+            };
+            let agent_id = match optional_str(&arguments, "agent_id", "mcp_secret_exec") {
+                Ok(a) => a,
+                Err(e) => return tool_error(e),
+            };
 
-            // Resolved before the child runs, not after: `run_with_secret`
-            // deliberately never returns the value it injected, and reading it
-            // back from the vault only after the child exits would redact
-            // against whatever value is current then. If the secret rotates
-            // during the run (TTL defaults to an hour) that mismatches what the
-            // child actually saw, letting the real value slip through
-            // unredacted. Resolving up front narrows that window to the gap
-            // between this read and `run_with_secret`'s own internal read.
-            let secret_val = ctx.vault.resolve_secret(secret_name).ok();
+            let secret_val = match ctx.vault.resolve_secret(secret_name) {
+                Ok(val) => val,
+                Err(e) => {
+                    let payload = json!({
+                        "error": format!("Vault error: {e}"),
+                        "lease_token": Value::Null,
+                        "timed_out": false,
+                        "revoked": true
+                    });
+                    return Ok(serde_json::to_value(MCPToolResult::structured(
+                        payload, true,
+                    ))?);
+                }
+            };
 
             let mut stdout_guard = TempStdoutGuard::new()?;
             let spec =
@@ -379,7 +566,7 @@ pub async fn handle_secrets_tool(
             };
 
             let raw_output = stdout_guard.read_and_delete();
-            let (stdout_text, truncated) = redact_and_truncate(raw_output, secret_val.as_deref());
+            let (stdout_text, truncated) = redact_and_truncate(raw_output, Some(&secret_val));
 
             let payload = json!({
                 "exit_code": outcome.exit_code,
@@ -400,7 +587,6 @@ pub async fn handle_secrets_tool(
         _ => Err(anyhow::anyhow!("Unknown secrets tool: {name}")),
     }
 }
-
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -953,5 +1139,389 @@ pub mod tests {
                 tool.name
             );
         }
+    }
+
+    #[tokio::test]
+    async fn secret_exec_fails_closed_when_secret_unavailable() {
+        let f = Fixture::new();
+        let non_existent_tmp = f.temp_dir.path().join("unreachable_tmpdir");
+        // Restores TMPDIR even if an assertion below panics.
+        struct TmpDirGuard(Option<std::ffi::OsString>);
+        impl Drop for TmpDirGuard {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(prev) => std::env::set_var("TMPDIR", prev),
+                    None => std::env::remove_var("TMPDIR"),
+                }
+            }
+        }
+        let _tmp_guard = TmpDirGuard(std::env::var_os("TMPDIR"));
+        std::env::set_var("TMPDIR", &non_existent_tmp);
+
+        let args = json!({
+            "secret_name": "MCP_SECRET_DEFINITELY_ABSENT",
+            "command": "echo",
+            "args": ["harmless"]
+        });
+
+        let res = handle_secrets_tool(&f.ctx, "secret_exec", args)
+            .await
+            .expect("must return tool error response without erroring on tempfile creation");
+
+        assert_eq!(res["isError"], true);
+        let structured = &res["structuredContent"];
+        assert_eq!(structured["revoked"], true);
+        assert_eq!(structured["lease_token"], Value::Null);
+        let err_msg = structured["error"].as_str().expect("error message");
+        assert!(err_msg.contains("Vault error"));
+    }
+
+    #[tokio::test]
+    async fn secret_exec_redacts_encoded_forms() {
+        let f = Fixture::new();
+        let secret_val = "sec>~??_";
+        let secret_name = format!("MCP_SECRET_ENC_{}", uuid::Uuid::new_v4().simple());
+        f.ctx
+            .vault
+            .store_secret(&secret_name, secret_val)
+            .expect("seed canary");
+
+        let hex_lower = "7365633e7e3f3f5f";
+        let hex_upper = "7365633E7E3F3F5F";
+        let b64_std_padded = "c2VjPn4/P18=";
+        let b64_std_unpadded = "c2VjPn4/P18";
+        let b64_url_padded = "c2VjPn4_P18=";
+        let b64_url_unpadded = "c2VjPn4_P18";
+        let url_encoded = "sec%3E~%3F%3F_";
+        let url_encoded_lower = "sec%3e~%3f%3f_";
+
+        let args = json!({
+            "secret_name": secret_name,
+            "command": "printf",
+            "args": [
+                "%s
+%s
+%s
+%s
+%s
+%s
+%s
+%s
+%s
+",
+                secret_val,
+                hex_lower,
+                hex_upper,
+                b64_std_padded,
+                b64_std_unpadded,
+                b64_url_padded,
+                b64_url_unpadded,
+                url_encoded,
+                url_encoded_lower
+            ]
+        });
+
+        let res = handle_secrets_tool(&f.ctx, "secret_exec", args)
+            .await
+            .expect("exec succeeds");
+        assert_eq!(res["isError"], false);
+
+        let stdout = res["structuredContent"]["stdout"]
+            .as_str()
+            .expect("stdout present");
+        assert!(
+            !stdout.contains(secret_val),
+            "exact secret must be redacted"
+        );
+        assert!(
+            !stdout.contains(hex_lower),
+            "lowercase hex must be redacted"
+        );
+        assert!(
+            !stdout.contains(hex_upper),
+            "uppercase hex must be redacted"
+        );
+        assert!(
+            !stdout.contains(b64_std_padded),
+            "standard base64 must be redacted"
+        );
+        assert!(
+            !stdout.contains(b64_std_unpadded),
+            "unpadded standard base64 must be redacted"
+        );
+        assert!(
+            !stdout.contains(b64_url_padded),
+            "url-safe base64 must be redacted"
+        );
+        assert!(
+            !stdout.contains(b64_url_unpadded),
+            "unpadded url-safe base64 must be redacted"
+        );
+        assert!(
+            !stdout.contains(url_encoded),
+            "url-encoded form must be redacted"
+        );
+        assert!(
+            !stdout.contains(url_encoded_lower),
+            "lowercase url-encoded form must be redacted"
+        );
+        assert!(stdout.contains("[REDACTED]"));
+    }
+
+    #[tokio::test]
+    async fn secret_args_wrong_type_rejected() {
+        let f = Fixture::new();
+
+        let res = handle_secrets_tool(
+            &f.ctx,
+            "secret_exec",
+            json!({
+                "secret_name": f.secret_name,
+                "command": "echo",
+                "args": "not_an_array"
+            }),
+        )
+        .await
+        .expect("tool returns result");
+        assert_eq!(res["isError"], true);
+        assert!(res["structuredContent"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("args"));
+
+        let res = handle_secrets_tool(
+            &f.ctx,
+            "secret_exec",
+            json!({
+                "secret_name": f.secret_name,
+                "command": "echo",
+                "args": [1, 2]
+            }),
+        )
+        .await
+        .expect("tool returns result");
+        assert_eq!(res["isError"], true);
+        assert!(res["structuredContent"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("args"));
+
+        let res = handle_secrets_tool(
+            &f.ctx,
+            "secret_exec",
+            json!({
+                "secret_name": f.secret_name,
+                "command": "echo",
+                "ttl_seconds": "invalid"
+            }),
+        )
+        .await
+        .expect("tool returns result");
+        assert_eq!(res["isError"], true);
+        assert!(res["structuredContent"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("ttl_seconds"));
+
+        let res = handle_secrets_tool(
+            &f.ctx,
+            "secret_exec",
+            json!({
+                "secret_name": 12345,
+                "command": "echo"
+            }),
+        )
+        .await
+        .expect("tool returns result");
+        assert_eq!(res["isError"], true);
+        assert!(res["structuredContent"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("secret_name"));
+
+        let res = handle_secrets_tool(
+            &f.ctx,
+            "secret_exec",
+            json!({
+                "secret_name": f.secret_name,
+                "command": true
+            }),
+        )
+        .await
+        .expect("tool returns result");
+        assert_eq!(res["isError"], true);
+        assert!(res["structuredContent"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("command"));
+
+        let res = handle_secrets_tool(
+            &f.ctx,
+            "secret_exec",
+            json!({
+                "secret_name": f.secret_name,
+                "command": "echo",
+                "env_var": 999
+            }),
+        )
+        .await
+        .expect("tool returns result");
+        assert_eq!(res["isError"], true);
+        assert!(res["structuredContent"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("env_var"));
+
+        let res = handle_secrets_tool(
+            &f.ctx,
+            "secret_lend",
+            json!({
+                "secret_name": f.secret_name,
+                "agent_id": "agent",
+                "ttl_seconds": "invalid"
+            }),
+        )
+        .await
+        .expect("tool returns result");
+        assert_eq!(res["isError"], true);
+        assert!(res["structuredContent"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("ttl_seconds"));
+    }
+
+    #[tokio::test]
+    async fn secret_lend_ttl_zero_rejected() {
+        let f = Fixture::new();
+
+        let res = handle_secrets_tool(
+            &f.ctx,
+            "secret_lend",
+            json!({
+                "secret_name": f.secret_name,
+                "agent_id": "test_agent",
+                "ttl_seconds": 0
+            }),
+        )
+        .await
+        .expect("tool returns result");
+        assert_eq!(res["isError"], true);
+        let err = res["structuredContent"]["error"].as_str().unwrap();
+        assert!(err.contains("ttl_seconds") && err.contains(">= 1"));
+
+        let res = handle_secrets_tool(
+            &f.ctx,
+            "secret_lend",
+            json!({
+                "secret_name": f.secret_name,
+                "agent_id": "test_agent",
+                "ttl_seconds": -5
+            }),
+        )
+        .await
+        .expect("tool returns result");
+        assert_eq!(res["isError"], true);
+        let err = res["structuredContent"]["error"].as_str().unwrap();
+        assert!(err.contains("ttl_seconds"));
+
+        let res = handle_secrets_tool(
+            &f.ctx,
+            "secret_exec",
+            json!({
+                "secret_name": f.secret_name,
+                "command": "echo",
+                "ttl_seconds": 0
+            }),
+        )
+        .await
+        .expect("tool returns result");
+        assert_eq!(res["isError"], true);
+        let err = res["structuredContent"]["error"].as_str().unwrap();
+        assert!(err.contains("ttl_seconds") && err.contains(">= 1"));
+
+        let res = handle_secrets_tool(
+            &f.ctx,
+            "secret_lend",
+            json!({
+                "secret_name": f.secret_name,
+                "agent_id": "test_agent",
+                "ttl_seconds": 999_999
+            }),
+        )
+        .await
+        .expect("tool returns result");
+        assert_eq!(res["isError"], false);
+        assert_eq!(res["structuredContent"]["revoked"], false);
+    }
+
+    #[tokio::test]
+    async fn secret_exec_rejects_invalid_env_var() {
+        let f = Fixture::new();
+
+        for disallowed in ["PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "HOME", "SHELL"] {
+            let res = handle_secrets_tool(
+                &f.ctx,
+                "secret_exec",
+                json!({
+                    "secret_name": f.secret_name,
+                    "command": "echo",
+                    "env_var": disallowed
+                }),
+            )
+            .await
+            .expect("tool returns result");
+            assert_eq!(
+                res["isError"], true,
+                "Disallowed {disallowed} must be rejected"
+            );
+            assert!(
+                res["structuredContent"]["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("env_var"),
+                "Error must name env_var for {disallowed}"
+            );
+        }
+
+        for invalid in [
+            "A=B;x", "FOO=BAR", "1VAR", "FOO-BAR", "FOO BAR", "VAR;id", "",
+        ] {
+            let res = handle_secrets_tool(
+                &f.ctx,
+                "secret_exec",
+                json!({
+                    "secret_name": f.secret_name,
+                    "command": "echo",
+                    "env_var": invalid
+                }),
+            )
+            .await
+            .expect("tool returns result");
+            assert_eq!(
+                res["isError"], true,
+                "Invalid env_var '{invalid}' must be rejected"
+            );
+            assert!(
+                res["structuredContent"]["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("env_var"),
+                "Error must name env_var for '{invalid}'"
+            );
+        }
+
+        let res = handle_secrets_tool(
+            &f.ctx,
+            "secret_exec",
+            json!({
+                "secret_name": f.secret_name,
+                "command": "echo",
+                "args": ["valid"],
+                "env_var": "VALID_ENV_VAR_123"
+            }),
+        )
+        .await
+        .expect("tool returns result");
+        assert_eq!(res["isError"], false);
     }
 }
