@@ -59,3 +59,6 @@ mod clavis_namespace_e2e;
 
 #[path = "clavis_vault_smoke_e2e.rs"]
 mod clavis_vault_smoke_e2e;
+
+#[path = "skill_store_config.rs"]
+mod skill_store_config;
