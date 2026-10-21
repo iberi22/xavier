@@ -1431,9 +1431,20 @@ pub(crate) fn record_matches_filters(
         resolve_metadata(&record.path, &record.metadata, workspace_id, None)
             .map(|resolved| {
                 filters
-                    .workspace_id
+                    .org_id
                     .as_deref()
-                    .is_none_or(|value| resolved.namespace.workspace_id.as_deref() == Some(value))
+                    .is_none_or(|value| resolved.namespace.org_id.as_deref() == Some(value))
+                    && filters
+                        .user_id
+                        .as_deref()
+                        .is_none_or(|value| resolved.namespace.user_id.as_deref() == Some(value))
+                    && filters
+                        .agent_id
+                        .as_deref()
+                        .is_none_or(|value| resolved.namespace.agent_id.as_deref() == Some(value))
+                    && filters.workspace_id.as_deref().is_none_or(|value| {
+                        resolved.namespace.workspace_id.as_deref() == Some(value)
+                    })
                     && filters
                         .project
                         .as_deref()
@@ -1706,5 +1717,104 @@ mod tests {
         assert!(hit.sources.contains(&"vector".to_string()));
         assert!(hit.sources.contains(&"lexical".to_string()));
         assert!(hit.sources.contains(&"kg".to_string()));
+    }
+
+    fn namespaced_record(id: &str, agent: Option<&str>) -> MemoryRecord {
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("org_id".into(), "org-1".into());
+        metadata.insert("user_id".into(), "user-1".into());
+        if let Some(agent) = agent {
+            metadata.insert("agent_id".into(), agent.into());
+        }
+        MemoryRecord {
+            id: id.to_string(),
+            workspace_id: "ws".to_string(),
+            path: format!("notes/{id}"),
+            content: format!("shared note {id}"),
+            metadata: serde_json::Value::Object(metadata),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn record_filter_agent_id_excludes_other_agents() {
+        let filters = MemoryQueryFilters {
+            agent_id: Some("agent-a".to_string()),
+            ..Default::default()
+        };
+        let own = namespaced_record("a", Some("agent-a"));
+        let other = namespaced_record("b", Some("agent-b"));
+        let missing = namespaced_record("c", None);
+        assert!(record_matches_filters(&own, "ws", Some(&filters)));
+        assert!(!record_matches_filters(&other, "ws", Some(&filters)));
+        assert!(!record_matches_filters(&missing, "ws", Some(&filters)));
+
+        let org = MemoryQueryFilters {
+            org_id: Some("org-2".to_string()),
+            ..Default::default()
+        };
+        assert!(!record_matches_filters(&own, "ws", Some(&org)));
+        let user = MemoryQueryFilters {
+            user_id: Some("user-2".to_string()),
+            ..Default::default()
+        };
+        assert!(!record_matches_filters(&own, "ws", Some(&user)));
+        let all = MemoryQueryFilters {
+            org_id: Some("org-1".to_string()),
+            user_id: Some("user-1".to_string()),
+            agent_id: Some("agent-a".to_string()),
+            ..Default::default()
+        };
+        assert!(record_matches_filters(&own, "ws", Some(&all)));
+    }
+
+    #[test]
+    fn record_filter_unset_ids_match_everything() {
+        let filters = MemoryQueryFilters::default();
+        for record in [
+            namespaced_record("a", Some("agent-a")),
+            namespaced_record("b", Some("agent-b")),
+            namespaced_record("c", None),
+            dummy_record("d"),
+        ] {
+            assert!(record_matches_filters(&record, "ws", Some(&filters)));
+            assert!(record_matches_filters(&record, "ws", None));
+        }
+    }
+
+    #[tokio::test]
+    async fn in_memory_store_agent_id_filter_returns_only_that_agent() {
+        let store = InMemoryMemoryStore::new();
+        store
+            .put(namespaced_record("a", Some("agent-a")))
+            .await
+            .unwrap();
+        store
+            .put(namespaced_record("b", Some("agent-b")))
+            .await
+            .unwrap();
+        store.put(namespaced_record("c", None)).await.unwrap();
+        let filters = MemoryQueryFilters {
+            agent_id: Some("agent-a".to_string()),
+            ..Default::default()
+        };
+
+        let listed = store.list_filtered("ws", &filters, 10).await.unwrap();
+        assert_eq!(
+            listed.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            vec!["a"]
+        );
+        let found = store
+            .search("ws", "shared note", Some(&filters))
+            .await
+            .unwrap();
+        assert_eq!(
+            found.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            vec!["a"]
+        );
+        assert_eq!(
+            store.search("ws", "shared note", None).await.unwrap().len(),
+            3
+        );
     }
 }
