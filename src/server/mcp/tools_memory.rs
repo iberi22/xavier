@@ -2002,6 +2002,7 @@ mod tests {
         let _env = crate::settings::tests::TempEnv::new();
         let tmp = tempfile::tempdir().expect("tempdir");
         std::env::set_var("XAVIER_MEMORY_VEC_PATH", tmp.path().join("vec.sqlite3"));
+        std::env::set_var("XAVIER_TOKEN", "bg-embed-test-token");
         let mut config = WorkspaceConfig::from_env();
         config.id = "bg-embed-ws".to_string();
         config.memory_backend = MemoryBackend::Vec;
