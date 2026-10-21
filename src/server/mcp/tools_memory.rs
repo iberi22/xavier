@@ -1199,14 +1199,36 @@ async fn handle_create_memory(
 
     validate_memory_write_clearance(workspace, path, &metadata, typed_payload.as_ref())?;
 
-    let doc_id = ingest_with_background_embedding(
-        workspace,
-        path.to_string(),
-        content.to_string(),
-        metadata,
-        typed_payload,
-    )
-    .await?;
+    // A same-path write with new content updates the existing record in place.
+    let existing = workspace.workspace.get_memory_record(path).await?;
+    let updated_id = match existing {
+        Some(record) if record.path == path && record.content != content => {
+            workspace
+                .workspace
+                .update_primary_memory(
+                    &record.id,
+                    path.to_string(),
+                    content.to_string(),
+                    metadata.clone(),
+                    typed_payload.clone(),
+                )
+                .await?
+        }
+        _ => None,
+    };
+    let doc_id = match updated_id {
+        Some(id) => id,
+        None => {
+            ingest_with_background_embedding(
+                workspace,
+                path.to_string(),
+                content.to_string(),
+                metadata,
+                typed_payload,
+            )
+            .await?
+        }
+    };
 
     super::server::mcp_text_result(
         format!(
@@ -1337,9 +1359,13 @@ async fn handle_save_fragment(
     });
 
     validate_memory_write_clearance(workspace, &path, &metadata, typed.as_ref())?;
-    ingest_with_background_embedding(workspace, path, content, metadata, typed).await?;
+    let doc_id =
+        ingest_with_background_embedding(workspace, path, content, metadata, typed).await?;
     super::server::mcp_text_result(
-        format!("MemoryFragment saved successfully for agent {}", agent_id),
+        format!(
+            "MemoryFragment saved successfully for agent {} (id: {})",
+            agent_id, doc_id
+        ),
         false,
     )
 }
@@ -2209,6 +2235,68 @@ fn get_doc_last_accessed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn create_memory_same_path_updates_content() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let args =
+            |c: &str| json!({"path": "notes/same-path", "content": c, "clearance": "Unclassified"});
+        handle_create_memory(&workspace, &args("first"))
+            .await
+            .expect("first");
+        let first = workspace
+            .workspace
+            .get_memory_record("notes/same-path")
+            .await
+            .unwrap()
+            .expect("first record");
+        handle_create_memory(&workspace, &args("second"))
+            .await
+            .expect("second");
+        let got = handle_memory_update(&state, &workspace, "get_memory", &json!({"id": first.id}))
+            .await
+            .expect("get");
+        let text = got["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Content: second"), "{text}");
+        assert!(text.contains("Revision: 2"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn save_fragment_returns_id() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let saved = handle_save_fragment(
+            &state,
+            &workspace,
+            &json!({"agent_id": "a1", "content": "frag body", "context": "observation", "clearance": "Unclassified"}),
+        )
+        .await
+        .expect("save");
+        let text = saved["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("saved successfully for agent a1"), "{text}");
+        let id = text
+            .split("(id: ")
+            .nth(1)
+            .and_then(|r| r.strip_suffix(')'))
+            .expect("id in response");
+        let got =
+            handle_memory_update(&state, &workspace, "memoryfragment_get", &json!({"id": id}))
+                .await
+                .expect("get by id");
+        assert!(got["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("frag body"));
+        let del = handle_memory_delete(
+            &state,
+            &workspace,
+            "memoryfragment_delete",
+            &json!({"id": id}),
+        )
+        .await
+        .expect("delete");
+        assert_eq!(del["isError"], json!(false), "{del}");
+    }
+
     #[tokio::test]
     async fn get_memory_metadata_hides_internal_fields() {
         let (state, workspace) = crate::server::mcp::tests::test_state().await;
