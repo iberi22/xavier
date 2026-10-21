@@ -999,6 +999,25 @@ impl WorkspaceState {
             .is_empty())
     }
 
+    /// Whether the conversation log, the loaded documents or the persistent
+    /// store know this session id. The lookups run concurrently; a positive
+    /// answer from any of them wins over a failing one.
+    pub async fn session_has_context(&self, session_id: &str) -> Result<bool> {
+        let (conversations, documents, records) = tokio::join!(
+            self.conversations_db.session_exists(session_id),
+            self.memory.has_session_document(session_id),
+            self.has_session_records(session_id),
+        );
+        let results = [conversations, documents, records];
+        if results.iter().any(|result| matches!(result, Ok(true))) {
+            return Ok(true);
+        }
+        match results.into_iter().find_map(Result::err) {
+            Some(error) => Err(error),
+            None => Ok(false),
+        }
+    }
+
     /// Test helper: write a record straight into the persistent store.
     #[cfg(test)]
     pub async fn put_store_record_for_tests(&self, record: MemoryRecord) -> Result<()> {
