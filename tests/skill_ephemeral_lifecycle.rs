@@ -6,6 +6,8 @@ use xavier::context::skill_controller::lease::{publish_task_skill, release_task,
 use xavier::context::skill_controller::rollback::RollbackOutcome;
 use xavier::context::skill_controller::state::Journal;
 
+xavier::isolate_test_process!();
+
 #[test]
 fn publish_secret_block_then_release() {
     let worktree = tempdir().unwrap();
