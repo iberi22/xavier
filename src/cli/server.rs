@@ -452,8 +452,13 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
             .with_state(()),
         )
         .merge(
-            xavier::server::f12_routes::router(xavier::server::f12_routes::F12State::new(
+            xavier::server::f12_routes::router(xavier::server::f12_routes::F12State::for_server(
                 state.workspace_dir.clone().join("data"),
+                xavier::mesh::node::NodeIdentity::load_or_create()
+                    .map(Arc::new)
+                    .map_err(|e| tracing::warn!(error = %e, "private mesh sync disabled"))
+                    .ok(),
+                state.store.clone(),
             ))
             .with_state(()),
         )

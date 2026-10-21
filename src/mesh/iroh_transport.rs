@@ -111,9 +111,20 @@ const MEMORY_SYNC_MAX_SKEW_SECS: i64 = 300;
 /// Workspace that receives synced memories lacking a `workspace_id` in metadata.
 const MESH_SYNC_DEFAULT_WORKSPACE: &str = "mesh-sync";
 
+/// Decides which sender node ids the accept loop serves.
+pub trait SenderPolicy: Send + Sync {
+    fn allows(&self, node_id: &str) -> bool;
+}
+
+impl SenderPolicy for HashSet<String> {
+    fn allows(&self, node_id: &str) -> bool {
+        self.contains(node_id)
+    }
+}
+
 /// Which peers the accept loop serves. `None` means no allowlist is enforced
-/// (handshakes only); sealed memory sync always requires an allowlisted sender.
-type PeerPolicy = Option<Arc<HashSet<String>>>;
+/// (handshakes only); sealed memory sync always requires an allowed sender.
+type PeerPolicy = Option<Arc<dyn SenderPolicy>>;
 
 fn memory_sync_message(
     timestamp: i64,
@@ -174,11 +185,26 @@ impl IrohTransport {
         allowed_peers: impl IntoIterator<Item = crate::mesh::node::NodeId>,
     ) -> Self {
         let allowed: HashSet<String> = allowed_peers.into_iter().map(|n| n.0).collect();
-        Self {
-            direct_only: true,
-            allowed_peers: Some(Arc::new(allowed)),
-            ..Self::new(identity, store)
-        }
+        Self::new(identity, store)
+            .localhost_only()
+            .with_sender_policy(Arc::new(allowed))
+    }
+
+    /// Binds to localhost with relays and discovery disabled.
+    pub fn localhost_only(mut self) -> Self {
+        self.direct_only = true;
+        self
+    }
+
+    /// Serves only senders that `policy` allows.
+    pub fn with_sender_policy(mut self, policy: Arc<dyn SenderPolicy>) -> Self {
+        self.allowed_peers = Some(policy);
+        self
+    }
+
+    /// Whether a sender policy is installed (sealed memory sync needs one).
+    pub fn has_sender_policy(&self) -> bool {
+        self.allowed_peers.is_some()
     }
 
     /// Full dialable address (id + bound direct sockets) of the local endpoint.
@@ -638,7 +664,7 @@ pub(crate) async fn handle_request(
 }
 
 /// Reject a handshake whose identity is forged or not allowlisted.
-fn check_handshake(body: &MeshHandshake, policy: &HashSet<String>) -> Result<(), String> {
+fn check_handshake(body: &MeshHandshake, policy: &dyn SenderPolicy) -> Result<(), String> {
     let pk = crate::crypto::hex_decode(&body.public_key_hex).map_err(|_| "bad public key")?;
     let sig = crate::crypto::hex_decode(&body.signature_hex).map_err(|_| "bad signature")?;
     if !NodeIdentity::verify(&pk, body.nonce.as_bytes(), &sig) {
@@ -647,7 +673,7 @@ fn check_handshake(body: &MeshHandshake, policy: &HashSet<String>) -> Result<(),
     if crate::mesh::node::NodeId::from_public_key_bytes(&pk) != body.node_id {
         return Err("node_id does not match public key".into());
     }
-    if !policy.contains(body.node_id.as_str()) {
+    if !policy.allows(body.node_id.as_str()) {
         return Err("unknown peer".into());
     }
     Ok(())
@@ -679,7 +705,7 @@ async fn apply_memory_sync(
     }
     let sender = crate::mesh::node::NodeId::from_public_key_bytes(&pk);
     match policy {
-        Some(allowed) if allowed.contains(sender.as_str()) => {}
+        Some(allowed) if allowed.allows(sender.as_str()) => {}
         _ => return Err("unknown peer".into()),
     }
     if (chrono::Utc::now().timestamp() - timestamp).abs() > MEMORY_SYNC_MAX_SKEW_SECS {
@@ -768,6 +794,20 @@ async fn handle_request_with_policy(
     req: &MeshRequest,
     policy: &PeerPolicy,
 ) -> Result<serde_json::Value> {
+    // Fail closed: these arms carry no verified sender identity.
+    if policy.is_some()
+        && matches!(
+            req,
+            MeshRequest::FetchManifest { .. }
+                | MeshRequest::FetchChunks { .. }
+                | MeshRequest::PushChunks { .. }
+                | MeshRequest::ShareSession { .. }
+                | MeshRequest::PrivateSync { .. }
+        )
+    {
+        tracing::warn!("unauthenticated mesh request refused");
+        return Ok(serde_json::json!({"accepted": false, "reason": "unauthorized"}));
+    }
     match req {
         MeshRequest::MemorySync { .. } => {
             let ack = match apply_memory_sync(local_identity, store, policy, req).await {
@@ -1254,5 +1294,125 @@ mod tests {
             serde_json::from_value(val).unwrap();
         assert_eq!(result.ciphertext_hex, enc.ciphertext_hex);
         assert_eq!(result.nonce_hex, enc.nonce_hex);
+    }
+
+    fn deny_all_policy() -> PeerPolicy {
+        Some(Arc::new(HashSet::<String>::new()))
+    }
+
+    fn fetch_chunks_req(hash: String) -> MeshRequest {
+        MeshRequest::FetchChunks {
+            request: MeshSyncRequest {
+                requesting_node_id: crate::mesh::node::NodeId("remote".into()),
+                wanted_hashes: vec![hash],
+                timestamp: 0,
+                nonce: "n".into(),
+                signature_hex: "s".into(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn policy_refuses_fetch_manifest() {
+        let identity = test_identity();
+        let store = test_store_with_records(vec![make_test_record("p1", "ws1", "secret", 1)]);
+        let req = MeshRequest::FetchManifest {
+            node_id: "remote".into(),
+            timestamp: "0".into(),
+            nonce: "n".into(),
+            signature: "s".into(),
+        };
+        let val = handle_request_with_policy(&identity, &*store, &req, &deny_all_policy())
+            .await
+            .unwrap();
+        assert_eq!(val["reason"], "unauthorized");
+        assert!(val.get("chunks").is_none());
+    }
+
+    #[tokio::test]
+    async fn policy_refuses_fetch_chunks() {
+        let identity = test_identity();
+        let rec = make_test_record("p2", "ws1", "secret", 1);
+        let hash = crate::memory::sync::merge::chunk_hash(&rec);
+        let store = test_store_with_records(vec![rec]);
+        let val = handle_request_with_policy(
+            &identity,
+            &*store,
+            &fetch_chunks_req(hash.clone()),
+            &deny_all_policy(),
+        )
+        .await
+        .unwrap();
+        assert!(val.get(&hash).is_none());
+        assert_eq!(val["reason"], "unauthorized");
+    }
+
+    #[tokio::test]
+    async fn policy_refuses_fetch_chunks_after_rejected_handshake() {
+        let identity = test_identity();
+        let rec = make_test_record("p3", "ws1", "secret", 1);
+        let hash = crate::memory::sync::merge::chunk_hash(&rec);
+        let store = test_store_with_records(vec![rec]);
+        let policy = deny_all_policy();
+        let hs = MeshRequest::Handshake {
+            body: crate::mesh::protocol::MeshHandshake {
+                node_id: crate::mesh::node::NodeId("remote".into()),
+                public_key_hex: "dead".into(),
+                xavier_version: "0.1.0".into(),
+                capabilities: vec![],
+                timestamp: 0,
+                nonce: "n".into(),
+                signature_hex: "s".into(),
+                pairing_secret: None,
+            },
+        };
+        let r = handle_request_with_policy(&identity, &*store, &hs, &policy)
+            .await
+            .unwrap();
+        assert_eq!(r["accepted"], false);
+        let val = handle_request_with_policy(
+            &identity,
+            &*store,
+            &fetch_chunks_req(hash.clone()),
+            &policy,
+        )
+        .await
+        .unwrap();
+        assert!(val.get(&hash).is_none());
+    }
+
+    #[tokio::test]
+    async fn policy_refuses_unauthenticated_echo_arms() {
+        let identity = test_identity();
+        let store = test_store_with_records(vec![]);
+        let push = MeshRequest::PushChunks {
+            request: MeshSyncRequest {
+                requesting_node_id: crate::mesh::node::NodeId("remote".into()),
+                wanted_hashes: vec!["h".into()],
+                timestamp: 0,
+                nonce: "n".into(),
+                signature_hex: "s".into(),
+            },
+        };
+        let val = handle_request_with_policy(&identity, &*store, &push, &deny_all_policy())
+            .await
+            .unwrap();
+        assert_eq!(val["reason"], "unauthorized");
+    }
+
+    #[tokio::test]
+    async fn no_policy_still_serves_manifest() {
+        let identity = test_identity();
+        let store = test_store_with_records(vec![make_test_record("p4", "ws1", "x", 1)]);
+        let req = MeshRequest::FetchManifest {
+            node_id: "remote".into(),
+            timestamp: "0".into(),
+            nonce: "n".into(),
+            signature: "s".into(),
+        };
+        let val = handle_request_with_policy(&identity, &*store, &req, &None)
+            .await
+            .unwrap();
+        assert_eq!(val["chunks"].as_array().unwrap().len(), 1);
     }
 }

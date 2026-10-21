@@ -15,6 +15,7 @@ use crate::mesh::cloud_node::CloudPeer;
 use crate::mesh::iroh_transport::IrohTransport;
 use crate::mesh::node::NodeIdentity;
 use crate::mesh::peer::PeerInfo;
+use crate::mesh::private_mesh::PrivateSyncPayload;
 use crate::mesh::protocol::{MeshHandshakeResponse, MeshManifest};
 use crate::mesh::transport::MeshTransport;
 use crate::session::sharing::SessionBundle;
@@ -78,6 +79,34 @@ pub fn calculate_reconnect_backoff(
     let jittered_ms = rng.gen_range(min_ms..=exp_ms);
 
     Duration::from_millis(jittered_ms as u64)
+}
+
+/// Receiver's verdict on a private sync payload delivered to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateSyncDelivery {
+    pub accepted: bool,
+    pub applied: usize,
+    pub reason: Option<String>,
+}
+
+/// Resolve a peer's registered Iroh address: either a JSON `EndpointAddr`
+/// (id plus direct sockets) or a bare `EndpointId` resolved by address lookup.
+#[cfg(feature = "mesh")]
+pub fn iroh_endpoint_addr(peer: &PeerInfo) -> Result<iroh::EndpointAddr> {
+    let raw = peer
+        .iroh_addr
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("peer {} has no iroh_addr", peer.node_id))?;
+    if raw.starts_with('{') {
+        return serde_json::from_str(raw)
+            .map_err(|e| anyhow::anyhow!("invalid iroh endpoint address: {e}"));
+    }
+    let id = raw
+        .parse::<iroh::PublicKey>()
+        .map_err(|e| anyhow::anyhow!("invalid iroh peer addr: {e}"))?;
+    Ok(iroh::EndpointAddr::new(id))
 }
 
 pub enum SyncTransport {
@@ -206,6 +235,37 @@ impl SyncTransport {
             Self::Cloud(t) => t.share_session(peer, token, bundle).await,
             #[cfg(feature = "mesh")]
             Self::P2pIroh(t) => t.share_session(peer, token, bundle).await,
+        }
+    }
+
+    /// Deliver a private sync payload to `peer`, sealed to `recipient_public_key`
+    /// (the peer's Ed25519 node key) so only the peer's own secret key opens it.
+    ///
+    /// Only the Iroh transport carries sealed private sync; HTTP and Cloud
+    /// peers are refused rather than receiving the payload in another form.
+    pub async fn send_private_sync(
+        &self,
+        peer: &PeerInfo,
+        recipient_public_key: &[u8],
+        payload: &PrivateSyncPayload,
+    ) -> Result<PrivateSyncDelivery> {
+        match self {
+            Self::P2P(_) | Self::Cloud(_) => {
+                let _ = (peer, recipient_public_key, payload);
+                anyhow::bail!("private sync requires an Iroh transport")
+            }
+            #[cfg(feature = "mesh")]
+            Self::P2pIroh(t) => {
+                let addr = iroh_endpoint_addr(peer)?;
+                let ack = t
+                    .send_memory_sync(addr, recipient_public_key, payload)
+                    .await?;
+                Ok(PrivateSyncDelivery {
+                    accepted: ack.accepted,
+                    applied: ack.applied,
+                    reason: ack.reason,
+                })
+            }
         }
     }
 
@@ -424,6 +484,35 @@ mod tests {
         {
             assert!(matches!(transport, SyncTransport::P2P(_)));
         }
+    }
+
+    #[cfg(feature = "mesh")]
+    #[test]
+    fn iroh_endpoint_addr_accepts_json_and_bare_id() {
+        let key = iroh::SecretKey::from_bytes(&[7u8; 32]).public();
+        let bare = test_peer(false, Some(&key.to_string()));
+        assert_eq!(iroh_endpoint_addr(&bare).unwrap().id, key);
+
+        let full = iroh::EndpointAddr::new(key);
+        let json = test_peer(false, Some(&serde_json::to_string(&full).unwrap()));
+        assert_eq!(iroh_endpoint_addr(&json).unwrap(), full);
+
+        assert!(iroh_endpoint_addr(&test_peer(false, None)).is_err());
+        assert!(iroh_endpoint_addr(&test_peer(false, Some("not-a-key"))).is_err());
+    }
+
+    #[tokio::test]
+    async fn private_sync_refused_over_http_transport() {
+        let transport = SyncTransport::P2P(MeshTransport::new(Arc::new(NodeIdentity::generate())));
+        let err = transport
+            .send_private_sync(
+                &test_peer(false, None),
+                &[0u8; 32],
+                &PrivateSyncPayload::default(),
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("requires an Iroh transport"));
     }
 
     #[test]

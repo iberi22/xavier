@@ -17,33 +17,62 @@ use axum::{
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 
 use crate::codebase::snapshot::{discover_swal_repo_roots, SnapshotManager};
 use crate::curation::CurationQueue;
 use crate::mesh::join::JoinDecision;
-use crate::mesh::node::NodeId;
+use crate::mesh::node::{NodeId, NodeIdentity};
 use crate::mesh::pairing::verify_join_decision;
 use crate::mesh::pairing_registry::PairingSecretRegistry;
 use crate::mesh::private_mesh::{
-    is_same_wallet, PrivateMemoryDelta, PrivateMeshRegistry, PrivateSyncPayload, WalletNode,
+    validate_node_public_key, PrivateMemoryDelta, PrivateMeshRegistry, PrivateSyncError,
+    PrivateSyncPayload, WalletNode,
 };
 use crate::mesh::public_directory::PublicDirectory;
 use crate::mesh::public_rag::{search_public, PublicRagResult};
-use crate::mesh::service_network::{ServiceKind, ServiceRegistry, TelemetrySample};
+use crate::mesh::service_network::{
+    apply_metric_whitelist, node_proof_subject, telemetry_publish_scope, verify_telemetry_publish,
+    ServiceKind, ServiceRegistry, TelemetryLimits, TelemetrySample, TELEMETRY_METRIC_WHITELIST,
+};
 use crate::mesh::visibility::Visibility;
 use crate::mesh::wallet_ownership::{
     issue_wallet_challenge, verify_wallet_action, verify_wallet_registration,
     WalletRegistrationProof,
 };
 use crate::security::groups::GroupRegistry;
+use crate::sync::transport::SyncTransport;
 
 /// Shared F12 state: data dir paths + in-memory registries (lazy loaded).
 #[derive(Clone)]
 pub struct F12State {
     pub data_dir: PathBuf,
     pub registry: Arc<Mutex<F12Registries>>,
+    /// Transport that delivers private mesh sync payloads to target nodes.
+    pub private_sync: Option<Arc<SyncTransport>>,
+    /// This node, when the server runs with a node identity.
+    pub local_node: Option<LocalNode>,
+    receiver: tokio::sync::watch::Receiver<ReceiverStatus>,
+}
+
+/// Identity of the local node as advertised to same-wallet peers.
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalNode {
+    pub node_id: NodeId,
+    pub public_key_hex: String,
+}
+
+/// State of the local private sync receiver (Iroh accept loop).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReceiverStatus {
+    Disabled,
+    Starting,
+    /// Accepting sync at `addr`, a JSON-encoded Iroh endpoint address.
+    Listening {
+        addr: String,
+    },
+    Failed(String),
 }
 
 #[derive(Default)]
@@ -60,7 +89,49 @@ impl F12State {
         Self {
             data_dir,
             registry: Arc::new(Mutex::new(F12Registries::default())),
+            private_sync: None,
+            local_node: None,
+            receiver: tokio::sync::watch::channel(ReceiverStatus::Disabled).1,
         }
+    }
+
+    /// State as the server builds it. With the `mesh` feature and an identity,
+    /// one Iroh endpoint backed by `store` sends private sync and also runs the
+    /// receiver, which accepts sync only from nodes registered under the same
+    /// wallet as this node. Without them, sync answers 503.
+    pub fn for_server(
+        data_dir: PathBuf,
+        identity: Option<Arc<NodeIdentity>>,
+        store: Arc<dyn crate::memory::store::MemoryStore>,
+    ) -> Self {
+        let state = Self::new(data_dir);
+        match identity {
+            Some(identity) => start_private_sync(state, identity, store),
+            None => state,
+        }
+    }
+
+    /// Waits until the receiver has started (or failed) and returns its status.
+    pub async fn private_sync_receiver(&self) -> ReceiverStatus {
+        let mut rx = self.receiver.clone();
+        let status = rx
+            .wait_for(|s| *s != ReceiverStatus::Starting)
+            .await
+            .map(|s| s.clone());
+        status.unwrap_or_else(|_| rx.borrow().clone())
+    }
+
+    fn receiver_addr(&self) -> Option<String> {
+        match &*self.receiver.borrow() {
+            ReceiverStatus::Listening { addr } => Some(addr.clone()),
+            _ => None,
+        }
+    }
+
+    /// Sets the transport used to deliver private mesh sync to target nodes.
+    pub fn with_private_sync_transport(mut self, transport: Arc<SyncTransport>) -> Self {
+        self.private_sync = Some(transport);
+        self
     }
 
     fn groups_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
@@ -86,19 +157,7 @@ impl F12State {
     }
 
     fn private_mesh_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
-        let mut reg = self.registry.lock();
-        if reg.private_mesh.is_none() {
-            reg.private_mesh = Some(
-                PrivateMeshRegistry::load_or_create(self.data_dir.join("mesh/private-mesh.json"))
-                    .unwrap_or_else(|_| {
-                        PrivateMeshRegistry::load_or_create(
-                            self.data_dir.join("mesh/private-mesh.json"),
-                        )
-                        .expect("mesh")
-                    }),
-            );
-        }
-        reg
+        private_mesh_locked(&self.registry, &self.data_dir)
     }
 
     fn curation_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
@@ -114,9 +173,159 @@ impl F12State {
     fn service_network_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
         let mut reg = self.registry.lock();
         if reg.service_network.is_none() {
-            reg.service_network = Some(ServiceRegistry::new());
+            let path = self.data_dir.join("mesh/service-telemetry.db");
+            reg.service_network = Some(
+                ServiceRegistry::open_with_telemetry_store(&path, TelemetryLimits::default())
+                    .unwrap_or_else(|e| {
+                        tracing::warn!(error = %e, "service telemetry store unavailable");
+                        ServiceRegistry::with_telemetry_limits(TelemetryLimits::default())
+                    }),
+            );
         }
         reg
+    }
+}
+
+fn private_mesh_locked<'a>(
+    registry: &'a Mutex<F12Registries>,
+    data_dir: &FsPath,
+) -> parking_lot::MutexGuard<'a, F12Registries> {
+    let mut reg = registry.lock();
+    if reg.private_mesh.is_none() {
+        let path = data_dir.join("mesh/private-mesh.json");
+        reg.private_mesh = Some(
+            PrivateMeshRegistry::load_or_create(path.clone())
+                .unwrap_or_else(|_| PrivateMeshRegistry::load_or_create(path).expect("mesh")),
+        );
+    }
+    reg
+}
+
+/// Accepts a sender only when both it and the local node are registered under
+/// the same wallet in the private mesh registry. Read on every request, so
+/// registrations take effect without a restart.
+pub struct SameWalletSenderPolicy {
+    registry: Arc<Mutex<F12Registries>>,
+    data_dir: PathBuf,
+    local_node: NodeId,
+}
+
+impl SameWalletSenderPolicy {
+    pub fn allows_sender(&self, sender: &str) -> bool {
+        let reg = private_mesh_locked(&self.registry, &self.data_dir);
+        let mesh = reg.private_mesh.as_ref().expect("mesh");
+        let wallet_of = |id: &str| {
+            mesh.all_nodes()
+                .iter()
+                .find(|n| n.node_id.as_str() == id)
+                .map(|n| n.wallet_id.clone())
+        };
+        match (wallet_of(self.local_node.as_str()), wallet_of(sender)) {
+            (Some(local), Some(remote)) => {
+                crate::mesh::private_mesh::is_same_wallet(&local, &remote)
+            }
+            _ => false,
+        }
+    }
+}
+
+#[cfg(feature = "mesh")]
+impl crate::mesh::iroh_transport::SenderPolicy for SameWalletSenderPolicy {
+    fn allows(&self, node_id: &str) -> bool {
+        self.allows_sender(node_id)
+    }
+}
+
+/// Whether the mesh endpoint binds to localhost only (no relays or discovery).
+#[cfg(feature = "mesh")]
+fn mesh_localhost_only() -> bool {
+    std::env::var("XAVIER_MESH_LOCALHOST_ONLY")
+        .map(|v| matches!(v.trim(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+}
+
+#[cfg(feature = "mesh")]
+fn start_private_sync(
+    mut state: F12State,
+    identity: Arc<NodeIdentity>,
+    store: Arc<dyn crate::memory::store::MemoryStore>,
+) -> F12State {
+    use crate::mesh::iroh_transport::IrohTransport;
+
+    let local_node = identity.node_id.clone();
+    state.local_node = Some(LocalNode {
+        node_id: local_node.clone(),
+        public_key_hex: crate::crypto::hex_encode(&identity.public_key),
+    });
+    let policy = Arc::new(SameWalletSenderPolicy {
+        registry: state.registry.clone(),
+        data_dir: state.data_dir.clone(),
+        local_node: local_node.clone(),
+    });
+    let mut iroh = IrohTransport::new(identity, store).with_sender_policy(policy);
+    if mesh_localhost_only() {
+        iroh = iroh.localhost_only();
+    }
+    let transport = Arc::new(SyncTransport::P2pIroh(iroh));
+    state.private_sync = Some(transport.clone());
+
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+        tracing::warn!("no async runtime: private sync receiver not started");
+        state.receiver =
+            tokio::sync::watch::channel(ReceiverStatus::Failed("no async runtime".into())).1;
+        return state;
+    };
+    let (tx, rx) = tokio::sync::watch::channel(ReceiverStatus::Starting);
+    state.receiver = rx;
+    let registry = state.registry.clone();
+    let data_dir = state.data_dir.clone();
+    runtime.spawn(async move {
+        let SyncTransport::P2pIroh(iroh) = &*transport else {
+            return;
+        };
+        let status = match iroh.direct_addr().await {
+            Ok(addr) => {
+                // Detached: the accept loop lives as long as the endpoint.
+                drop(iroh.spawn_accept_loop().await);
+                let addr = serde_json::to_string(&addr).unwrap_or_default();
+                advertise_receiver_addr(&registry, &data_dir, &local_node, &addr);
+                tracing::info!(node = %local_node.as_str(), "private sync receiver listening");
+                ReceiverStatus::Listening { addr }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "private sync receiver failed to start");
+                ReceiverStatus::Failed(e.to_string())
+            }
+        };
+        let _ = tx.send(status);
+    });
+    state
+}
+
+#[cfg(not(feature = "mesh"))]
+fn start_private_sync(
+    state: F12State,
+    _identity: Arc<NodeIdentity>,
+    _store: Arc<dyn crate::memory::store::MemoryStore>,
+) -> F12State {
+    state
+}
+
+/// Records the receiver address on the local node's registry entry, if any, so
+/// the node list a peer reads points at the live endpoint.
+#[cfg_attr(not(feature = "mesh"), allow(dead_code))]
+fn advertise_receiver_addr(
+    registry: &Mutex<F12Registries>,
+    data_dir: &FsPath,
+    local_node: &NodeId,
+    addr: &str,
+) {
+    let mut reg = private_mesh_locked(registry, data_dir);
+    let mesh = reg.private_mesh.as_mut().expect("mesh");
+    if mesh.set_node_addr(local_node, addr) {
+        if let Err(e) = mesh.save() {
+            tracing::warn!(error = %e, "could not persist private sync receiver address");
+        }
     }
 }
 
@@ -163,6 +372,10 @@ pub struct RegisterWalletNodeRequest {
     pub wallet_id: String,
     pub name: String,
     pub iroh_addr: Option<String>,
+    /// Hex Ed25519 public key of the node; its NodeID must equal `node_id`.
+    /// Private sync payloads are sealed to this key.
+    #[serde(default)]
+    pub public_key_hex: Option<String>,
     /// Signed challenge response proving ownership of `wallet_id`.
     pub proof: WalletRegistrationProof,
 }
@@ -212,6 +425,9 @@ pub struct PublishTelemetryRequest {
     pub kind: Option<ServiceKind>,
     pub payload: String,
     pub ts: Option<i64>,
+    /// Node proof: a challenge for the node key, signed for action
+    /// "telemetry-publish" and scope `telemetry_publish_scope(..)` of this request.
+    pub proof: Option<WalletRegistrationProof>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -379,16 +595,46 @@ pub async fn register_wallet_node(
         return (StatusCode::UNAUTHORIZED, "wallet ownership proof rejected").into_response();
     }
 
-    let mut reg = state.private_mesh_mut();
-    let mesh = reg.private_mesh.as_mut().expect("mesh");
+    // The local node advertises its own live receiver unless told otherwise.
+    let is_local = state
+        .local_node
+        .as_ref()
+        .is_some_and(|n| n.node_id.as_str() == req.node_id);
+    let iroh_addr = req
+        .iroh_addr
+        .filter(|a| !a.trim().is_empty())
+        .or_else(|| is_local.then(|| state.receiver_addr()).flatten())
+        .unwrap_or_default();
     let node = WalletNode {
         node_id: crate::mesh::node::NodeId(req.node_id),
         wallet_id: req.wallet_id.clone(),
         name: req.name,
-        iroh_addr: req.iroh_addr.unwrap_or_default(),
+        iroh_addr,
         last_seen: chrono::Utc::now(),
     };
-    match mesh.register_wallet_node(node, &req.wallet_id) {
+    let public_key = match req.public_key_hex.as_deref() {
+        None => None,
+        Some(hex) => match crate::crypto::hex_decode(hex)
+            .and_then(|pk| validate_node_public_key(&node.node_id, &pk))
+        {
+            Ok(pk) => Some(pk),
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    format!("invalid node public key: {e}"),
+                )
+                    .into_response()
+            }
+        },
+    };
+
+    let mut reg = state.private_mesh_mut();
+    let mesh = reg.private_mesh.as_mut().expect("mesh");
+    let registered = match public_key {
+        Some(pk) => mesh.register_wallet_node_with_key(node, &req.wallet_id, &pk),
+        None => mesh.register_wallet_node(node, &req.wallet_id),
+    };
+    match registered {
         Ok(_) => {
             let _ = mesh.save();
             (StatusCode::CREATED, "wallet node registered").into_response()
@@ -436,8 +682,29 @@ pub async fn list_wallet_nodes(
     Json(mesh.get_nodes_by_wallet(wallet)).into_response()
 }
 
+/// Receiver advertisement of this node: id, key and dialable Iroh address.
+pub async fn private_sync_receiver_info(State(state): State<F12State>) -> impl IntoResponse {
+    match (&state.local_node, state.receiver_addr()) {
+        (Some(node), Some(addr)) => Json(serde_json::json!({
+            "node_id": node.node_id,
+            "public_key_hex": node.public_key_hex,
+            "iroh_addr": addr,
+        }))
+        .into_response(),
+        _ => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "private sync receiver not running",
+        )
+            .into_response(),
+    }
+}
+
 /// Syncs with a same-wallet target node. The body must carry `proof`, a challenge
 /// signed for action "sync" and scope `target_node` (see `wallet_ownership`).
+///
+/// The payload is sealed to the target node's registered public key and sent to
+/// its registered address over the configured [`SyncTransport`]; the target node
+/// decrypts it with its own secret key and applies it to its store.
 pub async fn private_mesh_sync(
     State(state): State<F12State>,
     Json(req): Json<PrivateSyncApiRequest>,
@@ -451,98 +718,71 @@ pub async fn private_mesh_sync(
         return (StatusCode::UNAUTHORIZED, "wallet ownership proof rejected").into_response();
     }
 
-    let reg = state.private_mesh_mut();
-    let mesh = reg.private_mesh.as_ref().expect("mesh");
-
-    let target_node_record = mesh
-        .all_nodes()
-        .iter()
-        .find(|n| n.node_id.as_str() == req.target_node);
-
-    match target_node_record {
-        Some(node) => {
-            if !is_same_wallet(&req.wallet_id, &node.wallet_id) {
-                return (
-                    StatusCode::FORBIDDEN,
-                    "Cross-wallet sync rejected: target node belongs to a different wallet",
-                )
-                    .into_response();
-            }
+    let target = {
+        let reg = state.private_mesh_mut();
+        let mesh = reg.private_mesh.as_ref().expect("mesh");
+        mesh.sync_target(&req.wallet_id, &req.target_node)
+    };
+    let target = match target {
+        Ok(target) => target,
+        Err(e) => {
+            let status = match e {
+                PrivateSyncError::NodeNotFound(_) => StatusCode::NOT_FOUND,
+                PrivateSyncError::CrossWallet { .. } => StatusCode::FORBIDDEN,
+                PrivateSyncError::MissingPublicKey(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            };
+            return (status, e.to_string()).into_response();
         }
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                format!(
-                    "Target node '{}' not found in private mesh registry",
-                    req.target_node
-                ),
-            )
-                .into_response();
-        }
-    }
-
-    let memories = req.memories.unwrap_or_default();
-    let snapshots = req.snapshots.unwrap_or_default();
-
-    let payload = PrivateSyncPayload {
-        memories: memories.clone(),
-        vectors: Vec::new(),
-        snapshots: snapshots.clone(),
+    };
+    let Some(transport) = state.private_sync.clone() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "private sync transport not configured",
+        )
+            .into_response();
     };
 
-    match mesh.sync_deltas(&req.wallet_id, &req.wallet_id, payload) {
-        Ok(synced) => {
-            // Apply memory deltas locally to sync directory with restrictive permissions (0600)
-            if !memories.is_empty() {
-                let sync_memories_dir = state.data_dir.join("sync/memories");
-                let _ = std::fs::create_dir_all(&sync_memories_dir);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(
-                        &sync_memories_dir,
-                        std::fs::Permissions::from_mode(0o700),
-                    );
-                }
-                for mem in &synced.memories {
-                    let sanitized = mem.path.replace('/', "_");
-                    let file_path = sync_memories_dir.join(format!("{}.json", sanitized));
-                    let content = serde_json::to_string_pretty(mem).unwrap_or_default();
-                    let mut opts = std::fs::OpenOptions::new();
-                    opts.write(true).create(true).truncate(true);
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::OpenOptionsExt;
-                        opts.mode(0o600);
-                    }
-                    use std::io::Write;
-                    if let Ok(mut file) = opts.open(&file_path) {
-                        let _ = file.write_all(content.as_bytes());
-                        let _ = file.sync_all();
-                    }
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        let _ = std::fs::set_permissions(
-                            &file_path,
-                            std::fs::Permissions::from_mode(0o600),
-                        );
-                    }
-                }
-            }
+    let payload = PrivateSyncPayload {
+        memories: req.memories.unwrap_or_default(),
+        vectors: Vec::new(),
+        snapshots: req.snapshots.unwrap_or_default(),
+    };
+    let peer = crate::mesh::peer::PeerInfo {
+        node_id: target.node.node_id.clone(),
+        alias: Some(target.node.name.clone()),
+        public_key_hex: crate::crypto::hex_encode(target.public_key),
+        iroh_addr: Some(target.node.iroh_addr.clone()).filter(|a| !a.trim().is_empty()),
+        ..Default::default()
+    };
 
-            (
-                StatusCode::OK,
-                Json(PrivateSyncApiResponse {
-                    status: "success".to_string(),
-                    synced_memories: synced.memories.len(),
-                    synced_snapshots: synced.snapshots.len(),
-                    target_node: req.target_node,
-                }),
-            )
-                .into_response()
-        }
-        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    match transport
+        .send_private_sync(&peer, &target.public_key, &payload)
+        .await
+    {
+        Ok(delivery) if delivery.accepted => (
+            StatusCode::OK,
+            Json(PrivateSyncApiResponse {
+                status: "success".to_string(),
+                synced_memories: delivery.applied,
+                // The receiver applies memory deltas only; snapshots are not synced.
+                synced_snapshots: 0,
+                target_node: req.target_node,
+            }),
+        )
+            .into_response(),
+        Ok(delivery) => (
+            StatusCode::BAD_GATEWAY,
+            format!(
+                "target node rejected sync: {}",
+                delivery.reason.unwrap_or_default()
+            ),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            format!("private sync delivery failed: {e}"),
+        )
+            .into_response(),
     }
 }
 
@@ -658,37 +898,69 @@ pub async fn reject_curation_review(
 
 pub async fn telemetry_metrics() -> impl IntoResponse {
     // Safe telemetry metric names (whitelist for the service network).
-    let safe: Vec<String> = [
-        "search_latency_ms",
-        "index_files",
-        "embedding_ok",
-        "memory_count",
-        "mesh_peers",
-        "cpu_pct",
-        "ram_mb",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
+    let safe: Vec<String> = TELEMETRY_METRIC_WHITELIST
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     Json(safe).into_response()
 }
 
+/// Issues a one-shot challenge for the node key `public_key_hex`, to be signed
+/// for a telemetry publish (same mechanism as the wallet node registry).
+pub async fn service_network_challenge(
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let Some(public_key) = params
+        .get("public_key_hex")
+        .and_then(|hex| crate::crypto::hex_decode(hex).ok())
+        .filter(|pk| pk.len() == 32)
+    else {
+        return (StatusCode::BAD_REQUEST, "public_key_hex is required").into_response();
+    };
+    match issue_wallet_challenge(&node_proof_subject(&public_key)) {
+        Ok(challenge) => Json(challenge).into_response(),
+        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "challenge unavailable").into_response(),
+    }
+}
+
+/// Publishes a telemetry sample signed by the publishing node. Only whitelisted
+/// `key=value` metrics are kept; the rest of the payload is dropped.
 pub async fn publish_service_telemetry(
     State(state): State<F12State>,
     Json(req): Json<PublishTelemetryRequest>,
 ) -> impl IntoResponse {
+    let node_id = NodeId(req.node_id);
+    let kind = req
+        .kind
+        .unwrap_or_else(|| ServiceKind::Custom("ops".to_string()));
+    let ts = req.ts.unwrap_or(0);
+    let Some(proof) = req.proof.as_ref() else {
+        return (StatusCode::UNAUTHORIZED, "node proof required").into_response();
+    };
+    let scope = telemetry_publish_scope(&node_id, &kind, &req.payload, ts);
+    if let Err(e) = verify_telemetry_publish(proof, &node_id, &scope) {
+        tracing::debug!(error = %e, "telemetry node proof rejected");
+        return (StatusCode::UNAUTHORIZED, "node proof rejected").into_response();
+    }
+    let Some(payload) = apply_metric_whitelist(&req.payload) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            "payload carries no whitelisted metric keys",
+        )
+            .into_response();
+    };
+
     let sample = TelemetrySample {
-        node_id: NodeId(req.node_id),
-        kind: req
-            .kind
-            .unwrap_or_else(|| ServiceKind::Custom("ops".to_string())),
-        payload: req.payload,
-        ts: req.ts.unwrap_or(0),
+        node_id,
+        kind,
+        payload,
+        ts,
         classification: "INTERNAL".to_string(),
     };
     let mut reg = state.service_network_mut();
     let service_network = reg.service_network.as_mut().expect("service network");
-    let published = service_network.publish_telemetry(sample);
+    // A sample that missed the durable store is still accepted, flagged `persisted: false`.
+    let published = service_network.publish_telemetry_reporting(sample);
     Json(published).into_response()
 }
 
@@ -1085,6 +1357,10 @@ pub fn router(state: F12State) -> Router {
             get(wallet_registration_challenge),
         )
         .route("/v1/f12/private-mesh/sync", post(private_mesh_sync))
+        .route(
+            "/v1/f12/private-mesh/receiver",
+            get(private_sync_receiver_info),
+        )
         .route("/v1/f12/redact", post(redact_document))
         .route("/v1/f12/curation", post(submit_curation))
         .route("/v1/f12/curation/approve", post(approve_curation))
@@ -1099,6 +1375,10 @@ pub fn router(state: F12State) -> Router {
             post(reject_curation_review),
         )
         .route("/v1/f12/telemetry/metrics", get(telemetry_metrics))
+        .route(
+            "/v1/f12/service-network/challenge",
+            get(service_network_challenge),
+        )
         .route(
             "/v1/f12/service-network/telemetry",
             post(publish_service_telemetry),
@@ -1673,37 +1953,65 @@ mod tests {
         assert!(v.as_array().unwrap().len() >= 3);
     }
 
-    #[tokio::test]
-    async fn test_service_network_telemetry_publish_and_consume_endpoints() {
-        let state = test_state();
-        let app = router(state.clone());
+    /// Builds a publish body for `node`, signed over `payload` by `signer` when given.
+    async fn telemetry_publish_body(
+        app: &Router,
+        node: &NodeIdentity,
+        payload: &str,
+        signer: Option<&NodeIdentity>,
+    ) -> serde_json::Value {
+        let mut body = serde_json::json!({
+            "node_id": node.node_id.as_str(),
+            "payload": payload,
+            "ts": 1_000,
+        });
+        if let Some(signer) = signer {
+            let resp = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!(
+                            "/v1/f12/service-network/challenge?public_key_hex={}",
+                            crate::crypto::hex_encode(&signer.public_key)
+                        ))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+            let challenge: WalletChallenge = serde_json::from_slice(&bytes).unwrap();
+            let scope = telemetry_publish_scope(
+                &node.node_id,
+                &ServiceKind::Custom("ops".to_string()),
+                payload,
+                1_000,
+            );
+            let proof =
+                crate::mesh::service_network::sign_telemetry_publish(signer, &challenge, &scope);
+            body["proof"] = serde_json::to_value(proof).unwrap();
+        }
+        body
+    }
 
-        // Publish endpoint POST /v1/f12/service-network/telemetry with PII email & phone
-        let req_body = r#"{"node_id": "xv1", "payload": "bench test user user@example.com phone +1-555-123-4567"}"#;
-        let resp = app
-            .clone()
+    async fn post_telemetry(app: &Router, body: &serde_json::Value) -> axum::response::Response {
+        app.clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
                     .uri("/v1/f12/service-network/telemetry")
                     .header("content-type", "application/json")
-                    .body(Body::from(req_body))
+                    .body(Body::from(body.to_string()))
                     .unwrap(),
             )
             .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let body = resp.into_body().collect().await.unwrap().to_bytes();
-        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v["classification"].as_str().unwrap(), "INTERNAL");
-        let payload = v["payload"].as_str().unwrap();
-        assert!(!payload.contains("user@example.com"));
-        assert!(!payload.contains("+1-555-123-4567"));
-        assert!(payload.contains("[EMAIL]"));
-        assert!(payload.contains("[PHONE]"));
+            .unwrap()
+    }
 
-        // Consume endpoint GET /v1/f12/service-network/telemetry?since=0
+    async fn consumed_telemetry(app: &Router) -> Vec<serde_json::Value> {
         let resp = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .uri("/v1/f12/service-network/telemetry?since=0")
@@ -1714,9 +2022,123 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
-        let samples: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_service_network_telemetry_publish_and_consume_endpoints() {
+        let state = test_state();
+        let app = router(state.clone());
+        let node = NodeIdentity::generate();
+
+        // PII in whitelisted metric values is scrubbed and the sample forced INTERNAL.
+        let payload = "memory_count=user@example.com mesh_peers=+1-555-123-4567";
+        let body = telemetry_publish_body(&app, &node, payload, Some(&node)).await;
+        let resp = post_telemetry(&app, &body).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["classification"].as_str().unwrap(), "INTERNAL");
+        assert_eq!(v["persisted"], true);
+        let payload = v["payload"].as_str().unwrap();
+        assert!(!payload.contains("user@example.com"));
+        assert!(!payload.contains("+1-555-123-4567"));
+        assert!(payload.contains("[EMAIL]"));
+        assert!(payload.contains("[PHONE]"));
+
+        let samples = consumed_telemetry(&app).await;
         assert_eq!(samples.len(), 1);
-        assert_eq!(samples[0]["node_id"].as_str().unwrap(), "xv1");
+        assert_eq!(
+            samples[0]["node_id"].as_str().unwrap(),
+            node.node_id.as_str()
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_reports_sample_not_persisted_when_store_unavailable() {
+        let state = test_state();
+        // A directory where the database file belongs makes SQLite fail to open.
+        std::fs::create_dir_all(state.data_dir.join("mesh/service-telemetry.db")).unwrap();
+        let app = router(state);
+        let node = NodeIdentity::generate();
+
+        let body = telemetry_publish_body(&app, &node, "memory_count=1", Some(&node)).await;
+        let resp = post_telemetry(&app, &body).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["persisted"], false);
+        assert_eq!(consumed_telemetry(&app).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn publish_rejects_missing_or_bad_node_proof() {
+        let app = router(test_state());
+        let node = NodeIdentity::generate();
+        let other = NodeIdentity::generate();
+        let payload = "cpu_pct=12";
+
+        let unsigned = telemetry_publish_body(&app, &node, payload, None).await;
+        assert_eq!(
+            post_telemetry(&app, &unsigned).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        // Signed by a key that is not the publishing node's.
+        let wrong_key = telemetry_publish_body(&app, &node, payload, Some(&other)).await;
+        assert_eq!(
+            post_telemetry(&app, &wrong_key).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        // Valid signature, but the payload was changed after signing.
+        let mut tampered = telemetry_publish_body(&app, &node, payload, Some(&node)).await;
+        tampered["payload"] = serde_json::json!("cpu_pct=99");
+        assert_eq!(
+            post_telemetry(&app, &tampered).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        // A proof is one-shot: replaying an accepted body is refused.
+        let valid = telemetry_publish_body(&app, &node, payload, Some(&node)).await;
+        assert_eq!(post_telemetry(&app, &valid).await.status(), StatusCode::OK);
+        assert_eq!(
+            post_telemetry(&app, &valid).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+
+        assert_eq!(consumed_telemetry(&app).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn publish_applies_key_whitelist() {
+        let state = test_state();
+        let app = router(state.clone());
+        let node = NodeIdentity::generate();
+
+        let payload = "cpu_pct=12.5 hostname=box ram_mb=512 api_key=abc free text";
+        let body = telemetry_publish_body(&app, &node, payload, Some(&node)).await;
+        let resp = post_telemetry(&app, &body).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(v["payload"], "cpu_pct=12.5 ram_mb=512");
+
+        let none_listed = telemetry_publish_body(&app, &node, "hostname=box", Some(&node)).await;
+        assert_eq!(
+            post_telemetry(&app, &none_listed).await.status(),
+            StatusCode::BAD_REQUEST
+        );
+
+        // The accepted sample is persisted under the node's data dir.
+        let reopened = ServiceRegistry::open_with_telemetry_store(
+            state.data_dir.join("mesh/service-telemetry.db"),
+            TelemetryLimits::default(),
+        )
+        .unwrap();
+        let persisted = reopened.consume_telemetry(0);
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].payload, "cpu_pct=12.5 ram_mb=512");
     }
 
     #[tokio::test]
@@ -1833,24 +2255,64 @@ mod tests {
         assert!(text.contains("[REDACTED: Master Vault Keys]"));
     }
 
+    /// Registers `node` under the wallet of `owner`, sending `public_key_hex`.
+    async fn post_keyed_wallet_node(
+        app: &Router,
+        owner: &NodeIdentity,
+        node_id: &str,
+        public_key_hex: &str,
+    ) -> StatusCode {
+        let wallet = derive_wallet_id(&owner.public_key);
+        let challenge = fetch_wallet_challenge(app, &wallet).await;
+        let proof = sign_wallet_registration(owner, &challenge, node_id);
+        let body = serde_json::json!({
+            "node_id": node_id,
+            "wallet_id": wallet,
+            "name": "phone",
+            "iroh_addr": "addr1",
+            "public_key_hex": public_key_hex,
+            "proof": proof,
+        });
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/private-mesh/nodes")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+    }
+
+    /// Sync is delivered to the target node, never applied locally: without a
+    /// configured transport the route refuses and writes nothing to disk.
     #[tokio::test]
     async fn test_private_mesh_sync_endpoint_success() {
         let state = test_state();
         let app = router(state.clone());
         let key = NodeIdentity::generate();
         let wallet = derive_wallet_id(&key.public_key);
-        let challenge = fetch_wallet_challenge(&app, &wallet).await;
-        let proof = sign_wallet_registration(&key, &challenge, "xv1-b");
+        let target = NodeIdentity::generate();
+        let target_id = target.node_id.as_str().to_string();
         assert_eq!(
-            post_wallet_node(&app, &wallet, "xv1-b", &proof).await,
+            post_keyed_wallet_node(
+                &app,
+                &key,
+                &target_id,
+                &crate::crypto::hex_encode(&target.public_key)
+            )
+            .await,
             StatusCode::CREATED
         );
 
         let sync_challenge = fetch_wallet_challenge(&app, &wallet).await;
-        let sync_proof = sign_wallet_action(&key, &sync_challenge, "sync", "xv1-b");
+        let sync_proof = sign_wallet_action(&key, &sync_challenge, "sync", &target_id);
         let body = serde_json::json!({
             "wallet_id": wallet,
-            "target_node": "xv1-b",
+            "target_node": target_id,
             "proof": sync_proof,
             "memories": [{
                 "path": "test/secret/doc.md",
@@ -1873,30 +2335,48 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(resp.status(), StatusCode::OK);
-        let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
-        let v: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-        assert_eq!(v["status"], "success");
-        assert_eq!(v["target_node"], "xv1-b");
-        assert_eq!(v["synced_memories"], 1);
-
-        let written_file = state.data_dir.join("sync/memories/test_secret_doc.md.json");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert!(
-            written_file.exists(),
-            "Synced memory delta must be written to disk"
+            !state.data_dir.join("sync/memories").exists(),
+            "sync must not write memory deltas on the sending node"
         );
+    }
 
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let meta = std::fs::metadata(&written_file).unwrap();
-            let mode = meta.permissions().mode() & 0o777;
-            assert_eq!(mode, 0o600, "synced memory file must have mode 0600");
+    #[tokio::test]
+    async fn test_private_mesh_sync_requires_target_public_key() {
+        let app = router(test_state());
+        let key = NodeIdentity::generate();
+        let wallet = derive_wallet_id(&key.public_key);
+        let challenge = fetch_wallet_challenge(&app, &wallet).await;
+        let proof = sign_wallet_registration(&key, &challenge, "xv1-b");
+        assert_eq!(
+            post_wallet_node(&app, &wallet, "xv1-b", &proof).await,
+            StatusCode::CREATED
+        );
+        let resp = sync_request(&app, &wallet, &key, "xv1-b").await;
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
 
-            let dir_meta = std::fs::metadata(state.data_dir.join("sync/memories")).unwrap();
-            let dir_mode = dir_meta.permissions().mode() & 0o777;
-            assert_eq!(dir_mode, 0o700, "synced memories dir must have mode 0700");
-        }
+    #[tokio::test]
+    async fn test_register_wallet_node_rejects_key_not_matching_node_id() {
+        let app = router(test_state());
+        let owner = NodeIdentity::generate();
+        let node = NodeIdentity::generate();
+        let other = NodeIdentity::generate();
+        assert_eq!(
+            post_keyed_wallet_node(
+                &app,
+                &owner,
+                node.node_id.as_str(),
+                &crate::crypto::hex_encode(&other.public_key)
+            )
+            .await,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            post_keyed_wallet_node(&app, &owner, node.node_id.as_str(), "zz").await,
+            StatusCode::BAD_REQUEST
+        );
     }
 
     /// Posts a sync for `wallet_id` to `target`, signed by `key` for that target.
@@ -1924,6 +2404,167 @@ mod tests {
             )
             .await
             .unwrap()
+    }
+
+    /// The server builds its state with a node identity and gets a private sync
+    /// transport; only a missing identity leaves sync unavailable.
+    #[cfg(feature = "mesh")]
+    #[tokio::test]
+    async fn server_state_installs_private_sync_transport() {
+        let dir = test_state().data_dir;
+        let identity = Arc::new(NodeIdentity::generate());
+        let store: Arc<dyn crate::memory::store::MemoryStore> =
+            Arc::new(crate::memory::store::InMemoryMemoryStore::default());
+        let state = F12State::for_server(dir.clone(), Some(identity), store.clone());
+        assert!(matches!(
+            state.private_sync.as_deref(),
+            Some(SyncTransport::P2pIroh(_))
+        ));
+        assert!(F12State::for_server(dir, None, store)
+            .private_sync
+            .is_none());
+
+        let app = router(state);
+        let owner = NodeIdentity::generate();
+        let wallet = derive_wallet_id(&owner.public_key);
+        let target = NodeIdentity::generate();
+        let target_id = target.node_id.as_str().to_string();
+        assert_eq!(
+            post_keyed_wallet_node(
+                &app,
+                &owner,
+                &target_id,
+                &crate::crypto::hex_encode(&target.public_key)
+            )
+            .await,
+            StatusCode::CREATED
+        );
+        // The transport is used: an undialable address fails delivery (502), not 503.
+        let resp = sync_request(&app, &wallet, &owner, &target_id).await;
+        assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    /// The production state runs a receiver on the same endpoint as the outbound
+    /// transport, backed by the given store, advertising its address and
+    /// accepting sealed sync only from nodes registered under the local wallet.
+    #[cfg(feature = "mesh")]
+    #[tokio::test]
+    async fn server_state_starts_same_wallet_receiver() {
+        use crate::mesh::iroh_transport::IrohTransport;
+
+        let previous = std::env::var("XAVIER_MESH_LOCALHOST_ONLY").ok();
+        std::env::set_var("XAVIER_MESH_LOCALHOST_ONLY", "1");
+        let dir = test_state().data_dir;
+        let identity = Arc::new(NodeIdentity::generate());
+        let store: Arc<dyn crate::memory::store::MemoryStore> =
+            Arc::new(crate::memory::store::InMemoryMemoryStore::default());
+        let state = F12State::for_server(dir, Some(identity.clone()), store.clone());
+        match previous {
+            Some(v) => std::env::set_var("XAVIER_MESH_LOCALHOST_ONLY", v),
+            None => std::env::remove_var("XAVIER_MESH_LOCALHOST_ONLY"),
+        }
+
+        let Some(SyncTransport::P2pIroh(outbound)) = state.private_sync.as_deref() else {
+            panic!("outbound Iroh transport not installed");
+        };
+        assert!(outbound.has_sender_policy(), "sender policy not installed");
+        let ReceiverStatus::Listening { addr } = state.private_sync_receiver().await else {
+            panic!("receiver not listening");
+        };
+        assert_eq!(
+            serde_json::to_string(&outbound.direct_addr().await.unwrap()).unwrap(),
+            addr,
+            "outbound and receiver share one endpoint"
+        );
+
+        let app = router(state.clone());
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/private-mesh/receiver")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let info: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(info["iroh_addr"], addr.as_str());
+        assert_eq!(info["node_id"], identity.node_id.as_str());
+
+        let sender = Arc::new(NodeIdentity::generate());
+        let sender_transport = IrohTransport::new_direct(
+            sender.clone(),
+            Arc::new(crate::memory::store::InMemoryMemoryStore::default()),
+            std::iter::empty(),
+        );
+        let target: iroh::EndpointAddr = serde_json::from_str(&addr).unwrap();
+        let payload = PrivateSyncPayload {
+            memories: vec![PrivateMemoryDelta {
+                path: "notes/receiver".into(),
+                content: "applied by the production receiver".into(),
+                metadata: serde_json::json!({}),
+                created_at: chrono::Utc::now().timestamp(),
+            }],
+            vectors: Vec::new(),
+            snapshots: Vec::new(),
+        };
+        let send =
+            || sender_transport.send_memory_sync(target.clone(), &identity.public_key, &payload);
+
+        // Unregistered sender: rejected.
+        let ack = send().await.unwrap();
+        assert!(!ack.accepted, "unregistered sender must be rejected");
+
+        // Sender registered under another wallet than the local node: rejected.
+        let node = |id: &NodeId, wallet: &str| WalletNode {
+            node_id: id.clone(),
+            wallet_id: wallet.to_string(),
+            name: "n".into(),
+            iroh_addr: String::new(),
+            last_seen: chrono::Utc::now(),
+        };
+        {
+            let mut reg = state.private_mesh_mut();
+            let mesh = reg.private_mesh.as_mut().unwrap();
+            mesh.register_wallet_node(node(&identity.node_id, "wallet-a"), "wallet-a")
+                .unwrap();
+            mesh.register_wallet_node(node(&sender.node_id, "wallet-b"), "wallet-b")
+                .unwrap();
+        }
+        let ack = send().await.unwrap();
+        assert!(!ack.accepted, "cross-wallet sender must be rejected");
+
+        // A sender registered under the local node's wallet: accepted and
+        // applied to the store passed to `for_server`.
+        let peer = Arc::new(NodeIdentity::generate());
+        {
+            let mut reg = state.private_mesh_mut();
+            let mesh = reg.private_mesh.as_mut().unwrap();
+            mesh.register_wallet_node(node(&peer.node_id, "wallet-a"), "wallet-a")
+                .unwrap();
+        }
+        let peer_transport = IrohTransport::new_direct(
+            peer,
+            Arc::new(crate::memory::store::InMemoryMemoryStore::default()),
+            std::iter::empty(),
+        );
+        let ack = peer_transport
+            .send_memory_sync(target.clone(), &identity.public_key, &payload)
+            .await
+            .unwrap();
+        assert!(ack.accepted, "same-wallet sync rejected: {:?}", ack.reason);
+        assert_eq!(ack.applied, 1);
+        let applied = store
+            .get("mesh-sync", "notes/receiver")
+            .await
+            .unwrap()
+            .expect("applied to the store passed to for_server");
+        assert_eq!(applied.content, "applied by the production receiver");
     }
 
     #[tokio::test]

@@ -9,6 +9,190 @@ use crate::mesh::peer::PeerRegistry;
 use crate::security::clearance::ClearanceLevel;
 use crate::security::redaction::{RedactionEngine, RedactionRule};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+
+/// Metric keys a published telemetry payload may carry.
+pub const TELEMETRY_METRIC_WHITELIST: &[&str] = &[
+    "search_latency_ms",
+    "index_files",
+    "embedding_ok",
+    "memory_count",
+    "mesh_peers",
+    "cpu_pct",
+    "ram_mb",
+];
+
+/// Keeps only the `key=value` tokens of `payload` whose key is whitelisted.
+/// Returns `None` when no whitelisted metric remains.
+pub fn apply_metric_whitelist(payload: &str) -> Option<String> {
+    let kept: Vec<&str> = payload
+        .split(|c: char| c.is_whitespace() || c == ',')
+        .filter(|token| {
+            token
+                .split_once('=')
+                .is_some_and(|(k, v)| !v.is_empty() && TELEMETRY_METRIC_WHITELIST.contains(&k))
+        })
+        .collect();
+    (!kept.is_empty()).then(|| kept.join(" "))
+}
+
+/// Action name signed by a node publishing telemetry.
+pub const TELEMETRY_PUBLISH_ACTION: &str = "telemetry-publish";
+
+/// Challenge subject for a node key: the same SHA-256 id the wallet registry uses.
+pub fn node_proof_subject(public_key: &[u8]) -> String {
+    crate::mesh::private_mesh::derive_wallet_id(public_key)
+}
+
+/// Scope a publish proof is bound to: a digest of the published fields.
+pub fn telemetry_publish_scope(
+    node_id: &NodeId,
+    kind: &ServiceKind,
+    payload: &str,
+    ts: i64,
+) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(format!("{}|{}|{}|", node_id.as_str(), kind, ts).as_bytes());
+    hasher.update(payload.as_bytes());
+    crate::crypto::hex_encode(hasher.finalize())
+}
+
+/// Signs a telemetry publish with the node's own key over a challenge issued
+/// for [`node_proof_subject`] of that key.
+pub fn sign_telemetry_publish(
+    node: &crate::mesh::node::NodeIdentity,
+    challenge: &crate::mesh::wallet_ownership::WalletChallenge,
+    scope: &str,
+) -> crate::mesh::wallet_ownership::WalletRegistrationProof {
+    crate::mesh::wallet_ownership::sign_wallet_action(
+        node,
+        challenge,
+        TELEMETRY_PUBLISH_ACTION,
+        scope,
+    )
+}
+
+/// Verifies that `proof` was signed by the key behind `node_id` for `scope`.
+pub fn verify_telemetry_publish(
+    proof: &crate::mesh::wallet_ownership::WalletRegistrationProof,
+    node_id: &NodeId,
+    scope: &str,
+) -> anyhow::Result<()> {
+    let public_key = crate::crypto::hex_decode(&proof.public_key_hex)?;
+    if NodeId::from_public_key_bytes(&public_key) != *node_id {
+        anyhow::bail!("node proof key does not match node id");
+    }
+    crate::mesh::wallet_ownership::verify_wallet_action(
+        proof,
+        &node_proof_subject(&public_key),
+        TELEMETRY_PUBLISH_ACTION,
+        scope,
+    )
+}
+
+/// Retention bounds for persisted telemetry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TelemetryLimits {
+    /// Maximum number of samples kept (newest win).
+    pub max_samples: usize,
+    /// Maximum age of a sample, measured from when it was received.
+    pub max_age_secs: i64,
+}
+
+impl Default for TelemetryLimits {
+    fn default() -> Self {
+        Self {
+            max_samples: 10_000,
+            max_age_secs: 7 * 24 * 3600,
+        }
+    }
+}
+
+/// SQLite-backed telemetry log, pruned to [`TelemetryLimits`] on every write.
+#[derive(Debug, Clone)]
+pub struct TelemetryStore {
+    path: PathBuf,
+    limits: TelemetryLimits,
+}
+
+impl TelemetryStore {
+    /// Opens (creating if needed) the telemetry database at `path`.
+    pub fn open(path: impl AsRef<Path>, limits: TelemetryLimits) -> anyhow::Result<Self> {
+        let store = Self {
+            path: path.as_ref().to_path_buf(),
+            limits,
+        };
+        if let Some(parent) = store.path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        store.conn()?.execute_batch(
+            "CREATE TABLE IF NOT EXISTS telemetry_samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                received_at INTEGER NOT NULL,
+                sample TEXT NOT NULL
+            );",
+        )?;
+        Ok(store)
+    }
+
+    fn conn(&self) -> anyhow::Result<rusqlite::Connection> {
+        Ok(rusqlite::Connection::open(&self.path)?)
+    }
+
+    fn insert_at(&self, sample: &TelemetrySample, received_at: i64) -> anyhow::Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT INTO telemetry_samples (received_at, sample) VALUES (?1, ?2)",
+            rusqlite::params![received_at, serde_json::to_string(sample)?],
+        )?;
+        self.prune_with(&conn, received_at)
+    }
+
+    /// Stores a sample received now and enforces the retention bounds.
+    pub fn insert(&self, sample: &TelemetrySample) -> anyhow::Result<()> {
+        self.insert_at(sample, chrono::Utc::now().timestamp())
+    }
+
+    fn prune_with(&self, conn: &rusqlite::Connection, now: i64) -> anyhow::Result<()> {
+        conn.execute(
+            "DELETE FROM telemetry_samples WHERE received_at < ?1",
+            [now - self.limits.max_age_secs],
+        )?;
+        conn.execute(
+            "DELETE FROM telemetry_samples WHERE id NOT IN
+                (SELECT id FROM telemetry_samples ORDER BY id DESC LIMIT ?1)",
+            [self.limits.max_samples as i64],
+        )?;
+        Ok(())
+    }
+
+    /// Drops samples outside the retention bounds as of `now`.
+    pub fn prune(&self, now: i64) -> anyhow::Result<()> {
+        self.prune_with(&self.conn()?, now)
+    }
+
+    /// All retained samples, oldest first.
+    pub fn load(&self) -> anyhow::Result<Vec<TelemetrySample>> {
+        Ok(self.load_received()?.into_iter().map(|(_, s)| s).collect())
+    }
+
+    /// All retained samples with their receive time, oldest first.
+    fn load_received(&self) -> anyhow::Result<Vec<(i64, TelemetrySample)>> {
+        let conn = self.conn()?;
+        let mut stmt =
+            conn.prepare("SELECT received_at, sample FROM telemetry_samples ORDER BY id ASC")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut samples = Vec::new();
+        for row in rows {
+            let (received_at, sample) = row?;
+            samples.push((received_at, serde_json::from_str(&sample)?));
+        }
+        Ok(samples)
+    }
+}
 
 /// Telemetry sanitizer stripping file paths, IP subnets, hostnames, and PII before telemetry broadcast.
 #[derive(Debug, Clone)]
@@ -117,15 +301,97 @@ pub struct ServiceRegistry {
     pub services: HashMap<ServiceKind, Vec<ServiceInfo>>,
     /// Collected telemetry samples from nodes in the service network.
     pub telemetry: Vec<TelemetrySample>,
+    /// Receive time of each in-memory `telemetry` sample, used for age pruning.
+    received_at: Vec<i64>,
+    /// Retention bounds, enforced in memory as well as in the store.
+    limits: TelemetryLimits,
+    /// Durable, bounded backing store for `telemetry`, when configured.
+    store: Option<TelemetryStore>,
+}
+
+/// A published sample and whether it reached the durable store.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PublishedTelemetry {
+    #[serde(flatten)]
+    pub sample: TelemetrySample,
+    /// False when the sample is held only in the bounded in-memory fallback.
+    pub persisted: bool,
 }
 
 impl ServiceRegistry {
     /// Create a new empty service registry.
     pub fn new() -> Self {
+        Self::with_telemetry_limits(TelemetryLimits::default())
+    }
+
+    /// In-memory registry whose telemetry is bounded by `limits`.
+    pub fn with_telemetry_limits(limits: TelemetryLimits) -> Self {
         Self {
             services: HashMap::new(),
             telemetry: Vec::new(),
+            received_at: Vec::new(),
+            limits,
+            store: None,
         }
+    }
+
+    /// Registry whose telemetry is persisted in SQLite at `path` and bounded by `limits`.
+    /// Samples retained from earlier runs are loaded.
+    pub fn open_with_telemetry_store(
+        path: impl AsRef<Path>,
+        limits: TelemetryLimits,
+    ) -> anyhow::Result<Self> {
+        let store = TelemetryStore::open(path, limits)?;
+        let now = chrono::Utc::now().timestamp();
+        store.prune(now)?;
+        let (received_at, telemetry) = store.load_received()?.into_iter().unzip();
+        Ok(Self {
+            services: HashMap::new(),
+            received_at,
+            telemetry,
+            limits,
+            store: Some(store),
+        })
+    }
+
+    /// Records a sample in memory and, when configured, in the bounded store.
+    /// Returns whether the sample was persisted durably.
+    fn record_telemetry(&mut self, sample: &TelemetrySample, now: i64) -> bool {
+        let persisted = match &self.store {
+            None => false,
+            Some(store) => match store
+                .insert_at(sample, now)
+                .and_then(|_| store.load_received())
+            {
+                Ok(retained) => {
+                    (self.received_at, self.telemetry) = retained.into_iter().unzip();
+                    return true;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "telemetry persistence failed");
+                    false
+                }
+            },
+        };
+        self.telemetry.push(sample.clone());
+        self.received_at.push(now);
+        self.prune_memory(now);
+        persisted
+    }
+
+    /// Applies the retention bounds to the in-memory samples.
+    fn prune_memory(&mut self, now: i64) {
+        self.received_at.resize(self.telemetry.len(), now);
+        let cutoff = now - self.limits.max_age_secs;
+        let mut kept: Vec<(i64, TelemetrySample)> = self
+            .received_at
+            .drain(..)
+            .zip(self.telemetry.drain(..))
+            .filter(|(at, _)| *at >= cutoff)
+            .collect();
+        let excess = kept.len().saturating_sub(self.limits.max_samples);
+        kept.drain(..excess);
+        (self.received_at, self.telemetry) = kept.into_iter().unzip();
     }
 
     /// Register a service in the registry.
@@ -202,7 +468,7 @@ impl ServiceRegistry {
         if sample.ts == 0 {
             sample.ts = chrono::Utc::now().timestamp();
         }
-        self.telemetry.push(sample.clone());
+        self.record_telemetry(&sample, chrono::Utc::now().timestamp());
         Ok(sample)
     }
 
@@ -211,15 +477,28 @@ impl ServiceRegistry {
     ///
     /// The payload is automatically scrubbed for sensitive workspace paths, IP subnets,
     /// hostnames, and PII via `TelemetrySanitizer`, and `classification` is enforced to be `ClearanceLevel::Internal` ("INTERNAL").
-    pub fn publish_telemetry(&mut self, mut sample: TelemetrySample) -> TelemetrySample {
+    pub fn publish_telemetry(&mut self, sample: TelemetrySample) -> TelemetrySample {
+        self.publish_telemetry_reporting(sample).sample
+    }
+
+    /// [`Self::publish_telemetry`], also reporting whether the sample was persisted.
+    pub fn publish_telemetry_reporting(&mut self, sample: TelemetrySample) -> PublishedTelemetry {
+        self.publish_telemetry_at(sample, chrono::Utc::now().timestamp())
+    }
+
+    fn publish_telemetry_at(
+        &mut self,
+        mut sample: TelemetrySample,
+        now: i64,
+    ) -> PublishedTelemetry {
         let sanitizer = TelemetrySanitizer::default();
         sample.payload = sanitizer.sanitize(&sample.payload);
         sample.classification = ClearanceLevel::Internal.as_str().to_uppercase();
         if sample.ts == 0 {
-            sample.ts = chrono::Utc::now().timestamp();
+            sample.ts = now;
         }
-        self.telemetry.push(sample.clone());
-        sample
+        let persisted = self.record_telemetry(&sample, now);
+        PublishedTelemetry { sample, persisted }
     }
 
     /// Consume telemetry samples recorded since the given timestamp (`since`).
@@ -626,5 +905,131 @@ mod tests {
         let consumed = registry.consume_telemetry(0);
         assert_eq!(consumed.len(), 1);
         assert_eq!(consumed[0], published);
+    }
+
+    fn numbered_sample(i: i64) -> TelemetrySample {
+        TelemetrySample {
+            node_id: NodeId("xv1-persist".to_string()),
+            kind: ServiceKind::Memory,
+            payload: format!("memory_count={i}"),
+            ts: 1_000 + i,
+            classification: "INTERNAL".to_string(),
+        }
+    }
+
+    #[test]
+    fn telemetry_persists_across_restart_and_is_bounded() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("mesh/telemetry.db");
+        let limits = TelemetryLimits {
+            max_samples: 3,
+            max_age_secs: 3600,
+        };
+
+        let mut registry = ServiceRegistry::open_with_telemetry_store(&path, limits).unwrap();
+        for i in 0..5 {
+            registry.publish_telemetry(numbered_sample(i));
+        }
+        let payloads = |r: &ServiceRegistry| -> Vec<String> {
+            r.consume_telemetry(0)
+                .into_iter()
+                .map(|s| s.payload)
+                .collect()
+        };
+        let expected = vec!["memory_count=2", "memory_count=3", "memory_count=4"];
+        assert_eq!(
+            payloads(&registry),
+            expected,
+            "count bound keeps the newest"
+        );
+        drop(registry);
+
+        let reopened = ServiceRegistry::open_with_telemetry_store(&path, limits).unwrap();
+        assert_eq!(payloads(&reopened), expected, "samples survive a restart");
+        drop(reopened);
+
+        // A sample received longer ago than max_age is dropped.
+        let store = TelemetryStore::open(&path, limits).unwrap();
+        let now = chrono::Utc::now().timestamp();
+        store.insert_at(&numbered_sample(9), now).unwrap();
+        store.prune(now + 7200).unwrap();
+        assert!(
+            store.load().unwrap().is_empty(),
+            "age bound drops old samples"
+        );
+    }
+
+    #[test]
+    fn telemetry_fallback_stays_bounded() {
+        let limits = TelemetryLimits {
+            max_samples: 3,
+            max_age_secs: 3600,
+        };
+        let mut registry = ServiceRegistry::with_telemetry_limits(limits);
+        let now = chrono::Utc::now().timestamp();
+        for i in 0..5 {
+            let published = registry.publish_telemetry_at(numbered_sample(i), now);
+            assert!(!published.persisted, "no store means not persisted");
+        }
+        let payloads: Vec<String> = registry
+            .consume_telemetry(0)
+            .into_iter()
+            .map(|s| s.payload)
+            .collect();
+        assert_eq!(
+            payloads,
+            vec!["memory_count=2", "memory_count=3", "memory_count=4"],
+            "count bound keeps the newest"
+        );
+
+        registry.publish_telemetry_at(numbered_sample(9), now + 7200);
+        let payloads: Vec<String> = registry
+            .consume_telemetry(0)
+            .into_iter()
+            .map(|s| s.payload)
+            .collect();
+        assert_eq!(
+            payloads,
+            vec!["memory_count=9"],
+            "age bound drops old samples"
+        );
+    }
+
+    #[test]
+    fn telemetry_write_failure_is_reported() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("mesh/telemetry.db");
+        let limits = TelemetryLimits {
+            max_samples: 2,
+            max_age_secs: 3600,
+        };
+        let mut registry = ServiceRegistry::open_with_telemetry_store(&path, limits).unwrap();
+        assert!(
+            registry
+                .publish_telemetry_reporting(numbered_sample(0))
+                .persisted
+        );
+
+        // Replace the database with a directory so every later write fails.
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        for i in 1..5 {
+            let published = registry.publish_telemetry_reporting(numbered_sample(i));
+            assert!(!published.persisted, "failed write must be reported");
+        }
+        assert_eq!(
+            registry.consume_telemetry(0).len(),
+            2,
+            "fallback after a write failure stays bounded"
+        );
+    }
+
+    #[test]
+    fn metric_whitelist_keeps_only_known_keys() {
+        assert_eq!(
+            apply_metric_whitelist("cpu_pct=12.5 hostname=box ram_mb=512,free text").as_deref(),
+            Some("cpu_pct=12.5 ram_mb=512")
+        );
+        assert_eq!(apply_metric_whitelist("user alice secret=1 cpu_pct="), None);
     }
 }
