@@ -50,3 +50,6 @@ mod memory_sync_http;
 
 #[path = "memory_sync_unified.rs"]
 mod memory_sync_unified;
+
+#[path = "repo_memory_instance_e2e.rs"]
+mod repo_memory_instance_e2e;
