@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::{json, Map, Value};
 use xavier_pageindex::store::SqliteStore;
 use xavier_pageindex::{
-    BrowseQuery, IngestOptions, PageIndex, PageIndexError, Source, StructureOpts,
+    BrowseQuery, IngestOptions, PageIndex, PageIndexError, SearchHit, Source, StructureOpts,
 };
 
 use super::state::PageIndexState;
@@ -75,12 +75,12 @@ pub fn tool_specs() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: TOOL_SEARCH,
-            description: "BM25 search inside one document: ranked pages with section breadcrumb and a short snippet, no full text.",
+            description: "BM25 search across documents (or in one if doc_name is given): ranked pages with section breadcrumb and a short snippet.",
             input_schema: json!({"type":"object","properties":{
                 "doc_name":{"type":"string"},
                 "query":{"type":"string"},
                 "limit":{"type":"integer","minimum":1,"maximum":SEARCH_MAX_LIMIT}},
-                "required":["doc_name","query"]}),
+                "required":["query"]}),
         },
         ToolSpec {
             name: TOOL_INDEX,
@@ -120,7 +120,13 @@ fn ok_with(value: impl Serialize) -> Value {
 
 pub(crate) fn from_error(e: &PageIndexError) -> Value {
     let hint = match e {
-        PageIndexError::NotFound(_) => "Check the name with pageindex_browse_documents",
+        PageIndexError::NotFound(msg) => {
+            if msg.contains("node_id") {
+                "Copy node_id from get_document_structure"
+            } else {
+                "Check the name with pageindex_browse_documents"
+            }
+        }
         PageIndexError::InvalidRange(_) => {
             "Fix the range; use pageindex_get_document for page_count"
         }
@@ -148,8 +154,67 @@ fn str_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
         .filter(|s| !s.is_empty())
 }
 
-fn usize_arg(args: &Value, key: &str) -> Option<usize> {
-    args.get(key).and_then(Value::as_u64).map(|n| n as usize)
+fn bounded_usize(args: &Value, key: &str, min: usize, max: usize) -> Result<Option<usize>, Value> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => {
+            let bounds_str = if max == usize::MAX {
+                format!(">= {min}")
+            } else {
+                format!("{min}..{max}")
+            };
+            let make_err = || {
+                fail(
+                    format!("{key} must be {bounds_str}"),
+                    format!("Pass '{key}' as an integer in {bounds_str}"),
+                )
+            };
+
+            if let Some(n) = v.as_i64() {
+                if n >= min as i64 && (max == usize::MAX || n <= max as i64) {
+                    Ok(Some(n as usize))
+                } else {
+                    Err(make_err())
+                }
+            } else if let Some(n) = v.as_u64() {
+                if n >= min as u64 && (max == usize::MAX || n <= max as u64) {
+                    Ok(Some(n as usize))
+                } else {
+                    Err(make_err())
+                }
+            } else {
+                Err(make_err())
+            }
+        }
+    }
+}
+
+fn validate_doc_name(name: &str) -> Result<(), Value> {
+    if name.contains("..") {
+        return Err(fail(
+            "invalid doc_name: must not contain '..'",
+            "Provide a clean document name without path traversal",
+        ));
+    }
+    if name.starts_with('/') {
+        return Err(fail(
+            "invalid doc_name: must not start with '/'",
+            "Provide a relative document name without leading '/'",
+        ));
+    }
+    if name.chars().any(|c| c.is_control()) {
+        return Err(fail(
+            "invalid doc_name: must not contain control characters",
+            "Provide a document name without control characters",
+        ));
+    }
+    if name.chars().count() > 256 {
+        return Err(fail(
+            "invalid doc_name: must not exceed 256 characters",
+            "Shorten the document name to 256 characters or fewer",
+        ));
+    }
+    Ok(())
 }
 
 fn need_str<'a>(args: &'a Value, key: &str) -> Result<&'a str, Value> {
@@ -215,12 +280,12 @@ fn read_tool(
     let map = |e: PageIndexError| from_error(&e);
     match name {
         TOOL_BROWSE => {
-            let limit = usize_arg(args, "limit")
-                .unwrap_or(BROWSE_DEFAULT_LIMIT)
-                .clamp(1, BROWSE_MAX_LIMIT);
+            let limit =
+                bounded_usize(args, "limit", 1, BROWSE_MAX_LIMIT)?.unwrap_or(BROWSE_DEFAULT_LIMIT);
+            let offset = bounded_usize(args, "offset", 0, usize::MAX)?.unwrap_or(0);
             let q = BrowseQuery {
                 query: str_arg(args, "query").map(str::to_string),
-                offset: usize_arg(args, "offset").unwrap_or(0),
+                offset,
                 limit,
             };
             idx.browse(ws, q).map(ok_with).map_err(map)
@@ -231,25 +296,43 @@ fn read_tool(
         }
         TOOL_GET_STRUCTURE => {
             let doc = need_str(args, "doc_name")?;
+            let max_depth = bounded_usize(args, "max_depth", 1, usize::MAX)?;
             let opts = StructureOpts {
-                max_depth: usize_arg(args, "max_depth").map(|n| n as u32),
+                max_depth: max_depth.map(|n| n as u32),
                 node_id: str_arg(args, "node_id").map(str::to_string),
                 char_budget: None,
             };
             idx.get_structure(ws, doc, opts).map(ok_with).map_err(map)
         }
         TOOL_SEARCH => {
-            let doc = need_str(args, "doc_name")?;
             let query = need_str(args, "query")?;
-            let limit = usize_arg(args, "limit").unwrap_or(0);
-            idx.search(ws, doc, query, limit)
-                .map(ok_with)
-                .map_err(|e| match e {
-                    PageIndexError::InvalidRange(m) => {
-                        fail(m, "Pass words of 2+ letters or digits as 'query'")
+            let limit_opt = bounded_usize(args, "limit", 1, SEARCH_MAX_LIMIT)?;
+            let doc_opt = match args.get("doc_name") {
+                None | Some(Value::Null) => None,
+                Some(v) => {
+                    if let Some(s) = v.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                        Some(s)
+                    } else {
+                        return Err(fail(
+                            "parameter 'doc_name' must be a non-empty string",
+                            "Pass 'doc_name' as a non-empty string or omit it to search all documents",
+                        ));
                     }
-                    other => from_error(&other),
-                })
+                }
+            };
+            if let Some(doc) = doc_opt {
+                let limit = limit_opt.unwrap_or(0);
+                idx.search(ws, doc, query, limit)
+                    .map(ok_with)
+                    .map_err(|e| match e {
+                        PageIndexError::InvalidRange(m) => {
+                            fail(m, "Pass words of 2+ letters or digits as 'query'")
+                        }
+                        other => from_error(&other),
+                    })
+            } else {
+                search_workspace(idx, ws, query, limit_opt.unwrap_or(0))
+            }
         }
         _ => {
             let doc = need_str(args, "doc_name")?;
@@ -257,6 +340,101 @@ fn read_tool(
             idx.get_pages(ws, doc, pages, 0).map(ok_with).map_err(map)
         }
     }
+}
+
+fn search_workspace(
+    idx: &PageIndex<SqliteStore>,
+    ws: &str,
+    query: &str,
+    limit: usize,
+) -> Result<Value, Value> {
+    let terms = xavier_pageindex::eval::tokenize(query);
+    if terms.is_empty() {
+        return Err(fail(
+            "query has no searchable terms; use words of 2+ letters or digits",
+            "Pass words of 2+ letters or digits as 'query'",
+        ));
+    }
+    let effective_limit = match limit {
+        0 => xavier_pageindex::search::DEFAULT_SEARCH_LIMIT,
+        n => n.min(SEARCH_MAX_LIMIT),
+    };
+
+    let ready_docs = idx.ready_document_ids(ws).map_err(|e| from_error(&e))?;
+
+    struct HitAcrossDocs {
+        doc_name: String,
+        hit: SearchHit,
+    }
+
+    let mut all_hits: Vec<HitAcrossDocs> = Vec::new();
+    let mut total_matches = 0usize;
+
+    for (name, _) in ready_docs {
+        match idx.search(ws, &name, query, effective_limit) {
+            Ok(res) => {
+                total_matches += res.total_matches;
+                for hit in res.hits {
+                    all_hits.push(HitAcrossDocs {
+                        doc_name: name.clone(),
+                        hit,
+                    });
+                }
+            }
+            Err(PageIndexError::InvalidRange(m)) => {
+                return Err(fail(m, "Pass words of 2+ letters or digits as 'query'"));
+            }
+            Err(_) => {}
+        }
+    }
+
+    let max_score = all_hits.iter().map(|h| h.hit.score).fold(0.0f64, f64::max);
+
+    for h in &mut all_hits {
+        if max_score > 0.0 {
+            h.hit.score = ((h.hit.score / max_score) * 1000.0).round() / 1000.0;
+        }
+    }
+
+    all_hits.sort_by(|a, b| {
+        b.hit
+            .score
+            .total_cmp(&a.hit.score)
+            .then_with(|| a.doc_name.cmp(&b.doc_name))
+            .then_with(|| a.hit.page_no.cmp(&b.hit.page_no))
+    });
+
+    let truncated = total_matches > effective_limit;
+    let selected_hits: Vec<HitAcrossDocs> = all_hits.into_iter().take(effective_limit).collect();
+
+    let hits_json: Vec<Value> = selected_hits
+        .into_iter()
+        .map(|h| {
+            json!({
+                "doc_name": h.doc_name,
+                "page_no": h.hit.page_no,
+                "node_id": h.hit.node_id,
+                "breadcrumb": h.hit.breadcrumb,
+                "score": h.hit.score,
+                "snippet": h.hit.snippet,
+            })
+        })
+        .collect();
+
+    let next_steps: Vec<String> = if hits_json.is_empty() {
+        vec!["No page matched; try other or fewer terms, or browse documents with pageindex_browse_documents".into()]
+    } else {
+        vec!["Fetch the top pages with get_page_content() before answering".into()]
+    };
+
+    Ok(json!({
+        "ok": true,
+        "query": query.trim(),
+        "hits": hits_json,
+        "total_matches": total_matches,
+        "truncated": truncated,
+        "next_steps": next_steps,
+    }))
 }
 
 fn index_document(state: &PageIndexState, args: &Value, ctx: &ToolContext) -> Result<Value, Value> {
@@ -267,6 +445,7 @@ fn index_document(state: &PageIndexState, args: &Value, ctx: &ToolContext) -> Re
         ));
     }
     let doc_name = need_str(args, "doc_name")?;
+    validate_doc_name(doc_name)?;
     let content = args.get("content").and_then(Value::as_str);
     let path = str_arg(args, "path");
     let (bytes, ext_format) = match (content, path) {
@@ -463,7 +642,7 @@ mod tests {
         assert_eq!(required(TOOL_GET_DOCUMENT), ["doc_name"]);
         assert_eq!(required(TOOL_GET_STRUCTURE), ["doc_name"]);
         assert_eq!(required(TOOL_GET_PAGES), ["doc_name", "pages"]);
-        assert_eq!(required(TOOL_SEARCH), ["doc_name", "query"]);
+        assert_eq!(required(TOOL_SEARCH), ["query"]);
         assert_eq!(required(TOOL_INDEX), ["doc_name"]);
         assert!(specs.iter().all(|s| s.description.len() <= 200));
     }
@@ -709,5 +888,129 @@ mod tests {
             assert!(err.contains("feature disabled: pdf"), "{v}");
         }
         assert!(v["hint"].is_string());
+    }
+
+    #[tokio::test]
+    async fn search_without_doc_name_ranks_across_documents() {
+        let st = state_with(vec![]);
+        let doc1 = json!({
+            "doc_name": "doc_a",
+            "content": "# Guide A\nThis is a general guide.\n## Details\nSome generic text here.\n",
+            "format": "markdown"
+        });
+        let doc2 = json!({
+            "doc_name": "doc_b",
+            "content": "# Guide B\nRust compiler internals.\n## Section\nRust compiler optimization passes.\n",
+            "format": "markdown"
+        });
+        assert_eq!(call(&st, TOOL_INDEX, &doc1, &rw()).await["ok"], true);
+        assert_eq!(call(&st, TOOL_INDEX, &doc2, &rw()).await["ok"], true);
+
+        let res = call(
+            &st,
+            TOOL_SEARCH,
+            &json!({"query": "rust compiler", "limit": 5}),
+            &rw(),
+        )
+        .await;
+
+        assert_eq!(res["ok"], true, "{res}");
+        assert_eq!(res["query"], "rust compiler");
+        let hits = res["hits"].as_array().expect("hits array");
+        assert!(!hits.is_empty(), "expected hits across documents");
+        for hit in hits {
+            assert!(
+                hit.get("doc_name").and_then(Value::as_str).is_some(),
+                "each hit must include doc_name: {hit:?}"
+            );
+            let score = hit["score"].as_f64().expect("score as float");
+            assert!(
+                (0.0..=1.0).contains(&score),
+                "score must be normalized: {score}"
+            );
+        }
+        assert_eq!(hits[0]["doc_name"], "doc_b");
+    }
+
+    #[tokio::test]
+    async fn browse_rejects_out_of_range_limit() {
+        let st = state_with(vec![]);
+        let v0 = call(&st, TOOL_BROWSE, &json!({"limit": 0}), &rw()).await;
+        assert_eq!(v0["ok"], false, "{v0}");
+        let err0 = v0["error"].as_str().unwrap();
+        assert!(err0.contains("limit"), "{v0}");
+        assert!(err0.contains("1..100"), "{v0}");
+
+        let v101 = call(&st, TOOL_BROWSE, &json!({"limit": 101}), &rw()).await;
+        assert_eq!(v101["ok"], false, "{v101}");
+        let err101 = v101["error"].as_str().unwrap();
+        assert!(err101.contains("limit"), "{v101}");
+        assert!(err101.contains("1..100"), "{v101}");
+
+        let va = call(&st, TOOL_BROWSE, &json!({"limit": "a"}), &rw()).await;
+        assert_eq!(va["ok"], false, "{va}");
+        let erra = va["error"].as_str().unwrap();
+        assert!(erra.contains("limit"), "{va}");
+        assert!(erra.contains("1..100"), "{va}");
+    }
+
+    #[tokio::test]
+    async fn index_rejects_traversal_doc_name() {
+        let st = state_with(vec![]);
+        for bad_name in [
+            "../secret.md",
+            "dir/../secret.md",
+            "/etc/passwd",
+            "bad\x00name",
+            &"a".repeat(257),
+        ] {
+            let res = call(
+                &st,
+                TOOL_INDEX,
+                &json!({"doc_name": bad_name, "content": "text", "format": "text"}),
+                &rw(),
+            )
+            .await;
+            assert_eq!(
+                res["ok"], false,
+                "name {bad_name:?} should be rejected: {res}"
+            );
+            let err = res["error"].as_str().unwrap();
+            assert!(
+                err.contains("doc_name"),
+                "error must mention doc_name: {res}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn structure_node_not_found_hint() {
+        let st = state_with(vec![]);
+        let put = json!({
+            "doc_name": "guide",
+            "content": "# Section One\nsome content\n",
+            "format": "markdown"
+        });
+        assert_eq!(call(&st, TOOL_INDEX, &put, &rw()).await["ok"], true);
+
+        let res = call(
+            &st,
+            TOOL_GET_STRUCTURE,
+            &json!({"doc_name": "guide", "node_id": "nonexistent_node"}),
+            &rw(),
+        )
+        .await;
+
+        assert_eq!(res["ok"], false, "{res}");
+        let hint = res["hint"].as_str().expect("hint string");
+        assert_ne!(
+            hint, "Check the name with pageindex_browse_documents",
+            "node-not-found must not use generic browse documents hint: {res}"
+        );
+        assert!(
+            hint.to_lowercase()
+                .contains("copy node_id from get_document_structure"),
+            "hint must advise copying node_id from get_document_structure: {res}"
+        );
     }
 }
