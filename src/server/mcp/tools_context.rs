@@ -465,7 +465,7 @@ pub async fn handle_context_tool(
                 None => None,
             };
 
-            let result = crate::kernel::runner::execute_rtk_command(
+            let result = crate::kernel::runner::execute_rtk_command_bounded(
                 command,
                 cwd_canonical.as_deref(),
                 session_id,
