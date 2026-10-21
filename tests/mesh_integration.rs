@@ -887,6 +887,7 @@ async fn test_e2e_private_sync_two_nodes() {
                 "metadata": {},
                 "created_at": chrono::Utc::now().timestamp(),
             }],
+            "snapshots": ["snap-not-applied"],
         }))
         .send()
         .await
@@ -896,6 +897,7 @@ async fn test_e2e_private_sync_two_nodes() {
     assert_eq!(status, reqwest::StatusCode::OK, "sync failed: {body}");
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(v["synced_memories"], 1);
+    assert_eq!(v["synced_snapshots"], 0, "node B applies no snapshots");
     assert_eq!(v["target_node"], node_b.as_str());
 
     let applied = store_b

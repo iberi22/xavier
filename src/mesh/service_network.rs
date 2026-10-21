@@ -174,12 +174,21 @@ impl TelemetryStore {
 
     /// All retained samples, oldest first.
     pub fn load(&self) -> anyhow::Result<Vec<TelemetrySample>> {
+        Ok(self.load_received()?.into_iter().map(|(_, s)| s).collect())
+    }
+
+    /// All retained samples with their receive time, oldest first.
+    fn load_received(&self) -> anyhow::Result<Vec<(i64, TelemetrySample)>> {
         let conn = self.conn()?;
-        let mut stmt = conn.prepare("SELECT sample FROM telemetry_samples ORDER BY id ASC")?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut stmt =
+            conn.prepare("SELECT received_at, sample FROM telemetry_samples ORDER BY id ASC")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
         let mut samples = Vec::new();
         for row in rows {
-            samples.push(serde_json::from_str(&row?)?);
+            let (received_at, sample) = row?;
+            samples.push((received_at, serde_json::from_str(&sample)?));
         }
         Ok(samples)
     }
@@ -292,16 +301,36 @@ pub struct ServiceRegistry {
     pub services: HashMap<ServiceKind, Vec<ServiceInfo>>,
     /// Collected telemetry samples from nodes in the service network.
     pub telemetry: Vec<TelemetrySample>,
+    /// Receive time of each in-memory `telemetry` sample, used for age pruning.
+    received_at: Vec<i64>,
+    /// Retention bounds, enforced in memory as well as in the store.
+    limits: TelemetryLimits,
     /// Durable, bounded backing store for `telemetry`, when configured.
     store: Option<TelemetryStore>,
+}
+
+/// A published sample and whether it reached the durable store.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PublishedTelemetry {
+    #[serde(flatten)]
+    pub sample: TelemetrySample,
+    /// False when the sample is held only in the bounded in-memory fallback.
+    pub persisted: bool,
 }
 
 impl ServiceRegistry {
     /// Create a new empty service registry.
     pub fn new() -> Self {
+        Self::with_telemetry_limits(TelemetryLimits::default())
+    }
+
+    /// In-memory registry whose telemetry is bounded by `limits`.
+    pub fn with_telemetry_limits(limits: TelemetryLimits) -> Self {
         Self {
             services: HashMap::new(),
             telemetry: Vec::new(),
+            received_at: Vec::new(),
+            limits,
             store: None,
         }
     }
@@ -313,27 +342,56 @@ impl ServiceRegistry {
         limits: TelemetryLimits,
     ) -> anyhow::Result<Self> {
         let store = TelemetryStore::open(path, limits)?;
-        store.prune(chrono::Utc::now().timestamp())?;
+        let now = chrono::Utc::now().timestamp();
+        store.prune(now)?;
+        let (received_at, telemetry) = store.load_received()?.into_iter().unzip();
         Ok(Self {
             services: HashMap::new(),
-            telemetry: store.load()?,
+            received_at,
+            telemetry,
+            limits,
             store: Some(store),
         })
     }
 
     /// Records a sample in memory and, when configured, in the bounded store.
-    fn record_telemetry(&mut self, sample: &TelemetrySample) {
-        let Some(store) = &self.store else {
-            self.telemetry.push(sample.clone());
-            return;
+    /// Returns whether the sample was persisted durably.
+    fn record_telemetry(&mut self, sample: &TelemetrySample, now: i64) -> bool {
+        let persisted = match &self.store {
+            None => false,
+            Some(store) => match store
+                .insert_at(sample, now)
+                .and_then(|_| store.load_received())
+            {
+                Ok(retained) => {
+                    (self.received_at, self.telemetry) = retained.into_iter().unzip();
+                    return true;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "telemetry persistence failed");
+                    false
+                }
+            },
         };
-        match store.insert(sample).and_then(|_| store.load()) {
-            Ok(retained) => self.telemetry = retained,
-            Err(e) => {
-                tracing::warn!(error = %e, "telemetry persistence failed");
-                self.telemetry.push(sample.clone());
-            }
-        }
+        self.telemetry.push(sample.clone());
+        self.received_at.push(now);
+        self.prune_memory(now);
+        persisted
+    }
+
+    /// Applies the retention bounds to the in-memory samples.
+    fn prune_memory(&mut self, now: i64) {
+        self.received_at.resize(self.telemetry.len(), now);
+        let cutoff = now - self.limits.max_age_secs;
+        let mut kept: Vec<(i64, TelemetrySample)> = self
+            .received_at
+            .drain(..)
+            .zip(self.telemetry.drain(..))
+            .filter(|(at, _)| *at >= cutoff)
+            .collect();
+        let excess = kept.len().saturating_sub(self.limits.max_samples);
+        kept.drain(..excess);
+        (self.received_at, self.telemetry) = kept.into_iter().unzip();
     }
 
     /// Register a service in the registry.
@@ -410,7 +468,7 @@ impl ServiceRegistry {
         if sample.ts == 0 {
             sample.ts = chrono::Utc::now().timestamp();
         }
-        self.record_telemetry(&sample);
+        self.record_telemetry(&sample, chrono::Utc::now().timestamp());
         Ok(sample)
     }
 
@@ -419,15 +477,28 @@ impl ServiceRegistry {
     ///
     /// The payload is automatically scrubbed for sensitive workspace paths, IP subnets,
     /// hostnames, and PII via `TelemetrySanitizer`, and `classification` is enforced to be `ClearanceLevel::Internal` ("INTERNAL").
-    pub fn publish_telemetry(&mut self, mut sample: TelemetrySample) -> TelemetrySample {
+    pub fn publish_telemetry(&mut self, sample: TelemetrySample) -> TelemetrySample {
+        self.publish_telemetry_reporting(sample).sample
+    }
+
+    /// [`Self::publish_telemetry`], also reporting whether the sample was persisted.
+    pub fn publish_telemetry_reporting(&mut self, sample: TelemetrySample) -> PublishedTelemetry {
+        self.publish_telemetry_at(sample, chrono::Utc::now().timestamp())
+    }
+
+    fn publish_telemetry_at(
+        &mut self,
+        mut sample: TelemetrySample,
+        now: i64,
+    ) -> PublishedTelemetry {
         let sanitizer = TelemetrySanitizer::default();
         sample.payload = sanitizer.sanitize(&sample.payload);
         sample.classification = ClearanceLevel::Internal.as_str().to_uppercase();
         if sample.ts == 0 {
-            sample.ts = chrono::Utc::now().timestamp();
+            sample.ts = now;
         }
-        self.record_telemetry(&sample);
-        sample
+        let persisted = self.record_telemetry(&sample, now);
+        PublishedTelemetry { sample, persisted }
     }
 
     /// Consume telemetry samples recorded since the given timestamp (`since`).
@@ -885,6 +956,71 @@ mod tests {
         assert!(
             store.load().unwrap().is_empty(),
             "age bound drops old samples"
+        );
+    }
+
+    #[test]
+    fn telemetry_fallback_stays_bounded() {
+        let limits = TelemetryLimits {
+            max_samples: 3,
+            max_age_secs: 3600,
+        };
+        let mut registry = ServiceRegistry::with_telemetry_limits(limits);
+        let now = chrono::Utc::now().timestamp();
+        for i in 0..5 {
+            let published = registry.publish_telemetry_at(numbered_sample(i), now);
+            assert!(!published.persisted, "no store means not persisted");
+        }
+        let payloads: Vec<String> = registry
+            .consume_telemetry(0)
+            .into_iter()
+            .map(|s| s.payload)
+            .collect();
+        assert_eq!(
+            payloads,
+            vec!["memory_count=2", "memory_count=3", "memory_count=4"],
+            "count bound keeps the newest"
+        );
+
+        registry.publish_telemetry_at(numbered_sample(9), now + 7200);
+        let payloads: Vec<String> = registry
+            .consume_telemetry(0)
+            .into_iter()
+            .map(|s| s.payload)
+            .collect();
+        assert_eq!(
+            payloads,
+            vec!["memory_count=9"],
+            "age bound drops old samples"
+        );
+    }
+
+    #[test]
+    fn telemetry_write_failure_is_reported() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("mesh/telemetry.db");
+        let limits = TelemetryLimits {
+            max_samples: 2,
+            max_age_secs: 3600,
+        };
+        let mut registry = ServiceRegistry::open_with_telemetry_store(&path, limits).unwrap();
+        assert!(
+            registry
+                .publish_telemetry_reporting(numbered_sample(0))
+                .persisted
+        );
+
+        // Replace the database with a directory so every later write fails.
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        for i in 1..5 {
+            let published = registry.publish_telemetry_reporting(numbered_sample(i));
+            assert!(!published.persisted, "failed write must be reported");
+        }
+        assert_eq!(
+            registry.consume_telemetry(0).len(),
+            2,
+            "fallback after a write failure stays bounded"
         );
     }
 

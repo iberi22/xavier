@@ -23,7 +23,7 @@ use std::sync::Arc;
 use crate::codebase::snapshot::{discover_swal_repo_roots, SnapshotManager};
 use crate::curation::CurationQueue;
 use crate::mesh::join::JoinDecision;
-use crate::mesh::node::NodeId;
+use crate::mesh::node::{NodeId, NodeIdentity};
 use crate::mesh::pairing::verify_join_decision;
 use crate::mesh::pairing_registry::PairingSecretRegistry;
 use crate::mesh::private_mesh::{
@@ -68,6 +68,16 @@ impl F12State {
             data_dir,
             registry: Arc::new(Mutex::new(F12Registries::default())),
             private_sync: None,
+        }
+    }
+
+    /// State as the server builds it: private sync goes out over Iroh signed by
+    /// `identity`. Without the `mesh` feature or an identity, sync answers 503.
+    pub fn for_server(data_dir: PathBuf, identity: Option<Arc<NodeIdentity>>) -> Self {
+        let state = Self::new(data_dir);
+        match private_sync_transport(identity) {
+            Some(transport) => state.with_private_sync_transport(transport),
+            None => state,
         }
     }
 
@@ -133,12 +143,25 @@ impl F12State {
                 ServiceRegistry::open_with_telemetry_store(&path, TelemetryLimits::default())
                     .unwrap_or_else(|e| {
                         tracing::warn!(error = %e, "service telemetry store unavailable");
-                        ServiceRegistry::new()
+                        ServiceRegistry::with_telemetry_limits(TelemetryLimits::default())
                     }),
             );
         }
         reg
     }
+}
+
+#[cfg(feature = "mesh")]
+fn private_sync_transport(identity: Option<Arc<NodeIdentity>>) -> Option<Arc<SyncTransport>> {
+    // The sending side never accepts connections, so it needs no backing store.
+    let transport =
+        crate::mesh::iroh_transport::IrohTransport::new(identity?, crate::mesh::dummy_store());
+    Some(Arc::new(SyncTransport::P2pIroh(transport)))
+}
+
+#[cfg(not(feature = "mesh"))]
+fn private_sync_transport(_identity: Option<Arc<NodeIdentity>>) -> Option<Arc<SyncTransport>> {
+    None
 }
 
 // ---------- request/response types ----------
@@ -549,7 +572,8 @@ pub async fn private_mesh_sync(
             Json(PrivateSyncApiResponse {
                 status: "success".to_string(),
                 synced_memories: delivery.applied,
-                synced_snapshots: payload.snapshots.len(),
+                // The receiver applies memory deltas only; snapshots are not synced.
+                synced_snapshots: 0,
                 target_node: req.target_node,
             }),
         )
@@ -743,7 +767,8 @@ pub async fn publish_service_telemetry(
     };
     let mut reg = state.service_network_mut();
     let service_network = reg.service_network.as_mut().expect("service network");
-    let published = service_network.publish_telemetry(sample);
+    // A sample that missed the durable store is still accepted, flagged `persisted: false`.
+    let published = service_network.publish_telemetry_reporting(sample);
     Json(published).into_response()
 }
 
@@ -1818,6 +1843,7 @@ mod tests {
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["classification"].as_str().unwrap(), "INTERNAL");
+        assert_eq!(v["persisted"], true);
         let payload = v["payload"].as_str().unwrap();
         assert!(!payload.contains("user@example.com"));
         assert!(!payload.contains("+1-555-123-4567"));
@@ -1830,6 +1856,23 @@ mod tests {
             samples[0]["node_id"].as_str().unwrap(),
             node.node_id.as_str()
         );
+    }
+
+    #[tokio::test]
+    async fn publish_reports_sample_not_persisted_when_store_unavailable() {
+        let state = test_state();
+        // A directory where the database file belongs makes SQLite fail to open.
+        std::fs::create_dir_all(state.data_dir.join("mesh/service-telemetry.db")).unwrap();
+        let app = router(state);
+        let node = NodeIdentity::generate();
+
+        let body = telemetry_publish_body(&app, &node, "memory_count=1", Some(&node)).await;
+        let resp = post_telemetry(&app, &body).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["persisted"], false);
+        assert_eq!(consumed_telemetry(&app).await.len(), 1);
     }
 
     #[tokio::test]
@@ -2165,6 +2208,40 @@ mod tests {
             )
             .await
             .unwrap()
+    }
+
+    /// The server builds its state with a node identity and gets a private sync
+    /// transport; only a missing identity leaves sync unavailable.
+    #[cfg(feature = "mesh")]
+    #[tokio::test]
+    async fn server_state_installs_private_sync_transport() {
+        let dir = test_state().data_dir;
+        let identity = Arc::new(NodeIdentity::generate());
+        let state = F12State::for_server(dir.clone(), Some(identity));
+        assert!(matches!(
+            state.private_sync.as_deref(),
+            Some(SyncTransport::P2pIroh(_))
+        ));
+        assert!(F12State::for_server(dir, None).private_sync.is_none());
+
+        let app = router(state);
+        let owner = NodeIdentity::generate();
+        let wallet = derive_wallet_id(&owner.public_key);
+        let target = NodeIdentity::generate();
+        let target_id = target.node_id.as_str().to_string();
+        assert_eq!(
+            post_keyed_wallet_node(
+                &app,
+                &owner,
+                &target_id,
+                &crate::crypto::hex_encode(&target.public_key)
+            )
+            .await,
+            StatusCode::CREATED
+        );
+        // The transport is used: an undialable address fails delivery (502), not 503.
+        let resp = sync_request(&app, &wallet, &owner, &target_id).await;
+        assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
     }
 
     #[tokio::test]
