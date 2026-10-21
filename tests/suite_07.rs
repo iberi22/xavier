@@ -52,3 +52,6 @@ mod multi_node_sync;
 
 #[path = "e2e/multimodal_rag_pipeline_e2e.rs"]
 mod multimodal_rag_pipeline_e2e;
+
+#[path = "repo_store_isolation_e2e.rs"]
+mod repo_store_isolation_e2e;

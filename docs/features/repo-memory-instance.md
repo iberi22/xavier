@@ -20,7 +20,7 @@ El repositorio de memoria por repo vive en `<repo>/.xavier/`.
 | `pack` / `unpack` del paquete | ✅ | `src/cli/commands/repo_pack.rs` |
 | La config manda en la identidad | ✅ | `src/codebase/repo_identity.rs` |
 | BD de memoria por repo (ruta) | ✅ ruta, no aislamiento | `src/memory/repo_memory_store_path.rs` |
-| **Aislamiento físico de la memoria** | ❌ pendiente | ver abajo |
+| **Aislamiento físico de la memoria** | ✅ opt-in por repo, solo cuando la petición nombra el repo (HTTP add/search, MCP search); el camino por defecto sigue en el store global | `src/memory/repo_store_registry.rs` |
 
 ## Configuración por repo
 

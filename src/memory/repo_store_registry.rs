@@ -24,7 +24,8 @@
 //!
 //! # What is NOT done here
 //!
-//! - Routing reads and writes per repo (XAV-REPO T10). Nothing calls this yet.
+//! - Routing every read and write per repo (XAV-REPO T10): only requests that name opted-in repos
+//!   reach this registry (HTTP add and search, MCP search); the default path still uses the global store.
 //! - Federated search (T11), the admin endpoint and health section (T13, T14).
 //! - Pool-level fixes such as non-blocking eviction (T5).
 //!
