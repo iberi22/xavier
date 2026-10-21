@@ -36,17 +36,20 @@
 use crate::memory::store::MemoryStore;
 use crate::mesh::node::NodeIdentity;
 use crate::mesh::peer::PeerInfo;
-use crate::mesh::private_mesh::EncryptedSessionPayload;
+use crate::mesh::private_mesh::{
+    decrypt_session_payload, encrypt_session_payload, signing_key_to_x25519_secret,
+    EncryptedSessionPayload, PrivateSyncPayload,
+};
 use crate::mesh::protocol::{
     ChunkRef, MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSessionShare, MeshSyncRequest,
 };
 use crate::session::sharing::SessionBundle;
 use anyhow::{anyhow, Context, Result};
-use iroh::endpoint::presets::N0;
+use iroh::endpoint::presets::{Minimal, N0};
 use iroh::endpoint::Connection;
 use iroh::Endpoint;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
@@ -85,6 +88,45 @@ pub enum MeshRequest {
         wallet_id: String,
         encrypted: EncryptedSessionPayload,
     },
+    /// Sealed memory sync: payload encrypted to the receiver, signed by the sender.
+    MemorySync {
+        sender_public_key_hex: String,
+        timestamp: i64,
+        nonce: String,
+        signature_hex: String,
+        encrypted: EncryptedSessionPayload,
+    },
+}
+
+/// Result of a sealed memory sync, returned by the receiving node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemorySyncAck {
+    pub accepted: bool,
+    pub applied: usize,
+    pub reason: Option<String>,
+}
+
+/// Maximum clock skew tolerated for a signed `MemorySync` request.
+const MEMORY_SYNC_MAX_SKEW_SECS: i64 = 300;
+/// Workspace that receives synced memories lacking a `workspace_id` in metadata.
+const MESH_SYNC_DEFAULT_WORKSPACE: &str = "mesh-sync";
+
+/// Which peers the accept loop serves. `None` means no allowlist is enforced
+/// (handshakes only); sealed memory sync always requires an allowlisted sender.
+type PeerPolicy = Option<Arc<HashSet<String>>>;
+
+fn memory_sync_message(
+    timestamp: i64,
+    nonce: &str,
+    encrypted: &EncryptedSessionPayload,
+) -> Vec<u8> {
+    format!(
+        "memory-sync:{timestamp}:{nonce}:{}:{}:{}",
+        encrypted.nonce_hex,
+        encrypted.ephemeral_public_key_hex.as_deref().unwrap_or(""),
+        encrypted.ciphertext_hex
+    )
+    .into_bytes()
 }
 
 /// Iroh-backed P2P transport. Holds the local node identity used to sign
@@ -102,6 +144,9 @@ pub struct IrohTransport {
     local_identity: Arc<NodeIdentity>,
     endpoint: OnceCell<Endpoint>,
     store: Arc<dyn MemoryStore>,
+    /// Localhost-only endpoint: no relays, no address lookup (tests, LAN).
+    direct_only: bool,
+    allowed_peers: PeerPolicy,
 }
 
 impl IrohTransport {
@@ -116,7 +161,29 @@ impl IrohTransport {
             local_identity: identity,
             endpoint: OnceCell::new(),
             store,
+            direct_only: false,
+            allowed_peers: None,
         }
+    }
+
+    /// Transport bound to localhost with relays and discovery disabled. Peers
+    /// must be dialed by explicit address; only `allowed_peers` are served.
+    pub fn new_direct(
+        identity: Arc<NodeIdentity>,
+        store: Arc<dyn MemoryStore>,
+        allowed_peers: impl IntoIterator<Item = crate::mesh::node::NodeId>,
+    ) -> Self {
+        let allowed: HashSet<String> = allowed_peers.into_iter().map(|n| n.0).collect();
+        Self {
+            direct_only: true,
+            allowed_peers: Some(Arc::new(allowed)),
+            ..Self::new(identity, store)
+        }
+    }
+
+    /// Full dialable address (id + bound direct sockets) of the local endpoint.
+    pub async fn direct_addr(&self) -> Result<iroh::EndpointAddr> {
+        Ok(self.endpoint().await?.addr())
     }
 
     /// The local Iroh endpoint's node id (debug form). Binds the endpoint on
@@ -136,6 +203,18 @@ impl IrohTransport {
     async fn endpoint(&self) -> Result<&Endpoint> {
         self.endpoint
             .get_or_try_init(|| async {
+                if self.direct_only {
+                    return Endpoint::builder(Minimal)
+                        .relay_mode(iroh::RelayMode::Disabled)
+                        .clear_address_lookup()
+                        .clear_ip_transports()
+                        .bind_addr("127.0.0.1:0")
+                        .map_err(|e| anyhow!("invalid bind addr: {e:?}"))?
+                        .alpns(vec![XMESH_ALPN.to_vec()])
+                        .bind()
+                        .await
+                        .context("Failed to bind direct Iroh endpoint");
+                }
                 Endpoint::builder(N0)
                     .alpns(vec![XMESH_ALPN.to_vec()])
                     .bind()
@@ -181,13 +260,17 @@ impl IrohTransport {
         let public_key = trimmed
             .parse::<iroh::PublicKey>()
             .with_context(|| format!("invalid iroh peer addr: {peer_addr}"))?;
+        self.connect_addr(iroh::EndpointAddr::new(public_key)).await
+    }
+
+    /// Dial a remote endpoint by full address (id + direct sockets).
+    pub async fn connect_addr(&self, addr: iroh::EndpointAddr) -> Result<Connection> {
         let endpoint = self.endpoint().await?;
-        let endpoint_addr = iroh::EndpointAddr::new(public_key);
-        let conn = endpoint
-            .connect(endpoint_addr, XMESH_ALPN)
+        let id = addr.id;
+        endpoint
+            .connect(addr, XMESH_ALPN)
             .await
-            .with_context(|| format!("failed to connect to iroh peer {peer_addr}"))?;
-        Ok(conn)
+            .with_context(|| format!("failed to connect to iroh peer {id}"))
     }
 
     /// Open a framed request/response stream to a connection and exchange one
@@ -242,6 +325,40 @@ impl IrohTransport {
     ) -> Result<MeshHandshakeResponse> {
         let handshake_fut = async {
             let conn = self.connect(peer_addr).await?;
+            self.handshake_on(&conn, pairing_secret).await
+        };
+
+        match tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake_fut).await {
+            Ok(res) => res,
+            Err(_) => {
+                tracing::warn!("Handshake timed out for peer {peer_addr}");
+                Err(anyhow!("handshake timed out for peer {peer_addr}"))
+            }
+        }
+    }
+
+    /// Handshake with a peer dialed by explicit address (bounded by
+    /// [`HANDSHAKE_TIMEOUT`]).
+    pub async fn handshake_addr(
+        &self,
+        addr: iroh::EndpointAddr,
+        pairing_secret: Option<String>,
+    ) -> Result<MeshHandshakeResponse> {
+        let fut = async {
+            let conn = self.connect_addr(addr).await?;
+            self.handshake_on(&conn, pairing_secret).await
+        };
+        tokio::time::timeout(HANDSHAKE_TIMEOUT, fut)
+            .await
+            .map_err(|_| anyhow!("handshake timed out"))?
+    }
+
+    async fn handshake_on(
+        &self,
+        conn: &Connection,
+        pairing_secret: Option<String>,
+    ) -> Result<MeshHandshakeResponse> {
+        {
             let nonce = uuid::Uuid::new_v4().to_string();
             let signature = self.local_identity.sign(nonce.as_bytes());
             let body = MeshHandshake {
@@ -255,18 +372,44 @@ impl IrohTransport {
                 pairing_secret,
             };
             let resp = self
-                .round_trip(&conn, &MeshRequest::Handshake { body })
+                .round_trip(conn, &MeshRequest::Handshake { body })
                 .await?;
             serde_json::from_value(resp).context("parse handshake response")
-        };
-
-        match tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake_fut).await {
-            Ok(res) => res,
-            Err(_) => {
-                tracing::warn!("Handshake timed out for peer {peer_addr}");
-                Err(anyhow!("handshake timed out for peer {peer_addr}"))
-            }
         }
+    }
+
+    /// Seal `payload` to `recipient_public_key` (Ed25519), sign it with the
+    /// local identity and deliver it to the peer at `addr`.
+    pub async fn send_memory_sync(
+        &self,
+        addr: iroh::EndpointAddr,
+        recipient_public_key: &[u8],
+        payload: &PrivateSyncPayload,
+    ) -> Result<MemorySyncAck> {
+        let recipient: [u8; 32] = recipient_public_key
+            .try_into()
+            .map_err(|_| anyhow!("recipient public key must be 32 bytes"))?;
+        let encrypted = encrypt_session_payload(payload, &recipient)?;
+        let nonce = uuid::Uuid::new_v4().to_string();
+        let timestamp = chrono::Utc::now().timestamp();
+        let signature = self
+            .local_identity
+            .sign(&memory_sync_message(timestamp, &nonce, &encrypted));
+        let req = MeshRequest::MemorySync {
+            sender_public_key_hex: crate::crypto::hex_encode(&self.local_identity.public_key),
+            timestamp,
+            nonce,
+            signature_hex: crate::crypto::hex_encode(signature),
+            encrypted,
+        };
+        let fut = async {
+            let conn = self.connect_addr(addr).await?;
+            self.round_trip(&conn, &req).await
+        };
+        let resp = tokio::time::timeout(HANDSHAKE_TIMEOUT, fut)
+            .await
+            .map_err(|_| anyhow!("memory sync timed out"))??;
+        serde_json::from_value(resp).context("parse memory sync ack")
     }
 
     /// Fetch the sync manifest from a peer over Iroh. Reads the address out of
@@ -383,8 +526,9 @@ impl IrohTransport {
         };
         let local_identity = self.local_identity.clone();
         let store = self.store.clone();
+        let policy = self.allowed_peers.clone();
         tokio::spawn(async move {
-            if let Err(err) = Self::run_accept_loop(endpoint, local_identity, store).await {
+            if let Err(err) = Self::run_accept_loop(endpoint, local_identity, store, policy).await {
                 tracing::warn!("Iroh accept loop ended: {err:#}");
             }
         })
@@ -393,7 +537,13 @@ impl IrohTransport {
     /// Run the server-side accept loop on the Iroh endpoint.
     pub async fn accept_loop(&self) -> Result<()> {
         let endpoint = self.endpoint().await?.clone();
-        Self::run_accept_loop(endpoint, self.local_identity.clone(), self.store.clone()).await
+        Self::run_accept_loop(
+            endpoint,
+            self.local_identity.clone(),
+            self.store.clone(),
+            self.allowed_peers.clone(),
+        )
+        .await
     }
 
     /// Internal worker loop for processing incoming QUIC connections and bi-streams.
@@ -401,6 +551,7 @@ impl IrohTransport {
         endpoint: Endpoint,
         local_identity: Arc<NodeIdentity>,
         store: Arc<dyn MemoryStore>,
+        policy: PeerPolicy,
     ) -> Result<()> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -419,6 +570,7 @@ impl IrohTransport {
 
             let local_identity = local_identity.clone();
             let store = store.clone();
+            let policy = policy.clone();
             tokio::spawn(async move {
                 while let Ok((mut send, mut recv)) = conn.accept_bi().await {
                     let mut len_buf = [0u8; 4];
@@ -439,7 +591,8 @@ impl IrohTransport {
                         }
                     };
 
-                    let response_value = handle_request(&local_identity, &*store, &req).await;
+                    let response_value =
+                        handle_request_with_policy(&local_identity, &*store, &req, &policy).await;
 
                     let resp_bytes = match response_value.and_then(|v| Ok(serde_json::to_vec(&v)?))
                     {
@@ -481,7 +634,167 @@ pub(crate) async fn handle_request(
     store: &dyn MemoryStore,
     req: &MeshRequest,
 ) -> Result<serde_json::Value> {
+    handle_request_with_policy(local_identity, store, req, &None).await
+}
+
+/// Reject a handshake whose identity is forged or not allowlisted.
+fn check_handshake(body: &MeshHandshake, policy: &HashSet<String>) -> Result<(), String> {
+    let pk = crate::crypto::hex_decode(&body.public_key_hex).map_err(|_| "bad public key")?;
+    let sig = crate::crypto::hex_decode(&body.signature_hex).map_err(|_| "bad signature")?;
+    if !NodeIdentity::verify(&pk, body.nonce.as_bytes(), &sig) {
+        return Err("invalid handshake signature".into());
+    }
+    if crate::mesh::node::NodeId::from_public_key_bytes(&pk) != body.node_id {
+        return Err("node_id does not match public key".into());
+    }
+    if !policy.contains(body.node_id.as_str()) {
+        return Err("unknown peer".into());
+    }
+    Ok(())
+}
+
+/// Verify, decrypt and apply a sealed memory sync. Fails closed: without an
+/// allowlist, or for an unlisted or forged sender, nothing is applied.
+async fn apply_memory_sync(
+    local_identity: &NodeIdentity,
+    store: &dyn MemoryStore,
+    policy: &PeerPolicy,
+    req: &MeshRequest,
+) -> Result<MemorySyncAck, String> {
+    let MeshRequest::MemorySync {
+        sender_public_key_hex,
+        timestamp,
+        nonce,
+        signature_hex,
+        encrypted,
+    } = req
+    else {
+        return Err("not a memory sync".into());
+    };
+    let pk = crate::crypto::hex_decode(sender_public_key_hex).map_err(|_| "bad sender key")?;
+    let sig = crate::crypto::hex_decode(signature_hex).map_err(|_| "bad signature")?;
+    let message = memory_sync_message(*timestamp, nonce, encrypted);
+    if !NodeIdentity::verify(&pk, &message, &sig) {
+        return Err("invalid sender signature".into());
+    }
+    let sender = crate::mesh::node::NodeId::from_public_key_bytes(&pk);
+    match policy {
+        Some(allowed) if allowed.contains(sender.as_str()) => {}
+        _ => return Err("unknown peer".into()),
+    }
+    if (chrono::Utc::now().timestamp() - timestamp).abs() > MEMORY_SYNC_MAX_SKEW_SECS {
+        return Err("stale request".into());
+    }
+    let seed: [u8; 32] = local_identity
+        .private_key_bytes()
+        .try_into()
+        .map_err(|_| "bad local key")?;
+    let secret = signing_key_to_x25519_secret(&ed25519_dalek::SigningKey::from_bytes(&seed));
+    let payload = decrypt_session_payload(encrypted, &secret).map_err(|e| e.to_string())?;
+
+    let mut diffs = Vec::with_capacity(payload.memories.len());
+    for m in &payload.memories {
+        let path = m.path.trim();
+        if path.is_empty()
+            || path.starts_with('/')
+            || path.starts_with('\\')
+            || path.split(['/', '\\']).any(|c| c == "..")
+        {
+            return Err(format!("unsafe memory path: {path}"));
+        }
+        let workspace = m
+            .metadata
+            .get("workspace_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or(MESH_SYNC_DEFAULT_WORKSPACE)
+            .to_string();
+        let at = chrono::DateTime::from_timestamp(m.created_at, 0).unwrap_or_else(chrono::Utc::now);
+        let record = crate::memory::store::MemoryRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            workspace_id: workspace.clone(),
+            path: path.to_string(),
+            content: m.content.clone(),
+            metadata: m.metadata.clone(),
+            embedding: Vec::new(),
+            created_at: at,
+            updated_at: at,
+            revision: 1,
+            primary: true,
+            parent_id: None,
+            cluster_id: None,
+            level: Default::default(),
+            relation: None,
+            clearance: Default::default(),
+            revisions: Vec::new(),
+            encrypted_dek: None,
+            content_iv: None,
+            metadata_iv: None,
+            score: 0.0,
+            deleted_at: None,
+            embedding_status: "pending".into(),
+            embedding_attempts: 0,
+        };
+        let data =
+            crate::memory::sync::merge::serialise_chunk(&record).map_err(|e| e.to_string())?;
+        diffs.push(crate::memory::sync::ChunkDiff {
+            chunk_hash: crate::memory::sync::merge::chunk_hash(&record),
+            namespace: workspace,
+            action: crate::memory::sync::DiffAction::Add,
+            data: Some(data),
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some(record.path.clone()),
+        });
+    }
+    crate::memory::sync::merge::validate_changes_received(
+        &diffs,
+        crate::security::clearance::ClearanceLevel::Internal,
+    )
+    .map_err(|e| e.to_string())?;
+    let mut conflicts = 0u64;
+    crate::memory::sync::merge::apply_changes_received(store, &diffs, &mut conflicts)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(MemorySyncAck {
+        accepted: true,
+        applied: diffs.len(),
+        reason: None,
+    })
+}
+
+/// [`handle_request`] with a peer policy enforced for handshakes and memory sync.
+async fn handle_request_with_policy(
+    local_identity: &NodeIdentity,
+    store: &dyn MemoryStore,
+    req: &MeshRequest,
+    policy: &PeerPolicy,
+) -> Result<serde_json::Value> {
     match req {
+        MeshRequest::MemorySync { .. } => {
+            let ack = match apply_memory_sync(local_identity, store, policy, req).await {
+                Ok(ack) => ack,
+                Err(reason) => {
+                    tracing::warn!("memory sync rejected: {reason}");
+                    MemorySyncAck {
+                        accepted: false,
+                        applied: 0,
+                        reason: Some(reason),
+                    }
+                }
+            };
+            Ok(serde_json::to_value(ack)?)
+        }
+
+        MeshRequest::Handshake { body } if policy.is_some() => {
+            let verdict = check_handshake(body, policy.as_deref().expect("checked"));
+            let resp = MeshHandshakeResponse {
+                accepted: verdict.is_ok(),
+                node_id: local_identity.node_id.clone(),
+                public_key_hex: crate::crypto::hex_encode(&local_identity.public_key),
+                reason: verdict.err(),
+            };
+            Ok(serde_json::to_value(resp)?)
+        }
+
         MeshRequest::Handshake { body: _ } => {
             let resp = MeshHandshakeResponse {
                 accepted: true,
