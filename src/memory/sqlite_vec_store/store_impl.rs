@@ -561,7 +561,8 @@ impl MemoryStore for VecSqliteMemoryStore {
                             &record,
                             &workspace_owned,
                             Some(&filters_owned),
-                        ) {
+                        ) && identity_filters_match(&record, &workspace_owned, &filters_owned)
+                        {
                             out.push(record);
                             if out.len() >= limit {
                                 break;
@@ -600,6 +601,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         Ok(
             crate::memory::store::filter_records(results, workspace_id, "", Some(filters))?
                 .into_iter()
+                .filter(|record| identity_filters_match(record, workspace_id, filters))
                 .take(limit)
                 .collect(),
         )
@@ -1923,6 +1925,34 @@ impl VecSqliteMemoryStore {
     }
 }
 
+/// org/user/agent predicates evaluated on the decrypted metadata. SQL admits
+/// every sealed row for these filters and `record_matches_filters` does not
+/// check them, so without this a row of another agent (or a row that could
+/// not be opened) passed the filter.
+fn identity_filters_match(
+    record: &MemoryRecord,
+    workspace_id: &str,
+    filters: &MemoryQueryFilters,
+) -> bool {
+    if filters.org_id.is_none() && filters.user_id.is_none() && filters.agent_id.is_none() {
+        return true;
+    }
+    let Ok(resolved) =
+        crate::memory::schema::resolve_metadata(&record.path, &record.metadata, workspace_id, None)
+    else {
+        return false;
+    };
+    let ns = &resolved.namespace;
+    let pairs = [
+        (&filters.org_id, &ns.org_id),
+        (&filters.user_id, &ns.user_id),
+        (&filters.agent_id, &ns.agent_id),
+    ];
+    pairs
+        .iter()
+        .all(|(wanted, actual)| wanted.as_ref().is_none_or(|w| actual.as_ref() == Some(w)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2078,6 +2108,59 @@ mod tests {
             store.project_counts("ws").await.unwrap(),
             std::collections::BTreeMap::from([("private-project".into(), 1),])
         );
+    }
+
+    #[tokio::test]
+    async fn list_filtered_agent_filter_excludes_other_agents() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = latency_store(&temp).await;
+        store.record_key = Some([9; 32]);
+        for (id, metadata) in [
+            (
+                "a1",
+                serde_json::json!({"namespace": {"agent_id": "alpha"}}),
+            ),
+            ("b1", serde_json::json!({"namespace": {"agent_id": "beta"}})),
+            ("n1", serde_json::json!({})),
+            ("a2", serde_json::json!({"agent_id": "alpha"})),
+        ] {
+            store
+                .put(MemoryRecord {
+                    id: id.into(),
+                    workspace_id: "ws".into(),
+                    path: format!("fragments/{id}"),
+                    content: format!("fragment {id}"),
+                    metadata,
+                    revision: 1,
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+        }
+        store.conn_provider.with_conn(&store.project_id, |conn| {
+            conn.execute(
+                "INSERT INTO memory_records (id, workspace_id, path, content, metadata, encrypted_dek, created_at, updated_at)
+                 VALUES ('locked', 'ws', 'locked/path', '', '{\"agent_id\":\"alpha\"}', X'58534b31', '2030-01-01', '2030-01-01')", [],
+            )?;
+            Ok(())
+        }).await.unwrap();
+
+        let filters = MemoryQueryFilters {
+            agent_id: Some("alpha".into()),
+            ..Default::default()
+        };
+        let mut ids: Vec<String> = store
+            .list_filtered("ws", &filters, 10)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        ids.sort();
+        assert_eq!(ids, vec!["a1".to_string(), "a2".to_string()]);
+        let limited = store.list_filtered("ws", &filters, 1).await.unwrap();
+        assert_eq!(limited.len(), 1);
+        assert!(limited[0].id.starts_with('a'));
     }
 
     #[tokio::test]
