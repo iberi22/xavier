@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -e
 
@@ -11,32 +11,32 @@ trap 'rm -rf "$TEST_DIR"' EXIT
 echo "Created test dir: $TEST_DIR"
 
 cat << 'INNER' > "$TEST_DIR/backend_hang_stdin.sh"
-#!/bin/bash
+#!/usr/bin/env bash
 cat # Hangs on stdin
 INNER
 chmod +x "$TEST_DIR/backend_hang_stdin.sh"
 
 cat << 'INNER' > "$TEST_DIR/backend_zero_bytes.sh"
-#!/bin/bash
+#!/usr/bin/env bash
 exit 0
 INNER
 chmod +x "$TEST_DIR/backend_zero_bytes.sh"
 
 cat << 'INNER' > "$TEST_DIR/backend_wall_exceed.sh"
-#!/bin/bash
+#!/usr/bin/env bash
 sleep 10
 INNER
 chmod +x "$TEST_DIR/backend_wall_exceed.sh"
 
 cat << 'INNER' > "$TEST_DIR/backend_fail_nonzero.sh"
-#!/bin/bash
+#!/usr/bin/env bash
 echo "failing"
 exit 1
 INNER
 chmod +x "$TEST_DIR/backend_fail_nonzero.sh"
 
 cat << 'INNER' > "$TEST_DIR/backend_success.sh"
-#!/bin/bash
+#!/usr/bin/env bash
 echo "success"
 exit 0
 INNER
