@@ -19,7 +19,7 @@ CLAIM_FILE="$TEST_DIR/claim.json"
 echo '{"task_id": "1", "sha": "'"$HEAD_SHA"'"}' > "$CLAIM_FILE"
 
 cat << 'INNER' > "$TEST_DIR/fake_reviewer.sh"
-#!/bin/bash
+#!/usr/bin/env bash
 input=$(cat)
 # The seam must forward the worktree/claim_file the real atlas-review-adapter
 # requires; without them the reviewer cannot verify anything.
@@ -208,7 +208,7 @@ export DONE_REVIEW_CMD="$TEST_DIR/fake_reviewer.sh"
 
 # Additional test: fake reviewer rejects but bundle says approve
 cat << 'INNER' > "$TEST_DIR/fake_rejecter.sh"
-#!/bin/bash
+#!/usr/bin/env bash
 echo '{"verdict":"reject","notes":"i said no"}'
 INNER
 chmod +x "$TEST_DIR/fake_rejecter.sh"
@@ -251,7 +251,7 @@ fi
 ADAPTER="$DIR/../atlas-review-adapter.sh"
 if [ -f "$ADAPTER" ]; then
     cat << 'INNER' > "$TEST_DIR/approve_reviewer.sh"
-#!/bin/bash
+#!/usr/bin/env bash
 # args: verify <worktree> <claim_file>
 echo "VERDICT: APPROVE"
 INNER
