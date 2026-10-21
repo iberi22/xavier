@@ -373,6 +373,38 @@ fn sqlite_integrity(health: &crate::health::HealthResponse) -> Option<bool> {
         .map(|c| matches!(c.status, crate::health::CheckStatus::Pass))
 }
 
+/// Tool count from the same registry `tools/list` serves.
+fn served_tools_count() -> usize {
+    super::server::get_xavier_tools().len()
+}
+
+/// Run the blocking health collection off the async workers.
+async fn collect_health_blocking() -> crate::health::HealthResponse {
+    tokio::task::spawn_blocking(crate::health::collect_health_sync)
+        .await
+        .unwrap_or_else(|_| crate::health::fast_degraded_health_fallback())
+}
+
+/// One embedding probe shared by `health_check` and `xavier_local_status`.
+async fn shared_embedding_probe() -> bool {
+    let health = crate::observability::health::HEALTH.get_status().await;
+    !matches!(
+        health.embedding.status,
+        crate::observability::health::HealthLevel::Unhealthy
+    )
+}
+
+/// Serialize components; an unmeasured database (empty path) is `unknown`, not zeros.
+fn components_json(health: &crate::health::HealthResponse) -> Value {
+    let mut v = serde_json::to_value(health).unwrap_or(Value::Null);
+    if health.database.path.is_empty() {
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert("database".into(), json!({ "status": "unknown" }));
+        }
+    }
+    v
+}
+
 pub(crate) fn mcp_health_result(
     health: &crate::health::HealthResponse,
     tools_count: usize,
@@ -833,15 +865,14 @@ pub async fn handle_core_tool(
             )
         }
         "health_check" => {
-            let health = crate::health::collect_health_sync();
-            let tools_count = get_xavier_core_tools().len()
-                + crate::server::mcp::tools_memory::get_xavier_memory_tools().len()
-                + super::tools_context::get_xavier_context_tools().len();
+            let health = collect_health_blocking().await;
+            let tools_count = served_tools_count();
 
             // The store is OK when it actually answers a query; a measured SQLite
             // integrity failure overrides that.
             let store_reachable = workspace.workspace.memory.count().await.is_ok();
-            let result = mcp_health_result(&health, tools_count, store_reachable);
+            let mut result = mcp_health_result(&health, tools_count, store_reachable);
+            result.embedding_ok = shared_embedding_probe().await;
 
             // MCP `isError` = tool EXECUTION failure (spec 2025-06-18+), not host
             // state: warn/degraded alerts ride inside the payload. Only a hard
@@ -856,7 +887,7 @@ pub async fn handle_core_tool(
             // PSI, swap, load average, top procesos por RSS, D-state y alertas
             // con umbrales (docs/research/SELF-MANAGEMENT-RUNTIME.md §5).
             let snapshot = crate::self_manage::collect_system_snapshot();
-            let in_process_health = crate::health::collect_health_sync();
+            let in_process_health = collect_health_blocking().await;
 
             // `None` = not measured on this path (no DB connection is threaded into
             // `collect_health_sync`), reported as null instead of a fabricated `false`.
@@ -899,7 +930,7 @@ pub async fn handle_core_tool(
 
             let output = serde_json::json!({
                 "overall": overall_alert,
-                "components": in_process_health,
+                "components": components_json(&in_process_health),
                 "active_gaps": active_gaps,
                 "db_integrity": db_integrity,
                 "last_experiment": last_experiment,
@@ -1009,10 +1040,7 @@ pub async fn handle_core_tool(
                 .unwrap_or_else(|_| "local".into());
             let health = crate::observability::health::HEALTH.get_status().await;
             let llm_reachable = health.llm.reachable;
-            let embedding_reachable = !matches!(
-                health.embedding.status,
-                crate::observability::health::HealthLevel::Unhealthy
-            );
+            let embedding_reachable = shared_embedding_probe().await;
             let ollama_ok = llm_reachable && (provider == "local" || provider == "ollama");
             let mode_str = serde_json::to_value(&mode)
                 .ok()
@@ -1478,6 +1506,29 @@ fn drive_connect_status_report() -> serde_json::Value {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn health_check_tools_count_matches_tools_list() {
+        assert_eq!(
+            served_tools_count(),
+            super::super::server::get_xavier_tools().len()
+        );
+        let partial = get_xavier_core_tools().len()
+            + crate::server::mcp::tools_memory::get_xavier_memory_tools().len()
+            + super::super::tools_context::get_xavier_context_tools().len();
+        assert!(served_tools_count() > partial);
+    }
+
+    #[test]
+    fn health_check_unmeasured_database_is_unknown() {
+        let mut h = crate::health::fast_degraded_health_fallback();
+        h.database.path = String::new();
+        let v = components_json(&h);
+        assert_eq!(v["database"]["status"], "unknown");
+        assert!(v["database"].get("size_mb").is_none());
+        h.database.path = "/x/db.sqlite3".into();
+        assert_eq!(components_json(&h)["database"]["path"], "/x/db.sqlite3");
+    }
 
     /// A fresh, empty vault under a tempdir: no keyring, no real `~/.xavier`.
     fn isolated_empty_vault(temp_dir: &tempfile::TempDir) -> HardwareVault {
