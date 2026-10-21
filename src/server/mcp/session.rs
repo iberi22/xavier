@@ -326,22 +326,14 @@ pub async fn mcp_post_handler(
         manager.prune_stale_sessions(DEFAULT_TIMEOUT_DURATION);
     }
 
-    let header_session = headers.get("mcp-session-id").and_then(|v| v.to_str().ok());
-    let session_id = header_session.unwrap_or("default");
+    let session_id = headers
+        .get("mcp-session-id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("default");
 
     if manager.get_session(session_id).is_none() {
-        // An explicit but unknown session id is a stale/forged session: 404 per spec.
-        if header_session.is_some() {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(error_response(
-                    None,
-                    XAVIER_ERROR_NOT_FOUND,
-                    format!("Unknown Mcp-Session-Id: {session_id}"),
-                )),
-            )
-                .into_response();
-        }
+        // Unknown ids are adopted, not rejected with 404: sessions live in memory, so
+        // every daemon restart or prune would otherwise break all connected clients.
         if manager.active_session_count() > 10_000 {
             return (
                 StatusCode::SERVICE_UNAVAILABLE,

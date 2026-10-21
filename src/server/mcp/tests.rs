@@ -3489,25 +3489,16 @@ async fn mcp_null_id_is_a_request_not_a_notification() {
 }
 
 #[tokio::test]
-async fn mcp_unknown_session_id_is_404() {
+async fn mcp_unknown_session_id_is_adopted_after_restart() {
+    // Sessions are in memory: a client holding an id from before a restart must keep working.
     let (state, workspace) = test_state().await;
-    let router = test_router(state, workspace);
-    let payload =
-        serde_json::to_vec(&json!({"jsonrpc": "2.0", "id": 1, "method": "ping"})).unwrap();
-    let response = mcp_post_raw(router.clone(), payload.clone(), Some("no-such-session")).await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-
-    // A session id issued by the server is accepted on the next request.
-    let response = mcp_post_raw(router.clone(), payload.clone(), None).await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let issued = response
-        .headers()
-        .get(MCP_SESSION_HEADER)
-        .expect("session header")
-        .to_str()
-        .unwrap()
-        .to_string();
-    let response = mcp_post_raw(router, payload, Some(&issued)).await;
+    let payload = json!({"jsonrpc": "2.0", "id": 1, "method": "ping"});
+    let response = mcp_post_raw(
+        test_router(state, workspace),
+        serde_json::to_vec(&payload).unwrap(),
+        Some("issued-before-restart"),
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
 }
 
