@@ -767,5 +767,127 @@ async fn test_e2e_data_commons() {
     assert!(!filter.is_allowed("unconsented_data_type", &peer_id));
 }
 
+/// Two in-process nodes: node A's F12 route seals a private sync to node B's
+/// registered key and delivers it over the sync transport; node B decrypts it
+/// with its own secret and applies it to its store.
+#[cfg(feature = "mesh")]
+#[tokio::test]
+#[serial]
+async fn test_e2e_private_sync_two_nodes() {
+    use xavier::mesh::iroh_transport::IrohTransport;
+    use xavier::sync::transport::SyncTransport;
+
+    let owner = NodeIdentity::generate();
+    let wallet = xavier::mesh::derive_wallet_id(&owner.public_key);
+    let identity_a = Arc::new(NodeIdentity::generate());
+    let identity_b = Arc::new(NodeIdentity::generate());
+
+    // Node B: localhost-only Iroh endpoint that accepts sync from node A.
+    let store_b: Arc<dyn xavier::memory::MemoryStore> =
+        Arc::new(xavier::memory::store::InMemoryMemoryStore::default());
+    let transport_b = IrohTransport::new_direct(
+        identity_b.clone(),
+        store_b.clone(),
+        std::iter::once(identity_a.node_id.clone()),
+    );
+    let accept_b = transport_b.spawn_accept_loop().await;
+    let addr_b = serde_json::to_string(&transport_b.direct_addr().await.expect("addr B")).unwrap();
+
+    // Node A: F12 HTTP surface whose private sync goes out over its own Iroh endpoint.
+    let dir_a = tempdir().unwrap();
+    let transport_a = SyncTransport::P2pIroh(IrohTransport::new_direct(
+        identity_a.clone(),
+        Arc::new(xavier::memory::store::InMemoryMemoryStore::default()),
+        std::iter::once(identity_b.node_id.clone()),
+    ));
+    let state = F12State::new(dir_a.path().to_path_buf())
+        .with_private_sync_transport(Arc::new(transport_a));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let app = f12_routes::router(state);
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let challenge = |client: reqwest::Client, url: String, wallet: String| async move {
+        client
+            .get(format!(
+                "{}/v1/f12/private-mesh/challenge?wallet_id={}",
+                url, wallet
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json::<xavier::mesh::wallet_ownership::WalletChallenge>()
+            .await
+            .unwrap()
+    };
+
+    // Register node B with its node key and dialable address.
+    let node_b = identity_b.node_id.as_str().to_string();
+    let reg_challenge = challenge(client.clone(), url.clone(), wallet.clone()).await;
+    let reg_proof =
+        xavier::mesh::wallet_ownership::sign_wallet_registration(&owner, &reg_challenge, &node_b);
+    let reg = client
+        .post(format!("{}/v1/f12/private-mesh/nodes", url))
+        .json(&serde_json::json!({
+            "node_id": node_b,
+            "wallet_id": wallet,
+            "name": "node-b",
+            "iroh_addr": addr_b,
+            "public_key_hex": xavier::crypto::hex_encode(&identity_b.public_key),
+            "proof": reg_proof,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reg.status(), reqwest::StatusCode::CREATED);
+
+    let sync_challenge = challenge(client.clone(), url.clone(), wallet.clone()).await;
+    let sync_proof = xavier::mesh::wallet_ownership::sign_wallet_action(
+        &owner,
+        &sync_challenge,
+        "sync",
+        &node_b,
+    );
+    let resp = client
+        .post(format!("{}/v1/f12/private-mesh/sync", url))
+        .json(&serde_json::json!({
+            "wallet_id": wallet,
+            "target_node": node_b,
+            "proof": sync_proof,
+            "memories": [{
+                "path": "notes/private-sync",
+                "content": "delivered to node B",
+                "metadata": {},
+                "created_at": chrono::Utc::now().timestamp(),
+            }],
+        }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body = resp.text().await.unwrap();
+    assert_eq!(status, reqwest::StatusCode::OK, "sync failed: {body}");
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["synced_memories"], 1);
+    assert_eq!(v["target_node"], node_b.as_str());
+
+    let applied = store_b
+        .get("mesh-sync", "notes/private-sync")
+        .await
+        .unwrap()
+        .expect("memory applied on node B");
+    assert_eq!(applied.content, "delivered to node B");
+    assert!(
+        !dir_a.path().join("sync/memories").exists(),
+        "node A must not apply the delta locally"
+    );
+
+    server.abort();
+    accept_b.abort();
+}
+
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
 xavier::isolate_test_process!();

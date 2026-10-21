@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use crate::enterprise::rbac::Permission;
 use crate::mesh::network::{CrossGrant, MeshNetwork};
-use crate::mesh::node::NodeId;
+use crate::mesh::node::{NodeId, NodeIdentity};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 
@@ -164,12 +164,71 @@ pub fn decrypt_session_payload(
     Ok(payload)
 }
 
+/// Checks that `public_key` is a valid Ed25519 key whose derived NodeID is `node_id`.
+pub fn validate_node_public_key(node_id: &NodeId, public_key: &[u8]) -> Result<[u8; 32]> {
+    let key: [u8; 32] = public_key
+        .try_into()
+        .map_err(|_| anyhow!("Node public key must be 32 bytes"))?;
+    ed25519_pubkey_to_x25519_public(&key)?;
+    if NodeId::from_public_key_bytes(&key) != *node_id {
+        return Err(anyhow!(
+            "Node public key does not match node ID '{}'",
+            node_id.as_str()
+        ));
+    }
+    Ok(key)
+}
+
+/// Decrypts a private sync payload on the receiving node with its own secret key.
+pub fn open_private_sync(
+    encrypted: &EncryptedSessionPayload,
+    local_identity: &NodeIdentity,
+) -> Result<PrivateSyncPayload> {
+    let seed: [u8; 32] = local_identity
+        .private_key_bytes()
+        .try_into()
+        .map_err(|_| anyhow!("Local node key must be 32 bytes"))?;
+    let secret = signing_key_to_x25519_secret(&SigningKey::from_bytes(&seed));
+    decrypt_session_payload(encrypted, &secret)
+}
+
+/// Why a private sync towards a target node cannot proceed.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum PrivateSyncError {
+    #[error("Target node '{0}' not found in private mesh registry")]
+    NodeNotFound(String),
+    #[error("Cross-wallet sync rejected: wallet_id '{source_wallet}' does not match target wallet ID '{target_wallet}'")]
+    CrossWallet {
+        source_wallet: String,
+        target_wallet: String,
+    },
+    #[error("Target node '{0}' has no registered public key")]
+    MissingPublicKey(String),
+}
+
+/// A same-wallet target node and the Ed25519 key its sync payloads are sealed to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateSyncTarget {
+    pub node: WalletNode,
+    pub public_key: [u8; 32],
+}
+
+/// A payload sealed to a target node's key, ready to be sent to that node.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SealedPrivateSync {
+    pub target: PrivateSyncTarget,
+    pub encrypted: EncryptedSessionPayload,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedRegistry {
     #[serde(default)]
     nodes: Vec<WalletNode>,
     #[serde(default)]
     networks: HashMap<String, MeshNetwork>,
+    /// Node ID -> hex Ed25519 public key that private sync payloads are sealed to.
+    #[serde(default)]
+    node_keys: HashMap<String, String>,
 }
 
 /// registry to load/save JSON data for private mesh nodes.
@@ -177,6 +236,7 @@ struct PersistedRegistry {
 pub struct PrivateMeshRegistry {
     nodes: Vec<WalletNode>,
     networks: HashMap<String, MeshNetwork>,
+    node_keys: HashMap<String, String>,
     file_path: PathBuf,
 }
 
@@ -186,6 +246,7 @@ impl PrivateMeshRegistry {
         Self {
             nodes: Vec::new(),
             networks: HashMap::new(),
+            node_keys: HashMap::new(),
             file_path,
         }
     }
@@ -204,12 +265,14 @@ impl PrivateMeshRegistry {
                     return Ok(Self {
                         nodes,
                         networks: HashMap::new(),
+                        node_keys: HashMap::new(),
                         file_path,
                     });
                 }
                 return Ok(Self {
                     nodes: persisted.nodes,
                     networks: persisted.networks,
+                    node_keys: persisted.node_keys,
                     file_path,
                 });
             }
@@ -218,6 +281,7 @@ impl PrivateMeshRegistry {
             Ok(Self {
                 nodes,
                 networks: HashMap::new(),
+                node_keys: HashMap::new(),
                 file_path,
             })
         } else {
@@ -227,6 +291,7 @@ impl PrivateMeshRegistry {
             let registry = Self {
                 nodes: Vec::new(),
                 networks: HashMap::new(),
+                node_keys: HashMap::new(),
                 file_path,
             };
             registry.save()?;
@@ -242,6 +307,7 @@ impl PrivateMeshRegistry {
         let persisted = PersistedRegistry {
             nodes: self.nodes.clone(),
             networks: self.networks.clone(),
+            node_keys: self.node_keys.clone(),
         };
         let data = serde_json::to_string_pretty(&persisted)?;
 
@@ -293,6 +359,27 @@ impl PrivateMeshRegistry {
 
         self.save()?;
         Ok(())
+    }
+
+    /// Registers a node together with its Ed25519 public key, which must derive its node ID.
+    pub fn register_wallet_node_with_key(
+        &mut self,
+        node: WalletNode,
+        wallet_id: &str,
+        public_key: &[u8],
+    ) -> Result<()> {
+        let key = validate_node_public_key(&node.node_id, public_key)?;
+        let node_id = node.node_id.as_str().to_string();
+        self.register_wallet_node(node, wallet_id)?;
+        self.node_keys
+            .insert(node_id, crate::crypto::hex_encode(key));
+        self.save()
+    }
+
+    /// The registered Ed25519 public key of a node, if any.
+    pub fn node_public_key(&self, node_id: &str) -> Option<[u8; 32]> {
+        let hex = self.node_keys.get(node_id)?;
+        crate::crypto::hex_decode(hex).ok()?.try_into().ok()
     }
 
     /// Retrieve all registered nodes belonging to the same wallet ID.
@@ -435,39 +522,43 @@ impl PrivateMeshRegistry {
         self.networks.get(id).cloned()
     }
 
-    /// Synchronizes memory deltas and snapshots between two nodes.
-    /// Strictly verifies that both nodes belong to the exact same wallet (`is_same_wallet`).
-    /// Rejects cross-wallet transfers with an isolation error.
+    /// Resolves a same-wallet target node and the public key its payloads are sealed to.
+    pub fn sync_target(
+        &self,
+        source_wallet: &str,
+        target_node: &str,
+    ) -> std::result::Result<PrivateSyncTarget, PrivateSyncError> {
+        let node = self
+            .nodes
+            .iter()
+            .find(|n| n.node_id.as_str() == target_node)
+            .ok_or_else(|| PrivateSyncError::NodeNotFound(target_node.to_string()))?;
+        if !is_same_wallet(source_wallet, &node.wallet_id) {
+            return Err(PrivateSyncError::CrossWallet {
+                source_wallet: source_wallet.to_string(),
+                target_wallet: node.wallet_id.clone(),
+            });
+        }
+        let public_key = self
+            .node_public_key(target_node)
+            .ok_or_else(|| PrivateSyncError::MissingPublicKey(target_node.to_string()))?;
+        Ok(PrivateSyncTarget {
+            node: node.clone(),
+            public_key,
+        })
+    }
+
+    /// Seals memory deltas and snapshots to a same-wallet target node's public key.
+    /// Only the target node's secret key can open the result (see [`open_private_sync`]).
     pub fn sync_deltas(
         &self,
         source_wallet: &str,
-        target_wallet: &str,
+        target_node: &str,
         payload: PrivateSyncPayload,
-    ) -> Result<PrivateSyncPayload> {
-        if !is_same_wallet(source_wallet, target_wallet) {
-            return Err(anyhow!(
-                "Cross-wallet sync rejected: wallet_id '{}' does not match target wallet ID '{}'",
-                source_wallet,
-                target_wallet
-            ));
-        }
-
-        // Generate an ephemeral recipient keypair for this wallet session to verify
-        // that encrypt_session_payload and decrypt_session_payload operate securely
-        // on genuine asymmetric key material bound to the wallet.
-        let mut seed = [0u8; 32];
-        let mut hasher = Sha256::new();
-        hasher.update(b"private_mesh_sync_deltas_ephemeral_key:");
-        hasher.update(source_wallet.as_bytes());
-        seed.copy_from_slice(&hasher.finalize());
-        let signing_key = SigningKey::from_bytes(&seed);
-        let recipient_pubkey = signing_key.verifying_key().to_bytes();
-        let local_secret = signing_key_to_x25519_secret(&signing_key);
-
-        let encrypted = encrypt_session_payload(&payload, &recipient_pubkey)?;
-        let decrypted = decrypt_session_payload(&encrypted, &local_secret)?;
-
-        Ok(decrypted)
+    ) -> Result<SealedPrivateSync> {
+        let target = self.sync_target(source_wallet, target_node)?;
+        let encrypted = encrypt_session_payload(&payload, &target.public_key)?;
+        Ok(SealedPrivateSync { target, encrypted })
     }
 
     /// Performs a zero-knowledge / blind federated vector search across encrypted vectors.
@@ -634,7 +725,7 @@ mod tests {
             vectors: vec![],
             snapshots: vec![],
         };
-        let sync_res = registry.sync_deltas(wallet_a, wallet_b, payload);
+        let sync_res = registry.sync_deltas(wallet_a, "xv1-nodeB1", payload);
         assert!(sync_res.is_err());
     }
 
@@ -699,10 +790,18 @@ mod tests {
     #[test]
     fn test_sync_rejects_cross_wallet() {
         let file = NamedTempFile::new().unwrap();
-        let registry = PrivateMeshRegistry::load_or_create(file.path().to_path_buf()).unwrap();
+        let mut registry = PrivateMeshRegistry::load_or_create(file.path().to_path_buf()).unwrap();
 
         let wallet_a = "wallet_alice_123";
         let wallet_b = "wallet_bob_456";
+        let bob = NodeIdentity::generate();
+        registry
+            .register_wallet_node_with_key(
+                make_test_node(bob.node_id.as_str(), wallet_b, "Bob"),
+                wallet_b,
+                &bob.public_key,
+            )
+            .unwrap();
 
         let payload = PrivateSyncPayload {
             memories: vec![PrivateMemoryDelta {
@@ -715,7 +814,7 @@ mod tests {
             snapshots: vec!["repo_alice_v1".to_string()],
         };
 
-        let result = registry.sync_deltas(wallet_a, wallet_b, payload);
+        let result = registry.sync_deltas(wallet_a, bob.node_id.as_str(), payload);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("Cross-wallet sync rejected"));
@@ -727,11 +826,17 @@ mod tests {
         let mut registry = PrivateMeshRegistry::load_or_create(file.path().to_path_buf()).unwrap();
 
         let wallet_id = "wallet_alice_123";
-        let node_a = make_test_node("xv1-alice-laptop", wallet_id, "Laptop");
-        let node_b = make_test_node("xv1-alice-phone", wallet_id, "Phone");
-
-        registry.register_wallet_node(node_a, wallet_id).unwrap();
-        registry.register_wallet_node(node_b, wallet_id).unwrap();
+        let laptop = NodeIdentity::generate();
+        let phone = NodeIdentity::generate();
+        for (identity, name) in [(&laptop, "Laptop"), (&phone, "Phone")] {
+            registry
+                .register_wallet_node_with_key(
+                    make_test_node(identity.node_id.as_str(), wallet_id, name),
+                    wallet_id,
+                    &identity.public_key,
+                )
+                .unwrap();
+        }
 
         let memory_delta = PrivateMemoryDelta {
             path: "fact/swal_node_1".to_string(),
@@ -746,9 +851,11 @@ mod tests {
             snapshots: vec!["snap_swal_repo".to_string()],
         };
 
-        let synced = registry
-            .sync_deltas(wallet_id, wallet_id, payload)
+        let sealed = registry
+            .sync_deltas(wallet_id, phone.node_id.as_str(), payload)
             .expect("Same wallet sync must succeed");
+        assert_eq!(sealed.target.node.node_id, phone.node_id);
+        let synced = open_private_sync(&sealed.encrypted, &phone).expect("target opens");
 
         assert_eq!(synced.memories.len(), 1);
         assert_eq!(synced.memories[0].path, "fact/swal_node_1");
@@ -799,7 +906,7 @@ mod tests {
             vectors: vec![],
             snapshots: vec![],
         };
-        let sync_res = registry.sync_deltas(wallet_a, wallet_b, payload);
+        let sync_res = registry.sync_deltas(wallet_a, "xv1-beta1", payload);
         assert!(sync_res.is_err());
         let err_msg = sync_res.unwrap_err().to_string();
         assert!(err_msg.contains("Cross-wallet sync rejected"));
@@ -813,9 +920,17 @@ mod tests {
     fn test_encrypted_vector_sync_and_blind_search() {
         let file = NamedTempFile::new().unwrap();
         let path = file.path().to_path_buf();
-        let registry = PrivateMeshRegistry::load_or_create(path).unwrap();
+        let mut registry = PrivateMeshRegistry::load_or_create(path).unwrap();
 
         let wallet_id = "wallet_mesh_legal_secure";
+        let target = NodeIdentity::generate();
+        registry
+            .register_wallet_node_with_key(
+                make_test_node(target.node_id.as_str(), wallet_id, "Target"),
+                wallet_id,
+                &target.public_key,
+            )
+            .unwrap();
         let vector_payload = PrivateSyncPayload {
             memories: vec![],
             vectors: vec![
@@ -834,9 +949,10 @@ mod tests {
         };
 
         // Encrypt & sync deltas across same wallet
-        let synced = registry
-            .sync_deltas(wallet_id, wallet_id, vector_payload.clone())
+        let sealed = registry
+            .sync_deltas(wallet_id, target.node_id.as_str(), vector_payload.clone())
             .expect("Same wallet vector sync must succeed");
+        let synced = open_private_sync(&sealed.encrypted, &target).expect("target opens");
 
         assert_eq!(synced.vectors.len(), 2);
         assert_eq!(synced.vectors[0].path, "expediente/001/demanda.pdf");
@@ -979,5 +1095,137 @@ mod tests {
                 "private mesh registry file should be mode 0600"
             );
         }
+    }
+
+    /// Registers `identity` as a keyed node of `wallet_id`.
+    fn register_keyed(
+        registry: &mut PrivateMeshRegistry,
+        identity: &NodeIdentity,
+        wallet_id: &str,
+    ) {
+        registry
+            .register_wallet_node_with_key(
+                make_test_node(identity.node_id.as_str(), wallet_id, "keyed"),
+                wallet_id,
+                &identity.public_key,
+            )
+            .unwrap();
+    }
+
+    fn secret_payload() -> PrivateSyncPayload {
+        PrivateSyncPayload {
+            memories: vec![PrivateMemoryDelta {
+                path: "notes/private".to_string(),
+                content: "only for the target node".to_string(),
+                metadata: serde_json::json!({}),
+                created_at: Utc::now().timestamp(),
+            }],
+            vectors: vec![],
+            snapshots: vec![],
+        }
+    }
+
+    #[test]
+    fn test_sync_payload_opens_only_with_target_secret() {
+        let file = NamedTempFile::new().unwrap();
+        let mut registry = PrivateMeshRegistry::load_or_create(file.path().to_path_buf()).unwrap();
+        let wallet_id = "wallet_keyed";
+        let target = NodeIdentity::generate();
+        let sibling = NodeIdentity::generate();
+        register_keyed(&mut registry, &target, wallet_id);
+        register_keyed(&mut registry, &sibling, wallet_id);
+
+        let sealed = registry
+            .sync_deltas(wallet_id, target.node_id.as_str(), secret_payload())
+            .unwrap();
+        assert_eq!(
+            sealed.target.public_key.as_slice(),
+            target.public_key.as_slice()
+        );
+
+        let opened = open_private_sync(&sealed.encrypted, &target).expect("target opens");
+        assert_eq!(opened, secret_payload());
+
+        // Another node of the same wallet, or an unrelated node, holds the wrong secret.
+        assert!(open_private_sync(&sealed.encrypted, &sibling).is_err());
+        assert!(open_private_sync(&sealed.encrypted, &NodeIdentity::generate()).is_err());
+    }
+
+    #[test]
+    fn test_sync_key_is_not_derivable_from_wallet_id() {
+        let file = NamedTempFile::new().unwrap();
+        let mut registry = PrivateMeshRegistry::load_or_create(file.path().to_path_buf()).unwrap();
+        let wallet_id = "wallet_public_id";
+        let target = NodeIdentity::generate();
+        register_keyed(&mut registry, &target, wallet_id);
+
+        let sealed = registry
+            .sync_deltas(wallet_id, target.node_id.as_str(), secret_payload())
+            .unwrap();
+
+        // A key computed only from the public wallet id must not open the payload.
+        let mut hasher = Sha256::new();
+        hasher.update(b"private_mesh_sync_deltas_ephemeral_key:");
+        hasher.update(wallet_id.as_bytes());
+        let seed: [u8; 32] = hasher.finalize().into();
+        let derived = signing_key_to_x25519_secret(&SigningKey::from_bytes(&seed));
+        assert!(decrypt_session_payload(&sealed.encrypted, &derived).is_err());
+    }
+
+    #[test]
+    fn test_sync_target_requires_registered_public_key() {
+        let file = NamedTempFile::new().unwrap();
+        let mut registry = PrivateMeshRegistry::load_or_create(file.path().to_path_buf()).unwrap();
+        let wallet_id = "wallet_unkeyed";
+        registry
+            .register_wallet_node(
+                make_test_node("xv1-unkeyed", wallet_id, "Unkeyed"),
+                wallet_id,
+            )
+            .unwrap();
+
+        assert_eq!(
+            registry.sync_target(wallet_id, "xv1-unkeyed"),
+            Err(PrivateSyncError::MissingPublicKey(
+                "xv1-unkeyed".to_string()
+            ))
+        );
+        assert_eq!(
+            registry.sync_target(wallet_id, "xv1-missing"),
+            Err(PrivateSyncError::NodeNotFound("xv1-missing".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_register_with_key_binds_key_to_node_id() {
+        let file = NamedTempFile::new().unwrap();
+        let path = file.path().to_path_buf();
+        let mut registry = PrivateMeshRegistry::load_or_create(path.clone()).unwrap();
+        let wallet_id = "wallet_bind";
+        let node = NodeIdentity::generate();
+        let other = NodeIdentity::generate();
+
+        // A key that does not derive the node id is refused and nothing is stored.
+        let mismatch = registry.register_wallet_node_with_key(
+            make_test_node(node.node_id.as_str(), wallet_id, "Node"),
+            wallet_id,
+            &other.public_key,
+        );
+        assert!(mismatch.is_err());
+        assert!(registry.all_nodes().is_empty());
+        assert!(registry
+            .register_wallet_node_with_key(
+                make_test_node(node.node_id.as_str(), wallet_id, "Node"),
+                wallet_id,
+                &[0u8; 31],
+            )
+            .is_err());
+
+        register_keyed(&mut registry, &node, wallet_id);
+        let reloaded = PrivateMeshRegistry::load_or_create(path).unwrap();
+        assert_eq!(
+            reloaded.node_public_key(node.node_id.as_str()),
+            Some(node.public_key.as_slice().try_into().unwrap())
+        );
     }
 }

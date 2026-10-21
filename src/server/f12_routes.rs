@@ -27,7 +27,8 @@ use crate::mesh::node::NodeId;
 use crate::mesh::pairing::verify_join_decision;
 use crate::mesh::pairing_registry::PairingSecretRegistry;
 use crate::mesh::private_mesh::{
-    is_same_wallet, PrivateMemoryDelta, PrivateMeshRegistry, PrivateSyncPayload, WalletNode,
+    validate_node_public_key, PrivateMemoryDelta, PrivateMeshRegistry, PrivateSyncError,
+    PrivateSyncPayload, WalletNode,
 };
 use crate::mesh::public_directory::PublicDirectory;
 use crate::mesh::public_rag::{search_public, PublicRagResult};
@@ -38,12 +39,15 @@ use crate::mesh::wallet_ownership::{
     WalletRegistrationProof,
 };
 use crate::security::groups::GroupRegistry;
+use crate::sync::transport::SyncTransport;
 
 /// Shared F12 state: data dir paths + in-memory registries (lazy loaded).
 #[derive(Clone)]
 pub struct F12State {
     pub data_dir: PathBuf,
     pub registry: Arc<Mutex<F12Registries>>,
+    /// Transport that delivers private mesh sync payloads to target nodes.
+    pub private_sync: Option<Arc<SyncTransport>>,
 }
 
 #[derive(Default)]
@@ -60,7 +64,14 @@ impl F12State {
         Self {
             data_dir,
             registry: Arc::new(Mutex::new(F12Registries::default())),
+            private_sync: None,
         }
+    }
+
+    /// Sets the transport used to deliver private mesh sync to target nodes.
+    pub fn with_private_sync_transport(mut self, transport: Arc<SyncTransport>) -> Self {
+        self.private_sync = Some(transport);
+        self
     }
 
     fn groups_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
@@ -163,6 +174,10 @@ pub struct RegisterWalletNodeRequest {
     pub wallet_id: String,
     pub name: String,
     pub iroh_addr: Option<String>,
+    /// Hex Ed25519 public key of the node; its NodeID must equal `node_id`.
+    /// Private sync payloads are sealed to this key.
+    #[serde(default)]
+    pub public_key_hex: Option<String>,
     /// Signed challenge response proving ownership of `wallet_id`.
     pub proof: WalletRegistrationProof,
 }
@@ -379,8 +394,6 @@ pub async fn register_wallet_node(
         return (StatusCode::UNAUTHORIZED, "wallet ownership proof rejected").into_response();
     }
 
-    let mut reg = state.private_mesh_mut();
-    let mesh = reg.private_mesh.as_mut().expect("mesh");
     let node = WalletNode {
         node_id: crate::mesh::node::NodeId(req.node_id),
         wallet_id: req.wallet_id.clone(),
@@ -388,7 +401,29 @@ pub async fn register_wallet_node(
         iroh_addr: req.iroh_addr.unwrap_or_default(),
         last_seen: chrono::Utc::now(),
     };
-    match mesh.register_wallet_node(node, &req.wallet_id) {
+    let public_key = match req.public_key_hex.as_deref() {
+        None => None,
+        Some(hex) => match crate::crypto::hex_decode(hex)
+            .and_then(|pk| validate_node_public_key(&node.node_id, &pk))
+        {
+            Ok(pk) => Some(pk),
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    format!("invalid node public key: {e}"),
+                )
+                    .into_response()
+            }
+        },
+    };
+
+    let mut reg = state.private_mesh_mut();
+    let mesh = reg.private_mesh.as_mut().expect("mesh");
+    let registered = match public_key {
+        Some(pk) => mesh.register_wallet_node_with_key(node, &req.wallet_id, &pk),
+        None => mesh.register_wallet_node(node, &req.wallet_id),
+    };
+    match registered {
         Ok(_) => {
             let _ = mesh.save();
             (StatusCode::CREATED, "wallet node registered").into_response()
@@ -438,6 +473,10 @@ pub async fn list_wallet_nodes(
 
 /// Syncs with a same-wallet target node. The body must carry `proof`, a challenge
 /// signed for action "sync" and scope `target_node` (see `wallet_ownership`).
+///
+/// The payload is sealed to the target node's registered public key and sent to
+/// its registered address over the configured [`SyncTransport`]; the target node
+/// decrypts it with its own secret key and applies it to its store.
 pub async fn private_mesh_sync(
     State(state): State<F12State>,
     Json(req): Json<PrivateSyncApiRequest>,
@@ -451,98 +490,70 @@ pub async fn private_mesh_sync(
         return (StatusCode::UNAUTHORIZED, "wallet ownership proof rejected").into_response();
     }
 
-    let reg = state.private_mesh_mut();
-    let mesh = reg.private_mesh.as_ref().expect("mesh");
-
-    let target_node_record = mesh
-        .all_nodes()
-        .iter()
-        .find(|n| n.node_id.as_str() == req.target_node);
-
-    match target_node_record {
-        Some(node) => {
-            if !is_same_wallet(&req.wallet_id, &node.wallet_id) {
-                return (
-                    StatusCode::FORBIDDEN,
-                    "Cross-wallet sync rejected: target node belongs to a different wallet",
-                )
-                    .into_response();
-            }
+    let target = {
+        let reg = state.private_mesh_mut();
+        let mesh = reg.private_mesh.as_ref().expect("mesh");
+        mesh.sync_target(&req.wallet_id, &req.target_node)
+    };
+    let target = match target {
+        Ok(target) => target,
+        Err(e) => {
+            let status = match e {
+                PrivateSyncError::NodeNotFound(_) => StatusCode::NOT_FOUND,
+                PrivateSyncError::CrossWallet { .. } => StatusCode::FORBIDDEN,
+                PrivateSyncError::MissingPublicKey(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            };
+            return (status, e.to_string()).into_response();
         }
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                format!(
-                    "Target node '{}' not found in private mesh registry",
-                    req.target_node
-                ),
-            )
-                .into_response();
-        }
-    }
-
-    let memories = req.memories.unwrap_or_default();
-    let snapshots = req.snapshots.unwrap_or_default();
-
-    let payload = PrivateSyncPayload {
-        memories: memories.clone(),
-        vectors: Vec::new(),
-        snapshots: snapshots.clone(),
+    };
+    let Some(transport) = state.private_sync.clone() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "private sync transport not configured",
+        )
+            .into_response();
     };
 
-    match mesh.sync_deltas(&req.wallet_id, &req.wallet_id, payload) {
-        Ok(synced) => {
-            // Apply memory deltas locally to sync directory with restrictive permissions (0600)
-            if !memories.is_empty() {
-                let sync_memories_dir = state.data_dir.join("sync/memories");
-                let _ = std::fs::create_dir_all(&sync_memories_dir);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(
-                        &sync_memories_dir,
-                        std::fs::Permissions::from_mode(0o700),
-                    );
-                }
-                for mem in &synced.memories {
-                    let sanitized = mem.path.replace('/', "_");
-                    let file_path = sync_memories_dir.join(format!("{}.json", sanitized));
-                    let content = serde_json::to_string_pretty(mem).unwrap_or_default();
-                    let mut opts = std::fs::OpenOptions::new();
-                    opts.write(true).create(true).truncate(true);
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::OpenOptionsExt;
-                        opts.mode(0o600);
-                    }
-                    use std::io::Write;
-                    if let Ok(mut file) = opts.open(&file_path) {
-                        let _ = file.write_all(content.as_bytes());
-                        let _ = file.sync_all();
-                    }
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        let _ = std::fs::set_permissions(
-                            &file_path,
-                            std::fs::Permissions::from_mode(0o600),
-                        );
-                    }
-                }
-            }
+    let payload = PrivateSyncPayload {
+        memories: req.memories.unwrap_or_default(),
+        vectors: Vec::new(),
+        snapshots: req.snapshots.unwrap_or_default(),
+    };
+    let peer = crate::mesh::peer::PeerInfo {
+        node_id: target.node.node_id.clone(),
+        alias: Some(target.node.name.clone()),
+        public_key_hex: crate::crypto::hex_encode(target.public_key),
+        iroh_addr: Some(target.node.iroh_addr.clone()).filter(|a| !a.trim().is_empty()),
+        ..Default::default()
+    };
 
-            (
-                StatusCode::OK,
-                Json(PrivateSyncApiResponse {
-                    status: "success".to_string(),
-                    synced_memories: synced.memories.len(),
-                    synced_snapshots: synced.snapshots.len(),
-                    target_node: req.target_node,
-                }),
-            )
-                .into_response()
-        }
-        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    match transport
+        .send_private_sync(&peer, &target.public_key, &payload)
+        .await
+    {
+        Ok(delivery) if delivery.accepted => (
+            StatusCode::OK,
+            Json(PrivateSyncApiResponse {
+                status: "success".to_string(),
+                synced_memories: delivery.applied,
+                synced_snapshots: payload.snapshots.len(),
+                target_node: req.target_node,
+            }),
+        )
+            .into_response(),
+        Ok(delivery) => (
+            StatusCode::BAD_GATEWAY,
+            format!(
+                "target node rejected sync: {}",
+                delivery.reason.unwrap_or_default()
+            ),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            format!("private sync delivery failed: {e}"),
+        )
+            .into_response(),
     }
 }
 
@@ -1833,24 +1844,64 @@ mod tests {
         assert!(text.contains("[REDACTED: Master Vault Keys]"));
     }
 
+    /// Registers `node` under the wallet of `owner`, sending `public_key_hex`.
+    async fn post_keyed_wallet_node(
+        app: &Router,
+        owner: &NodeIdentity,
+        node_id: &str,
+        public_key_hex: &str,
+    ) -> StatusCode {
+        let wallet = derive_wallet_id(&owner.public_key);
+        let challenge = fetch_wallet_challenge(app, &wallet).await;
+        let proof = sign_wallet_registration(owner, &challenge, node_id);
+        let body = serde_json::json!({
+            "node_id": node_id,
+            "wallet_id": wallet,
+            "name": "phone",
+            "iroh_addr": "addr1",
+            "public_key_hex": public_key_hex,
+            "proof": proof,
+        });
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/private-mesh/nodes")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+    }
+
+    /// Sync is delivered to the target node, never applied locally: without a
+    /// configured transport the route refuses and writes nothing to disk.
     #[tokio::test]
     async fn test_private_mesh_sync_endpoint_success() {
         let state = test_state();
         let app = router(state.clone());
         let key = NodeIdentity::generate();
         let wallet = derive_wallet_id(&key.public_key);
-        let challenge = fetch_wallet_challenge(&app, &wallet).await;
-        let proof = sign_wallet_registration(&key, &challenge, "xv1-b");
+        let target = NodeIdentity::generate();
+        let target_id = target.node_id.as_str().to_string();
         assert_eq!(
-            post_wallet_node(&app, &wallet, "xv1-b", &proof).await,
+            post_keyed_wallet_node(
+                &app,
+                &key,
+                &target_id,
+                &crate::crypto::hex_encode(&target.public_key)
+            )
+            .await,
             StatusCode::CREATED
         );
 
         let sync_challenge = fetch_wallet_challenge(&app, &wallet).await;
-        let sync_proof = sign_wallet_action(&key, &sync_challenge, "sync", "xv1-b");
+        let sync_proof = sign_wallet_action(&key, &sync_challenge, "sync", &target_id);
         let body = serde_json::json!({
             "wallet_id": wallet,
-            "target_node": "xv1-b",
+            "target_node": target_id,
             "proof": sync_proof,
             "memories": [{
                 "path": "test/secret/doc.md",
@@ -1873,30 +1924,48 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(resp.status(), StatusCode::OK);
-        let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
-        let v: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-        assert_eq!(v["status"], "success");
-        assert_eq!(v["target_node"], "xv1-b");
-        assert_eq!(v["synced_memories"], 1);
-
-        let written_file = state.data_dir.join("sync/memories/test_secret_doc.md.json");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert!(
-            written_file.exists(),
-            "Synced memory delta must be written to disk"
+            !state.data_dir.join("sync/memories").exists(),
+            "sync must not write memory deltas on the sending node"
         );
+    }
 
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let meta = std::fs::metadata(&written_file).unwrap();
-            let mode = meta.permissions().mode() & 0o777;
-            assert_eq!(mode, 0o600, "synced memory file must have mode 0600");
+    #[tokio::test]
+    async fn test_private_mesh_sync_requires_target_public_key() {
+        let app = router(test_state());
+        let key = NodeIdentity::generate();
+        let wallet = derive_wallet_id(&key.public_key);
+        let challenge = fetch_wallet_challenge(&app, &wallet).await;
+        let proof = sign_wallet_registration(&key, &challenge, "xv1-b");
+        assert_eq!(
+            post_wallet_node(&app, &wallet, "xv1-b", &proof).await,
+            StatusCode::CREATED
+        );
+        let resp = sync_request(&app, &wallet, &key, "xv1-b").await;
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
 
-            let dir_meta = std::fs::metadata(state.data_dir.join("sync/memories")).unwrap();
-            let dir_mode = dir_meta.permissions().mode() & 0o777;
-            assert_eq!(dir_mode, 0o700, "synced memories dir must have mode 0700");
-        }
+    #[tokio::test]
+    async fn test_register_wallet_node_rejects_key_not_matching_node_id() {
+        let app = router(test_state());
+        let owner = NodeIdentity::generate();
+        let node = NodeIdentity::generate();
+        let other = NodeIdentity::generate();
+        assert_eq!(
+            post_keyed_wallet_node(
+                &app,
+                &owner,
+                node.node_id.as_str(),
+                &crate::crypto::hex_encode(&other.public_key)
+            )
+            .await,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            post_keyed_wallet_node(&app, &owner, node.node_id.as_str(), "zz").await,
+            StatusCode::BAD_REQUEST
+        );
     }
 
     /// Posts a sync for `wallet_id` to `target`, signed by `key` for that target.
