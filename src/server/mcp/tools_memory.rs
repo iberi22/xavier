@@ -2,6 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use super::metadata_redact::public_metadata;
 use super::types::*;
 use crate::memory::schema::{
     EvidenceKind, MemoryKind, MemoryNamespace, MemoryProvenance, MemoryQueryFilters,
@@ -441,6 +442,15 @@ fn validate_search_query(query: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn require_str_arg<'a>(arguments: &'a Value, arg: &str) -> anyhow::Result<&'a str> {
+    match arguments.get(arg) {
+        None => Err(anyhow::anyhow!("Missing {}", arg)),
+        Some(v) => v
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("'{}' must be a string", arg)),
+    }
+}
+
 fn validate_create_path(path: &str) -> anyhow::Result<()> {
     let n = path.chars().count();
     if n > MCP_CREATE_PATH_MAX_CHARS {
@@ -449,6 +459,9 @@ fn validate_create_path(path: &str) -> anyhow::Result<()> {
             n,
             MCP_CREATE_PATH_MAX_CHARS
         );
+    }
+    if path.split(['/', '\\']).any(|seg| seg == "..") {
+        anyhow::bail!("path cannot contain '..' traversal segments");
     }
     Ok(())
 }
@@ -922,7 +935,7 @@ async fn handle_get_recent_fragments(
                 "path": rec.path,
                 "snippet": snippet,
                 "content": rec.content,
-                "metadata": rec.metadata,
+                "metadata": public_metadata(&rec.metadata),
             })
         })
         .collect();
@@ -942,10 +955,13 @@ async fn handle_search_fragments(
     workspace: &WorkspaceContext,
     arguments: &Value,
 ) -> anyhow::Result<Value> {
-    let query = arguments
-        .get("query")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let query = match arguments.get("query") {
+        None => "",
+        Some(v) => match v.as_str() {
+            Some(s) => s,
+            None => return Err(anyhow::anyhow!("'query' must be a string")),
+        },
+    };
     let query = match secure_mcp_external_input(state, "memoryfragment query", query).await? {
         Ok(query) => query,
         Err(blocked) => return Ok(blocked),
@@ -963,12 +979,18 @@ async fn handle_search_fragments(
         filters.scope = Some(ctx);
     }
 
+    let fetch_limit = if tags.is_empty() {
+        limit
+    } else {
+        limit.saturating_mul(10).max(200)
+    };
+
     let results = workspace
         .workspace
         .memory
-        .search_filtered(&query, limit, Some(&filters))
+        .search_filtered(&query, fetch_limit, Some(&filters))
         .await?;
-    let filtered: Vec<_> = results
+    let mut filtered: Vec<_> = results
         .into_iter()
         .filter(|doc| {
             if !tags.is_empty() {
@@ -989,6 +1011,7 @@ async fn handle_search_fragments(
             true
         })
         .collect();
+    filtered.truncate(limit);
 
     let candidates: Vec<Value> = filtered
         .into_iter()
@@ -997,10 +1020,10 @@ async fn handle_search_fragments(
             json!({
                 "id": doc.id,
                 "path": doc.path,
-                "score": 1.0,
+                "score": doc.score,
                 "snippet": snippet,
                 "content": doc.content,
-                "metadata": doc.metadata,
+                "metadata": public_metadata(&doc.metadata),
             })
         })
         .collect();
@@ -1037,15 +1060,12 @@ async fn handle_create_memory(
     workspace: &WorkspaceContext,
     arguments: &Value,
 ) -> anyhow::Result<Value> {
-    let path = arguments
-        .get("path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing path"))?;
+    let path = require_str_arg(arguments, "path")?;
     validate_create_path(path)?;
-    let content = arguments
-        .get("content")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing content"))?;
+    let content = require_str_arg(arguments, "content")?;
+    if content.is_empty() {
+        return Err(anyhow::anyhow!("content cannot be empty"));
+    }
     let metadata = arguments
         .get("metadata")
         .cloned()
@@ -1147,10 +1167,10 @@ async fn handle_save_fragment(
     arguments: &Value,
 ) -> anyhow::Result<Value> {
     let agent_id = require_memoryfragment_component(arguments, "agent_id")?;
-    let content = arguments
-        .get("content")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing content"))?;
+    let content = require_str_arg(arguments, "content")?;
+    if content.is_empty() {
+        return Err(anyhow::anyhow!("content cannot be empty"));
+    }
     let content = match secure_mcp_external_input(state, "memoryfragment content", content).await? {
         Ok(content) => content,
         Err(blocked) => return Ok(blocked),
@@ -1215,10 +1235,7 @@ async fn handle_memory_save(
     workspace: &WorkspaceContext,
     arguments: &Value,
 ) -> anyhow::Result<Value> {
-    let text = arguments
-        .get("text")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing text"))?;
+    let text = require_str_arg(arguments, "text")?;
     let metadata = arguments
         .get("metadata")
         .cloned()
@@ -1368,10 +1385,7 @@ pub async fn handle_memory_update(
 ) -> anyhow::Result<Value> {
     match name {
         "get_memory" => {
-            let id = arguments
-                .get("id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
+            let id = require_str_arg(arguments, "id")?;
             let (record_id, path, revision, primary, content, metadata) =
                 if let Ok(Some(record)) = workspace.workspace.get_memory_record(id).await {
                     (
@@ -1395,6 +1409,7 @@ pub async fn handle_memory_update(
                     return Err(anyhow::anyhow!("Memory not found: {id}"));
                 };
 
+            let public_meta = public_metadata(&metadata);
             Ok(serde_json::to_value(MCPToolResult {
                 content: vec![MCPContent::Text(MCPTextContent {
                     content_type: "text".to_string(),
@@ -1405,7 +1420,7 @@ pub async fn handle_memory_update(
                         revision,
                         primary,
                         content,
-                        serde_json::to_string_pretty(&metadata)?
+                        serde_json::to_string_pretty(&public_meta)?
                     ),
                 })],
                 structured_content: None,
@@ -1413,10 +1428,7 @@ pub async fn handle_memory_update(
             })?)
         }
         "memoryfragment_get" => {
-            let id = arguments
-                .get("id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
+            let id = require_str_arg(arguments, "id")?;
             let (record_id, path, revision, content, gestalt_context, tags, metadata) =
                 if let Ok(Some(record)) = workspace.workspace.get_memory_record(id).await {
                     let gc = record.metadata.get("gestalt_context").cloned();
@@ -1446,10 +1458,11 @@ pub async fn handle_memory_update(
                     return Err(anyhow::anyhow!("Memory not found: {id}"));
                 };
 
+            let public_meta = public_metadata(&metadata);
             Ok(serde_json::to_value(MCPToolResult {
                 content: vec![MCPContent::Text(MCPTextContent {
                     content_type: "text".to_string(),
-                    text: format!("Id: {}\nPath: {}\nRevision: {}\nContent: {}\nContext: {:?}\nTags: {:?}\nMetadata: {}", record_id, path, revision, content, gestalt_context, tags, serde_json::to_string_pretty(&metadata)?),
+                    text: format!("Id: {}\nPath: {}\nRevision: {}\nContent: {}\nContext: {:?}\nTags: {:?}\nMetadata: {}", record_id, path, revision, content, gestalt_context, tags, serde_json::to_string_pretty(&public_meta)?),
                 })],
                 structured_content: None,
                 is_error: Some(false),
@@ -1486,10 +1499,7 @@ pub async fn handle_memory_delete(
 ) -> anyhow::Result<Value> {
     match name {
         "memoryfragment_delete" => {
-            let id = arguments
-                .get("id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
+            let id = require_str_arg(arguments, "id")?;
             let record = workspace.workspace.delete_memory_record(id).await?;
             let (message, is_error) = if let Some(r) = record {
                 (
@@ -1618,10 +1628,13 @@ pub async fn handle_memory_delete(
                 .get("older_than_days")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
-            let dry_run = arguments
-                .get("dry_run")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
+            let dry_run = match arguments.get("dry_run") {
+                Some(v) => match v.as_bool() {
+                    Some(b) => b,
+                    None => return Err(anyhow::anyhow!("'dry_run' must be a boolean")),
+                },
+                None => true,
+            };
 
             if kind.is_none() && path_prefix.is_none() && older_than_days <= 0 {
                 return Err(anyhow::anyhow!("At least one filter required"));
@@ -1909,10 +1922,7 @@ fn is_safe_memoryfragment_component(value: &str) -> bool {
 }
 
 fn require_memoryfragment_component(arguments: &Value, field: &str) -> anyhow::Result<String> {
-    let value = arguments
-        .get(field)
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing {field}"))?;
+    let value = require_str_arg(arguments, field)?;
     validate_memoryfragment_component(field, value)
 }
 
@@ -1921,7 +1931,13 @@ fn optional_memoryfragment_component(
     field: &str,
     default: Option<&str>,
 ) -> anyhow::Result<Option<String>> {
-    let value = arguments.get(field).and_then(|v| v.as_str()).or(default);
+    let value = match arguments.get(field) {
+        None => default,
+        Some(v) => match v.as_str() {
+            Some(s) => Some(s),
+            None => return Err(anyhow::anyhow!("'{}' must be a string", field)),
+        },
+    };
     value
         .map(|value| validate_memoryfragment_component(field, value))
         .transpose()
@@ -1939,8 +1955,13 @@ fn validate_memoryfragment_provenance(
     arguments: &Value,
     field: &str,
 ) -> anyhow::Result<Option<String>> {
-    let Some(value) = arguments.get(field).and_then(|v| v.as_str()) else {
-        return Ok(None);
+    let value = match arguments.get(field) {
+        None => return Ok(None),
+        Some(v) if v.is_null() => return Ok(None),
+        Some(v) => match v.as_str() {
+            Some(s) => s,
+            None => return Err(anyhow::anyhow!("'{}' must be a string", field)),
+        },
     };
     if value.chars().count() > MEMORYFRAGMENT_MAX_PROVENANCE_CHARS
         || value.chars().any(char::is_control)
@@ -1970,8 +1991,14 @@ fn memoryfragment_importance(arguments: &Value) -> anyhow::Result<f32> {
 }
 
 fn memoryfragment_tags(arguments: &Value) -> anyhow::Result<Vec<String>> {
-    let Some(tags) = arguments.get("tags").and_then(|v| v.as_array()) else {
+    let Some(tags_val) = arguments.get("tags") else {
         return Ok(Vec::new());
+    };
+    if tags_val.is_null() {
+        return Ok(Vec::new());
+    }
+    let Some(tags) = tags_val.as_array() else {
+        return Err(anyhow::anyhow!("'tags' must be an array"));
     };
     if tags.len() > MEMORYFRAGMENT_MAX_TAGS {
         return Err(anyhow::anyhow!(
@@ -2029,6 +2056,316 @@ fn get_doc_last_accessed(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn get_memory_metadata_hides_internal_fields() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let record_metadata = json!({
+            "author": "Alice",
+            "encrypted_dek": "super-secret-dek",
+            "content_iv": "super-secret-iv",
+            "nonce": "super-secret-nonce",
+            "custom_key_id": "super-secret-key-id",
+            "note": "public note"
+        });
+
+        let id = workspace
+            .workspace
+            .ingest_typed(
+                "test/get_mem_redact".to_string(),
+                "secret memory content".to_string(),
+                record_metadata,
+                None,
+                None,
+                false,
+            )
+            .await
+            .expect("ingest record");
+
+        let result = handle_memory_update(&state, &workspace, "get_memory", &json!({ "id": id }))
+            .await
+            .expect("handle get_memory");
+
+        let text = result["content"][0]["text"].as_str().expect("text result");
+        assert!(text.contains("public note"));
+        assert!(!text.contains("encrypted_dek"));
+        assert!(!text.contains("super-secret-dek"));
+        assert!(!text.contains("content_iv"));
+        assert!(!text.contains("super-secret-iv"));
+        assert!(!text.contains("nonce"));
+        assert!(!text.contains("custom_key_id"));
+    }
+
+    #[tokio::test]
+    async fn search_fragments_metadata_hides_internal_fields() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let record_metadata = json!({
+            "tags": ["crypto_test"],
+            "encrypted_dek": "super-secret-dek",
+            "content_iv": "super-secret-iv",
+            "nonce": "super-secret-nonce",
+            "custom_key_id": "super-secret-key-id",
+            "public_field": "visible_tag"
+        });
+
+        workspace
+            .workspace
+            .ingest_typed(
+                "fragments/redact_test".to_string(),
+                "searchable crypto fragment content".to_string(),
+                record_metadata,
+                None,
+                None,
+                false,
+            )
+            .await
+            .expect("ingest record");
+
+        let result = handle_search_fragments(
+            &state,
+            &workspace,
+            &json!({
+                "query": "searchable crypto fragment",
+                "limit": 10
+            }),
+        )
+        .await
+        .expect("handle search_fragments");
+
+        let candidates = result["structuredContent"]["candidates"]
+            .as_array()
+            .expect("candidates array");
+        assert!(!candidates.is_empty(), "expected at least one candidate");
+
+        let cand_meta = &candidates[0]["metadata"];
+        assert_eq!(cand_meta["public_field"], "visible_tag");
+        assert!(cand_meta.get("encrypted_dek").is_none());
+        assert!(cand_meta.get("content_iv").is_none());
+        assert!(cand_meta.get("nonce").is_none());
+        assert!(cand_meta.get("custom_key_id").is_none());
+    }
+
+    #[tokio::test]
+    async fn search_fragments_tag_filter_not_truncated_by_limit() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+
+        for i in 0..5 {
+            workspace
+                .workspace
+                .ingest_typed(
+                    format!("test/doc_{i}"),
+                    "testing_tag_limit common topic text".to_string(),
+                    json!({ "tags": ["other_tag"] }),
+                    None,
+                    None,
+                    false,
+                )
+                .await
+                .expect("ingest doc");
+        }
+
+        workspace
+            .workspace
+            .ingest_typed(
+                "test/doc_target".to_string(),
+                "testing_tag_limit common topic text target".to_string(),
+                json!({ "tags": ["desired_tag"] }),
+                None,
+                None,
+                false,
+            )
+            .await
+            .expect("ingest target");
+
+        let result = handle_search_fragments(
+            &state,
+            &workspace,
+            &json!({
+                "query": "testing_tag_limit",
+                "tags": ["desired_tag"],
+                "limit": 1
+            }),
+        )
+        .await
+        .expect("handle search_fragments");
+
+        let candidates = result["structuredContent"]["candidates"]
+            .as_array()
+            .expect("candidates array");
+        assert_eq!(
+            candidates.len(),
+            1,
+            "expected 1 candidate matching tag even with limit 1"
+        );
+        assert_eq!(candidates[0]["path"], "test/doc_target");
+    }
+
+    #[test]
+    fn memoryfragment_tags_rejects_string() {
+        let res = memoryfragment_tags(&json!({ "tags": "single_string_not_array" }));
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("'tags' must be an array") || err.contains("must be an array"));
+
+        let res_number = memoryfragment_tags(&json!({ "tags": 123 }));
+        assert!(res_number.is_err());
+
+        let res_valid = memoryfragment_tags(&json!({ "tags": ["valid-tag"] }));
+        assert!(res_valid.is_ok());
+        assert_eq!(res_valid.unwrap(), vec!["valid-tag".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn create_memory_rejects_traversal_path() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+
+        let res = handle_memory_create(
+            &state,
+            &workspace,
+            "create_memory",
+            &json!({
+                "path": "../../etc/passwd",
+                "content": "some content"
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("..") || err.contains("traversal"));
+
+        let res2 = handle_memory_create(
+            &state,
+            &workspace,
+            "create_memory",
+            &json!({
+                "path": "foo/../bar",
+                "content": "some content"
+            }),
+        )
+        .await;
+        assert!(res2.is_err());
+
+        let res3 = handle_memory_create(
+            &state,
+            &workspace,
+            "create_memory",
+            &json!({
+                "path": "..",
+                "content": "some content"
+            }),
+        )
+        .await;
+        assert!(res3.is_err());
+    }
+
+    #[tokio::test]
+    async fn wrong_type_args_report_invalid_params() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+
+        let err_path = handle_memory_create(
+            &state,
+            &workspace,
+            "create_memory",
+            &json!({ "path": 123, "content": "hello" }),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err_path.contains("'path' must be a string"),
+            "got: {err_path}"
+        );
+        assert!(!err_path.contains("Missing path"), "got: {err_path}");
+
+        let err_content = handle_memory_create(
+            &state,
+            &workspace,
+            "create_memory",
+            &json!({ "path": "test/path", "content": 123 }),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err_content.contains("'content' must be a string"),
+            "got: {err_content}"
+        );
+        assert!(
+            !err_content.contains("Missing content"),
+            "got: {err_content}"
+        );
+
+        let err_empty = handle_memory_create(
+            &state,
+            &workspace,
+            "create_memory",
+            &json!({ "path": "test/path", "content": "" }),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err_empty.contains("content cannot be empty"),
+            "got: {err_empty}"
+        );
+
+        let err_get_id =
+            handle_memory_update(&state, &workspace, "get_memory", &json!({ "id": 123 }))
+                .await
+                .unwrap_err()
+                .to_string();
+        assert!(
+            err_get_id.contains("'id' must be a string"),
+            "got: {err_get_id}"
+        );
+        assert!(!err_get_id.contains("Missing id"), "got: {err_get_id}");
+
+        let err_save_text =
+            handle_memory_create(&state, &workspace, "memory_save", &json!({ "text": 123 }))
+                .await
+                .unwrap_err()
+                .to_string();
+        assert!(
+            err_save_text.contains("'text' must be a string"),
+            "got: {err_save_text}"
+        );
+        assert!(
+            !err_save_text.contains("Missing text"),
+            "got: {err_save_text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn memory_prune_rejects_non_bool_dry_run() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+
+        let res = handle_memory_delete(
+            &state,
+            &workspace,
+            "memory_prune",
+            &json!({
+                "path_prefix": "test/",
+                "dry_run": "yes"
+            }),
+        )
+        .await;
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("'dry_run' must be a boolean"), "got: {err}");
+
+        let res2 = handle_memory_delete(
+            &state,
+            &workspace,
+            "memory_prune",
+            &json!({
+                "path_prefix": "test/",
+                "dry_run": 1
+            }),
+        )
+        .await;
+        assert!(res2.is_err());
+        let err2 = res2.unwrap_err().to_string();
+        assert!(err2.contains("'dry_run' must be a boolean"), "got: {err2}");
+    }
 
     #[test]
     fn background_embedding_skips_locked_placeholder() {
