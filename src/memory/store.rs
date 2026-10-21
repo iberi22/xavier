@@ -607,8 +607,29 @@ pub trait MemoryStore: crate::domain::cycle_breaks::w30_12::MemoryConsumerStore 
     }
     async fn put(&self, record: MemoryRecord) -> Result<()>;
     /// Persist a caller-supplied vector, including an intentionally empty one.
+    ///
+    /// The default delegates to `put`, which for every store that does not
+    /// generate embeddings itself (file, in-memory, sqlite, postgres, supabase)
+    /// already stores the record as given. A store whose `put` embeds inline
+    /// must override this so the empty vector is kept.
     async fn put_without_embedding(&self, record: MemoryRecord) -> Result<()> {
         self.put(record).await
+    }
+    /// Attach a computed vector to an existing record without treating it as a
+    /// content change. Backends that can should override this to leave the
+    /// revision, history and `updated_at` untouched and emit no update event;
+    /// the default falls back to a full `update`.
+    async fn set_embedding(
+        &self,
+        workspace_id: &str,
+        id_or_path: &str,
+        embedding: Vec<f32>,
+    ) -> Result<()> {
+        let Some(mut record) = self.get(workspace_id, id_or_path).await? else {
+            anyhow::bail!("set_embedding: memory not found: {id_or_path}");
+        };
+        record.embedding = embedding;
+        self.update(record).await
     }
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>>;
     async fn update(&self, record: MemoryRecord) -> Result<()>;
@@ -1540,6 +1561,32 @@ impl<T: MemoryStore> crate::domain::cycle_breaks::w30_12::MemoryConsumerStore fo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn non_vec_store_keeps_empty_vector_and_default_set_embedding_fills_it() {
+        let store = InMemoryMemoryStore::new();
+        let mut record = dummy_record("m1");
+        record.workspace_id = "ws".to_string();
+        record.revision = 1;
+        store.put_without_embedding(record).await.unwrap();
+        assert!(store
+            .get("ws", "m1")
+            .await
+            .unwrap()
+            .unwrap()
+            .embedding
+            .is_empty());
+
+        store
+            .set_embedding("ws", "m1", vec![1.0, 2.0])
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get("ws", "m1").await.unwrap().unwrap().embedding,
+            vec![1.0, 2.0]
+        );
+        assert!(store.set_embedding("ws", "nope", vec![1.0]).await.is_err());
+    }
 
     fn dummy_record(id: &str) -> MemoryRecord {
         MemoryRecord {
