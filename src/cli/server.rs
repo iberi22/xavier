@@ -2057,12 +2057,15 @@ async fn start_http_server_inner(
                         .unwrap_or_else(|_| "0".to_string());
                     let days = days_str.trim().parse::<u64>().unwrap_or(0);
 
-                    if days > 0 {
-                        let ids: Vec<String> =
-                            manager.list().await.into_iter().map(|s| s.id).collect();
-                        let results = xavier::espacio::retention::sweep_spaces(
+                    {
+                        let mut spaces: Vec<(String, Option<u64>)> = Vec::new();
+                        for info in manager.list().await {
+                            let days = manager.protocol(&info.id).await.retention_days;
+                            spaces.push((info.id, days));
+                        }
+                        let results = xavier::espacio::retention::sweep_spaces_per_space(
                             &manager.stores(),
-                            &ids,
+                            &spaces,
                             chrono::Utc::now(),
                             days,
                         );

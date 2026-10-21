@@ -64,6 +64,10 @@ pub struct SpaceProtocol {
     pub embedding_mode: EmbeddingProviderMode,
     pub members_cap: u32,
     pub invite_default_ttl_hours: u32,
+    /// Per-space message retention in days; None falls back to the global
+    /// sweep value, Some(0) disables retention for this space.
+    #[serde(default)]
+    pub retention_days: Option<u64>,
 }
 
 impl Default for SpaceProtocol {
@@ -92,6 +96,7 @@ impl Default for SpaceProtocol {
             embedding_mode: EmbeddingProviderMode::BringYourOwn,
             members_cap: 100,
             invite_default_ttl_hours: 24,
+            retention_days: None,
         }
     }
 }
@@ -189,6 +194,21 @@ pub fn immutable_change(old: &SpaceProtocol, new: &SpaceProtocol) -> Result<(), 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn retention_days_defaults_to_none_and_roundtrips() {
+        let mut v = serde_json::to_value(SpaceProtocol::default()).unwrap();
+        v.as_object_mut().unwrap().remove("retention_days");
+        let p: SpaceProtocol = serde_json::from_value(v).unwrap();
+        assert_eq!(p.retention_days, None);
+        let p = SpaceProtocol {
+            retention_days: Some(7),
+            ..SpaceProtocol::default()
+        };
+        let back: SpaceProtocol =
+            serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back.retention_days, Some(7));
+    }
+
     use super::*;
 
     fn has(p: &SpaceProtocol, needle: &str) -> bool {
