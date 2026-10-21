@@ -7,6 +7,8 @@
 //! - Access frequency tracking
 //! - Fast in-memory BM25-style search
 
+use crate::espacio::keys::{looks_encrypted, KeyHandle, DEFAULT_SPACE_ID};
+use crate::memory::sqlite_vec_store::at_rest;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -432,6 +434,21 @@ struct WorkingMemorySnapshot {
     items: Vec<MemoryItem>,
 }
 
+/// Record id / kind bound into the seal of the snapshot file.
+const SNAPSHOT_RECORD_ID: &str = "working-memory-snapshot";
+const SNAPSHOT_KIND: &str = "memory.content";
+
+/// Default-space key when the node has a default keystore, else `None` (clear).
+/// A present-but-unusable key is an error: never fall back to clear.
+fn snapshot_key() -> std::io::Result<Option<KeyHandle>> {
+    if !at_rest::default_keystore_exists() {
+        return Ok(None);
+    }
+    at_rest::default_space_key()
+        .map(Some)
+        .map_err(std::io::Error::other)
+}
+
 /// Default snapshot cadence in seconds
 pub const DEFAULT_SNAPSHOT_INTERVAL_SECS: u64 = 60;
 
@@ -462,12 +479,32 @@ impl WorkingMemory {
     }
 
     /// Atomically write a snapshot (temp file + rename) and clear the dirty flag.
+    ///
+    /// Sealed under the default-space key when the node has a default keystore
+    /// (same rule as the store); otherwise written clear as before.
     pub fn save_snapshot(&mut self, path: &std::path::Path) -> std::io::Result<()> {
+        let key = snapshot_key()?;
+        self.save_snapshot_with_key(path, key.as_ref())
+    }
+
+    /// [`WorkingMemory::save_snapshot`] with an injected key (`None` = clear).
+    pub fn save_snapshot_with_key(
+        &mut self,
+        path: &std::path::Path,
+        key: Option<&KeyHandle>,
+    ) -> std::io::Result<()> {
         let snapshot = WorkingMemorySnapshot {
             version: SNAPSHOT_VERSION,
             items: self.items().into_iter().cloned().collect(),
         };
-        let bytes = serde_json::to_vec(&snapshot).map_err(std::io::Error::other)?;
+        let mut bytes = serde_json::to_vec(&snapshot).map_err(std::io::Error::other)?;
+        if let Some(dek) = key {
+            let plain = String::from_utf8(bytes).map_err(std::io::Error::other)?;
+            let (sealed, _) =
+                at_rest::seal_for_space(dek, DEFAULT_SPACE_ID, SNAPSHOT_RECORD_ID, &plain, "{}")
+                    .map_err(std::io::Error::other)?;
+            bytes = sealed.into_bytes();
+        }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -495,6 +532,23 @@ impl WorkingMemory {
     /// is logged and ignored: boot must never fail because of it. Capacity is
     /// always respected (older items are evicted first). Returns items restored.
     pub fn restore_snapshot(&mut self, path: &std::path::Path) -> usize {
+        let key = match snapshot_key() {
+            Ok(k) => k,
+            Err(e) => {
+                tracing::error!(path = %path.display(), error = %e, "working memory snapshot key unavailable; starting empty");
+                return 0;
+            }
+        };
+        self.restore_snapshot_with_key(path, key.as_ref())
+    }
+
+    /// [`WorkingMemory::restore_snapshot`] with an injected key. Legacy clear
+    /// snapshots are accepted; a sealed one needs the key.
+    pub fn restore_snapshot_with_key(
+        &mut self,
+        path: &std::path::Path,
+        key: Option<&KeyHandle>,
+    ) -> usize {
         // A crash mid-save can leave a stale temp file behind.
         let _ = std::fs::remove_file(path.with_extension("json.tmp"));
         let raw = match std::fs::read(path) {
@@ -504,6 +558,28 @@ impl WorkingMemory {
                 tracing::error!(path = %path.display(), error = %e, "working memory snapshot unreadable; starting empty");
                 return 0;
             }
+        };
+        let raw = match std::str::from_utf8(&raw) {
+            Ok(text) if looks_encrypted(text.trim()) => {
+                let opened = key
+                    .ok_or_else(|| anyhow::anyhow!("sealed snapshot but no key available"))
+                    .and_then(|k| {
+                        k.open_record(
+                            DEFAULT_SPACE_ID,
+                            SNAPSHOT_KIND,
+                            SNAPSHOT_RECORD_ID,
+                            text.trim(),
+                        )
+                    });
+                match opened {
+                    Ok(plain) => plain.into_bytes(),
+                    Err(e) => {
+                        tracing::error!(path = %path.display(), error = %e, "working memory snapshot cannot be opened; starting empty");
+                        return 0;
+                    }
+                }
+            }
+            _ => raw,
         };
         let snapshot = match serde_json::from_slice::<WorkingMemorySnapshot>(&raw) {
             Ok(s) if s.version == SNAPSHOT_VERSION => s,
@@ -858,5 +934,45 @@ mod tests {
         std::fs::write(&path, b"{ not json").expect("write");
         assert_eq!(wm.restore_snapshot(&path), 0);
         assert!(wm.is_empty());
+    }
+
+    fn test_key_handle(dir: &std::path::Path) -> KeyHandle {
+        use crate::espacio::keys::{KeyRing, StaticNodeKek, UnlockMode};
+        let ring = KeyRing::new(dir, std::sync::Arc::new(StaticNodeKek::new([0x42; 32])));
+        ring.create_keys("default", UnlockMode::NodeUnlock, None)
+            .expect("keys")
+            .0
+    }
+
+    #[test]
+    fn test_snapshot_sealed_on_disk_and_legacy_clear_readable() {
+        const MARKER: &str = "WM-CANARY-7f3a91";
+        let dir = tempfile::tempdir().expect("tempdir");
+        let keys = tempfile::tempdir().expect("tempdir");
+        let dek = test_key_handle(keys.path());
+        let path = snapshot_path(dir.path());
+
+        let mut wm = WorkingMemory::new();
+        wm.push(MemoryItem::new("a", MARKER));
+        wm.save_snapshot_with_key(&path, Some(&dek)).expect("save");
+        let raw = std::fs::read(&path).expect("read");
+        assert!(
+            raw.windows(MARKER.len()).all(|w| w != MARKER.as_bytes()),
+            "plaintext marker found in sealed snapshot"
+        );
+
+        let mut back = WorkingMemory::new();
+        assert_eq!(back.restore_snapshot_with_key(&path, Some(&dek)), 1);
+        assert_eq!(back.get("a").expect("item").content, MARKER);
+
+        // Sealed snapshot without a key starts empty instead of leaking/panicking.
+        let mut locked = WorkingMemory::new();
+        assert_eq!(locked.restore_snapshot_with_key(&path, None), 0);
+
+        // Legacy clear snapshot is still readable, with or without a key.
+        wm.save_snapshot_with_key(&path, None).expect("save clear");
+        let mut legacy = WorkingMemory::new();
+        assert_eq!(legacy.restore_snapshot_with_key(&path, Some(&dek)), 1);
+        assert_eq!(legacy.get("a").expect("item").content, MARKER);
     }
 }
