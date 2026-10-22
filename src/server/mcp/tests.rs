@@ -656,6 +656,315 @@ async fn fragment_tools_integration() {
 }
 
 #[tokio::test]
+async fn memoryfragment_search_only_returns_fragments() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // All records match the query; only save_fragment supplies the fragment marker.
+    for (name, arguments) in [
+        (
+            "create_memory",
+            json!({
+                "path": "docs/fragment-search",
+                "content": "fragmentsearchneedle ordinary memory",
+                "metadata": {"agent_id": "agent1", "scope": "observation", "tags": ["tag1"]}
+            }),
+        ),
+        (
+            "save_fragment",
+            json!({
+                "agent_id": "agent1", "context": "observation", "tags": ["tag1"],
+                "content": "fragmentsearchneedle first fragment"
+            }),
+        ),
+        (
+            "save_fragment",
+            json!({
+                "agent_id": "agent2", "context": "decision", "tags": ["tag2"],
+                "content": "fragmentsearchneedle second fragment"
+            }),
+        ),
+    ] {
+        let response = post_json(
+            router.clone(),
+            json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": name, "arguments": arguments}
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = get_json_body(response).await;
+        assert!(body.get("error").is_none(), "{body}");
+        assert_eq!(body["result"]["isError"], false, "{body}");
+    }
+
+    for (tool, filters, expected_count) in [
+        ("memoryfragment_search", json!({}), 2),
+        ("search_fragments", json!({}), 2),
+        ("memoryfragment_search", json!({"agent_id": "agent1"}), 1),
+        (
+            "memoryfragment_search",
+            json!({"context": "observation"}),
+            1,
+        ),
+        ("memoryfragment_search", json!({"tags": ["tag1"]}), 1),
+        (
+            "memoryfragment_search",
+            json!({"agent_id": "agent1", "context": "decision"}),
+            0,
+        ),
+        ("memoryfragment_search", json!({"tags": ["missing"]}), 0),
+    ] {
+        let mut arguments = json!({"query": "fragmentsearchneedle", "limit": 100});
+        arguments
+            .as_object_mut()
+            .unwrap()
+            .extend(filters.as_object().unwrap().clone());
+        let response = post_json(
+            router.clone(),
+            json!({
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": tool, "arguments": arguments}
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = get_json_body(response).await;
+        assert!(body.get("error").is_none(), "{body}");
+        assert_eq!(body["result"]["isError"], false, "{body}");
+        let candidates = body["result"]["structuredContent"]["candidates"]
+            .as_array()
+            .unwrap();
+        assert_eq!(candidates.len(), expected_count, "{tool} {filters}: {body}");
+        assert_eq!(body["result"]["structuredContent"]["count"], expected_count);
+        for candidate in candidates {
+            assert!(
+                candidate["metadata"]["gestalt_context"].is_string(),
+                "{candidate}"
+            );
+            assert_ne!(candidate["path"], "docs/fragment-search");
+            if expected_count == 1 {
+                assert!(
+                    candidate["content"]
+                        .as_str()
+                        .unwrap()
+                        .contains("first fragment"),
+                    "{candidate}"
+                );
+            }
+        }
+    }
+}
+
+/// Calls a fragment-search alias through the public MCP router and returns
+/// `result.structuredContent`.
+async fn call_fragment_search(router: Router, tool: &str, arguments: Value) -> Value {
+    let response = post_json(
+        router,
+        json!({
+            "jsonrpc": "2.0", "id": 7, "method": "tools/call",
+            "params": {"name": tool, "arguments": arguments}
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    assert!(body.get("error").is_none(), "{body}");
+    assert_eq!(body["result"]["isError"], false, "{body}");
+    body["result"]["structuredContent"].clone()
+}
+
+fn candidate_paths(structured: &Value) -> Vec<String> {
+    structured["candidates"]
+        .as_array()
+        .expect("candidates array")
+        .iter()
+        .map(|c| c["path"].as_str().expect("candidate path").to_string())
+        .collect()
+}
+
+async fn seed_in_process(workspace: &WorkspaceContext, path: String, content: String, meta: Value) {
+    workspace
+        .workspace
+        .memory
+        .add_document_typed_with_embedding(path, content, meta, None, Some(Vec::new()))
+        .await
+        .expect("seed document in-process");
+}
+
+#[tokio::test]
+async fn fragment_search_aliases_find_fragment_ranked_below_250_ordinary_docs() {
+    let (state, workspace) = test_state().await;
+    let term = "recallmarkerterm";
+
+    // 250 ordinary (non-fragment) docs that outrank the fragments lexically.
+    for i in 0..250 {
+        seed_in_process(
+            &workspace,
+            format!("docs/{term}/{i:03}"),
+            format!("{term} {term}"),
+            json!({}),
+        )
+        .await;
+    }
+    // Weakly matching target fragment: long body, single hit, no hit in path.
+    let filler = vec!["filler"; 440].join(" ");
+    let target_path = "gestalt/recall-agent/recall-ctx/target".to_string();
+    seed_in_process(
+        &workspace,
+        target_path.clone(),
+        format!("{filler} {term}"),
+        json!({"gestalt_context": "recall-ctx", "agent_id": "recall-agent"}),
+    )
+    .await;
+    // Strongly matching fragment of another agent/context (decoy).
+    let decoy_path = format!("gestalt/other-agent/other-ctx/{term}-decoy");
+    seed_in_process(
+        &workspace,
+        decoy_path.clone(),
+        format!("{term} {term}"),
+        json!({"gestalt_context": "other-ctx", "agent_id": "other-agent"}),
+    )
+    .await;
+
+    // Sanity: without the fragment predicate the target is outranked.
+    let plain = workspace
+        .workspace
+        .memory
+        .search_filtered(term, 200, None)
+        .await
+        .expect("plain search");
+    assert_eq!(
+        plain.len(),
+        200,
+        "fixture must fill the old retrieval window"
+    );
+    assert!(
+        plain.iter().all(|doc| doc.path != target_path),
+        "fixture must outrank the target in the unfiltered top 200"
+    );
+
+    let router = test_router(state, workspace);
+    for tool in ["search_fragments", "memoryfragment_search"] {
+        let scoped = call_fragment_search(
+            router.clone(),
+            tool,
+            json!({"query": term, "agent_id": "recall-agent", "limit": 1}),
+        )
+        .await;
+        assert_eq!(scoped["count"], 1, "{tool}: {scoped}");
+        assert_eq!(
+            candidate_paths(&scoped),
+            vec![target_path.clone()],
+            "{tool}"
+        );
+
+        let both =
+            call_fragment_search(router.clone(), tool, json!({"query": term, "limit": 10})).await;
+        let mut paths = candidate_paths(&both);
+        paths.sort();
+        let mut expected = vec![target_path.clone(), decoy_path.clone()];
+        expected.sort();
+        assert_eq!(paths, expected, "{tool}: only fragments, none ordinary");
+
+        let wrong_ctx = call_fragment_search(
+            router.clone(),
+            tool,
+            json!({"query": term, "agent_id": "recall-agent", "context": "other-ctx", "limit": 10}),
+        )
+        .await;
+        assert_eq!(wrong_ctx["count"], 0, "{tool}: {wrong_ctx}");
+
+        let other = call_fragment_search(
+            router.clone(),
+            tool,
+            json!({"query": term, "agent_id": "other-agent", "context": "other-ctx", "limit": 1}),
+        )
+        .await;
+        assert_eq!(candidate_paths(&other), vec![decoy_path.clone()], "{tool}");
+    }
+}
+
+#[tokio::test]
+async fn fragment_search_aliases_find_correct_tag_ranked_below_250_wrong_tag_fragments() {
+    let (state, workspace) = test_state().await;
+    let term = "recalltagterm";
+
+    // 250 strongly matching fragments carrying the wrong tag.
+    for i in 0..250 {
+        seed_in_process(
+            &workspace,
+            format!("gestalt/recall-agent/recall-ctx/{term}-{i:03}"),
+            format!("{term} {term} {term} {term}"),
+            json!({"gestalt_context": "recall-ctx", "tags": ["wrongtag"]}),
+        )
+        .await;
+    }
+    let filler = vec!["filler"; 440].join(" ");
+    let target_path = "gestalt/recall-agent/recall-ctx/target".to_string();
+    seed_in_process(
+        &workspace,
+        target_path.clone(),
+        format!("{filler} {term}"),
+        json!({"gestalt_context": "recall-ctx", "tags": ["righttag"]}),
+    )
+    .await;
+
+    let plain = workspace
+        .workspace
+        .memory
+        .search_filtered(term, 200, None)
+        .await
+        .expect("plain search");
+    assert_eq!(
+        plain.len(),
+        200,
+        "fixture must fill the old retrieval window"
+    );
+    assert!(
+        plain.iter().all(|doc| doc.path != target_path),
+        "fixture must outrank the target in the unfiltered top 200"
+    );
+
+    let router = test_router(state, workspace);
+    for tool in ["search_fragments", "memoryfragment_search"] {
+        let hit = call_fragment_search(
+            router.clone(),
+            tool,
+            json!({"query": term, "tags": ["righttag"], "limit": 1}),
+        )
+        .await;
+        assert_eq!(hit["count"], 1, "{tool}: {hit}");
+        assert_eq!(candidate_paths(&hit), vec![target_path.clone()], "{tool}");
+
+        let wrong_ctx = call_fragment_search(
+            router.clone(),
+            tool,
+            json!({"query": term, "tags": ["righttag"], "context": "other-ctx", "limit": 10}),
+        )
+        .await;
+        assert_eq!(wrong_ctx["count"], 0, "{tool}: {wrong_ctx}");
+
+        let missing = call_fragment_search(
+            router.clone(),
+            tool,
+            json!({"query": term, "tags": ["missingtag"], "limit": 10}),
+        )
+        .await;
+        assert_eq!(missing["count"], 0, "{tool}: {missing}");
+
+        let truncated = call_fragment_search(
+            router.clone(),
+            tool,
+            json!({"query": term, "tags": ["righttag", "wrongtag"], "limit": 1}),
+        )
+        .await;
+        assert_eq!(truncated["count"], 1, "{tool}: limit 1 must truncate");
+    }
+}
+
+#[tokio::test]
 async fn security_violation_returns_standard_code() {
     let (state, workspace) = test_state().await;
     let router = test_router(state, workspace);
