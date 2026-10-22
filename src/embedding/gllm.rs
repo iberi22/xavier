@@ -2,9 +2,9 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use std::collections::HashMap;
 use std::fmt;
-#[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::embedding::{Embedder, EmbeddingError};
 
@@ -15,6 +15,34 @@ pub const DEFAULT_GLLM_DIMENSION: usize = 1024;
 
 #[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
 type InnerEmbedder = ::gllm::FallbackEmbedder;
+
+/// Returns the cached value for `key`, running `init` only on a miss.
+/// A failed `init` is not cached. The lock is held during `init` so
+/// concurrent callers do not load the same weights twice.
+#[cfg_attr(
+    not(any(feature = "local-gllm", feature = "local-gllm-cuda")),
+    allow(dead_code)
+)]
+fn get_or_init_cached<T, E>(
+    cache: &Mutex<HashMap<String, Arc<T>>>,
+    key: &str,
+    init: impl FnOnce() -> Result<Arc<T>, E>,
+) -> Result<Arc<T>, E> {
+    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(hit) = guard.get(key) {
+        return Ok(Arc::clone(hit));
+    }
+    let value = init()?;
+    guard.insert(key.to_string(), Arc::clone(&value));
+    Ok(value)
+}
+
+#[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
+fn embedder_cache() -> &'static Mutex<HashMap<String, Arc<InnerEmbedder>>> {
+    static CACHE: std::sync::OnceLock<Mutex<HashMap<String, Arc<InnerEmbedder>>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 pub struct GllmEmbedder {
     #[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
@@ -36,11 +64,14 @@ impl GllmEmbedder {
     #[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
     /// New.
     pub fn new(model: String, dimension: usize) -> Result<Self, EmbeddingError> {
-        let inner = ::gllm::FallbackEmbedder::new(&model)
-            .map_err(|error| EmbeddingError::Config(error.to_string()))?;
+        let inner = get_or_init_cached(embedder_cache(), &model, || {
+            ::gllm::FallbackEmbedder::new(&model)
+                .map(Arc::new)
+                .map_err(|error| EmbeddingError::Config(error.to_string()))
+        })?;
 
         Ok(Self {
-            inner: Arc::new(inner),
+            inner,
             model,
             dimension,
         })
@@ -117,6 +148,41 @@ pub fn dimension_for_model(model: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn cache_runs_init_once_per_key() {
+        let cache = Mutex::new(HashMap::new());
+        let calls = Cell::new(0);
+        let init = || -> Result<Arc<u32>, String> {
+            calls.set(calls.get() + 1);
+            Ok(Arc::new(calls.get()))
+        };
+        let a = get_or_init_cached(&cache, "m", init).unwrap();
+        let b = get_or_init_cached(&cache, "m", init).unwrap();
+        assert_eq!(calls.get(), 1);
+        assert!(Arc::ptr_eq(&a, &b));
+        let c = get_or_init_cached(&cache, "other", init).unwrap();
+        assert_eq!(calls.get(), 2);
+        assert!(!Arc::ptr_eq(&a, &c));
+    }
+
+    #[test]
+    fn cache_does_not_store_errors() {
+        let cache: Mutex<HashMap<String, Arc<u32>>> = Mutex::new(HashMap::new());
+        let calls = Cell::new(0);
+        let failed = get_or_init_cached(&cache, "m", || {
+            calls.set(calls.get() + 1);
+            Err::<Arc<u32>, _>("boom")
+        });
+        assert!(failed.is_err());
+        let ok = get_or_init_cached(&cache, "m", || {
+            calls.set(calls.get() + 1);
+            Ok::<_, &str>(Arc::new(7))
+        })
+        .unwrap();
+        assert_eq!((*ok, calls.get()), (7, 2));
+    }
 
     #[test]
     fn test_normalize_model_name() {
