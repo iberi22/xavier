@@ -86,7 +86,10 @@ impl ReplayStore for SqliteReplayStore {
             return Ok(Claim::Stale);
         }
 
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("mutex poisoned"))?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
         // 1. Get current floor
@@ -202,33 +205,50 @@ mod tests {
         let temp_db = NamedTempFile::new().unwrap();
         let path = temp_db.path().to_str().unwrap();
 
-        let store = SqliteReplayStore::open(path).unwrap();
-
         let now = 1000000;
-        // ts must be >= now - 300 to not be stale immediately.
-        // effective_floor = max(0, 1000000 - 301) = 999699
-        let res = store.claim("s1", "n1", now, now).unwrap();
-        assert_eq!(res, Claim::Fresh);
+        {
+            let store = SqliteReplayStore::open(path).unwrap();
 
-        // Fast forward clock
-        let future = now + 1000; // effective_floor will be 1000699.
-        let future_ts = future;
-        let res_future = store.claim("s2", "n2", future_ts, future).unwrap();
-        assert_eq!(res_future, Claim::Fresh);
+            // ts must be >= now - 300 to not be stale immediately.
+            // effective_floor = max(0, 1000000 - 301) = 999699
+            let res = store.claim("s1", "n1", now, now).unwrap();
+            assert_eq!(res, Claim::Fresh);
+
+            // Fast forward clock
+            let future = now + 1000; // effective_floor will be 1000699.
+            let future_ts = future;
+            let res_future = store.claim("s2", "n2", future_ts, future).unwrap();
+            assert_eq!(res_future, Claim::Fresh);
+        }
 
         // At this point, the old row n1 with ts = 1000000 should be pruned because ts < 1000699
-        // A rollback of the clock should not lower the floor
-        let rollback_now = now + 500;
-        let res_rollback = store.claim("s1", "n1", now, rollback_now).unwrap();
-        // Since n1 was deleted but the floor remains at 1000699, ts=1000000 < floor, so it should be rejected as Stale.
-        assert_eq!(res_rollback, Claim::Stale);
+        // A rollback of the clock should not lower the floor. We use rollback_now = now (skew 0).
+        let rollback_now = now;
 
-        // Verify via raw SQLite that the floor is indeed 1000699
+        // Reopen store before replay
+        {
+            let store = SqliteReplayStore::open(path).unwrap();
+            let res_rollback = store.claim("s1", "n1", now, rollback_now).unwrap();
+            // Since n1 was deleted but the floor remains at 1000699, ts=1000000 < floor, so it should be rejected as Stale.
+            // It MUST fail if floor rejection is removed (which it isn't).
+            assert_eq!(res_rollback, Claim::Stale);
+        }
+
+        // Verify via raw SQLite that the floor is indeed 1000699 and the row was pruned
         let conn = rusqlite::Connection::open(path).unwrap();
         let floor: i64 = conn
             .query_row("SELECT floor FROM meta WHERE id = 1", [], |r| r.get(0))
             .unwrap();
         assert_eq!(floor, 1000699);
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(1) FROM seen WHERE sender = 's1' AND nonce = 'n1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[test]
@@ -300,6 +320,25 @@ mod tests {
         let store = SqliteReplayStore::open(path).unwrap();
         let res = store.claim("s1", "n_new", 1000000, 1000000).unwrap();
         assert_eq!(res, Claim::Full);
+
+        // Verify another sender can claim successfully.
+        let res_other = store.claim("s2", "n_new", 1000000, 1000000).unwrap();
+        assert_eq!(res_other, Claim::Fresh);
+
+        // Query DB to verify the rejected nonce wasn't inserted.
+        let conn = rusqlite::Connection::open(path).unwrap();
+        let count_rejected: i64 = conn
+            .query_row(
+                "SELECT COUNT(1) FROM seen WHERE sender = 's1' AND nonce = 'n_new'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count_rejected, 0);
+
+        // Verify existing nonce claims still return Replayed at cap.
+        let res_replayed = store.claim("s1", "n0", 1000000, 1000000).unwrap();
+        assert_eq!(res_replayed, Claim::Replayed);
     }
 
     #[test]
@@ -324,6 +363,20 @@ mod tests {
         // use an invalid path
         let res = SqliteReplayStore::open("/invalid/path/that/does/not/exist");
         assert!(res.is_err());
+
+        // Real transaction/query failure case
+        let temp_db = NamedTempFile::new().unwrap();
+        let path = temp_db.path().to_str().unwrap();
+        let store = SqliteReplayStore::open(path).unwrap();
+
+        // Drop the seen table via an external connection to force a query failure
+        {
+            let conn = rusqlite::Connection::open(path).unwrap();
+            conn.execute("DROP TABLE seen", []).unwrap();
+        }
+
+        let res_claim = store.claim("s1", "n1", 1000000, 1000000);
+        assert!(res_claim.is_err());
     }
 
     #[test]
@@ -363,32 +416,29 @@ mod tests {
         let temp_db = NamedTempFile::new().unwrap();
         let path = temp_db.path().to_path_buf();
 
-        // Init DB
-        SqliteReplayStore::open(&path).unwrap();
+        // Init DB and open connections before spawning threads
+        let store1 = SqliteReplayStore::open(&path).unwrap();
+        let store2 = SqliteReplayStore::open(&path).unwrap();
 
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
 
         let b1 = barrier.clone();
-        let p1 = path.clone();
         let t1 = thread::spawn(move || {
-            let store = SqliteReplayStore::open(&p1).unwrap();
             b1.wait();
-            store.claim("s1", "concurrent_nonce", 1000000, 1000000)
+            store1.claim("s1", "concurrent_nonce", 1000000, 1000000)
         });
 
         let b2 = barrier;
-        let p2 = path.clone();
         let t2 = thread::spawn(move || {
-            let store = SqliteReplayStore::open(&p2).unwrap();
             b2.wait();
-            store.claim("s1", "concurrent_nonce", 1000000, 1000000)
+            store2.claim("s1", "concurrent_nonce", 1000000, 1000000)
         });
 
         let res1 = t1.join().unwrap().unwrap();
         let res2 = t2.join().unwrap().unwrap();
 
         // One must be Fresh, the other must be Replayed (or block on lock and evaluate to Replayed)
-        let mut results = vec![res1, res2];
+        let mut results = [res1, res2];
         results.sort_by_key(|r| match r {
             Claim::Fresh => 1,
             Claim::Replayed => 2,
