@@ -74,6 +74,11 @@ pub async fn handle_users_command(cmd: UsersCommand) -> Result<()> {
             json,
             i_understand_output_is_not_a_tty,
         } => reset_password(&email, json, i_understand_output_is_not_a_tty).await,
+        UsersCommand::LoginCode {
+            email,
+            json,
+            i_understand_output_is_not_a_tty,
+        } => login_code_cmd(email, json, i_understand_output_is_not_a_tty).await,
         UsersCommand::Create {
             email,
             role,
@@ -145,6 +150,79 @@ async fn reset_password(email: &str, json: bool, tty_override: bool) -> Result<(
     eprintln!(
         "AVISO: esta contrasena no se vuelve a mostrar. Entregala a su dueno y pierde este texto."
     );
+    Ok(())
+}
+
+// ── users login-code ────────────────────────────────────────────────────────
+
+/// Picks the target account: the given email, else the oldest admin account.
+fn resolve_login_user(db: &AuthDb, email: Option<&str>) -> Result<User> {
+    if let Some(e) = email {
+        let norm = e.trim().to_ascii_lowercase();
+        return db
+            .get_user_by_email(&norm)?
+            .ok_or_else(|| anyhow!("no existe ninguna cuenta con el correo '{}'", norm));
+    }
+    let users = db.list_users()?;
+    if users.is_empty() {
+        bail!("no hay cuentas registradas; crea una con 'xavier users create'");
+    }
+    users
+        .into_iter()
+        .filter(|u| u.role == "admin")
+        .min_by(|a, b| a.created_at.cmp(&b.created_at).then(a.email.cmp(&b.email)))
+        .ok_or_else(|| anyhow!("no hay ninguna cuenta con rol admin; indica un correo explicito"))
+}
+
+fn percent_encode(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// Panel link that prefills and auto-submits the login code.
+fn build_login_link(base_url: &str, email: &str, code: &str) -> String {
+    format!(
+        "{}/#/login?email={}&code={}",
+        base_url.trim_end_matches('/'),
+        percent_encode(email),
+        code
+    )
+}
+
+async fn login_code_cmd(email: Option<String>, json: bool, tty_override: bool) -> Result<()> {
+    ensure_secret_output_allowed(std::io::stdout().is_terminal(), tty_override)?;
+    let db = open_auth_db()?;
+    let user = resolve_login_user(&db, email.as_deref())?;
+    let code = auth2::login_code::issue_login_code(&db, &user.id, now_secs())?;
+    let base = std::env::var("XAVIER_PANEL_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "http://localhost:8006".to_string());
+    let link = build_login_link(&base, &user.email, &code);
+    let ttl = auth2::login_code::LOGIN_CODE_TTL_SECS;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "email": user.email,
+                "code": code,
+                "expires_in_secs": ttl,
+                "link": link,
+            }))?
+        );
+    } else {
+        println!("Codigo de acceso para {}: {}", user.email, code);
+        println!("Expira en {ttl} segundos y sirve una sola vez.");
+        println!("Enlace: {link}");
+    }
     Ok(())
 }
 
@@ -734,6 +812,45 @@ mod tests {
         let err = disable_totp_with_code(&db, "ana@ejemplo.com", "123456")
             .expect_err("should refuse: 2FA not enabled");
         assert!(err.to_string().contains("no tiene 2FA activo"));
+    }
+
+    // ── users login-code ────────────────────────────────────────────────────
+
+    #[test]
+    fn login_link_encodes_email_and_trims_base() {
+        assert_eq!(
+            build_login_link("http://localhost:8006/", "a+b@x.com", "123456"),
+            "http://localhost:8006/#/login?email=a%2Bb%40x.com&code=123456"
+        );
+    }
+
+    #[test]
+    fn login_user_defaults_to_an_admin() {
+        let dir = tempdir().unwrap();
+        let db = open_test_db(&dir);
+        assert!(resolve_login_user(&db, None).is_err());
+        create_user_in_db(&db, "u@e.com", OK_PASS, "U", "user").unwrap();
+        create_user_in_db(&db, "adm@e.com", OK_PASS, "A", "admin").unwrap();
+        assert_eq!(resolve_login_user(&db, None).unwrap().email, "adm@e.com");
+    }
+
+    #[test]
+    fn login_user_errors_on_unknown_email_or_no_admin() {
+        let dir = tempdir().unwrap();
+        let db = open_test_db(&dir);
+        create_user_in_db(&db, "u@e.com", OK_PASS, "U", "user").unwrap();
+        assert!(resolve_login_user(&db, None).is_err());
+        let err = resolve_login_user(&db, Some("nope@e.com")).unwrap_err();
+        assert!(err.to_string().contains("no existe"));
+        assert_eq!(
+            resolve_login_user(&db, Some(" U@E.com ")).unwrap().email,
+            "u@e.com"
+        );
+    }
+
+    #[test]
+    fn login_code_refused_on_non_tty() {
+        assert!(ensure_secret_output_allowed(false, false).is_err());
     }
 
     #[test]

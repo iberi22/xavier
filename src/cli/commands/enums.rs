@@ -1300,6 +1300,17 @@ pub enum UsersCommand {
         #[arg(long, default_value_t = false)]
         i_understand_output_is_not_a_tty: bool,
     },
+    /// Mint a one-time login code (6 digits, 120 s, single use) and print it with a panel link.
+    LoginCode {
+        /// Account email (defaults to the oldest account with role admin)
+        email: Option<String>,
+        /// Output as JSON instead of human-readable text
+        #[arg(long, default_value_t = false)]
+        json: bool,
+        /// Allow printing the code even when stdout is not a TTY
+        #[arg(long, default_value_t = false)]
+        i_understand_output_is_not_a_tty: bool,
+    },
     /// Create the first (or a new) local account interactively, with no server running.
     ///
     /// Prompts for the password twice (hidden input), applies the same validation,
