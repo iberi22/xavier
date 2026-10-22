@@ -1183,7 +1183,7 @@ pub async fn handle_core_tool(
                 Some(v) => {
                     let n = v
                         .as_u64()
-                        .ok_or_else(|| anyhow::anyhow!("'limit' must be an integer"))?;
+                        .ok_or_else(|| anyhow::anyhow!("'limit' must be a non-negative integer"))?;
                     n.min(100) as usize
                 }
                 None => 20,
@@ -1193,6 +1193,14 @@ pub async fn handle_core_tool(
                 let val = json!({
                     "returned": 0,
                     "symbols": [],
+                });
+                return Ok(serde_json::to_value(MCPToolResult::structured(val, false))?);
+            }
+            if query.trim().is_empty() {
+                let val = json!({
+                    "returned": 0,
+                    "symbols": [],
+                    "hint": "Provide a non-empty 'query' (symbol name or keyword).",
                 });
                 return Ok(serde_json::to_value(MCPToolResult::structured(val, false))?);
             }
@@ -1245,7 +1253,7 @@ pub async fn handle_core_tool(
                 Some(v) => {
                     let n = v
                         .as_u64()
-                        .ok_or_else(|| anyhow::anyhow!("'limit' must be an integer"))?;
+                        .ok_or_else(|| anyhow::anyhow!("'limit' must be a non-negative integer"))?;
                     n.clamp(1, 1000) as usize
                 }
                 None => 100,
@@ -1280,20 +1288,65 @@ pub async fn handle_core_tool(
             };
 
             let code_query = _state.code_query.clone();
+            let code_db = _state.code_db.clone();
             let symbol_owned = symbol.to_string();
-            let edges = match tokio::time::timeout(
+            let structural_filter = reverse && edge_type_filter.is_none();
+            let (edges, names, found, truncated) = match tokio::time::timeout(
                 std::time::Duration::from_secs(20),
                 tokio::task::spawn_blocking(move || {
-                    if reverse {
+                    // Fetch one extra edge so a cut can be detected.
+                    let fetch = limit + 1;
+                    let mut edges = if reverse {
                         code_query.reverse_dependencies(
                             &symbol_owned,
                             edge_type_filter,
                             max_depth,
-                            limit,
-                        )
+                            fetch,
+                        )?
                     } else {
-                        code_query.dependencies(&symbol_owned, edge_type_filter, max_depth, limit)
+                        code_query.dependencies(
+                            &symbol_owned,
+                            edge_type_filter,
+                            max_depth,
+                            fetch,
+                        )?
+                    };
+                    if structural_filter {
+                        // Callers traces skip file->symbol structural edges.
+                        edges.retain(|e| {
+                            !matches!(
+                                e.edge_type,
+                                code_graph::types::EdgeType::Contains
+                                    | code_graph::types::EdgeType::Defines
+                            )
+                        });
                     }
+                    let truncated = edges.len() > limit || (limit >= 1000 && edges.len() >= limit);
+                    edges.truncate(limit);
+
+                    let mut names = std::collections::HashMap::new();
+                    for e in &edges {
+                        for id in [&e.from_symbol, &e.to_symbol] {
+                            if names.contains_key(id) {
+                                continue;
+                            }
+                            if let Some(sym) = code_db.symbol_by_stable_id(id)? {
+                                names.insert(id.clone(), sym.name);
+                            }
+                        }
+                    }
+
+                    let found = if !edges.is_empty() {
+                        true
+                    } else if symbol_owned.len() == 64
+                        && symbol_owned.chars().all(|c| c.is_ascii_hexdigit())
+                    {
+                        code_db.symbol_by_stable_id(&symbol_owned)?.is_some()
+                    } else {
+                        !code_db.find_by_name(&symbol_owned, 1)?.is_empty()
+                            || !code_db.find_symbols(&symbol_owned, 1)?.symbols.is_empty()
+                    };
+                    Ok::<_, code_graph::GraphError>((edges, names, found, truncated))
                 }),
             )
             .await
@@ -1305,11 +1358,34 @@ pub async fn handle_core_tool(
             };
 
             let direction = if reverse { "callers" } else { "dependencies" };
-            let val = json!({
+            let edges_json: Vec<Value> = edges
+                .iter()
+                .map(|e| {
+                    let mut v = serde_json::to_value(e).unwrap_or(Value::Null);
+                    if let Some(obj) = v.as_object_mut() {
+                        for (key, id) in [("from_name", &e.from_symbol), ("to_name", &e.to_symbol)]
+                        {
+                            let name = names.get(id).cloned().unwrap_or_else(|| id.clone());
+                            obj.insert(key.to_string(), Value::String(name));
+                        }
+                    }
+                    v
+                })
+                .collect();
+            let mut val = json!({
                 "symbol": symbol,
                 "direction": direction,
-                "edges": edges,
+                "found": found,
+                "edges": edges_json,
             });
+            if truncated {
+                val["truncated"] = json!(true);
+            }
+            if !found {
+                val["hint"] = json!(
+                    "No indexed symbol matches this name; run a code scan or use codegraph_explore to find the exact name."
+                );
+            }
 
             Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
         }
@@ -1324,7 +1400,7 @@ pub async fn handle_core_tool(
                 Some(v) => {
                     let n = v
                         .as_u64()
-                        .ok_or_else(|| anyhow::anyhow!("'limit' must be an integer"))?;
+                        .ok_or_else(|| anyhow::anyhow!("'limit' must be a non-negative integer"))?;
                     n.min(100) as usize
                 }
                 None => 10,
@@ -1344,18 +1420,46 @@ pub async fn handle_core_tool(
                 return Ok(serde_json::to_value(MCPToolResult::structured(val, false))?);
             }
 
+            let route_refusal = |reason: &str| {
+                json!({
+                    "mode": "ExactName",
+                    "margin": 0.0,
+                    "confident": false,
+                    "refusal": true,
+                    "est_tokens": 0,
+                    "total": 0,
+                    "shown": 0,
+                    "hits": [],
+                    "reason": reason,
+                })
+            };
+            if query.trim().is_empty() {
+                let val = route_refusal("Empty query: provide a symbol name or keyword.");
+                return Ok(serde_json::to_value(MCPToolResult::structured(val, false))?);
+            }
+
             let code_query = _state.code_query.clone();
             let query_owned = query.to_string();
-            let report = match tokio::time::timeout(
+            let routed = match tokio::time::timeout(
                 std::time::Duration::from_secs(20),
                 tokio::task::spawn_blocking(move || code_query.route_query(&query_owned, limit)),
             )
             .await
             {
-                Ok(res) => res
-                    .map_err(|e| anyhow::anyhow!("spawn_blocking failed: {e}"))?
-                    .map_err(|e| anyhow::anyhow!("{e}"))?,
+                Ok(res) => res.map_err(|e| anyhow::anyhow!("spawn_blocking failed: {e}"))?,
                 Err(_) => anyhow::bail!("codegraph_route timed out after 20 seconds"),
+            };
+            let report = match routed {
+                Ok(r) => r,
+                Err(
+                    code_graph::GraphError::UnknownSymbol { .. } | code_graph::GraphError::Query(_),
+                ) => {
+                    let val = route_refusal(&format!(
+                        "No indexed symbol matches '{query}'. Try an exact symbol name."
+                    ));
+                    return Ok(serde_json::to_value(MCPToolResult::structured(val, false))?);
+                }
+                Err(e) => return Err(anyhow::anyhow!("{e}")),
             };
 
             let hits_json: Vec<Value> = report
@@ -1392,7 +1496,7 @@ pub async fn handle_core_tool(
                 Some(v) => {
                     let n = v
                         .as_u64()
-                        .ok_or_else(|| anyhow::anyhow!("'limit' must be an integer"))?;
+                        .ok_or_else(|| anyhow::anyhow!("'limit' must be a non-negative integer"))?;
                     n.min(100) as usize
                 }
                 None => 10,
@@ -2905,5 +3009,208 @@ pub(crate) mod tests {
                 .len(),
             0
         );
+    }
+
+    async fn cg_call(
+        state: &AppState,
+        workspace: &WorkspaceContext,
+        tool: &str,
+        args: Value,
+    ) -> anyhow::Result<Value> {
+        let claims = admin_claims();
+        handle_core_tool(state.clone(), workspace.clone(), Some(&claims), tool, args).await
+    }
+
+    fn cg_sym(name: &str, file: &str) -> code_graph::types::Symbol {
+        code_graph::types::Symbol {
+            name: name.to_string(),
+            kind: code_graph::types::SymbolKind::Function,
+            lang: code_graph::types::Language::Rust,
+            file_path: file.to_string(),
+            start_line: 1,
+            end_line: 5,
+            stable_id: Some(format!("{file}:{name}")),
+            ..Default::default()
+        }
+    }
+
+    fn cg_edge(
+        from: &str,
+        to: &str,
+        ty: code_graph::types::EdgeType,
+    ) -> code_graph::types::CodeEdge {
+        code_graph::types::CodeEdge {
+            id: None,
+            from_symbol: from.to_string(),
+            to_symbol: to.to_string(),
+            edge_type: ty,
+            file_path: "/src/a.rs".to_string(),
+            line: 1,
+            confidence: 1.0,
+            metadata: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn codegraph_route_unknown_symbol_is_refusal_result() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        for q in ["NoSuchSymbolAnywhere", "where is the auth handler defined"] {
+            let out = cg_call(&state, &workspace, "codegraph_route", json!({"query": q}))
+                .await
+                .expect("unknown symbol must not be an error");
+            let sc = &out["structuredContent"];
+            assert_eq!(sc["refusal"], true);
+            assert_eq!(sc["confident"], false);
+            assert!(sc["hits"].as_array().unwrap().is_empty());
+            assert!(sc["reason"].as_str().is_some_and(|r| !r.is_empty()));
+        }
+        let blank = cg_call(
+            &state,
+            &workspace,
+            "codegraph_route",
+            json!({"query": "  "}),
+        )
+        .await
+        .expect("blank route ok");
+        assert_eq!(blank["structuredContent"]["refusal"], true);
+        assert!(blank["structuredContent"]["hits"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn codegraph_negative_limit_message_and_blank_explore() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        state
+            .code_db
+            .insert_symbol(&cg_sym("arbitrary_row", "/src/z.rs"))
+            .unwrap();
+        for (tool, args) in [
+            ("codegraph_explore", json!({"query": "x", "limit": -1})),
+            ("codegraph_gods", json!({"limit": -3})),
+            ("codegraph_route", json!({"query": "x", "limit": -1})),
+        ] {
+            let err = cg_call(&state, &workspace, tool, args)
+                .await
+                .expect_err("negative limit rejected");
+            assert!(
+                err.to_string()
+                    .contains("'limit' must be a non-negative integer"),
+                "{tool}: {err}"
+            );
+        }
+        let out = cg_call(
+            &state,
+            &workspace,
+            "codegraph_explore",
+            json!({"query": ""}),
+        )
+        .await
+        .expect("blank explore ok");
+        let sc = &out["structuredContent"];
+        assert_eq!(sc["returned"], 0);
+        assert!(sc["hint"].as_str().is_some());
+    }
+
+    #[tokio::test]
+    async fn trace_path_names_truncated_found_and_structural_filter() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let db = &state.code_db;
+        for (n, f) in [
+            ("tp_root", "/src/r.rs"),
+            ("tp_a", "/src/a.rs"),
+            ("tp_b", "/src/b.rs"),
+        ] {
+            db.insert_symbol(&cg_sym(n, f)).unwrap();
+        }
+        use code_graph::types::EdgeType::{Calls, Contains};
+        db.insert_edge(&cg_edge("/src/r.rs:tp_root", "/src/a.rs:tp_a", Calls))
+            .unwrap();
+        db.insert_edge(&cg_edge("/src/r.rs:tp_root", "/src/b.rs:tp_b", Calls))
+            .unwrap();
+        db.insert_edge(&cg_edge("file:/src/a.rs", "/src/a.rs:tp_a", Contains))
+            .unwrap();
+        db.insert_edge(&cg_edge("/src/r.rs:tp_root", "/src/a.rs:tp_a", Calls))
+            .ok();
+
+        // Names resolved, no truncation.
+        let out = cg_call(
+            &state,
+            &workspace,
+            "trace_path",
+            json!({"symbol": "tp_root"}),
+        )
+        .await
+        .unwrap();
+        let sc = &out["structuredContent"];
+        assert_eq!(sc["found"], true);
+        assert!(sc.get("truncated").is_none());
+        let edges = sc["edges"].as_array().unwrap();
+        assert!(edges
+            .iter()
+            .any(|e| e["from_name"] == "tp_root" && e["to_name"] == "tp_a"));
+
+        // Limit cut flagged.
+        let out = cg_call(
+            &state,
+            &workspace,
+            "trace_path",
+            json!({"symbol": "tp_root", "limit": 1}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(out["structuredContent"]["truncated"], true);
+        assert_eq!(
+            out["structuredContent"]["edges"].as_array().unwrap().len(),
+            1
+        );
+
+        // Unknown symbol is distinguishable from a leaf.
+        let out = cg_call(
+            &state,
+            &workspace,
+            "trace_path",
+            json!({"symbol": "tp_nope_zz"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(out["structuredContent"]["found"], false);
+        assert!(out["structuredContent"]["hint"].as_str().is_some());
+        let leaf = cg_call(&state, &workspace, "trace_path", json!({"symbol": "tp_b"}))
+            .await
+            .unwrap();
+        assert_eq!(leaf["structuredContent"]["found"], true);
+
+        // Reverse trace drops Contains/Defines unless asked for.
+        let out = cg_call(
+            &state,
+            &workspace,
+            "trace_path",
+            json!({"symbol": "tp_a", "reverse": true}),
+        )
+        .await
+        .unwrap();
+        let edges = out["structuredContent"]["edges"].as_array().unwrap();
+        assert!(!edges.is_empty());
+        assert!(
+            edges.iter().all(|e| e["edge_type"] != "Contains"),
+            "{edges:?}"
+        );
+        let out = cg_call(
+            &state,
+            &workspace,
+            "trace_path",
+            json!({"symbol": "tp_a", "reverse": true, "edge_type": "contains"}),
+        )
+        .await
+        .unwrap();
+        assert!(!out["structuredContent"]["edges"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 }
