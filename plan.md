@@ -1,0 +1,4 @@
+1. **Append tests to `src/telegram/mod.rs`**: Use `run_in_bash_session` (with `cat` appending or a diff patch) to append the complete test module (including the capture server, fake messages, and five test functions: `login_handler_denies_empty_allowlist`, `login_handler_denies_group_even_if_allowlisted`, `login_handler_denies_missing_sender`, `login_handler_non_admin_gets_admin_denial`, and `login_handler_authorized_dm_issues_code`) to `src/telegram/mod.rs` inside the existing `#[cfg(test)]` module.
+2. **Verify modifications**: Run `rustfmt --edition 2021 src/telegram/mod.rs` and `git diff src/telegram/mod.rs` to confirm the test code was formatted and appended correctly.
+3. **Complete pre-commit steps**: Complete pre-commit steps to ensure proper testing, verification, review, and reflection are done.
+4. **Submit**: Once all tests pass, I will submit the change with a descriptive commit message.
