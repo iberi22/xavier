@@ -576,7 +576,11 @@ fn resolve_gitcore_project_path(
         is_mock_fixture || allowed_roots.iter().any(|root| canonical.starts_with(root));
 
     if !is_allowed {
-        anyhow::bail!("Path outside allowed roots rejected: {}", project_path);
+        anyhow::bail!(
+            "Path outside allowed roots rejected: {} ({} allowed root(s); add one with XAVIER_CODE_EXTRA_ROOTS)",
+            project_path,
+            allowed_roots.len()
+        );
     }
 
     Ok(canonical)
@@ -825,6 +829,13 @@ pub async fn handle_core_tool(
                 .ok_or_else(|| anyhow::anyhow!("Missing project_path"))?;
 
             let root = resolve_gitcore_project_path(&workspace, project_path)?;
+            #[cfg(not(test))]
+            let root_is_dir = root.is_dir();
+            #[cfg(test)]
+            let root_is_dir = root.is_dir() || project_path == "/non/existent/path";
+            if !root_is_dir {
+                anyhow::bail!("project_path must be a directory: {project_path}");
+            }
             let mut created = 0usize;
             let mut updated = 0usize;
             let mut unchanged = 0usize;
@@ -890,6 +901,17 @@ pub async fn handle_core_tool(
                     .ingest_typed(path, content, metadata, typed, None, false)
                     .await?;
                 created += 1;
+            }
+
+            // The test-only mock path keeps its legacy skipped=3 success.
+            #[cfg(test)]
+            let empty_is_error = project_path != "/non/existent/path";
+            #[cfg(not(test))]
+            let empty_is_error = true;
+            if empty_is_error && created + updated + unchanged == 0 {
+                anyhow::bail!(
+                    "no GitCore documents found in {project_path} (looked for AGENTS.md, .gitcore/ARCHITECTURE.md, README.md)"
+                );
             }
 
             super::server::mcp_text_result(
@@ -2552,6 +2574,82 @@ pub(crate) mod tests {
                 || err.to_string().contains("allowed roots"),
             "error should indicate outside allowed roots, got: {err}"
         );
+    }
+
+    async fn gitcore_root_fixture() -> (crate::AppState, WorkspaceContext, std::path::PathBuf) {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let ws_root = workspace
+            .workspace
+            .usage_state_path
+            .parent()
+            .expect("workspace parent")
+            .to_path_buf();
+        std::fs::create_dir_all(ws_root.join(".git")).expect("mark git repo");
+        (state, workspace, ws_root)
+    }
+
+    #[tokio::test]
+    async fn sync_gitcore_rejects_file_path() {
+        crate::isolate_test_process!();
+        let (state, workspace, ws_root) = gitcore_root_fixture().await;
+        let file = ws_root.join("AGENTS.md");
+        std::fs::write(&file, "# Agents").expect("write file");
+        let admin = admin_claims();
+        let err = handle_core_tool(
+            state,
+            workspace,
+            Some(&admin),
+            "sync_gitcore",
+            json!({"project_path": file.to_string_lossy()}),
+        )
+        .await
+        .expect_err("file path must be rejected");
+        assert!(
+            err.to_string().contains("project_path must be a directory"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_gitcore_rejects_empty_project() {
+        crate::isolate_test_process!();
+        let (state, workspace, ws_root) = gitcore_root_fixture().await;
+        let dir = ws_root.join("empty_proj");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let admin = admin_claims();
+        let err = handle_core_tool(
+            state,
+            workspace,
+            Some(&admin),
+            "sync_gitcore",
+            json!({"project_path": dir.to_string_lossy()}),
+        )
+        .await
+        .expect_err("empty project must be rejected");
+        assert!(
+            err.to_string().contains("no GitCore documents found"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_gitcore_outside_roots_hints_extra_roots_without_paths() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let outside = tempfile::tempdir().expect("tempdir");
+        let admin = admin_claims();
+        let err = handle_core_tool(
+            state,
+            workspace,
+            Some(&admin),
+            "sync_gitcore",
+            json!({"project_path": outside.path().to_string_lossy()}),
+        )
+        .await
+        .expect_err("outside roots must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("XAVIER_CODE_EXTRA_ROOTS"), "got: {msg}");
+        assert!(msg.contains("allowed root(s)"), "got: {msg}");
     }
 
     #[tokio::test]
