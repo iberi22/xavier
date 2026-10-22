@@ -609,12 +609,12 @@ mod tests {
             // Oh, we can just use scoped threads to borrow `store1` and `store2`.
 
             let res = std::thread::scope(|s| {
-                let t1 = s.spawn(|| {
+                let t1 = s.spawn(move || {
                     b1.wait();
                     store1.claim("s1", &n1, 1000000, 1000000)
                 });
 
-                let t2 = s.spawn(|| {
+                let t2 = s.spawn(move || {
                     b2.wait();
                     store2.claim("s1", &n2, 1000000, 1000000)
                 });
@@ -664,12 +664,12 @@ mod tests {
             let b1 = barrier_cap.clone();
             let b2 = barrier_cap;
 
-            let t1 = s.spawn(|| {
+            let t1 = s.spawn(move || {
                 b1.wait();
                 store3.claim("s2", "n_race_1", 1000000, 1000000)
             });
 
-            let t2 = s.spawn(|| {
+            let t2 = s.spawn(move || {
                 b2.wait();
                 store4.claim("s2", "n_race_2", 1000000, 1000000)
             });
