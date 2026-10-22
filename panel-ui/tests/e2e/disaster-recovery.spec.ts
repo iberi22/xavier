@@ -178,6 +178,10 @@ test.describe("Sovereign Recovery Modal & Disaster Recovery Wizard E2E", () => {
 
     await expect(page.locator("h2:has-text('Disaster Recovery Wizard')")).toBeVisible();
 
+    // The quiz is randomized in an effect after open, so the first render can show
+    // the default #1/#2 prompt. Regenerate explicitly and read the prompt from that state.
+    await page.locator("button:has-text('Refresh Quiz')").click();
+
     // Locate quiz prompt text containing word numbers (e.g. "please type word #1 and word #2.")
     const quizPromptLocator = page.locator("p:has-text('please type word')");
     await expect(quizPromptLocator).toBeVisible();
@@ -307,6 +311,10 @@ test.describe("Sovereign Recovery Modal & Disaster Recovery Wizard E2E", () => {
     await recoveryBtn.click();
 
     await expect(page.locator("h2:has-text('Disaster Recovery Wizard')")).toBeVisible();
+
+    // The quiz is randomized in an effect after open, so the first render can show
+    // the default #1/#2 prompt. Regenerate explicitly and read the prompt from that state.
+    await page.locator("button:has-text('Refresh Quiz')").click();
 
     const quizPromptLocator = page.locator("p:has-text('please type word')");
     await expect(quizPromptLocator).toBeVisible();
