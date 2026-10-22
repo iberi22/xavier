@@ -67,6 +67,7 @@ pub mod protocol;
 pub mod public_directory;
 pub mod public_rag;
 pub mod registry;
+pub mod replay_store;
 pub mod service_network;
 pub mod telemetry;
 pub mod telemetry_collector;

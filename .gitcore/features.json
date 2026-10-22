@@ -3619,6 +3619,40 @@
       ],
       "req_ids": [],
       "user_stories": []
+    },
+    "feat-mesh-replay-store": {
+      "id": "feat-mesh-replay-store",
+      "name": "Mesh Replay Store",
+      "category": "mesh",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "A reusable SQLite storage primitive to ensure replay requests are rejected and new ones recorded durably.",
+      "steps": [
+        "Implement Claim enum and ReplayStore trait",
+        "Implement SqliteReplayStore with WAL, synchronous=FULL, and busy timeout",
+        "Enforce sender and nonce length limits, max entries per sender, and timestamp skew",
+        "Maintain single monotonic floor row and prune stale records",
+        "Reject identical replayed claims and strictly isolate state"
+      ],
+      "implemented_in": "src/mesh/replay_store.rs",
+      "tests": [
+        "tests::replay_same_second_after_reopen_rejected",
+        "tests::replay_sender_ahead_ts_plus_200_after_reopen_rejected",
+        "tests::floor_only_rises_and_pruned_rows_stay_rejected",
+        "tests::sender_nonce_namespace_is_isolated",
+        "tests::repeated_nonce_with_new_timestamp_is_rejected_while_retained",
+        "tests::per_sender_cap_returns_full_without_claiming",
+        "tests::invalid_empty_or_oversized_identity_and_nonce_rejected",
+        "tests::sqlite_open_or_transaction_error_is_not_fresh",
+        "tests::timestamp_extremes_are_rejected_without_overflow",
+        "tests::concurrent_duplicate_only_one_fresh"
+      ],
+      "passes": false,
+      "spec_reference": "docs/features/specs/FEATURE-MESH-REPLAY-STORE.md",
+      "req_ids": [
+        "REQ-012"
+      ],
+      "user_stories": []
     }
   },
   "verification_commands": {
