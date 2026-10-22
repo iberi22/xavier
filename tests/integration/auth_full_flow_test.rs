@@ -499,6 +499,8 @@ async fn e2e_login_code_exchange_refresh_and_reuse() {
         .await
         .unwrap();
     assert_eq!(status_res.status(), StatusCode::OK);
+    let status_body: Value = status_res.json().await.unwrap();
+    assert_eq!(status_body["user_id"], user_id);
 
     // The refresh token from the exchange rotates through the normal refresh endpoint.
     let refresh_token = exchange_body["refresh_token"].as_str().unwrap();
@@ -511,7 +513,18 @@ async fn e2e_login_code_exchange_refresh_and_reuse() {
     assert_eq!(refresh_res.status(), StatusCode::OK);
     let refresh_body: Value = refresh_res.json().await.unwrap();
     assert!(!refresh_body["access_token"].as_str().unwrap().is_empty());
-    assert!(!refresh_body["refresh_token"].as_str().unwrap().is_empty());
+    let rotated_refresh_token = refresh_body["refresh_token"].as_str().unwrap();
+    assert!(!rotated_refresh_token.is_empty());
+    assert_ne!(rotated_refresh_token, refresh_token);
+
+    // Replaying the rotated-out exchange token is treated as reuse and forbidden (as in test_jwt_refresh_cycle).
+    let reuse_res = client
+        .post(format!("{}/auth/refresh", base_url))
+        .json(&json!({ "refresh_token": refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reuse_res.status(), StatusCode::FORBIDDEN);
 
     // Codes are single use: replaying the same code is rejected.
     let (status, _, body) = post_exchange(&client, &base_url, CLIENT_IP, email, &code).await;
