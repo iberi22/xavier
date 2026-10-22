@@ -6,7 +6,18 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
     page,
   }) => {
     test.setTimeout(120_000);
-    // 1. Intercept API routes with deterministic mock data
+    // 1. Intercept API routes with deterministic mock data.
+    // Playwright tries the most recently registered route first, so the /v1
+    // catch-all is registered first to act only as a fallback for /v1 calls that
+    // have no specific mock below it.
+    await page.route("**/v1/**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok" }),
+      });
+    });
+
     await page.route("**/health", async (route) => {
       await route.fulfill({
         status: 200,
@@ -84,7 +95,7 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ quotas: [] }),
+        body: JSON.stringify([]),
       });
     });
 
@@ -209,15 +220,6 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ total_symbols: 0, total_files: 0, nodes: [], links: [] }),
-      });
-    });
-
-    // Catch-all route handler for remaining unhandled REST requests
-    await page.route("**/v1/**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ status: "ok" }),
       });
     });
 
