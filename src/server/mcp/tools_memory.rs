@@ -444,6 +444,9 @@ const MCP_CREATE_PATH_MAX_CHARS: usize = 1024;
 const MCP_SEARCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 fn validate_search_query(query: &str) -> anyhow::Result<()> {
+    if query.trim().is_empty() {
+        anyhow::bail!("'query' must be a non-empty string");
+    }
     if query.len() > MCP_SEARCH_QUERY_MAX_BYTES {
         anyhow::bail!(
             "Invalid argument 'query': {} bytes exceeds the {} byte limit",
@@ -487,6 +490,9 @@ fn context_selectors(arguments: &Value) -> anyhow::Result<(Option<&str>, Option<
     };
     if query.is_none() && ids.is_none() {
         return Err(anyhow::anyhow!("Either 'query' or 'ids' must be provided"));
+    }
+    if ids.is_none() && query.is_some_and(|q| q.trim().is_empty()) {
+        return Err(anyhow::anyhow!("'query' must be a non-empty string"));
     }
     Ok((query, ids))
 }
@@ -1087,6 +1093,7 @@ async fn handle_search_fragments(
             None => return Err(anyhow::anyhow!("'query' must be a string")),
         },
     };
+    validate_search_query(query)?;
     let query = match secure_mcp_external_input(state, "memoryfragment query", query).await? {
         Ok(query) => query,
         Err(blocked) => return Ok(blocked),
@@ -1094,7 +1101,7 @@ async fn handle_search_fragments(
     let agent_id = optional_memoryfragment_component(arguments, "agent_id", None)?;
     let context = optional_memoryfragment_component(arguments, "context", None)?;
     let tags = memoryfragment_tags(arguments)?;
-    let limit = memoryfragment_limit(arguments);
+    let limit = memoryfragment_limit(arguments)?;
 
     let mut filters = MemoryQueryFilters::default();
     if let Some(aid) = agent_id {
@@ -2164,12 +2171,8 @@ fn validate_memoryfragment_provenance(
     Ok(Some(value.to_string()))
 }
 
-fn memoryfragment_limit(arguments: &Value) -> usize {
-    arguments
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(10)
-        .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize
+fn memoryfragment_limit(arguments: &Value) -> anyhow::Result<usize> {
+    Ok(positive_int_arg(arguments, "limit", 10)?.min(MEMORYFRAGMENT_MAX_LIMIT))
 }
 
 fn memoryfragment_importance(arguments: &Value) -> anyhow::Result<f32> {
@@ -2510,6 +2513,50 @@ mod tests {
         )
         .await;
         assert!(res3.is_err());
+    }
+
+    #[tokio::test]
+    async fn blank_queries_fail_fast_and_fragment_limit_is_validated() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        for tool in [
+            "search_memory",
+            "mem_search",
+            "memory_search",
+            "memoryfragment_search",
+            "search_fragments",
+            "mem_context",
+            "memory_context",
+        ] {
+            for q in ["", "  \t\n"] {
+                let err = handle_memory_tool(
+                    state.clone(),
+                    workspace.clone(),
+                    tool,
+                    json!({ "query": q }),
+                )
+                .await
+                .unwrap_err()
+                .to_string();
+                assert!(
+                    err.contains("'query' must be a non-empty string"),
+                    "{tool}: {err}"
+                );
+            }
+        }
+        for tool in ["memoryfragment_search", "search_fragments"] {
+            for bad in [json!(0), json!(-1), json!(1.5)] {
+                let err = handle_memory_tool(
+                    state.clone(),
+                    workspace.clone(),
+                    tool,
+                    json!({ "query": "x", "limit": bad }),
+                )
+                .await
+                .unwrap_err()
+                .to_string();
+                assert!(err.contains("must be a positive integer"), "{tool}: {err}");
+            }
+        }
     }
 
     #[tokio::test]
