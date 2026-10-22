@@ -105,6 +105,14 @@ pub struct MemoryQueryFilters {
     /// that telemetry back (e.g. an activity dashboard) set this to `true`.
     #[serde(default)]
     pub include_activity: Option<bool>,
+    /// When `Some(true)`, only documents carrying a string `gestalt_context`
+    /// metadata marker (memory fragments) match. Narrowing only.
+    #[serde(default)]
+    pub fragments_only: Option<bool>,
+    /// When non-empty, a document must carry at least one of these tags in its
+    /// `tags` metadata array. Narrowing only.
+    #[serde(default)]
+    pub tags_any: Option<Vec<String>>,
     #[serde(default)]
     pub federated: Option<FederatedSearchRequest>,
 }

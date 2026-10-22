@@ -564,6 +564,29 @@ pub fn matches_filters(
         }
     }
 
+    // QmdMemory callers apply these narrowing predicates before scoring and limits.
+    if filters.fragments_only == Some(true)
+        && !metadata
+            .get("gestalt_context")
+            .is_some_and(|value| value.is_string())
+    {
+        return false;
+    }
+    if let Some(tags_any) = filters.tags_any.as_ref().filter(|tags| !tags.is_empty()) {
+        let has_tag = metadata
+            .get("tags")
+            .and_then(Value::as_array)
+            .is_some_and(|doc_tags| {
+                doc_tags
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .any(|doc_tag| tags_any.iter().any(|wanted| wanted == doc_tag))
+            });
+        if !has_tag {
+            return false;
+        }
+    }
+
     true
 }
 
