@@ -197,7 +197,6 @@ fn open_code_graph_db(
         let _ = std::fs::create_dir_all(parent);
     }
     code_graph::db::CodeGraphDB::new(&db_path)
-        .or_else(|_| code_graph::db::CodeGraphDB::create_new(&db_path))
         .map(std::sync::Arc::new)
         .map_err(|e| e.to_string())
 }
@@ -412,7 +411,9 @@ mod tests {
     use axum::response::IntoResponse;
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_execute_tool_code_scan_returns_real_result() {
+        let _env = crate::settings::tests::TempEnv::new();
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("src");
         std::fs::create_dir_all(&src).unwrap();
@@ -441,6 +442,104 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
+    async fn headless_open_error_preserves_corrupt_db() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().unwrap();
+
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+
+        let db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(dir.path());
+        let wal_path = std::path::PathBuf::from(format!("{}-wal", db_path.display()));
+
+        if let Some(p) = db_path.parent() {
+            let _ = std::fs::create_dir_all(p);
+        }
+
+        // Write corrupt DB
+        std::fs::write(&db_path, b"NOT A SQLITE DATABASE, CORRUPTED BYTES HERE").unwrap();
+        // Write a WAL file marker to ensure it's not deleted
+        std::fs::write(&wal_path, b"WAL MARKER").unwrap();
+
+        let shared_db_path =
+            crate::settings::XavierSettings::resolve_data_dir().join("code_graph.db");
+        let shared_db_snapshot = if shared_db_path.exists() {
+            Some(std::fs::read(&shared_db_path).unwrap())
+        } else {
+            None
+        };
+
+        let req = ToolExecuteRequest {
+            args: serde_json::json!({ "path": dir.path().to_string_lossy() }),
+        };
+
+        // Call code_stats
+        let response = execute_tool("code_stats".to_string(), req)
+            .await
+            .into_response();
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["code"], 500);
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("code graph db open failed"));
+
+        // Call code_scan
+        let req2 = ToolExecuteRequest {
+            args: serde_json::json!({ "path": dir.path().to_string_lossy() }),
+        };
+        let response2 = execute_tool("code_scan".to_string(), req2)
+            .await
+            .into_response();
+        assert_eq!(
+            response2.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let bytes2 = axum::body::to_bytes(response2.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let body2: serde_json::Value = serde_json::from_slice(&bytes2).unwrap();
+        assert_eq!(body2["code"], 500);
+        assert!(body2["error"]
+            .as_str()
+            .unwrap()
+            .contains("code graph db open failed"));
+
+        // Assert DB and WAL are preserved
+        assert!(db_path.exists(), "db file should still exist");
+        assert_eq!(
+            std::fs::read(&db_path).unwrap(),
+            b"NOT A SQLITE DATABASE, CORRUPTED BYTES HERE",
+            "db file bytes should be preserved"
+        );
+        assert!(wal_path.exists(), "wal file should still exist");
+        assert_eq!(
+            std::fs::read(&wal_path).unwrap(),
+            b"WAL MARKER",
+            "wal file bytes should be preserved"
+        );
+
+        if let Some(snapshot) = shared_db_snapshot {
+            assert_eq!(
+                std::fs::read(&shared_db_path).unwrap(),
+                snapshot,
+                "shared db unchanged"
+            );
+        } else {
+            assert!(!shared_db_path.exists(), "shared db absent");
+        }
+
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+    }
+
+    #[tokio::test]
     async fn test_execute_tool_other_returns_200() {
         let req = ToolExecuteRequest {
             args: serde_json::json!({ "query": "test" }),
@@ -452,7 +551,9 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
     async fn test_execute_tool_code_scan_current_thread() {
+        let _env = crate::settings::tests::TempEnv::new();
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("src");
         std::fs::create_dir_all(&src).unwrap();
@@ -476,6 +577,83 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["status"], "ok");
         assert!(body["indexed_files"].as_u64().unwrap_or(0) >= 1);
+
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn headless_valid_db_opens_and_keeps_rows() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("code_graph.db");
+
+        std::env::set_var(
+            "XAVIER_CODE_GRAPH_DB_PATH",
+            db_path.to_string_lossy().as_ref(),
+        );
+
+        // 1. Create a valid DB and add a symbol (via code_scan on a real rust file)
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("main.rs"), "fn special_target_symbol() {}").unwrap();
+
+        let req_scan = ToolExecuteRequest {
+            args: serde_json::json!({ "path": dir.path().to_string_lossy() }),
+        };
+        let response_scan = execute_tool("code_scan".to_string(), req_scan)
+            .await
+            .into_response();
+        assert_eq!(response_scan.status(), axum::http::StatusCode::OK);
+
+        // 2. Query it to prove it's valid
+        let req_find = ToolExecuteRequest {
+            args: serde_json::json!({ "query": "special_target_symbol", "path": dir.path().to_string_lossy() }),
+        };
+        let response_find = execute_tool("code_find".to_string(), req_find)
+            .await
+            .into_response();
+        assert_eq!(response_find.status(), axum::http::StatusCode::OK);
+        let bytes = axum::body::to_bytes(response_find.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["status"], "ok");
+        let count = body["count"].as_u64().unwrap();
+        assert!(count >= 1, "Should find the symbol we inserted");
+
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn headless_missing_db_creates_fresh_database() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("code_graph.db");
+        assert!(!db_path.exists());
+
+        std::env::set_var(
+            "XAVIER_CODE_GRAPH_DB_PATH",
+            db_path.to_string_lossy().as_ref(),
+        );
+
+        // Run code_scan to initialize the database
+        let req = ToolExecuteRequest {
+            args: serde_json::json!({ "path": dir.path().to_string_lossy() }),
+        };
+        let response = execute_tool("code_scan".to_string(), req)
+            .await
+            .into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["status"], "ok");
+
+        // Assert it was created
+        assert!(db_path.exists());
 
         std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
     }
