@@ -61,23 +61,47 @@ async fn test_e2e_multi_node_memory_flow_via_mesh() {
     // 2. Initialize active Iroh transports
     let store_a: std::sync::Arc<dyn xavier::memory::MemoryStore> =
         std::sync::Arc::new(xavier::memory::store::InMemoryMemoryStore::default());
+
+    // Seed one real record into A to test manifest chunk generation
+    let test_record = xavier::memory::store::MemoryRecord {
+        path: "test/sync.md".to_string(),
+        workspace_id: "default".to_string(),
+        content: "hello mesh".to_string(),
+        metadata: serde_json::json!({}),
+        created_at: chrono::Utc::now().timestamp(),
+        version: 1,
+        author: "admin".to_string(),
+        status: xavier::memory::store::MemoryStatus::Active,
+        last_modified: chrono::Utc::now().timestamp(),
+        encrypted_dek: None,
+    };
+    let test_record_hash = xavier::memory::sync::merge::chunk_hash(&test_record);
+    store_a
+        .put(test_record)
+        .await
+        .expect("seed record");
+
     let store_b: std::sync::Arc<dyn xavier::memory::MemoryStore> =
         std::sync::Arc::new(xavier::memory::store::InMemoryMemoryStore::default());
-    let transport_a = IrohTransport::new(identity_a.clone(), store_a);
-    let transport_b = IrohTransport::new(identity_b.clone(), store_b);
+    let transport_a = IrohTransport::new(identity_a.clone(), store_a).localhost_only();
+    let transport_b = IrohTransport::new(identity_b.clone(), store_b).localhost_only();
 
     // Bind endpoints
     let addr_a = transport_a
+        .direct_addr()
+        .await
+        .expect("Node A iroh direct addr");
+    let addr_a_str = transport_a
         .my_addr_string()
         .await
-        .expect("Node A iroh addr");
+        .expect("Node A iroh addr string");
 
-    // Spawn accept loop for Node A
-    let handle_a = transport_a.spawn_accept_loop().await;
+    // Spawn accept loop for Node A using real seam
+    let (transport_a, handle_a) = xavier::mesh::start_mesh_node_with_transport(transport_a).await;
 
-    // 3. Node B performs handshake with Node A over QUIC
+    // 3. Node B performs handshake with Node A over QUIC using real seam behavior
     let handshake_resp = transport_b
-        .handshake(&addr_a, "test-token", None)
+        .handshake_addr(addr_a.clone(), None)
         .await
         .expect("Handshake B -> A");
 
@@ -94,19 +118,29 @@ async fn test_e2e_multi_node_memory_flow_via_mesh() {
         last_seen_at: Some(chrono::Utc::now().timestamp()),
         sync_enabled: true,
         is_cloud: false,
-        iroh_addr: Some(addr_a.clone()),
+        iroh_addr: Some(addr_a_str),
         shared_workspace_ids: Vec::new(),
         shared_workspace_tokens: HashMap::new(),
         capabilities: Vec::new(),
     };
 
-    // 5. Node B fetches manifest from Node A via mesh transport
+    // 5. Node B fetches manifest from Node A via fetch_manifest_addr
     let manifest = transport_b
-        .fetch_manifest(&peer_a_info, "token")
+        .fetch_manifest_addr(addr_a, "token")
         .await
-        .expect("fetch_manifest B -> A");
+        .expect("fetch_manifest_addr B -> A");
 
     assert_eq!(manifest.node_id, identity_a.node_id);
+    assert_eq!(
+        manifest.chunks.len(),
+        1,
+        "expected seeded record hash chunk"
+    );
+    assert_eq!(
+        manifest.chunks[0].hash,
+        test_record_hash,
+        "expected exact record hash match"
+    );
 
     // Abort background tasks
     handle_a.abort();

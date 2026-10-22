@@ -440,9 +440,12 @@ impl IrohTransport {
 
     /// Fetch the sync manifest from a peer over Iroh. Reads the address out of
     /// `peer.iroh_addr`.
-    pub async fn fetch_manifest(&self, peer: &PeerInfo, _token: &str) -> Result<MeshManifest> {
-        let addr = Self::addr_from_peer(peer)?;
-        let conn = self.connect(&addr).await?;
+    pub async fn fetch_manifest_addr(
+        &self,
+        addr: iroh::EndpointAddr,
+        _token: &str,
+    ) -> Result<MeshManifest> {
+        let conn = self.connect_addr(addr).await?;
         let timestamp = chrono::Utc::now().timestamp().to_string();
         let nonce = uuid::Uuid::new_v4().to_string();
         let message = format!("{}:{}", timestamp, nonce);
@@ -459,6 +462,14 @@ impl IrohTransport {
             )
             .await?;
         serde_json::from_value(resp).context("parse manifest")
+    }
+
+    /// Fetch the sync manifest from a peer over Iroh. Reads the address out of
+    /// `peer.iroh_addr`.
+    pub async fn fetch_manifest(&self, peer: &PeerInfo, _token: &str) -> Result<MeshManifest> {
+        let addr_str = Self::addr_from_peer(peer)?;
+        let addr = iroh::EndpointAddr::from(addr_str.parse::<iroh::PublicKey>()?);
+        self.fetch_manifest_addr(addr, _token).await
     }
 
     /// Fetch specific chunks from a peer over Iroh.

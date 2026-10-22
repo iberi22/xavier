@@ -55,12 +55,55 @@ async fn test_iroh_accept_loop_handshake_flow() {
         std::iter::once(identity_a.node_id.clone()),
     );
     let resp = transport_b
-        .handshake_addr(addr_a, None)
+        .handshake_addr(addr_a.clone(), None)
         .await
         .expect("Handshake over Iroh failed");
 
     assert!(resp.accepted, "Expected handshake to be accepted");
     assert_eq!(resp.node_id, identity_a.node_id);
+
+    // T1: assert direct address loopback properties.
+    let addrs = addr_a.direct_addresses().collect::<Vec<_>>();
+    assert!(!addrs.is_empty(), "Expected direct addresses");
+    for addr in addrs {
+        assert!(addr.ip().is_loopback(), "Expected loopback direct address");
+    }
+    assert!(addr_a.relay_url().is_none(), "Expected no relay URL");
+
+    handle_a.abort();
+    let _ = handle_a.await;
+}
+
+#[tokio::test]
+async fn test_new_direct_policy_refuses_manifest() {
+    let identity_b = Arc::new(NodeIdentity::generate());
+    let (identity_a, _store_a, transport_a) = direct_node(&[]); // b is not allowed
+    let handle_a = transport_a.spawn_accept_loop().await;
+    let addr_a = transport_a.direct_addr().await.expect("addr A");
+
+    let transport_b = IrohTransport::new_direct(
+        identity_b,
+        test_store(),
+        std::iter::once(identity_a.node_id.clone()),
+    );
+
+    // Prove healthy direct handshake first (fails policy, but network OK)
+    let resp = transport_b
+        .handshake_addr(addr_a.clone(), None)
+        .await
+        .expect("Handshake network call should succeed but be unaccepted");
+    assert!(!resp.accepted, "Expected handshake to be unaccepted");
+
+    // T4: verify refusal yields existing parse-manifest err
+    let err = transport_b
+        .fetch_manifest_addr(addr_a, "test-token")
+        .await
+        .expect_err("fetch manifest must fail due to policy refusal");
+
+    assert!(
+        err.to_string().contains("parse manifest"),
+        "Expected parse manifest err on policy refusal"
+    );
 
     handle_a.abort();
     let _ = handle_a.await;

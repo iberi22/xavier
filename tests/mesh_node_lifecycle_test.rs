@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 use xavier::mesh::node::NodeIdentity;
-use xavier::mesh::start_mesh_node;
+use xavier::mesh::{start_mesh_node, start_mesh_node_with_transport, IrohTransport};
 
 #[tokio::test]
 async fn test_start_mesh_node_lifecycle_and_handshake() {
@@ -14,7 +14,10 @@ async fn test_start_mesh_node_lifecycle_and_handshake() {
     let identity_a = Arc::new(NodeIdentity::generate());
     let store_a: Arc<dyn xavier::memory::MemoryStore> =
         Arc::new(xavier::memory::store::InMemoryMemoryStore::default());
-    let (transport_a, handle_a) = start_mesh_node(identity_a.clone(), store_a).await;
+    let (transport_a, handle_a) = start_mesh_node_with_transport(
+        IrohTransport::new(identity_a.clone(), store_a).localhost_only(),
+    )
+    .await;
 
     // 2. Obtain Node A address
     let addr_a = transport_a
@@ -26,7 +29,9 @@ async fn test_start_mesh_node_lifecycle_and_handshake() {
     let identity_b = Arc::new(NodeIdentity::generate());
     let store_b: Arc<dyn xavier::memory::MemoryStore> =
         Arc::new(xavier::memory::store::InMemoryMemoryStore::default());
-    let (transport_b, handle_b) = start_mesh_node(identity_b, store_b).await;
+    let (transport_b, handle_b) =
+        start_mesh_node_with_transport(IrohTransport::new(identity_b, store_b).localhost_only())
+            .await;
 
     // 4. Perform P2P handshake from Node B to Node A
     let handshake_resp = transport_b
