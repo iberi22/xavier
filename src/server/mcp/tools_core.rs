@@ -148,7 +148,7 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
                     },
                     "depth": {
                         "type": "number",
-                        "description": "Project depth: 0 = only this project, 1 = include sub-projects (default: 0, max: 2)",
+                        "description": "Reserved: currently has no effect (response echoes depth_applied: 0)",
                         "default": 0
                     }
                 },
@@ -614,30 +614,44 @@ pub async fn handle_core_tool(
             let project_id = arguments
                 .get("project_id")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing project_id"))?;
-            let page = arguments
-                .get("page")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(1)
-                .clamp(1, 1000) as usize;
-            let max_records = arguments
-                .get("max_records")
-                .or_else(|| arguments.get("limit"))
-                .and_then(|v| v.as_u64())
-                .unwrap_or(10)
-                .clamp(1, 50) as usize;
-            let max_chars = arguments
-                .get("max_chars")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(8000)
-                .clamp(1, 32000) as usize;
-            let _depth = arguments
-                .get("depth")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0)
-                .clamp(0, 2) as usize;
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .ok_or_else(|| anyhow::anyhow!("'project_id' must be a non-empty string"))?;
+            // Absent -> default; present but not a non-negative integer -> error.
+            let int_arg = |key: &str, default: u64| -> anyhow::Result<u64> {
+                match arguments.get(key) {
+                    None | Some(Value::Null) => Ok(default),
+                    Some(v) => v
+                        .as_u64()
+                        .ok_or_else(|| anyhow::anyhow!("'{key}' must be a non-negative integer")),
+                }
+            };
+            let page = int_arg("page", 1)?.clamp(1, 1000) as usize;
+            let max_records_key = if arguments.get("max_records").is_some() {
+                "max_records"
+            } else {
+                "limit"
+            };
+            let max_records = int_arg(max_records_key, 10)?.clamp(1, 50) as usize;
+            let max_chars = int_arg("max_chars", 8000)?.clamp(1, 32000) as usize;
+            // Reserved: validated but has no effect.
+            int_arg("depth", 0)?;
 
-            let fetch_limit = page.saturating_mul(max_records).saturating_add(1);
+            const MAX_FETCH_RECORDS: usize = 1000;
+            let wanted = page.saturating_mul(max_records).saturating_add(1);
+            let fetch_capped = wanted > MAX_FETCH_RECORDS;
+            let fetch_limit = wanted.min(MAX_FETCH_RECORDS);
+            let finalize = |mut payload: Value| -> Value {
+                payload["depth_applied"] = json!(0);
+                if fetch_capped {
+                    payload["truncated"] = json!(true);
+                    if payload.get("truncatedReason").is_none_or(|v| v.is_null()) {
+                        payload["truncatedReason"] =
+                            json!(format!("fetch capped at {MAX_FETCH_RECORDS} records"));
+                    }
+                }
+                payload
+            };
             let all_records = workspace
                 .workspace
                 .list_memory_records_filtered(
@@ -713,7 +727,7 @@ pub async fn handle_core_tool(
             if content_parts.is_empty() {
                 if records.is_empty() {
                     return Ok(serde_json::to_value(MCPToolResult::structured(
-                        json!(MCPContextResult {
+                        finalize(json!(MCPContextResult {
                             total_chars: 0,
                             total_records: 0,
                             truncated: false,
@@ -725,7 +739,7 @@ pub async fn handle_core_tool(
                             limit: Some(max_records),
                             total_pages: Some(total_pages),
                             has_more: Some(has_more),
-                        }),
+                        })),
                         false,
                     ))?);
                 }
@@ -762,7 +776,7 @@ pub async fn handle_core_tool(
                     metadata: first.metadata.clone(),
                 });
                 return Ok(serde_json::to_value(MCPToolResult::structured(
-                    json!(MCPContextResult {
+                    finalize(json!(MCPContextResult {
                         total_chars: clipped.len(),
                         total_records: 1,
                         truncated: true,
@@ -778,7 +792,7 @@ pub async fn handle_core_tool(
                         limit: Some(max_records),
                         total_pages: Some(total_pages),
                         has_more: Some(has_more),
-                    }),
+                    })),
                     false,
                 ))?);
             }
@@ -788,7 +802,7 @@ pub async fn handle_core_tool(
             let estimated_tokens = crate::context::estimate_tokens(&content);
 
             Ok(serde_json::to_value(MCPToolResult::structured(
-                json!(MCPContextResult {
+                finalize(json!(MCPContextResult {
                     total_chars,
                     total_records,
                     truncated,
@@ -800,7 +814,7 @@ pub async fn handle_core_tool(
                     limit: Some(max_records),
                     total_pages: Some(total_pages),
                     has_more: Some(has_more),
-                }),
+                })),
                 false,
             ))?)
         }
@@ -1999,6 +2013,85 @@ pub(crate) mod tests {
             Some(1000),
             "Huge page should be clamped to the maximum supported page"
         );
+    }
+
+    async fn project_context_call(args: Value) -> anyhow::Result<Value> {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let claims = admin_claims();
+        handle_core_tool(state, workspace, Some(&claims), "get_project_context", args).await
+    }
+
+    #[tokio::test]
+    async fn project_context_rejects_bad_project_id() {
+        crate::isolate_test_process!();
+        for bad in [json!(7), json!(""), json!("   "), json!(null)] {
+            let err = project_context_call(json!({ "project_id": bad }))
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains("'project_id' must be a non-empty string"),
+                "{bad}: {err}"
+            );
+        }
+        let err = project_context_call(json!({}))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("'project_id' must be a non-empty string"));
+    }
+
+    #[tokio::test]
+    async fn project_context_rejects_non_integer_numeric_args() {
+        crate::isolate_test_process!();
+        for key in ["page", "max_records", "max_chars", "depth"] {
+            for bad in [json!("2"), json!(1.5), json!(-1)] {
+                let err = project_context_call(json!({ "project_id": "p", key: bad }))
+                    .await
+                    .unwrap_err()
+                    .to_string();
+                assert!(err.contains(&format!("'{key}'")), "{key}={bad}: {err}");
+            }
+        }
+        // Null means "not provided" for the optional numeric arguments.
+        let out = project_context_call(json!({
+            "project_id": "p", "page": null, "max_records": null, "max_chars": null, "depth": null
+        }))
+        .await
+        .expect("nulls default");
+        assert_eq!(out["structuredContent"]["limit"], 10);
+        // Absent and out-of-range positive values still succeed (clamped).
+        let out = project_context_call(json!({
+            "project_id": "p", "page": 5000, "max_records": 9999, "max_chars": 999999
+        }))
+        .await
+        .expect("clamped");
+        assert_eq!(out["structuredContent"]["limit"], 50);
+    }
+
+    #[tokio::test]
+    async fn project_context_echoes_depth_applied_zero() {
+        crate::isolate_test_process!();
+        let out = project_context_call(json!({ "project_id": "p", "depth": 2 }))
+            .await
+            .expect("ok");
+        assert_eq!(out["structuredContent"]["depth_applied"], 0);
+        assert_eq!(out["structuredContent"]["truncated"], false);
+    }
+
+    #[tokio::test]
+    async fn project_context_reports_fetch_cap() {
+        crate::isolate_test_process!();
+        let out = project_context_call(json!({
+            "project_id": "p", "page": 1000, "max_records": 50
+        }))
+        .await
+        .expect("ok");
+        assert_eq!(out["structuredContent"]["truncated"], true);
+        assert!(out["structuredContent"]["truncatedReason"]
+            .as_str()
+            .unwrap()
+            .contains("1000"));
     }
 
     fn root_claims() -> crate::security::auth::Claims {
