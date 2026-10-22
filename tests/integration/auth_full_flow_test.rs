@@ -413,5 +413,179 @@ async fn test_jwt_refresh_cycle() {
     assert_eq!(status_res.status(), StatusCode::OK);
 }
 
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
+
+// Changes the first digit so the code is guaranteed different (no random collision skip).
+fn with_first_digit_changed(code: &str) -> String {
+    let mut digits: Vec<char> = code.chars().collect();
+    let first = digits[0].to_digit(10).expect("code starts with a digit");
+    digits[0] = char::from_digit((first + 1) % 10, 10).unwrap();
+    digits.into_iter().collect()
+}
+
+/// Returns (status, content-type, raw body) so failure responses can be compared byte for byte.
+async fn post_exchange(
+    client: &Client,
+    base_url: &str,
+    client_ip: &str,
+    email: &str,
+    code: &str,
+) -> (StatusCode, Option<String>, String) {
+    let res = client
+        .post(format!("{}/auth/exchange", base_url))
+        .header("x-forwarded-for", client_ip)
+        .json(&json!({ "email": email, "code": code }))
+        .send()
+        .await
+        .unwrap();
+    let status = res.status();
+    let content_type = res
+        .headers()
+        .get("content-type")
+        .map(|v| v.to_str().unwrap().to_string());
+    (status, content_type, res.text().await.unwrap())
+}
+
+// ─── Test 7: Register → one-time code → /auth/exchange → refresh → same code rejected ───
+#[tokio::test]
+async fn e2e_login_code_exchange_refresh_and_reuse() {
+    // Own client IP key: /auth/exchange has a process-wide per-IP limiter shared by all tests.
+    const CLIENT_IP: &str = "198.51.100.7";
+    let (base_url, client, _temp_dir, auth_db) = spawn_test_server().await;
+
+    let email = "e2e_login_code_exchange@example.com";
+    let password = "SuperSecurePassword123!";
+
+    let reg_res = client
+        .post(format!("{}/auth/register", base_url))
+        .json(&json!({
+            "email": email,
+            "password": password,
+            "name": "Code Exchange User",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reg_res.status(), StatusCode::OK);
+    let reg_body: Value = reg_res.json().await.unwrap();
+    let user_id = reg_body["user"]["id"].as_str().unwrap().to_string();
+
+    let code = {
+        let db = auth_db.lock();
+        xavier::auth2::login_code::issue_login_code(&db, &user_id, now_secs()).unwrap()
+    };
+
+    // First exchange succeeds and returns a session.
+    let (status, _, body) = post_exchange(&client, &base_url, CLIENT_IP, email, &code).await;
+    assert_eq!(status, StatusCode::OK, "exchange body: {body}");
+    let exchange_body: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(exchange_body["user"]["id"], user_id);
+    assert_eq!(exchange_body["user"]["email"], email);
+    assert!(!exchange_body["access_token"].as_str().unwrap().is_empty());
+    assert!(!exchange_body["refresh_token"].as_str().unwrap().is_empty());
+    assert_eq!(exchange_body["requires_2fa"], false);
+
+    // The access token from the exchange authenticates against a protected route.
+    let access_token = exchange_body["access_token"].as_str().unwrap();
+    let status_res = client
+        .get(format!("{}/auth/status", base_url))
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(status_res.status(), StatusCode::OK);
+    let status_body: Value = status_res.json().await.unwrap();
+    assert_eq!(status_body["user_id"], user_id);
+
+    // The refresh token from the exchange rotates through the normal refresh endpoint.
+    let refresh_token = exchange_body["refresh_token"].as_str().unwrap();
+    let refresh_res = client
+        .post(format!("{}/auth/refresh", base_url))
+        .json(&json!({ "refresh_token": refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refresh_res.status(), StatusCode::OK);
+    let refresh_body: Value = refresh_res.json().await.unwrap();
+    assert!(!refresh_body["access_token"].as_str().unwrap().is_empty());
+    let rotated_refresh_token = refresh_body["refresh_token"].as_str().unwrap();
+    assert!(!rotated_refresh_token.is_empty());
+    assert_ne!(rotated_refresh_token, refresh_token);
+
+    // Replaying the rotated-out exchange token is treated as reuse and forbidden (as in test_jwt_refresh_cycle).
+    let reuse_res = client
+        .post(format!("{}/auth/refresh", base_url))
+        .json(&json!({ "refresh_token": refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reuse_res.status(), StatusCode::FORBIDDEN);
+
+    // Codes are single use: replaying the same code is rejected.
+    let (status, _, body) = post_exchange(&client, &base_url, CLIENT_IP, email, &code).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body, r#"{"error":"invalid_code"}"#);
+}
+
+// ─── Test 8: Expired, wrong-code and unknown-email exchanges fail identically ───
+#[tokio::test]
+async fn e2e_login_code_exchange_failure_uniformity() {
+    // Own client IP key so this test's requests stay inside the per-IP exchange budget.
+    const CLIENT_IP: &str = "198.51.100.8";
+    // Fixed past instant: with the 120 s TTL the code expired decades before the request.
+    const PAST_NOW: i64 = 1_000_000;
+    let (base_url, client, _temp_dir, auth_db) = spawn_test_server().await;
+
+    let password = "SuperSecurePassword123!";
+    let expired_email = "e2e_expired_code@example.com";
+    let wrong_email = "e2e_wrong_code@example.com";
+    let unknown_email = "e2e_never_registered@example.com";
+
+    // Independent fixture users, registered over HTTP, so each failure mode is isolated.
+    let mut user_ids = Vec::new();
+    for (email, name) in [(expired_email, "Expired"), (wrong_email, "Wrong Code")] {
+        let reg_res = client
+            .post(format!("{}/auth/register", base_url))
+            .json(&json!({ "email": email, "password": password, "name": name }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(reg_res.status(), StatusCode::OK);
+        let reg_body: Value = reg_res.json().await.unwrap();
+        user_ids.push(reg_body["user"]["id"].as_str().unwrap().to_string());
+    }
+
+    let (expired_code, valid_code) = {
+        let db = auth_db.lock();
+        let expired =
+            xavier::auth2::login_code::issue_login_code(&db, &user_ids[0], PAST_NOW).unwrap();
+        let valid =
+            xavier::auth2::login_code::issue_login_code(&db, &user_ids[1], now_secs()).unwrap();
+        (expired, valid)
+    };
+    let wrong_code = with_first_digit_changed(&valid_code);
+    assert_ne!(wrong_code, valid_code);
+
+    let expired = post_exchange(&client, &base_url, CLIENT_IP, expired_email, &expired_code).await;
+    let wrong = post_exchange(&client, &base_url, CLIENT_IP, wrong_email, &wrong_code).await;
+    // A real, unexpired code presented for an email that has no account.
+    let unknown = post_exchange(&client, &base_url, CLIENT_IP, unknown_email, &valid_code).await;
+
+    for (status, _, _) in [&expired, &wrong, &unknown] {
+        assert_eq!(*status, StatusCode::UNAUTHORIZED);
+    }
+    assert!(expired.1.is_some());
+    assert_eq!(expired.1, wrong.1);
+    assert_eq!(expired.1, unknown.1);
+    assert_eq!(expired.2, r#"{"error":"invalid_code"}"#);
+    assert_eq!(wrong.2, expired.2);
+    assert_eq!(unknown.2, expired.2);
+}
+
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
 xavier::isolate_test_process!();
