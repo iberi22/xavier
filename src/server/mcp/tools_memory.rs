@@ -463,6 +463,34 @@ fn require_str_arg<'a>(arguments: &'a Value, arg: &str) -> anyhow::Result<&'a st
     }
 }
 
+/// Smallest `max_chars` for memory_context; keeps the header line whole.
+const CONTEXT_MIN_MAX_CHARS: usize = 32;
+
+/// Validates the `query` / `ids` selectors of memory_context.
+fn context_selectors(arguments: &Value) -> anyhow::Result<(Option<&str>, Option<&Vec<Value>>)> {
+    let query = match arguments.get("query") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(
+            v.as_str()
+                .ok_or_else(|| anyhow::anyhow!("'query' must be a string"))?,
+        ),
+    };
+    let ids = match arguments.get("ids") {
+        None | Some(Value::Null) => None,
+        Some(v) => {
+            let arr = v
+                .as_array()
+                .filter(|a| a.iter().all(Value::is_string))
+                .ok_or_else(|| anyhow::anyhow!("'ids' must be an array of strings"))?;
+            Some(arr)
+        }
+    };
+    if query.is_none() && ids.is_none() {
+        return Err(anyhow::anyhow!("Either 'query' or 'ids' must be provided"));
+    }
+    Ok((query, ids))
+}
+
 /// Optional positive integer argument; absent or null yields `default`.
 fn positive_int_arg(arguments: &Value, arg: &str, default: usize) -> anyhow::Result<usize> {
     match arguments.get(arg) {
@@ -1650,23 +1678,16 @@ pub async fn handle_memory_delete(
             super::server::mcp_text_result(message, is_error)
         }
         "memory_context" | "mem_context" => {
-            let query = arguments.get("query").and_then(|v| v.as_str());
-            let ids = arguments.get("ids").and_then(|v| v.as_array());
-
-            if query.is_none() && ids.is_none() {
-                return Err(anyhow::anyhow!("Either 'query' or 'ids' must be provided"));
-            }
-
-            let limit = arguments
-                .get("limit")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(5)
-                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+            let (query, ids) = context_selectors(arguments)?;
+            let limit = positive_int_arg(arguments, "limit", 5)?.min(MEMORYFRAGMENT_MAX_LIMIT);
             let max_chars = arguments
                 .get("max_chars")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(CONTEXT_DEFAULT_MAX_CHARS as u64)
-                .clamp(1, CONTEXT_ABSOLUTE_MAX_CHARS as u64) as usize;
+                .clamp(
+                    CONTEXT_MIN_MAX_CHARS as u64,
+                    CONTEXT_ABSOLUTE_MAX_CHARS as u64,
+                ) as usize;
             let max_chars_per_doc = arguments
                 .get("max_chars_per_doc")
                 .and_then(|v| v.as_u64())
@@ -1725,7 +1746,7 @@ pub async fn handle_memory_delete(
                         embedding_model: None,
                         version: None,
                     },
-                    metadata: src.metadata,
+                    metadata: public_metadata(&src.metadata),
                 })
                 .collect();
 
@@ -1868,23 +1889,16 @@ pub async fn handle_memory_context(
 ) -> anyhow::Result<Value> {
     match name {
         "memory_context" | "mem_context" => {
-            let query = arguments.get("query").and_then(|v| v.as_str());
-            let ids = arguments.get("ids").and_then(|v| v.as_array());
-
-            if query.is_none() && ids.is_none() {
-                return Err(anyhow::anyhow!("Either 'query' or 'ids' must be provided"));
-            }
-
-            let limit = arguments
-                .get("limit")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(5)
-                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+            let (query, ids) = context_selectors(arguments)?;
+            let limit = positive_int_arg(arguments, "limit", 5)?.min(MEMORYFRAGMENT_MAX_LIMIT);
             let max_chars = arguments
                 .get("max_chars")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(CONTEXT_DEFAULT_MAX_CHARS as u64)
-                .clamp(1, CONTEXT_ABSOLUTE_MAX_CHARS as u64) as usize;
+                .clamp(
+                    CONTEXT_MIN_MAX_CHARS as u64,
+                    CONTEXT_ABSOLUTE_MAX_CHARS as u64,
+                ) as usize;
             let max_chars_per_doc = arguments
                 .get("max_chars_per_doc")
                 .and_then(|v| v.as_u64())
@@ -2023,7 +2037,7 @@ pub async fn handle_memory_context(
                         embedding_model: None,
                         version: None,
                     },
-                    metadata: meta,
+                    metadata: public_metadata(&meta),
                 });
             }
 
@@ -2739,6 +2753,76 @@ mod tests {
             );
         }
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn memory_context_hides_key_material_and_validates_args() {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let id = workspace
+            .workspace
+            .ingest_typed(
+                "test/ctx_redact".to_string(),
+                "zirconium ledger entry".to_string(),
+                json!({
+                    "encrypted_dek": "super-secret-dek",
+                    "content_iv": "super-secret-iv",
+                    "note": "public note"
+                }),
+                None,
+                None,
+                false,
+            )
+            .await
+            .expect("ingest");
+        for tool in ["memory_context", "mem_context"] {
+            for args in [
+                json!({ "query": "zirconium ledger" }),
+                json!({ "ids": [id.clone()] }),
+            ] {
+                let out = handle_memory_context(&state, &workspace, tool, &args)
+                    .await
+                    .unwrap();
+                let text = serde_json::to_string(&out).unwrap();
+                assert!(text.contains("public note"), "{tool}: {text}");
+                for bad in ["encrypted_dek", "content_iv", "super-secret"] {
+                    assert!(!text.contains(bad), "{tool} leaked {bad}: {text}");
+                }
+            }
+        }
+
+        let tiny = handle_memory_context(
+            &state,
+            &workspace,
+            "mem_context",
+            &json!({ "ids": [id.clone()], "max_chars": 0 }),
+        )
+        .await
+        .unwrap();
+        let content = tiny["structuredContent"]["content"].as_str().unwrap();
+        assert!(
+            content.starts_with("# Relevant Memory Context"),
+            "{content}"
+        );
+
+        let err = |args: Value| {
+            let (state, workspace) = (&state, &workspace);
+            async move {
+                handle_memory_context(state, workspace, "memory_context", &args)
+                    .await
+                    .unwrap_err()
+                    .to_string()
+            }
+        };
+        let e = err(json!({ "query": "x", "limit": 0 })).await;
+        assert!(e.contains("must be a positive integer"), "{e}");
+        let e = err(json!({ "query": 5 })).await;
+        assert!(e.contains("'query' must be a string"), "{e}");
+        let e = err(json!({ "ids": "abc" })).await;
+        assert!(e.contains("'ids' must be an array of strings"), "{e}");
+        let e = err(json!({})).await;
+        assert!(e.contains("Either 'query' or 'ids'"), "{e}");
     }
 
     #[tokio::test]
