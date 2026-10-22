@@ -1125,6 +1125,15 @@ async fn handle_search_fragments(
     let mut filtered: Vec<_> = results
         .into_iter()
         .filter(|doc| {
+            // save_fragment marks fragments with gestalt_context metadata.
+            if doc
+                .metadata
+                .get("gestalt_context")
+                .and_then(Value::as_str)
+                .is_none()
+            {
+                return false;
+            }
             if !tags.is_empty() {
                 let doc_tags: Vec<String> = doc
                     .metadata
@@ -2358,6 +2367,7 @@ mod tests {
         let (state, workspace) = crate::server::mcp::tests::test_state().await;
         let record_metadata = json!({
             "tags": ["crypto_test"],
+            "gestalt_context": "observation",
             "encrypted_dek": "super-secret-dek",
             "content_iv": "super-secret-iv",
             "nonce": "super-secret-nonce",
@@ -2412,7 +2422,7 @@ mod tests {
                 .ingest_typed(
                     format!("test/doc_{i}"),
                     "testing_tag_limit common topic text".to_string(),
-                    json!({ "tags": ["other_tag"] }),
+                    json!({ "tags": ["other_tag"], "gestalt_context": "observation" }),
                     None,
                     None,
                     false,
@@ -2426,7 +2436,7 @@ mod tests {
             .ingest_typed(
                 "test/doc_target".to_string(),
                 "testing_tag_limit common topic text target".to_string(),
-                json!({ "tags": ["desired_tag"] }),
+                json!({ "tags": ["desired_tag"], "gestalt_context": "observation" }),
                 None,
                 None,
                 false,

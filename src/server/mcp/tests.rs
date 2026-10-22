@@ -656,6 +656,108 @@ async fn fragment_tools_integration() {
 }
 
 #[tokio::test]
+async fn memoryfragment_search_only_returns_fragments() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // All records match the query; only save_fragment supplies the fragment marker.
+    for (name, arguments) in [
+        (
+            "create_memory",
+            json!({
+                "path": "docs/fragment-search",
+                "content": "fragmentsearchneedle ordinary memory",
+                "metadata": {"agent_id": "agent1", "scope": "observation", "tags": ["tag1"]}
+            }),
+        ),
+        (
+            "save_fragment",
+            json!({
+                "agent_id": "agent1", "context": "observation", "tags": ["tag1"],
+                "content": "fragmentsearchneedle first fragment"
+            }),
+        ),
+        (
+            "save_fragment",
+            json!({
+                "agent_id": "agent2", "context": "decision", "tags": ["tag2"],
+                "content": "fragmentsearchneedle second fragment"
+            }),
+        ),
+    ] {
+        let response = post_json(
+            router.clone(),
+            json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": name, "arguments": arguments}
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = get_json_body(response).await;
+        assert!(body.get("error").is_none(), "{body}");
+        assert_eq!(body["result"]["isError"], false, "{body}");
+    }
+
+    for (tool, filters, expected_count) in [
+        ("memoryfragment_search", json!({}), 2),
+        ("search_fragments", json!({}), 2),
+        ("memoryfragment_search", json!({"agent_id": "agent1"}), 1),
+        (
+            "memoryfragment_search",
+            json!({"context": "observation"}),
+            1,
+        ),
+        ("memoryfragment_search", json!({"tags": ["tag1"]}), 1),
+        (
+            "memoryfragment_search",
+            json!({"agent_id": "agent1", "context": "decision"}),
+            0,
+        ),
+        ("memoryfragment_search", json!({"tags": ["missing"]}), 0),
+    ] {
+        let mut arguments = json!({"query": "fragmentsearchneedle", "limit": 100});
+        arguments
+            .as_object_mut()
+            .unwrap()
+            .extend(filters.as_object().unwrap().clone());
+        let response = post_json(
+            router.clone(),
+            json!({
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": tool, "arguments": arguments}
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = get_json_body(response).await;
+        assert!(body.get("error").is_none(), "{body}");
+        assert_eq!(body["result"]["isError"], false, "{body}");
+        let candidates = body["result"]["structuredContent"]["candidates"]
+            .as_array()
+            .unwrap();
+        assert_eq!(candidates.len(), expected_count, "{tool} {filters}: {body}");
+        assert_eq!(body["result"]["structuredContent"]["count"], expected_count);
+        for candidate in candidates {
+            assert!(
+                candidate["metadata"]["gestalt_context"].is_string(),
+                "{candidate}"
+            );
+            assert_ne!(candidate["path"], "docs/fragment-search");
+            if expected_count == 1 {
+                assert!(
+                    candidate["content"]
+                        .as_str()
+                        .unwrap()
+                        .contains("first fragment"),
+                    "{candidate}"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn security_violation_returns_standard_code() {
     let (state, workspace) = test_state().await;
     let router = test_router(state, workspace);
