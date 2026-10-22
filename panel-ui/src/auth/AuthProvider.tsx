@@ -26,7 +26,32 @@ import type { AuthState } from "../types";
 // every read of it have been removed. `token` (used as X-Xavier-Token on panel/* routes) is
 // now always sourced from `accessToken`, the operator's raw JWT minted by /auth/login or
 // /auth/refresh — see src/types.ts's AuthState.token comment.
-const useAuthStore = create<AuthState>((set, get) => ({
+// Persistence: ONLY the refresh token is kept, in sessionStorage (`xavier.rt`), so a page
+// reload can restore the session via /auth/refresh. sessionStorage is per-tab and cleared when
+// the tab closes; the token is rotated on every refresh and removed on logout or failed refresh.
+// The access token (JWT) is never persisted — it lives in memory only.
+const RT_KEY = "xavier.rt";
+const readRt = (): string | null => {
+	try {
+		return sessionStorage.getItem(RT_KEY);
+	} catch {
+		return null;
+	}
+};
+const writeRt = (rt: string | null | undefined) => {
+	try {
+		if (rt) sessionStorage.setItem(RT_KEY, rt);
+		else sessionStorage.removeItem(RT_KEY);
+	} catch {
+		// storage unavailable: session simply won't survive reloads
+	}
+};
+
+type AuthStore = AuthState & {
+	loginWithCode: (email: string, code: string) => Promise<void>;
+};
+
+const useAuthStore = create<AuthStore>((set, get) => ({
 	user: null,
 	token: null, // X-Xavier-Token for panel/* calls — always the operator's JWT (accessToken) once authenticated
 	accessToken: null, // Operator JWT — the raw /auth/* access_token
@@ -35,9 +60,23 @@ const useAuthStore = create<AuthState>((set, get) => ({
 	requires2FA: false,
 	pendingBackupCodes: null,
 
+	loginWithCode: async (email, code) => {
+		const response = await authClient.exchange(email, code);
+		writeRt(response.refresh_token);
+		set({
+			user: response.user,
+			token: response.access_token ?? null,
+			accessToken: response.access_token ?? null,
+			refreshToken: response.refresh_token,
+			isAuthenticated: true,
+			requires2FA: false,
+		});
+	},
+
 	login: async (email, password, totpCode) => {
 		try {
 			const response = await authClient.login(email, password, totpCode);
+			writeRt(response.refresh_token);
 			set({
 				user: response.user,
 				token: response.access_token ?? null,
@@ -61,7 +100,9 @@ const useAuthStore = create<AuthState>((set, get) => ({
 
 	logout: async () => {
 		// logout_handler needs the refresh token in the body to revoke it server-side.
-		await authClient.logout(get().refreshToken);
+		const rt = get().refreshToken ?? readRt();
+		writeRt(null);
+		await authClient.logout(rt);
 		set({
 			user: null,
 			token: null,
@@ -84,7 +125,10 @@ const useAuthStore = create<AuthState>((set, get) => ({
 		try {
 			// /auth/refresh only returns { access_token, refresh_token } — no `user` — so the
 			// existing user object is preserved instead of being wiped out by `undefined`.
-			const response = await authClient.refresh(get().refreshToken);
+			const response = await authClient.refresh(
+				get().refreshToken ?? readRt(),
+			);
+			writeRt(response.refresh_token);
 			set({
 				token: response.access_token ?? null,
 				accessToken: response.access_token ?? null,
@@ -92,6 +136,7 @@ const useAuthStore = create<AuthState>((set, get) => ({
 				isAuthenticated: true,
 			});
 		} catch (_error) {
+			writeRt(null);
 			set({
 				user: null,
 				token: null,
