@@ -148,6 +148,8 @@ pub fn verify_webhook_secret(
 pub enum Command {
     #[command(description = "display this text.")]
     Help,
+    #[command(description = "get a one-time panel login code")]
+    Login,
     #[command(description = "start the bot.")]
     Start,
     #[command(description = "check system health.")]
@@ -351,6 +353,90 @@ pub async fn load_local_memory(
     Ok(memory)
 }
 
+/// Strict gate for /login: needs a non-empty allow-list containing the sender, in a private chat.
+/// A missing sender (`None`) always fails closed, even if the list contains `0`.
+fn is_login_allowed(admin_ids: &[u64], user_id: Option<u64>, is_private: bool) -> bool {
+    match user_id {
+        Some(id) => is_private && !admin_ids.is_empty() && admin_ids.contains(&id),
+        None => false,
+    }
+}
+
+/// Generic user-facing failure text (MarkdownV2); never carries internal details.
+const LOGIN_FAILED_REPLY: &str = "❌ Could not issue a login code\\.";
+
+/// RFC 3986 unreserved bytes pass through, everything else is `%XX` (UTF-8 bytes).
+/// Local copy of the `users` CLI helper; TODO follow-up: share one `pub(crate)` fn.
+fn login_percent_encode(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// Panel link that prefills the login form (same shape as the `users` CLI link).
+fn build_login_link(base_url: &str, email: &str, code: &str) -> String {
+    format!(
+        "{}/#/login?email={}&code={}",
+        base_url.trim_end_matches('/'),
+        login_percent_encode(email),
+        code
+    )
+}
+
+/// Panel base URL: `XAVIER_PANEL_URL` when set and non-blank, else the local default.
+fn resolve_panel_base(env_value: Option<String>) -> String {
+    env_value
+        .filter(|v| !v.trim().is_empty())
+        .map(|v| v.trim().to_string())
+        .unwrap_or_else(|| "http://localhost:8006".to_string())
+}
+
+/// MarkdownV2 reply carrying the code (in backticks), its TTL and the panel link.
+fn build_login_reply(base_url: &str, email: &str, code: &str) -> String {
+    let link = build_login_link(base_url, email, code);
+    format!(
+        "🔑 Login code: `{}`\nValid {} s, single use\\.\n{}",
+        escape_markdown_v2(code),
+        crate::auth2::login_code::LOGIN_CODE_TTL_SECS,
+        escape_markdown_v2(&link)
+    )
+}
+
+/// auth.db location, resolved like the `users` CLI command.
+fn login_auth_db_path() -> std::path::PathBuf {
+    let dir = std::env::var("XAVIER_STATE_DIR")
+        .or_else(|_| std::env::var("HOME"))
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string());
+    std::path::PathBuf::from(dir)
+        .join(".xavier")
+        .join("auth.db")
+}
+
+/// Issue a login code for the oldest admin account; returns (email, code).
+fn issue_admin_login_code(path: &std::path::Path, now: i64) -> anyhow::Result<(String, String)> {
+    let db = crate::auth2::db::AuthDb::new(path)?;
+    let admin = db
+        .list_users()?
+        .into_iter()
+        .filter(|u| u.role == "admin")
+        .min_by(|a, b| {
+            a.created_at
+                .cmp(&b.created_at)
+                .then_with(|| a.email.cmp(&b.email))
+        })
+        .ok_or_else(|| anyhow::anyhow!("no admin account"))?;
+    let code = crate::auth2::login_code::issue_login_code(&db, &admin.id, now)?;
+    Ok((admin.email, code))
+}
+
 fn escape_markdown_v2(text: &str) -> String {
     let escapes = [
         "_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!",
@@ -538,6 +624,35 @@ impl XavierBot {
         }
 
         match cmd {
+            Command::Login => {
+                let sender = msg.from.as_ref().map(|u| u.id.0);
+                if !is_login_allowed(&config.admin_ids, sender, msg.chat.is_private()) {
+                    bot.send_message(msg.chat.id, "⛔ Access denied.").await?;
+                    return Ok(());
+                }
+                let path = login_auth_db_path();
+                let now = Utc::now().timestamp();
+                let res =
+                    tokio::task::spawn_blocking(move || issue_admin_login_code(&path, now)).await;
+                let text = match res {
+                    Ok(Ok((email, code))) => {
+                        let base = resolve_panel_base(std::env::var("XAVIER_PANEL_URL").ok());
+                        build_login_reply(&base, &email, &code)
+                    }
+                    Ok(Err(_)) => {
+                        // No error detail: it could echo account data. Never log code/email.
+                        warn!("telegram /login: could not issue a login code (issue step failed)");
+                        LOGIN_FAILED_REPLY.to_string()
+                    }
+                    Err(_) => {
+                        warn!("telegram /login: could not issue a login code (worker task failed)");
+                        LOGIN_FAILED_REPLY.to_string()
+                    }
+                };
+                bot.send_message(msg.chat.id, text)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .await?;
+            }
             Command::Start => {
                 bot.send_message(
                     msg.chat.id,
@@ -978,6 +1093,156 @@ pub async fn start_webhook(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_is_login_allowed_matrix() {
+        assert!(!is_login_allowed(&[], Some(1), true));
+        assert!(!is_login_allowed(&[2], Some(1), true));
+        assert!(!is_login_allowed(&[1], Some(1), false));
+        assert!(is_login_allowed(&[1], Some(1), true));
+    }
+
+    #[test]
+    fn test_is_login_allowed_denies_empty_groups_and_missing_sender() {
+        // Empty allow-list denies everyone, including id 0.
+        assert!(!is_login_allowed(&[], Some(0), true));
+        // Group/channel chats deny even an allow-listed sender.
+        assert!(!is_login_allowed(&[1, 2], Some(2), false));
+        // Missing sender fails closed, even when the list holds 0.
+        assert!(!is_login_allowed(&[0], None, true));
+        assert!(!is_login_allowed(&[0, 1], None, false));
+        assert!(!is_login_allowed(&[], None, true));
+    }
+
+    fn seed_auth_db(path: &std::path::Path, rows: &[(&str, &str, &str, i64)]) {
+        let db = crate::auth2::db::AuthDb::new(path).unwrap();
+        for (id, email, role, ts) in rows {
+            db.create_user(&crate::auth2::db::User {
+                id: (*id).into(),
+                email: (*email).into(),
+                password_hash: "h".into(),
+                name: (*id).into(),
+                role: (*role).into(),
+                totp_secret: None,
+                totp_enabled: false,
+                recovery_seed_hash: None,
+                backup_codes: None,
+                created_at: *ts,
+                updated_at: *ts,
+            })
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_login_link_percent_encodes_email() {
+        assert_eq!(
+            build_login_link("http://localhost:8006", "a+b@x.io", "123456"),
+            "http://localhost:8006/#/login?email=a%2Bb%40x.io&code=123456"
+        );
+        assert_eq!(
+            build_login_link("http://h/", "a&b=c#d@x.io", "000001"),
+            "http://h/#/login?email=a%26b%3Dc%23d%40x.io&code=000001"
+        );
+        // Non-ASCII is encoded as UTF-8 bytes.
+        assert_eq!(
+            build_login_link("http://h", "ñ@x.io", "000001"),
+            "http://h/#/login?email=%C3%B1%40x.io&code=000001"
+        );
+    }
+
+    #[test]
+    fn test_resolve_panel_base_honours_env_value() {
+        assert_eq!(resolve_panel_base(None), "http://localhost:8006");
+        assert_eq!(
+            resolve_panel_base(Some("   ".to_string())),
+            "http://localhost:8006"
+        );
+        assert_eq!(
+            resolve_panel_base(Some(" https://panel.example.test/ ".to_string())),
+            "https://panel.example.test/"
+        );
+        // Trailing slash from the env value never doubles up in the link.
+        let base = resolve_panel_base(Some("https://panel.example.test/".to_string()));
+        assert_eq!(
+            build_login_link(&base, "a@x.io", "123456"),
+            "https://panel.example.test/#/login?email=a%40x.io&code=123456"
+        );
+    }
+
+    #[test]
+    fn test_build_login_reply_has_code_ttl_and_encoded_link() {
+        let reply = build_login_reply("https://panel.example.test", "a+b@x.io", "123456");
+        assert!(reply.contains("`123456`"));
+        assert!(reply.contains(&format!(
+            "Valid {} s, single use\\.",
+            crate::auth2::login_code::LOGIN_CODE_TTL_SECS
+        )));
+        let link = build_login_link("https://panel.example.test", "a+b@x.io", "123456");
+        assert!(link.contains("email=a%2Bb%40x.io"));
+        assert!(reply.ends_with(&escape_markdown_v2(&link)));
+        assert!(!reply.contains("a+b@x"));
+    }
+
+    #[test]
+    fn test_issue_admin_login_code_tie_breaks_by_email() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.db");
+        // Equal created_at; the alphabetically first email is not inserted first.
+        seed_auth_db(
+            &path,
+            &[
+                ("u1", "zed@x.io", "admin", 50),
+                ("u2", "alpha@x.io", "admin", 50),
+                ("u3", "mid@x.io", "admin", 50),
+            ],
+        );
+        let (email, _) = issue_admin_login_code(&path, 1000).unwrap();
+        assert_eq!(email, "alpha@x.io");
+    }
+
+    #[test]
+    fn test_issue_admin_login_code_errors_without_admin() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.db");
+        seed_auth_db(&path, &[("u1", "user@x.io", "user", 1)]);
+        let err = issue_admin_login_code(&path, 1000).unwrap_err();
+        assert_eq!(err.to_string(), "no admin account");
+        // The user-visible text is generic and carries no account data.
+        assert!(!LOGIN_FAILED_REPLY.contains("user@x.io"));
+        assert!(!LOGIN_FAILED_REPLY.contains("admin"));
+    }
+
+    #[test]
+    fn test_issue_admin_login_code_picks_oldest_admin() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.db");
+        let db = crate::auth2::db::AuthDb::new(&path).unwrap();
+        for (id, email, role, ts) in [
+            ("u1", "user@x.io", "user", 1),
+            ("u3", "late@x.io", "admin", 30),
+            ("u2", "first@x.io", "admin", 20),
+        ] {
+            db.create_user(&crate::auth2::db::User {
+                id: id.into(),
+                email: email.into(),
+                password_hash: "h".into(),
+                name: id.into(),
+                role: role.into(),
+                totp_secret: None,
+                totp_enabled: false,
+                recovery_seed_hash: None,
+                backup_codes: None,
+                created_at: ts,
+                updated_at: ts,
+            })
+            .unwrap();
+        }
+        drop(db);
+        let (email, code) = issue_admin_login_code(&path, 1000).unwrap();
+        assert_eq!(email, "first@x.io");
+        assert_eq!(code.len(), 6);
+    }
 
     #[test]
     fn test_memory_command_parse_stats() {

@@ -1,0 +1,41 @@
+name: Telegram Features
+
+on:
+  pull_request:
+    paths:
+      - 'src/telegram/**'
+      - 'src/auth2/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/telegram-features.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  telegram-tests:
+    name: Telegram feature tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.0
+      - uses: rui314/setup-mold@v1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: telegram-feature-tests
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Verify Telegram test discovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --package xavier --lib --features ci-safe,telegram telegram:: -- --list > /tmp/telegram-tests.txt
+          cat /tmp/telegram-tests.txt
+          count=$(grep -cE '^telegram::.*: test$' /tmp/telegram-tests.txt || true)
+          test "$count" -gt 0
+      - name: Run Telegram tests
+        run: |
+          cargo test --package xavier --lib --features ci-safe,telegram telegram:: -- --test-threads=1
