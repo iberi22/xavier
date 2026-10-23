@@ -642,6 +642,7 @@ pub async fn handle_core_tool(
             int_arg("depth", 0)?;
 
             const MAX_FETCH_RECORDS: usize = 1000;
+            const ENTRY_SEPARATOR: &str = "\n\n---\n\n";
             let wanted = page.saturating_mul(max_records).saturating_add(1);
             let fetch_capped = wanted > MAX_FETCH_RECORDS;
             let fetch_limit = wanted.min(MAX_FETCH_RECORDS);
@@ -694,9 +695,16 @@ pub async fn handle_core_tool(
                     "Id: {}\nPath: {}\nRevision: {}\nContent: {}",
                     record.id, record.path, record.revision, record.content
                 );
-                let entry_len = entry.len();
+                let entry_len = entry.chars().count();
+                // Entries after the first are joined with the separator, so the
+                // separator counts against the budget as well.
+                let separator_len = if content_parts.is_empty() {
+                    0
+                } else {
+                    ENTRY_SEPARATOR.chars().count()
+                };
 
-                if total_chars + entry_len > max_chars {
+                if total_chars + separator_len + entry_len > max_chars {
                     truncated = true;
                     truncated_reason = Some(format!(
                         "truncated at {} chars (max: {})",
@@ -705,7 +713,7 @@ pub async fn handle_core_tool(
                     break;
                 }
 
-                total_chars += entry_len;
+                total_chars += separator_len + entry_len;
                 content_parts.push(entry);
 
                 sources.push(MCPSearchResult {
@@ -736,7 +744,11 @@ pub async fn handle_core_tool(
                             total_records: 0,
                             truncated: false,
                             truncated_reason: None,
-                            content: format!("No context found for project {project_id}."),
+                            content: crate::memory::snippet::clip_chars(
+                                &format!("No context found for project {project_id}."),
+                                max_chars,
+                            )
+                            .to_string(),
                             sources: vec![],
                             estimated_tokens: 0,
                             page: Some(page),
@@ -755,12 +767,39 @@ pub async fn handle_core_tool(
                 // and conclude the store was empty). Return the first entry
                 // clipped to the budget, flagged as truncated.
                 let first = &records[0];
-                let full_entry = format!(
-                    "Id: {}\nPath: {}\nRevision: {}\nContent: {}",
-                    first.id, first.path, first.revision, first.content
+                let header = format!(
+                    "Id: {}\nPath: {}\nRevision: {}\nContent: ",
+                    first.id, first.path, first.revision
                 );
-                let clipped =
-                    crate::memory::snippet::clip_chars(&full_entry, max_chars).to_string();
+                let header_chars = header.chars().count();
+                let full_entry_chars = header_chars + first.content.chars().count();
+                // A header is never rendered partially: nothing is rendered unless
+                // the whole header and at least one body character fit.
+                if max_chars <= header_chars {
+                    return Ok(serde_json::to_value(MCPToolResult::structured(
+                        finalize(json!(MCPContextResult {
+                            total_chars: 0,
+                            total_records: 0,
+                            truncated: true,
+                            truncated_reason: Some(format!(
+                                "max_chars ({max_chars}) is below the first entry header ({header_chars} chars)"
+                            )),
+                            content: String::new(),
+                            sources: vec![],
+                            estimated_tokens: 0,
+                            page: Some(page),
+                            limit: Some(max_records),
+                            total_pages: Some(total_pages),
+                            has_more: Some(has_more),
+                        })),
+                        false,
+                    ))?);
+                }
+                // Only the body is clipped; the header stays whole.
+                let clipped = format!(
+                    "{header}{}",
+                    crate::memory::snippet::clip_chars(&first.content, max_chars - header_chars)
+                );
                 sources.push(MCPSearchResult {
                     id: first.id.clone(),
                     path: first.path.clone(),
@@ -781,13 +820,12 @@ pub async fn handle_core_tool(
                 });
                 return Ok(serde_json::to_value(MCPToolResult::structured(
                     finalize(json!(MCPContextResult {
-                        total_chars: clipped.len(),
+                        total_chars: clipped.chars().count(),
                         total_records: 1,
                         truncated: true,
                         truncated_reason: Some(format!(
                             "first entry exceeded max_chars ({} > {}), clipped to budget",
-                            full_entry.len(),
-                            max_chars
+                            full_entry_chars, max_chars
                         )),
                         content: clipped.clone(),
                         sources,
@@ -801,7 +839,7 @@ pub async fn handle_core_tool(
                 ))?);
             }
 
-            let content = content_parts.join("\n\n---\n\n");
+            let content = content_parts.join(ENTRY_SEPARATOR);
             let total_records = content_parts.len();
             let estimated_tokens = crate::context::estimate_tokens(&content);
 
@@ -2114,6 +2152,175 @@ pub(crate) mod tests {
             .as_str()
             .unwrap()
             .contains("1000"));
+    }
+
+    /// Seeds `contents` into project `project` through the `create_memory`
+    /// write path and returns the state and workspace to query them with.
+    async fn project_fixture(
+        project: &str,
+        contents: &[String],
+    ) -> (crate::AppState, crate::workspace::WorkspaceContext) {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        for (i, content) in contents.iter().enumerate() {
+            crate::server::mcp::tools_memory::handle_memory_tool(
+                state.clone(),
+                workspace.clone(),
+                "create_memory",
+                json!({
+                    "path": format!("{project}/budget/{i}"),
+                    "content": content,
+                    "namespace": { "project": project },
+                    "metadata": { "clearance": "UNCLASSIFIED" },
+                }),
+            )
+            .await
+            .expect("seed create_memory");
+        }
+        (state, workspace)
+    }
+
+    /// Runs `get_project_context` against a seeded fixture and returns its
+    /// `structuredContent`.
+    async fn project_context_on(
+        state: &crate::AppState,
+        workspace: &crate::workspace::WorkspaceContext,
+        args: Value,
+    ) -> Value {
+        let claims = admin_claims();
+        let out = handle_core_tool(
+            state.clone(),
+            workspace.clone(),
+            Some(&claims),
+            "get_project_context",
+            args,
+        )
+        .await
+        .expect("get_project_context");
+        out["structuredContent"].clone()
+    }
+
+    /// The rendered entries of a `content` string, split on the entry separator.
+    fn rendered_entries(content: &str) -> Vec<&str> {
+        if content.is_empty() {
+            Vec::new()
+        } else {
+            content.split("\n\n---\n\n").collect()
+        }
+    }
+
+    /// The ids named by the `Id:` header lines of a rendered `content` string.
+    fn rendered_ids(content: &str) -> Vec<String> {
+        content
+            .lines()
+            .filter_map(|line| line.strip_prefix("Id: ").map(str::to_string))
+            .collect()
+    }
+
+    /// Character length of an entry's header: everything up to and including
+    /// the `Content: ` label.
+    fn header_chars(entry: &str) -> usize {
+        let (header, _) = entry
+            .split_once("Content: ")
+            .expect("entry carries a Content: header line");
+        header.chars().count() + "Content: ".chars().count()
+    }
+
+    #[tokio::test]
+    async fn project_context_content_never_exceeds_max_chars() {
+        crate::isolate_test_process!();
+        let (state, workspace) = project_fixture(
+            "budget-p",
+            &["alpha".repeat(12), "bravo".repeat(18), "charlie".repeat(6)],
+        )
+        .await;
+        let full = project_context_on(
+            &state,
+            &workspace,
+            json!({ "project_id": "budget-p", "max_chars": 8000 }),
+        )
+        .await;
+        let entries = rendered_entries(full["content"].as_str().unwrap());
+        assert_eq!(
+            entries.len(),
+            3,
+            "all records fit a generous budget: {full}"
+        );
+        let e1 = entries[0].chars().count();
+        let e2 = entries[1].chars().count();
+        let h = header_chars(entries[0]);
+
+        for max in [1, 10, h, h + 1, e1, e1 + 5, e1 + e2 + 3, 8000] {
+            let out = project_context_on(
+                &state,
+                &workspace,
+                json!({ "project_id": "budget-p", "max_chars": max }),
+            )
+            .await;
+            let content = out["content"].as_str().unwrap();
+            assert!(
+                content.chars().count() <= max,
+                "max_chars={max}: content is {} chars: {out}",
+                content.chars().count()
+            );
+            let sources: Vec<String> = out["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["id"].as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(
+                sources,
+                rendered_ids(content),
+                "max_chars={max}: sources must name exactly the rendered entries: {out}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn project_context_tiny_budget_has_no_partial_header() {
+        crate::isolate_test_process!();
+        let (state, workspace) = project_fixture("budget-tiny", &["alpha".repeat(12)]).await;
+        let full = project_context_on(
+            &state,
+            &workspace,
+            json!({ "project_id": "budget-tiny", "max_chars": 8000 }),
+        )
+        .await;
+        let h = header_chars(rendered_entries(full["content"].as_str().unwrap())[0]);
+
+        for max in 1..h {
+            let out = project_context_on(
+                &state,
+                &workspace,
+                json!({ "project_id": "budget-tiny", "max_chars": max }),
+            )
+            .await;
+            let content = out["content"].as_str().unwrap();
+            assert!(
+                !content.contains("Id: "),
+                "max_chars={max} (header is {h} chars): partial header rendered: {content:?}"
+            );
+            assert_eq!(out["truncated"], true, "max_chars={max}: {out}");
+            assert!(
+                out["sources"].as_array().unwrap().is_empty(),
+                "max_chars={max}: no source may name an unrendered entry: {out}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn project_context_empty_message_is_bounded() {
+        crate::isolate_test_process!();
+        let out = project_context_call(json!({
+            "project_id": "budget-missing", "max_chars": 5
+        }))
+        .await
+        .expect("ok");
+        let content = out["structuredContent"]["content"].as_str().unwrap();
+        assert!(
+            content.chars().count() <= 5,
+            "the empty-result message must fit max_chars: {content:?}"
+        );
     }
 
     fn root_claims() -> crate::security::auth::Claims {
