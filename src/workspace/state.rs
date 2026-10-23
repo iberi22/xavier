@@ -1031,14 +1031,19 @@ impl WorkspaceState {
     /// Delete memory record.
     pub async fn delete_memory_record(&self, id: &str) -> Result<Option<MemoryRecord>> {
         let res = self.store.delete(&self.config.id, id).await?;
-        // Evict from in-memory index so subsequent get and search requests do not serve stale data.
-        self.memory.index_remove(id).await?;
+        // If the in-memory index is already loaded, evict by record.id only (never
+        // by path, which may be shared by other live records). Best-effort: eviction
+        // errors do not fail an already-successful store deletion. If not loaded,
+        // nothing to evict (the next lazy load reads the store without this record).
         if let Some(record) = &res {
-            if record.id != id {
-                self.memory.index_remove(&record.id).await?;
-            }
-            if record.path != id {
-                self.memory.index_remove(&record.path).await?;
+            if self
+                .memory
+                .loaded
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                if let Err(error) = self.memory.index_remove(&record.id).await {
+                    tracing::warn!(%error, id = %record.id, "failed to evict deleted memory record from in-memory index");
+                }
             }
         }
         Ok(res)

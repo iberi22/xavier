@@ -782,18 +782,17 @@ async fn memoryfragment_delete_evicts_get_and_search() {
     )
     .await;
     let body = get_json_body(response).await;
-    if let Some(candidates) = body["result"]
+    let candidates = body["result"]
         .get("structuredContent")
         .and_then(|v| v.get("candidates"))
         .and_then(|v| v.as_array())
-    {
-        assert!(
-            candidates
-                .iter()
-                .all(|c| c.get("id").and_then(|v| v.as_str()) != Some(&id)),
-            "deleted id {id} still returned in structured candidates: {body}"
-        );
-    }
+        .expect("candidates array in search result");
+    assert!(
+        candidates
+            .iter()
+            .all(|c| c.get("id").and_then(|v| v.as_str()) != Some(&id)),
+        "deleted id {id} still returned in structured candidates: {body}"
+    );
     if let Some(text) = body["result"]["content"][0]
         .get("text")
         .and_then(|v| v.as_str())
