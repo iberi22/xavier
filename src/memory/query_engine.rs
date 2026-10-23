@@ -342,155 +342,172 @@ impl MemoryQueryEngine {
             results
         };
 
-        // Prepare every block (header + body) so the budget can be applied on whole blocks.
-        struct Block<'a> {
-            record: &'a MemoryDocument,
-            header: String,
-            body: String,
-            doc_truncated: bool,
-            total_record_chars: usize,
-        }
-        let blocks: Vec<Block<'_>> = expanded
-            .iter()
-            .map(|record| {
-                let total_record_chars = record.content.chars().count();
-                let doc_truncated = total_record_chars > params.max_chars_per_doc;
-                let body = if doc_truncated {
-                    let mut clipped: String =
-                        snippet::clip_chars(&record.content, params.max_chars_per_doc).to_string();
-                    clipped.push_str(DOC_TRUNCATED_MARKER);
-                    clipped
-                } else {
-                    record.content.clone()
-                };
-                Block {
-                    record,
-                    header: format!(
-                        "### {} (id: {})\n",
-                        record.path,
-                        record.id.as_deref().unwrap_or("none")
-                    ),
-                    body,
-                    doc_truncated,
-                    total_record_chars,
-                }
-            })
-            .collect();
+        Ok(render_budgeted(
+            &expanded,
+            params.max_chars,
+            params.max_chars_per_doc,
+        ))
+    }
+}
 
-        let title_chars = CONTEXT_TITLE.chars().count();
-        let full_chars = title_chars
-            + blocks
-                .iter()
-                .map(|b| b.header.chars().count() + b.body.chars().count() + BLOCK_SEPARATOR_CHARS)
-                .sum::<usize>();
-        let marker_chars = CONTEXT_TRUNCATED_MARKER.chars().count();
-        let over_budget = full_chars > params.max_chars;
-
-        let mut context_str = String::new();
-        // (block index, clipped by the budget)
-        let mut rendered: Vec<(usize, bool)> = Vec::new();
-        if !over_budget {
-            context_str.push_str(CONTEXT_TITLE);
-            for (i, b) in blocks.iter().enumerate() {
-                context_str.push_str(&b.header);
-                context_str.push_str(&b.body);
-                context_str.push_str("\n\n");
-                rendered.push((i, false));
+/// Renders `expanded` into a context string of at most `max_chars` characters.
+///
+/// Pure and synchronous: the budget covers the title, every header, body, separator
+/// and truncation marker. A header is never emitted without at least one body char,
+/// and only rendered blocks are reported as sources.
+pub(crate) fn render_budgeted(
+    expanded: &[MemoryDocument],
+    max_chars: usize,
+    max_chars_per_doc: usize,
+) -> MemoryContext {
+    // Prepare every block (header + body) so the budget can be applied on whole blocks.
+    struct Block<'a> {
+        record: &'a MemoryDocument,
+        header: String,
+        body: String,
+        doc_truncated: bool,
+        total_record_chars: usize,
+    }
+    let blocks: Vec<Block<'_>> = expanded
+        .iter()
+        .map(|record| {
+            let total_record_chars = record.content.chars().count();
+            let doc_truncated = total_record_chars > max_chars_per_doc;
+            let body = if doc_truncated {
+                let mut clipped: String =
+                    snippet::clip_chars(&record.content, max_chars_per_doc).to_string();
+                clipped.push_str(DOC_TRUNCATED_MARKER);
+                clipped
+            } else {
+                record.content.clone()
+            };
+            Block {
+                record,
+                header: format!(
+                    "### {} (id: {})\n",
+                    record.path,
+                    record.id.as_deref().unwrap_or("none")
+                ),
+                body,
+                doc_truncated,
+                total_record_chars,
             }
-        } else if params.max_chars >= marker_chars {
-            let available = params.max_chars - marker_chars;
-            if title_chars <= available {
-                context_str.push_str(CONTEXT_TITLE);
-                let mut remaining = available - title_chars;
-                for (i, b) in blocks.iter().enumerate() {
-                    let header_chars = b.header.chars().count();
-                    let body_chars = b.body.chars().count();
-                    let min_body = body_chars.min(1);
-                    // Never emit a header without at least one body char (when it has one).
-                    if header_chars + min_body + BLOCK_SEPARATOR_CHARS > remaining {
-                        break;
-                    }
-                    let room = remaining - header_chars - BLOCK_SEPARATOR_CHARS;
-                    let clipped = body_chars > room;
-                    context_str.push_str(&b.header);
-                    context_str.push_str(snippet::clip_chars(&b.body, room));
-                    context_str.push_str("\n\n");
-                    remaining -= header_chars + body_chars.min(room) + BLOCK_SEPARATOR_CHARS;
-                    rendered.push((i, clipped));
-                    if clipped {
-                        break;
-                    }
-                }
-            }
-            context_str.push_str(CONTEXT_TRUNCATED_MARKER);
-        }
-        // else: budget cannot even hold the marker, so the text is empty and lists no sources.
-
-        let mut sources = Vec::with_capacity(rendered.len());
-        let mut any_doc_truncated = false;
-        for (i, clipped_by_budget) in rendered {
-            let b = &blocks[i];
-            let record = b.record;
-            let is_truncated = b.doc_truncated || clipped_by_budget;
-            any_doc_truncated |= is_truncated;
-
-            let mut meta = record.metadata.clone();
-            if let Some(obj) = meta.as_object_mut() {
-                obj.insert("truncated".to_string(), serde_json::json!(is_truncated));
-                obj.insert(
-                    "total_chars".to_string(),
-                    serde_json::json!(b.total_record_chars),
-                );
-            }
-
-            let kind = record
-                .metadata
-                .get("kind")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string();
-
-            sources.push(SearchResultItem {
-                id: record.id.clone().unwrap_or_default(),
-                path: record.path.clone(),
-                content: record.content.clone(),
-                score: record.score,
-                source: "search_filtered".to_string(),
-                snippet: snippet::clip_chars(&record.content, 200).to_string(),
-                kind,
-                metadata: meta,
-                vector_score: None,
-                lexical_score: None,
-                embedding: None,
-            });
-        }
-
-        let omitted_sources = expanded.len() - sources.len();
-        let truncated = over_budget || any_doc_truncated;
-        let truncated_reason = if over_budget {
-            Some(format!(
-                "Context truncated from {} to {} characters; {} source(s) omitted",
-                full_chars, params.max_chars, omitted_sources
-            ))
-        } else if any_doc_truncated {
-            Some("One or more documents were truncated".to_string())
-        } else {
-            None
-        };
-
-        let final_total_chars = context_str.chars().count();
-        let estimated_tokens = crate::domain::cycle_breaks::w30_08::estimate_tokens(&context_str);
-
-        Ok(MemoryContext {
-            total_chars: final_total_chars,
-            total_records: expanded.len(),
-            truncated,
-            truncated_reason,
-            omitted_sources,
-            content: context_str,
-            sources,
-            estimated_tokens,
         })
+        .collect();
+
+    let title_chars = CONTEXT_TITLE.chars().count();
+    let full_chars = title_chars
+        + blocks
+            .iter()
+            .map(|b| b.header.chars().count() + b.body.chars().count() + BLOCK_SEPARATOR_CHARS)
+            .sum::<usize>();
+    let marker_chars = CONTEXT_TRUNCATED_MARKER.chars().count();
+    let over_budget = full_chars > max_chars;
+
+    let mut context_str = String::new();
+    // (block index, clipped by the budget)
+    let mut rendered: Vec<(usize, bool)> = Vec::new();
+    if !over_budget {
+        context_str.push_str(CONTEXT_TITLE);
+        for (i, b) in blocks.iter().enumerate() {
+            context_str.push_str(&b.header);
+            context_str.push_str(&b.body);
+            context_str.push_str("\n\n");
+            rendered.push((i, false));
+        }
+    } else if max_chars >= marker_chars {
+        let available = max_chars - marker_chars;
+        if title_chars <= available {
+            context_str.push_str(CONTEXT_TITLE);
+            let mut remaining = available - title_chars;
+            for (i, b) in blocks.iter().enumerate() {
+                let header_chars = b.header.chars().count();
+                let body_chars = b.body.chars().count();
+                let min_body = body_chars.min(1);
+                // Never emit a header without at least one body char (when it has one).
+                if header_chars + min_body + BLOCK_SEPARATOR_CHARS > remaining {
+                    break;
+                }
+                let room = remaining - header_chars - BLOCK_SEPARATOR_CHARS;
+                let clipped = body_chars > room;
+                context_str.push_str(&b.header);
+                context_str.push_str(snippet::clip_chars(&b.body, room));
+                context_str.push_str("\n\n");
+                remaining -= header_chars + body_chars.min(room) + BLOCK_SEPARATOR_CHARS;
+                rendered.push((i, clipped));
+                if clipped {
+                    break;
+                }
+            }
+        }
+        context_str.push_str(CONTEXT_TRUNCATED_MARKER);
+    }
+    // else: budget cannot even hold the marker, so the text is empty and lists no sources.
+
+    let mut sources = Vec::with_capacity(rendered.len());
+    let mut any_doc_truncated = false;
+    for (i, clipped_by_budget) in rendered {
+        let b = &blocks[i];
+        let record = b.record;
+        let is_truncated = b.doc_truncated || clipped_by_budget;
+        any_doc_truncated |= is_truncated;
+
+        let mut meta = record.metadata.clone();
+        if let Some(obj) = meta.as_object_mut() {
+            obj.insert("truncated".to_string(), serde_json::json!(is_truncated));
+            obj.insert(
+                "total_chars".to_string(),
+                serde_json::json!(b.total_record_chars),
+            );
+        }
+
+        let kind = record
+            .metadata
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        sources.push(SearchResultItem {
+            id: record.id.clone().unwrap_or_default(),
+            path: record.path.clone(),
+            content: record.content.clone(),
+            score: record.score,
+            source: "search_filtered".to_string(),
+            snippet: snippet::clip_chars(&record.content, 200).to_string(),
+            kind,
+            metadata: meta,
+            vector_score: None,
+            lexical_score: None,
+            embedding: None,
+        });
+    }
+
+    let omitted_sources = expanded.len() - sources.len();
+    let truncated = over_budget || any_doc_truncated;
+    let truncated_reason = if over_budget {
+        Some(format!(
+            "Context truncated from {} to {} characters; {} source(s) omitted",
+            full_chars, max_chars, omitted_sources
+        ))
+    } else if any_doc_truncated {
+        Some("One or more documents were truncated".to_string())
+    } else {
+        None
+    };
+
+    let final_total_chars = context_str.chars().count();
+    let estimated_tokens = crate::domain::cycle_breaks::w30_08::estimate_tokens(&context_str);
+
+    MemoryContext {
+        total_chars: final_total_chars,
+        total_records: expanded.len(),
+        truncated,
+        truncated_reason,
+        omitted_sources,
+        content: context_str,
+        sources,
+        estimated_tokens,
     }
 }
 

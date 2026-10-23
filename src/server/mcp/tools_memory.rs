@@ -1701,101 +1701,6 @@ pub async fn handle_memory_delete(
             };
             super::server::mcp_text_result(message, is_error)
         }
-        "memory_context" | "mem_context" => {
-            let (query, ids) = context_selectors(arguments)?;
-            let limit = positive_int_arg(arguments, "limit", 5)?.min(MEMORYFRAGMENT_MAX_LIMIT);
-            let max_chars = arguments
-                .get("max_chars")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(CONTEXT_DEFAULT_MAX_CHARS as u64)
-                .clamp(
-                    CONTEXT_MIN_MAX_CHARS as u64,
-                    CONTEXT_ABSOLUTE_MAX_CHARS as u64,
-                ) as usize;
-            let max_chars_per_doc = arguments
-                .get("max_chars_per_doc")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-                .unwrap_or_else(|| std::cmp::min(800, max_chars));
-            let depth = arguments
-                .get("depth")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0)
-                .clamp(0, 2) as usize;
-
-            let explicit_docs = if let Some(ids_arr) = ids {
-                let mut docs = Vec::new();
-                for id_val in ids_arr {
-                    if let Some(id) = id_val.as_str() {
-                        if let Ok(Some(record)) = workspace.workspace.get_memory_record(id).await {
-                            docs.push(record.to_document());
-                        } else if let Ok(Some(doc)) = workspace.workspace.memory.get(id).await {
-                            docs.push(doc);
-                        }
-                    }
-                }
-                Some(docs)
-            } else {
-                None
-            };
-
-            let engine = crate::memory::query_engine::MemoryQueryEngine::new();
-            let context_params = crate::memory::query_engine::ContextParams {
-                query: query.map(|s| s.to_string()),
-                ids: None,
-                explicit_docs,
-                limit,
-                max_chars,
-                max_chars_per_doc,
-                depth,
-                filters: None,
-            };
-
-            let mem_ctx = engine
-                .context(&workspace.workspace.memory, context_params)
-                .await?;
-
-            let mcp_sources: Vec<MCPSearchResult> = mem_ctx
-                .sources
-                .into_iter()
-                .map(|src| MCPSearchResult {
-                    id: src.id,
-                    path: src.path,
-                    score: src.score as f64,
-                    snippet: src.snippet,
-                    provenance: MCPProvenance {
-                        source: "search_filtered".to_string(),
-                        retrieved_at: chrono::Utc::now().to_rfc3339(),
-                        retrieval_method: "context_depth_search".to_string(),
-                        embedding_model: None,
-                        version: None,
-                    },
-                    metadata: public_metadata(&src.metadata),
-                })
-                .collect();
-
-            crate::observability::token_accounting::SEARCH_STATS
-                .record_search("ids", mem_ctx.total_chars);
-
-            let payload = MCPContextResult {
-                total_chars: mem_ctx.total_chars,
-                total_records: mem_ctx.total_records,
-                truncated: mem_ctx.truncated,
-                truncated_reason: mem_ctx.truncated_reason,
-                content: mem_ctx.content,
-                sources: mcp_sources,
-                estimated_tokens: mem_ctx.estimated_tokens,
-                page: None,
-                limit: Some(limit),
-                total_pages: None,
-                has_more: None,
-            };
-
-            Ok(serde_json::to_value(MCPToolResult::structured(
-                serde_json::to_value(payload)?,
-                false,
-            ))?)
-        }
         "memory_prune" => {
             let kind = arguments
                 .get("kind")
@@ -2015,45 +1920,19 @@ pub async fn handle_memory_context(
                 results.to_vec()
             };
 
-            let mut sources: Vec<MCPSearchResult> = Vec::new();
-            let mut context = String::from("# Relevant Memory Context\n\n");
-            let mut any_doc_truncated = false;
-
-            for record in &expanded {
-                let total_record_chars = record.content.chars().count();
-                let is_this_doc_truncated = total_record_chars > max_chars_per_doc;
-                if is_this_doc_truncated {
-                    any_doc_truncated = true;
-                }
-
-                let doc_content = if is_this_doc_truncated {
-                    let mut truncated: String =
-                        crate::memory::snippet::clip_chars(&record.content, max_chars_per_doc)
-                            .to_string();
-                    truncated.push_str("\n[... doc truncated ...]");
-                    truncated
-                } else {
-                    record.content.clone()
-                };
-
-                context.push_str(&format!(
-                    "### {} (id: {})\n{}\n\n",
-                    record.path,
-                    record.id.as_deref().unwrap_or("none"),
-                    doc_content
-                ));
-
-                let mut meta = record.metadata.clone();
-                if let Some(obj) = meta.as_object_mut() {
-                    obj.insert("truncated".to_string(), json!(is_this_doc_truncated));
-                    obj.insert("total_chars".to_string(), json!(total_record_chars));
-                }
-
-                sources.push(MCPSearchResult {
-                    id: record.id.clone().unwrap_or_default(),
-                    path: record.path.clone(),
+            let mem_ctx = crate::memory::query_engine::render_budgeted(
+                &expanded,
+                max_chars,
+                max_chars_per_doc,
+            );
+            let sources: Vec<MCPSearchResult> = mem_ctx
+                .sources
+                .into_iter()
+                .map(|item| MCPSearchResult {
+                    id: item.id,
+                    path: item.path,
                     score: 0.0,
-                    snippet: crate::memory::snippet::clip_chars(&record.content, 200).to_string(),
+                    snippet: item.snippet,
                     provenance: MCPProvenance {
                         source: "search_filtered".to_string(),
                         retrieved_at: chrono::Utc::now().to_rfc3339(),
@@ -2061,39 +1940,17 @@ pub async fn handle_memory_context(
                         embedding_model: None,
                         version: None,
                     },
-                    metadata: public_metadata(&meta),
-                });
-            }
-
-            // Phase 4: enforce absolute max_chars truncation
-            let mut truncated = any_doc_truncated;
-            let mut truncated_reason = None;
-            let total_chars = context.chars().count();
-            if total_chars > max_chars {
-                truncated = true;
-                truncated_reason = Some(format!(
-                    "Context truncated from {} to {} characters",
-                    total_chars, max_chars
-                ));
-                // Truncate at character boundary
-                let mut truncated_text: String =
-                    crate::memory::snippet::clip_chars(&context, max_chars).to_string();
-                truncated_text.push_str("\n[... truncated ...]");
-                context = truncated_text;
-            } else if any_doc_truncated {
-                truncated_reason = Some("One or more documents were truncated".to_string());
-            }
-
-            let final_total_chars = context.chars().count();
-            let estimated_tokens = crate::context::estimate_tokens(&context);
+                    metadata: public_metadata(&item.metadata),
+                })
+                .collect();
             let payload = MCPContextResult {
-                total_chars: final_total_chars,
-                total_records: expanded.len(),
-                truncated,
-                truncated_reason,
-                content: context,
+                total_chars: mem_ctx.total_chars,
+                total_records: mem_ctx.total_records,
+                truncated: mem_ctx.truncated,
+                truncated_reason: mem_ctx.truncated_reason,
+                content: mem_ctx.content,
                 sources,
-                estimated_tokens,
+                estimated_tokens: mem_ctx.estimated_tokens,
                 page: None,
                 limit: Some(limit),
                 total_pages: None,
@@ -2865,10 +2722,18 @@ mod tests {
         )
         .await
         .unwrap();
+        // At the 32-char floor the title plus a whole header cannot fit, so the
+        // budget renderer returns the marker alone and no sources (see #3479).
         let content = tiny["structuredContent"]["content"].as_str().unwrap();
-        assert!(
-            content.starts_with("# Relevant Memory Context"),
-            "{content}"
+        assert!(content.chars().count() <= 32, "{content}");
+        assert!(!content.contains("### "), "{content}");
+        assert_eq!(
+            tiny["structuredContent"]["sources"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0,
+            "{tiny}"
         );
 
         let err = |args: Value| {
