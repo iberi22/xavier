@@ -1030,7 +1030,18 @@ impl WorkspaceState {
     }
     /// Delete memory record.
     pub async fn delete_memory_record(&self, id: &str) -> Result<Option<MemoryRecord>> {
-        self.store.delete(&self.config.id, id).await
+        let res = self.store.delete(&self.config.id, id).await?;
+        // evict when the index is eager or already lazily loaded; a not-yet-loaded
+        // lazy index will read the store, which no longer has the record.
+        // Best-effort: eviction errors do not fail an already-successful store deletion.
+        if let Some(record) = &res {
+            if !self.memory.is_lazy() || self.memory.is_loaded() {
+                if let Err(error) = self.memory.index_remove(&record.id).await {
+                    tracing::warn!(%error, id = %record.id, "failed to evict deleted memory record from in-memory index");
+                }
+            }
+        }
+        Ok(res)
     }
 
     /// Update primary memory.
