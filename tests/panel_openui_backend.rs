@@ -33,7 +33,11 @@ async fn create_panel_test_state(temp: &tempfile::TempDir) -> CliState {
 async fn production_chat_persists_ui_render_agent_output() {
     let temp = tempfile::tempdir().unwrap();
     let mut server = mockito::Server::new_async().await;
-    let _env = RestoreEnv::set_str(&[("XAVIER_LOCAL_LLM_URL", &format!("{}/v1", server.url()))]);
+    let _env = RestoreEnv::set_str(&[
+        ("XAVIER_LOCAL_LLM_URL", &format!("{}/v1", server.url())),
+        // Xavier ships no default model; the panel sends "auto".
+        ("XAVIER_LOCAL_LLM_MODEL", "test-model"),
+    ]);
     let models = server
         .mock("GET", "/v1/models")
         .with_status(200)

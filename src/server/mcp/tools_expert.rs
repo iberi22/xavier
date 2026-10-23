@@ -244,6 +244,8 @@ mod tests {
         general.base_url = Some(format!("{}/v1", server.url()));
         general.model = "test-model".to_string();
         let cfg = ExpertRouterConfig {
+            // Mini-experts and routing hit the mock too, never a real Ollama.
+            ollama_base_url: server.url(),
             general,
             ..Default::default()
         };
@@ -299,6 +301,8 @@ mod tests {
         general.base_url = Some(format!("{}/v1", server.url()));
         general.model = "test-model".to_string();
         let cfg = ExpertRouterConfig {
+            // Mini-experts and routing hit the mock too, never a real Ollama.
+            ollama_base_url: server.url(),
             general,
             ..Default::default()
         };
