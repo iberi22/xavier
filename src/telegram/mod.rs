@@ -1500,4 +1500,393 @@ mod tests {
         let config_default: TelegramConfig = serde_json::from_str(json_str_default).unwrap();
         assert_eq!(config_default.transport_mode, TelegramTransport::Polling);
     }
+    // ── Full Login Handler Mocks and Tests ──────────────────────────────────────────
+
+    struct CaptureServer {
+        pub url: String,
+        pub requests: std::sync::Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+        handle: Option<tokio::task::JoinHandle<()>>,
+    }
+
+    impl Drop for CaptureServer {
+        fn drop(&mut self) {
+            if let Some(h) = self.handle.take() {
+                h.abort();
+            }
+        }
+    }
+
+    async fn start_capture_server() -> CaptureServer {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let requests = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        let reqs_clone = requests.clone();
+
+        let app = axum::Router::new().route(
+            "/bot123456:TEST/SendMessage",
+            axum::routing::post(
+                |axum::extract::Json(body): axum::extract::Json<serde_json::Value>| async move {
+                    reqs_clone.lock().await.push(body);
+                    axum::Json(serde_json::json!({
+                        "ok": true,
+                        "result": {
+                            "message_id": 1,
+                            "date": 0,
+                            "chat": {"id": 7, "type": "private"},
+                            "text": "mock"
+                        }
+                    }))
+                },
+            ),
+        );
+
+        let handle = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        CaptureServer {
+            url,
+            requests,
+            handle: Some(handle),
+        }
+    }
+
+    fn make_test_bot(url: &str) -> Bot {
+        let mut bot = Bot::new("123456:TEST");
+        bot = bot.set_api_url(url.parse().unwrap());
+        bot
+    }
+
+    fn build_test_message(json_str: &str) -> Message {
+        serde_json::from_str(json_str).unwrap()
+    }
+
+    struct EnvRestore {
+        key: &'static str,
+        val: Option<String>,
+    }
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            if let Some(v) = &self.val {
+                std::env::set_var(self.key, v);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    fn count_db_login_codes(path: &std::path::Path) -> usize {
+        let db = rusqlite::Connection::open(path).expect("failed to open test db");
+        let count: i64 = db
+            .query_row("SELECT count(*) FROM login_codes", [], |row| row.get(0))
+            .expect("failed to count login codes");
+        count as usize
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[serial_test::serial]
+    async fn login_handler_denies_empty_allowlist() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        let sandbox = tempfile::tempdir().unwrap();
+
+        let _env_panel = EnvRestore {
+            key: "XAVIER_PANEL_URL",
+            val: std::env::var("XAVIER_PANEL_URL").ok(),
+        };
+        let _env_state = EnvRestore {
+            key: "XAVIER_STATE_DIR",
+            val: std::env::var("XAVIER_STATE_DIR").ok(),
+        };
+        std::env::set_var("XAVIER_PANEL_URL", "http://my-panel.test");
+        std::env::set_var("XAVIER_STATE_DIR", sandbox.path().join("state"));
+
+        let db_path = login_auth_db_path();
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        seed_auth_db(&db_path, &[("7", "admin@x.io", "admin", 1000)]);
+
+        let capture = start_capture_server().await;
+        let bot = make_test_bot(&capture.url);
+
+        let config = std::sync::Arc::new(TelegramConfig {
+            admin_ids: vec![],
+            ..Default::default()
+        });
+
+        let msg = build_test_message(
+            r#"{"message_id":1,"date":0,"chat":{"id":7,"type":"private"},"from":{"id":7,"is_bot":false,"first_name":"T"}}"#,
+        );
+
+        XavierBot::handle_command(
+            bot,
+            msg,
+            Command::Login,
+            config,
+            std::sync::Arc::new(crate::ports::inbound::memory_port::MockMemoryQueryPort),
+            crate::coordination::SimpleAgentRegistry::new(None),
+            std::sync::Arc::new(crate::app::security_service::SecurityService::new()),
+            std::sync::Arc::new(RateLimiter::new(10, 60)),
+        )
+        .await
+        .unwrap();
+
+        let reqs = capture.requests.lock().await;
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0]["text"].as_str().unwrap(), "⛔ Access denied.");
+        assert_eq!(
+            count_db_login_codes(&db_path),
+            0,
+            "NO active login code should be created"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[serial_test::serial]
+    async fn login_handler_denies_group_even_if_allowlisted() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        let sandbox = tempfile::tempdir().unwrap();
+
+        let _env_panel = EnvRestore {
+            key: "XAVIER_PANEL_URL",
+            val: std::env::var("XAVIER_PANEL_URL").ok(),
+        };
+        let _env_state = EnvRestore {
+            key: "XAVIER_STATE_DIR",
+            val: std::env::var("XAVIER_STATE_DIR").ok(),
+        };
+        std::env::set_var("XAVIER_PANEL_URL", "http://my-panel.test");
+        std::env::set_var("XAVIER_STATE_DIR", sandbox.path().join("state"));
+
+        let db_path = login_auth_db_path();
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        seed_auth_db(&db_path, &[("7", "admin@x.io", "admin", 1000)]);
+
+        let capture = start_capture_server().await;
+        let bot = make_test_bot(&capture.url);
+
+        let config = std::sync::Arc::new(TelegramConfig {
+            admin_ids: vec![7],
+            ..Default::default()
+        });
+
+        let msg = build_test_message(
+            r#"{"message_id":1,"date":0,"chat":{"id":7,"type":"supergroup","title":"G"},"from":{"id":7,"is_bot":false,"first_name":"T"}}"#,
+        );
+
+        XavierBot::handle_command(
+            bot,
+            msg,
+            Command::Login,
+            config,
+            std::sync::Arc::new(crate::ports::inbound::memory_port::MockMemoryQueryPort),
+            crate::coordination::SimpleAgentRegistry::new(None),
+            std::sync::Arc::new(crate::app::security_service::SecurityService::new()),
+            std::sync::Arc::new(RateLimiter::new(10, 60)),
+        )
+        .await
+        .unwrap();
+
+        let reqs = capture.requests.lock().await;
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0]["text"].as_str().unwrap(), "⛔ Access denied.");
+        assert_eq!(
+            count_db_login_codes(&db_path),
+            0,
+            "NO active login code should be created"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[serial_test::serial]
+    async fn login_handler_denies_missing_sender() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        let sandbox = tempfile::tempdir().unwrap();
+
+        let _env_panel = EnvRestore {
+            key: "XAVIER_PANEL_URL",
+            val: std::env::var("XAVIER_PANEL_URL").ok(),
+        };
+        let _env_state = EnvRestore {
+            key: "XAVIER_STATE_DIR",
+            val: std::env::var("XAVIER_STATE_DIR").ok(),
+        };
+        std::env::set_var("XAVIER_PANEL_URL", "http://my-panel.test");
+        std::env::set_var("XAVIER_STATE_DIR", sandbox.path().join("state"));
+
+        let db_path = login_auth_db_path();
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        seed_auth_db(&db_path, &[("7", "admin@x.io", "admin", 1000)]);
+
+        let capture = start_capture_server().await;
+        let bot = make_test_bot(&capture.url);
+
+        let config = std::sync::Arc::new(TelegramConfig {
+            admin_ids: vec![0],
+            ..Default::default()
+        });
+
+        let msg = build_test_message(
+            r#"{"message_id":1,"date":0,"chat":{"id":7,"type":"private"},"sender_chat":{"id":7,"type":"private"}}"#,
+        );
+
+        XavierBot::handle_command(
+            bot,
+            msg,
+            Command::Login,
+            config,
+            std::sync::Arc::new(crate::ports::inbound::memory_port::MockMemoryQueryPort),
+            crate::coordination::SimpleAgentRegistry::new(None),
+            std::sync::Arc::new(crate::app::security_service::SecurityService::new()),
+            std::sync::Arc::new(RateLimiter::new(10, 60)),
+        )
+        .await
+        .unwrap();
+
+        let reqs = capture.requests.lock().await;
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0]["text"].as_str().unwrap(), "⛔ Access denied.");
+        assert_eq!(
+            count_db_login_codes(&db_path),
+            0,
+            "NO active login code should be created"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[serial_test::serial]
+    async fn login_handler_non_admin_gets_admin_denial() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        let sandbox = tempfile::tempdir().unwrap();
+
+        let _env_panel = EnvRestore {
+            key: "XAVIER_PANEL_URL",
+            val: std::env::var("XAVIER_PANEL_URL").ok(),
+        };
+        let _env_state = EnvRestore {
+            key: "XAVIER_STATE_DIR",
+            val: std::env::var("XAVIER_STATE_DIR").ok(),
+        };
+        std::env::set_var("XAVIER_PANEL_URL", "http://my-panel.test");
+        std::env::set_var("XAVIER_STATE_DIR", sandbox.path().join("state"));
+
+        let db_path = login_auth_db_path();
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        seed_auth_db(&db_path, &[("7", "admin@x.io", "admin", 1000)]);
+
+        let capture = start_capture_server().await;
+        let bot = make_test_bot(&capture.url);
+
+        let config = std::sync::Arc::new(TelegramConfig {
+            admin_ids: vec![7],
+            ..Default::default()
+        });
+
+        let msg = build_test_message(
+            r#"{"message_id":1,"date":0,"chat":{"id":8,"type":"private"},"from":{"id":8,"is_bot":false,"first_name":"T"}}"#,
+        );
+
+        XavierBot::handle_command(
+            bot,
+            msg,
+            Command::Login,
+            config,
+            std::sync::Arc::new(crate::ports::inbound::memory_port::MockMemoryQueryPort),
+            crate::coordination::SimpleAgentRegistry::new(None),
+            std::sync::Arc::new(crate::app::security_service::SecurityService::new()),
+            std::sync::Arc::new(RateLimiter::new(10, 60)),
+        )
+        .await
+        .unwrap();
+
+        let reqs = capture.requests.lock().await;
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(
+            reqs[0]["text"].as_str().unwrap(),
+            "⛔ Access denied. You are not an admin."
+        );
+        assert_eq!(
+            count_db_login_codes(&db_path),
+            0,
+            "NO active login code should be created"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[serial_test::serial]
+    async fn login_handler_authorized_dm_issues_code() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        let sandbox = tempfile::tempdir().unwrap();
+
+        let _env_panel = EnvRestore {
+            key: "XAVIER_PANEL_URL",
+            val: std::env::var("XAVIER_PANEL_URL").ok(),
+        };
+        let _env_state = EnvRestore {
+            key: "XAVIER_STATE_DIR",
+            val: std::env::var("XAVIER_STATE_DIR").ok(),
+        };
+        std::env::set_var("XAVIER_PANEL_URL", "http://my-panel.test");
+        std::env::set_var("XAVIER_STATE_DIR", sandbox.path().join("state"));
+
+        let db_path = login_auth_db_path();
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        seed_auth_db(&db_path, &[("7", "admin@x.io", "admin", 1000)]);
+
+        let capture = start_capture_server().await;
+        let bot = make_test_bot(&capture.url);
+
+        let config = std::sync::Arc::new(TelegramConfig {
+            admin_ids: vec![7],
+            ..Default::default()
+        });
+
+        let msg = build_test_message(
+            r#"{"message_id":1,"date":0,"chat":{"id":7,"type":"private"},"from":{"id":7,"is_bot":false,"first_name":"T"}}"#,
+        );
+
+        XavierBot::handle_command(
+            bot,
+            msg,
+            Command::Login,
+            config,
+            std::sync::Arc::new(crate::ports::inbound::memory_port::MockMemoryQueryPort),
+            crate::coordination::SimpleAgentRegistry::new(None),
+            std::sync::Arc::new(crate::app::security_service::SecurityService::new()),
+            std::sync::Arc::new(RateLimiter::new(10, 60)),
+        )
+        .await
+        .unwrap();
+
+        let reqs = capture.requests.lock().await;
+        assert_eq!(reqs.len(), 1);
+        let text = reqs[0]["text"].as_str().unwrap();
+
+        assert_eq!(reqs[0]["chat_id"].as_i64().unwrap(), 7);
+        assert_eq!(reqs[0]["parse_mode"].as_str().unwrap(), "MarkdownV2");
+        assert!(text.contains("http://my\\-panel\\.test"));
+
+        let db = crate::auth2::db::AuthDb::new(&db_path).unwrap();
+        let re = regex::Regex::new(r"code\\?=([0-9]{6})").unwrap();
+        let code = re.captures(text).unwrap().get(1).unwrap().as_str();
+
+        let user = crate::auth2::login_code::redeem_login_code(
+            &db,
+            "admin@x.io",
+            code,
+            chrono::Utc::now().timestamp() + 5,
+        )
+        .unwrap();
+        assert!(user.is_some());
+
+        let second = crate::auth2::login_code::redeem_login_code(
+            &db,
+            "admin@x.io",
+            code,
+            chrono::Utc::now().timestamp() + 5,
+        )
+        .unwrap();
+        assert!(
+            second.is_none(),
+            "second redemption should fail for single-use"
+        );
+    }
 }
