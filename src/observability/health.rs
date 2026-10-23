@@ -793,34 +793,12 @@ impl HealthMonitor {
 
     async fn check_llm(&self) -> LlmHealth {
         let config = crate::agents::provider::ModelProviderConfig::from_env();
+        if let Some(h) = llm_health_unconfigured(&config) {
+            return h;
+        }
         let provider = config.provider_label.clone();
         let api_key = config.api_key_state().to_string();
-
-        let raw_endpoint = config
-            .base_url
-            .clone()
-            .unwrap_or_else(|| "none".to_string());
-        let endpoint = if let Ok(mut u) = url::Url::parse(&raw_endpoint) {
-            let _ = u.set_username("");
-            let _ = u.set_password(None);
-            u.to_string()
-        } else {
-            raw_endpoint
-        };
-
-        if let Some(r) = config.unconfigured_reason() {
-            return LlmHealth {
-                provider,
-                model: String::new(),
-                endpoint,
-                reachable: false,
-                status: HealthLevel::Degraded,
-                configured: false,
-                api_key,
-                model_available: None,
-                error: Some(r),
-            };
-        }
+        let endpoint = redacted_llm_endpoint(&config);
 
         let model = config.model.clone();
         let mut p = config.probe().await;
@@ -982,6 +960,40 @@ fn peer_lag_secs(peer: &PeerInfo, now: i64) -> u64 {
     } else {
         0
     }
+}
+
+/// Endpoint of the configured LLM provider with any URL credentials removed.
+fn redacted_llm_endpoint(config: &crate::agents::provider::ModelProviderConfig) -> String {
+    let raw_endpoint = config
+        .base_url
+        .clone()
+        .unwrap_or_else(|| "none".to_string());
+    if let Ok(mut u) = url::Url::parse(&raw_endpoint) {
+        let _ = u.set_username("");
+        let _ = u.set_password(None);
+        u.to_string()
+    } else {
+        raw_endpoint
+    }
+}
+
+/// Health for a provider that has no usable model/key, or `None` when the
+/// provider is configured and must be probed. Pure: reads no env.
+fn llm_health_unconfigured(
+    config: &crate::agents::provider::ModelProviderConfig,
+) -> Option<LlmHealth> {
+    let reason = config.unconfigured_reason()?;
+    Some(LlmHealth {
+        provider: config.provider_label.clone(),
+        model: String::new(),
+        endpoint: redacted_llm_endpoint(config),
+        reachable: false,
+        status: HealthLevel::Degraded,
+        configured: false,
+        api_key: config.api_key_state().to_string(),
+        model_available: None,
+        error: Some(reason),
+    })
 }
 
 #[cfg(test)]
@@ -1230,47 +1242,31 @@ mod tests {
         assert!(status.compute_degraded_reasons().is_empty());
     }
 
-    #[tokio::test]
-    async fn check_llm_unconfigured_is_degraded() {
-        let prev_path = std::env::var("XAVIER_CONFIG_PATH").ok();
-        std::env::set_var(
-            "XAVIER_CONFIG_PATH",
-            "/tmp/nonexistent-xavier-ci-defaults.json",
-        );
-        const CLEARED: [&str; 7] = [
-            "XAVIER_MODEL_PROVIDER",
-            "XAVIER_LOCAL_LLM_MODEL",
-            "XAVIER_LLM_MODEL",
-            "GROQ_API_KEY",
-            "ANTHROPIC_API_KEY",
-            "OPENAI_API_KEY",
-            "XAVIER_LLM_API_KEY",
-        ];
-        let saved: Vec<(&str, Option<String>)> = CLEARED
-            .iter()
-            .map(|k| (*k, std::env::var(k).ok()))
-            .collect();
-        for k in CLEARED {
-            std::env::remove_var(k);
-        }
+    #[test]
+    fn check_llm_unconfigured_is_degraded() {
+        // Hand-built config: no env mutation, so this cannot race other tests.
+        let mut config = crate::agents::provider::ModelProviderConfig::local_from_env();
+        config.model = String::new();
+        config.api_key = None;
+        config.base_url = Some("http://user:secret@127.0.0.1:9/v1".to_string());
 
-        let cm = ConnectionManager::global();
-        let monitor = HealthMonitor::new(cm);
-        let llm_health = monitor.check_llm().await;
+        let llm_health = llm_health_unconfigured(&config).expect("unconfigured");
 
-        match prev_path {
-            Some(p) => std::env::set_var("XAVIER_CONFIG_PATH", p),
-            None => std::env::remove_var("XAVIER_CONFIG_PATH"),
-        }
-        for (k, v) in saved {
-            if let Some(v) = v {
-                std::env::set_var(k, v);
-            }
-        }
-
-        assert_eq!(llm_health.configured, false);
+        assert!(!llm_health.configured);
         assert_eq!(llm_health.status, HealthLevel::Degraded);
-        assert!(llm_health.error.is_some());
+        assert!(llm_health
+            .error
+            .as_deref()
+            .is_some_and(|e| e.contains("XAVIER_LOCAL_LLM_MODEL")));
         assert_eq!(llm_health.api_key, "unset");
+        assert!(!llm_health.endpoint.contains("secret"));
+    }
+
+    #[test]
+    fn check_llm_configured_is_probed() {
+        let mut config = crate::agents::provider::ModelProviderConfig::local_from_env();
+        config.model = "test-model".to_string();
+        config.base_url = Some("http://127.0.0.1:9/v1".to_string());
+        assert!(llm_health_unconfigured(&config).is_none());
     }
 }

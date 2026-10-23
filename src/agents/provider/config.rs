@@ -14,7 +14,10 @@ use crate::agents::provider::types::{
 use crate::domain::proxy::SecretInjectionStrategy;
 use crate::secrets::vault::HardwareVault;
 
-static REACHABILITY_CACHE: LazyLock<Mutex<HashMap<String, (bool, Option<bool>, Instant)>>> =
+/// Cached probe result: (reachable, model_listed, probed_at).
+type ReachabilityEntry = (bool, Option<bool>, Instant);
+
+static REACHABILITY_CACHE: LazyLock<Mutex<HashMap<String, ReachabilityEntry>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub(crate) const DEFAULT_LOCAL_BASE_URL: &str = "http://127.0.0.1:11435/v1";
@@ -1195,21 +1198,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_unconfigured_is_reachable_returns_not_configured() {
-        let _guard = env_lock().lock().expect("test assertion");
-        let prev_config_path = std::env::var("XAVIER_CONFIG_PATH").ok();
-        std::env::set_var(
-            "XAVIER_CONFIG_PATH",
-            "/tmp/nonexistent-xavier-ci-defaults.json",
-        );
-        std::env::remove_var("XAVIER_LOCAL_LLM_MODEL");
-        std::env::remove_var("XAVIER_LLM_MODEL");
+        let config = {
+            let _guard = env_lock().lock().expect("test assertion");
+            let prev_config_path = std::env::var("XAVIER_CONFIG_PATH").ok();
+            std::env::set_var(
+                "XAVIER_CONFIG_PATH",
+                "/tmp/nonexistent-xavier-ci-defaults.json",
+            );
+            std::env::remove_var("XAVIER_LOCAL_LLM_MODEL");
+            std::env::remove_var("XAVIER_LLM_MODEL");
 
-        let config = ModelProviderConfig::local_from_env();
+            let config = ModelProviderConfig::local_from_env();
 
-        match prev_config_path {
-            Some(v) => std::env::set_var("XAVIER_CONFIG_PATH", v),
-            None => std::env::remove_var("XAVIER_CONFIG_PATH"),
-        }
+            match prev_config_path {
+                Some(v) => std::env::set_var("XAVIER_CONFIG_PATH", v),
+                None => std::env::remove_var("XAVIER_CONFIG_PATH"),
+            }
+            config
+        };
 
         assert_eq!(
             config.is_reachable().await,

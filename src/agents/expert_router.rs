@@ -730,8 +730,9 @@ mod tests {
     async fn test_ask_general_anthropic() {
         let mut server = mockito::Server::new_async().await;
         let mock = server
-            .mock("POST", "/messages")
+            .mock("POST", "/v1/messages")
             .match_header("x-api-key", "test-anthropic-key")
+            .match_header("anthropic-version", "2023-06-01")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(

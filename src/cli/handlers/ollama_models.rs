@@ -195,13 +195,17 @@ pub async fn set_active_handler(Json(payload): Json<SetActivePayload>) -> Respon
 /// GET /v1/ollama/active
 pub async fn get_active_handler() -> Response {
     let settings = crate::settings::XavierSettings::current();
+    // Blank values count as unset at every level (env, then config file).
+    let non_blank = |s: String| {
+        let t = s.trim().to_string();
+        (!t.is_empty()).then_some(t)
+    };
     let llm: Option<String> = std::env::var("XAVIER_LOCAL_LLM_MODEL")
-        .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
         .ok()
-        .or_else(|| Some(settings.models.local_llm_model.clone()))
-        .or_else(|| settings.models.llm_model.clone())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+        .and_then(non_blank)
+        .or_else(|| std::env::var("XAVIER_LLM_MODEL").ok().and_then(non_blank))
+        .or_else(|| non_blank(settings.models.local_llm_model.clone()))
+        .or_else(|| settings.models.llm_model.clone().and_then(non_blank));
 
     let embedding = std::env::var("XAVIER_EMBEDDING_MODEL")
         .ok()

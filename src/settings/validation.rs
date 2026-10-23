@@ -38,12 +38,9 @@ pub fn validate_local_config(settings: &XavierSettings) -> Result<(), Vec<String
             ));
         }
 
-        if settings.models.local_llm_model.trim().is_empty() {
-            errors.push(
-                "local_llm_model is empty: set XAVIER_LOCAL_LLM_MODEL or models.local_llm_model to a model your local server serves"
-                    .to_string(),
-            );
-        }
+        // An empty `local_llm_model` is NOT a startup error: Xavier ships no
+        // default model, so a fresh install boots in degraded mode and the
+        // LLM-backed tools report a clear "no model configured" error instead.
 
         if settings.models.embedding_url.trim().is_empty() {
             errors.push(
@@ -118,6 +115,15 @@ mod tests {
         assert!(errs
             .iter()
             .any(|e| e.contains("not a valid http/https URL")));
+    }
+
+    #[test]
+    fn test_local_empty_model_is_not_a_startup_error() {
+        let mut settings = XavierSettings::default();
+        settings.models.provider = "local".to_string();
+        settings.models.local_llm_model = "".to_string();
+
+        assert!(validate_local_config(&settings).is_ok());
     }
 
     #[test]
