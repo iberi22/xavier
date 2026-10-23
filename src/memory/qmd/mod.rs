@@ -728,7 +728,9 @@ impl QmdMemory {
         self.vsearch(query_vector, limit).await
     }
 
-    /// Expand search results by depth using parent/child relationships.
+    /// Expand search results by depth: each hop adds the parent of every
+    /// document (via `parent_id`, or the metadata the store derives it from)
+    /// and its same-cluster peers.
     pub async fn expand_depth(
         &self,
         results: &[MemoryDocument],
@@ -738,66 +740,117 @@ impl QmdMemory {
         if depth == 0 {
             return Ok(results.to_vec());
         }
-
+        let (added, _capped) = self
+            .expand_depth_bounded(results, depth, filters, usize::MAX)
+            .await?;
         let mut all_docs = results.to_vec();
+        all_docs.extend(added);
+        Ok(all_docs)
+    }
+
+    /// In-memory documents carrying `cluster_id`. An empty-query search does not
+    /// enumerate a cluster, so membership is read from the document set itself.
+    async fn cluster_members(&self, cluster_id: &str) -> Vec<MemoryDocument> {
+        let docs = self.docs.read().await;
+        docs.iter()
+            .filter(|doc| doc.cluster_id.as_deref() == Some(cluster_id))
+            .cloned()
+            .collect()
+    }
+
+    /// Same expansion as [`expand_depth`](Self::expand_depth), but returns only
+    /// the documents it adds (never `results` or a repeat of them) and stops
+    /// once `max_new` have been added. The flag is true when more documents
+    /// were available than `max_new` allowed.
+    ///
+    /// Each cluster is searched at most once per call, so hop 2 costs at most
+    /// one cluster search per distinct cluster in the frontier, and the frontier
+    /// never grows past `max_new` documents.
+    pub(crate) async fn expand_depth_bounded(
+        &self,
+        results: &[MemoryDocument],
+        depth: usize,
+        filters: Option<&MemoryQueryFilters>,
+        max_new: usize,
+    ) -> Result<(Vec<MemoryDocument>, bool)> {
+        let mut added: Vec<MemoryDocument> = Vec::new();
+        if depth == 0 {
+            return Ok((added, false));
+        }
+        self.ensure_loaded().await?;
+
         let mut seen_ids: std::collections::HashSet<String> = results
             .iter()
             .filter_map(|d| d.id.clone().or_else(|| Some(d.path.clone())))
             .collect();
+        let mut searched_clusters: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
 
         let mut current_idxs: Vec<String> = results
             .iter()
             .filter_map(|d| d.id.clone().or_else(|| Some(d.path.clone())))
             .collect();
 
-        for _ in 1..=depth {
+        let mut capped = false;
+        'hops: for _ in 1..=depth {
             let mut next_ids: Vec<String> = Vec::new();
             for doc_id in &current_idxs {
-                if let Ok(Some(doc)) = self.get(doc_id).await {
-                    // Fetch parent
-                    if let Some(ref parent_id) = doc.parent_id {
-                        if !seen_ids.contains(parent_id) {
-                            if let Ok(Some(parent)) = self.get(parent_id).await {
-                                if matches_filters(
-                                    &parent.path,
-                                    &parent.metadata,
-                                    &self.workspace_id,
-                                    filters,
-                                ) {
-                                    seen_ids.insert(parent_id.clone());
-                                    next_ids.push(parent_id.clone());
-                                    all_docs.push(parent);
+                let Ok(Some(doc)) = self.get(doc_id).await else {
+                    continue;
+                };
+
+                // Parent: the in-memory copy of a fresh write has no parent_id,
+                // so fall back to the metadata the store derives it from.
+                let parent_id = doc
+                    .parent_id
+                    .clone()
+                    .or_else(|| writer::derive_parent_id(&doc));
+                if let Some(parent_id) = parent_id {
+                    if !seen_ids.contains(&parent_id) {
+                        if let Ok(Some(parent)) = self.get(&parent_id).await {
+                            if matches_filters(
+                                &parent.path,
+                                &parent.metadata,
+                                &self.workspace_id,
+                                filters,
+                            ) {
+                                if added.len() >= max_new {
+                                    capped = true;
+                                    break 'hops;
                                 }
+                                seen_ids.insert(parent_id.clone());
+                                next_ids.push(parent_id);
+                                added.push(parent);
                             }
                         }
                     }
+                }
 
-                    // Fetch children (documents whose parent_id matches this id)
-                    if let Some(ref cluster) = doc.cluster_id {
-                        let child_filters = MemoryQueryFilters {
-                            cluster_ids: Some(vec![cluster.clone()]),
-                            ..Default::default()
-                        };
-                        if let Ok(children) =
-                            self.search_filtered("", 50, Some(&child_filters)).await
-                        {
-                            for child in children {
-                                if let Some(ref cid) = child.id {
-                                    if cid != doc_id
-                                        && !seen_ids.contains(cid)
-                                        && matches_filters(
-                                            &child.path,
-                                            &child.metadata,
-                                            &self.workspace_id,
-                                            filters,
-                                        )
-                                    {
-                                        seen_ids.insert(cid.clone());
-                                        next_ids.push(cid.clone());
-                                        all_docs.push(child);
-                                    }
-                                }
+                // Same-cluster peers, searched once per cluster.
+                if let Some(cluster) = doc.cluster_id.clone() {
+                    if searched_clusters.insert(cluster.clone()) {
+                        for peer in self.cluster_members(&cluster).await {
+                            let Some(peer_id) = peer.id.clone() else {
+                                continue;
+                            };
+                            if peer_id == *doc_id
+                                || seen_ids.contains(&peer_id)
+                                || !matches_filters(
+                                    &peer.path,
+                                    &peer.metadata,
+                                    &self.workspace_id,
+                                    filters,
+                                )
+                            {
+                                continue;
                             }
+                            if added.len() >= max_new {
+                                capped = true;
+                                break 'hops;
+                            }
+                            seen_ids.insert(peer_id.clone());
+                            next_ids.push(peer_id);
+                            added.push(peer);
                         }
                     }
                 }
@@ -808,7 +861,7 @@ impl QmdMemory {
             current_idxs = next_ids;
         }
 
-        Ok(all_docs)
+        Ok((added, capped))
     }
 }
 
@@ -840,6 +893,45 @@ pub async fn query_with_embedding_filtered(
 mod tests {
     use super::*;
     use std::env;
+
+    #[tokio::test]
+    async fn expand_depth_finds_parent_of_freshly_written_doc() {
+        let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(Vec::new())));
+        let parent_id = memory
+            .add_document(
+                "docs/c2/parent".to_string(),
+                "parent note describing the release plan".to_string(),
+                serde_json::json!({ "clearance": "UNCLASSIFIED" }),
+            )
+            .await
+            .expect("test assertion");
+        let child_id = memory
+            .add_document(
+                "docs/c2/child".to_string(),
+                "child note with one release detail".to_string(),
+                serde_json::json!({ "parent_id": parent_id, "clearance": "UNCLASSIFIED" }),
+            )
+            .await
+            .expect("test assertion");
+        let child = memory
+            .get(&child_id)
+            .await
+            .expect("test assertion")
+            .expect("freshly written child is readable");
+
+        let expanded = memory
+            .expand_depth(std::slice::from_ref(&child), 1, None)
+            .await
+            .expect("test assertion");
+
+        let paths: Vec<&str> = expanded.iter().map(|doc| doc.path.as_str()).collect();
+        assert!(
+            expanded
+                .iter()
+                .any(|doc| doc.id.as_deref() == Some(parent_id.as_str())),
+            "depth 1 must add the parent of a freshly written doc, got {paths:?}"
+        );
+    }
 
     #[tokio::test]
     async fn repeated_searches_hit_cache() {

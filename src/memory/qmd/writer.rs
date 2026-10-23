@@ -182,7 +182,20 @@ pub(crate) fn memory_record_from_document(
         .get("source_path")
         .and_then(|value| value.as_str())
         .is_none();
-    let parent_id = document
+    let parent_id = derive_parent_id(document);
+
+    MemoryRecord::from_document(workspace_id, document, primary, parent_id)
+}
+
+/// Parent id of a document as the store records it: `metadata.parent_id`, or,
+/// for a derived (non-primary) document, its `metadata.source_path`.
+pub(crate) fn derive_parent_id(document: &MemoryDocument) -> Option<String> {
+    let primary = document
+        .metadata
+        .get("source_path")
+        .and_then(|value| value.as_str())
+        .is_none();
+    document
         .metadata
         .get("parent_id")
         .and_then(|value| value.as_str())
@@ -197,9 +210,7 @@ pub(crate) fn memory_record_from_document(
                         .map(|value| value.to_string())
                 })
                 .flatten()
-        });
-
-    MemoryRecord::from_document(workspace_id, document, primary, parent_id)
+        })
 }
 
 async fn emit_operation_event(memory: &QmdMemory, operation: &str, path: &str, metadata: &Value) {
