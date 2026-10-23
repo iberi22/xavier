@@ -365,9 +365,7 @@ MemoryFragment inputs enforce strict validation:
 
 ## Error Handling and Codes
 
-Xavier uses standard JSON-RPC 2.0 error codes and custom Xavier-specific codes for MCP tool calls. The channel a failure uses depends on the phase where it happens, as decided in [ADR-047](adr/ADR-047-mcp-error-channels.md) (Proposed). The numeric codes do not change.
-
-> **Status:** this table is the target contract. Until the ADR-047 implementation lands, wrong-type and invalid-value arguments and absent entities still return JSON-RPC errors (see the note under the channel table).
+Xavier uses standard JSON-RPC 2.0 error codes and custom Xavier-specific codes for MCP tool calls. The channel a failure uses depends on the phase where it happens, as decided in [ADR-047](adr/ADR-047-mcp-error-channels.md) (Accepted). The numeric codes do not change.
 
 ### Channel by phase
 
@@ -381,8 +379,6 @@ Xavier uses standard JSON-RPC 2.0 error codes and custom Xavier-specific codes f
 | Entity absent | memory or fragment not found | tool result, `isError: true` | `-32002` | `not_found` |
 | Content security policy | prompt-injection block | tool result, `isError: true` | `-32000` | `security_policy` |
 | Other execution failures (in-tool clearance, rate limit, internal) | — | JSON-RPC error | `-32000` / `-32603` | — |
-
-At HEAD, a missing required argument already returns a tool result. Wrong-type and invalid-value arguments and absent entities still return JSON-RPC errors (`-32001`, `-32002`) until the implementation lands.
 
 ### Tool-result error shape
 

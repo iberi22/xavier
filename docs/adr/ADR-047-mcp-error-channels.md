@@ -3,9 +3,10 @@
 | Campo | Valor |
 |-------|--------|
 | **ID** | ADR-047 |
-| **Estado** | Propuesto |
+| **Estado** | Aceptado |
 | **Fecha** | 2026-10-23 |
 | **Autores** | Xavier architecture contributors |
+| **Aceptación** | Brahyan accepted it, Oct 23 2026 |
 | **Relacionados** | `docs/MCP_CONTRACT.md` (Error Handling and Codes); ADR-046 (format reference) |
 
 ## Context
@@ -67,14 +68,14 @@ Constraints:
 
 ## Simulation
 
-Not run. The template requires a multi-scenario simulation before acceptance. This ADR stays `Propuesto` until the owner decides and that requirement is met or explicitly waived. The decision is a protocol-channel rule, and its behaviour is pinned by tests in the implementation change instead.
+Not run. The template requires a multi-scenario simulation before acceptance; the owner waived it when accepting this ADR (Oct 23 2026). The decision is a protocol-channel rule, and its behaviour is pinned by the probe-matrix tests added in the implementation change (#3496) instead.
 
 ## Assumptions
 
 | Parameter | Value used | Source |
 |-----------|------------|--------|
 | Missing-required arguments already return tool results | true at HEAD | existing missing-argument tests in `src/server/mcp/tests.rs` |
-| Known clients read `isError` on tool results | assumed; not verified for every client | ASSUMPTION — confirm with the clients in use before acceptance |
+| Known clients read `isError` on tool results | assumed; not verified for every client | ASSUMPTION — accepted by the owner on Oct 23 2026 without a per-client check |
 | Renumbering codes is unnecessary | `kind` carries the category | Decision 1 |
 
 ## Consequences
@@ -96,4 +97,4 @@ Not run. The template requires a multi-scenario simulation before acceptance. Th
 - The implementation change adds a probe matrix over the HTTP and stdio transports. Each row checks channel, code and `kind`, and the two transports must return the same result payload.
 - Alias pairs (for example the two names of the same memory lookup) must return the same code and `kind`.
 - A unit test checks that a typed error wins over message-based classification.
-- Review this ADR when the implementation is merged and before moving it to `Aceptado`.
+- The implementation landed in #3496. The owner accepted this ADR on Oct 23 2026.
