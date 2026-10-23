@@ -225,16 +225,55 @@ pub enum SkillUsageError {
     WorkspaceMismatch,
 }
 
-/// Record an acknowledgment for a dispatch id. The Delivered row for
-/// (`event.task_id`, skill) decides the workspace; `caller_project`, when
-/// present, must match it. Nothing is written on any error.
+/// Record an acknowledgment for a dispatch id (`event.task_id`).
+///
+/// The Delivered row for (dispatch id, skill) decides the workspace, and
+/// `caller_project`, when present, must equal it. Nothing is written on any
+/// error. A missing database, or no matching row, is `UnknownDispatch`.
+///
+/// Trust model (deliberate, S1 design): the dispatch id is a server-generated
+/// UUID v4 returned only to the requester, so it acts as a bearer capability
+/// for acknowledging that one delivery. The check is against the row's
+/// workspace and the optional project; it is not checked against the
+/// caller's `WorkspaceContext`.
 pub fn record_dispatch_ack(
     db_path: &Path,
     event: &UsageEvent,
     caller_project: Option<&str>,
 ) -> Result<Outcome, SkillUsageError> {
-    let _ = (db_path, event, caller_project);
-    Err(SkillUsageError::NotAnAcknowledgment)
+    if !matches!(event.stage, SkillStage::Invoked | SkillStage::Completed) {
+        return Err(SkillUsageError::NotAnAcknowledgment);
+    }
+    if !db_path.is_file() {
+        return Err(SkillUsageError::UnknownDispatch);
+    }
+    // Read-write without CREATE: a rejected ack must not create a database.
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
+    )?;
+    crate::storage::pragma::apply_acquire_pragmas(&conn)?;
+    let workspaces: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT workspace_id FROM skill_usage_events
+             WHERE task_id = ?1 AND skill_name = ?2 AND stage = 'delivered' LIMIT 2",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![event.task_id, event.skill_name], |row| {
+            row.get::<_, String>(0)
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    let workspace = match workspaces.as_slice() {
+        [workspace] => workspace.clone(),
+        // No row, or two workspaces under one id: never guess which one.
+        _ => return Err(SkillUsageError::UnknownDispatch),
+    };
+    if caller_project.is_some_and(|project| project != workspace) {
+        return Err(SkillUsageError::WorkspaceMismatch);
+    }
+    let mut stored = event.clone();
+    stored.workspace_id = workspace;
+    Ok(TelemetryWriter::new(&conn).record(&stored, false)?)
 }
 
 /// Record an idempotent harness acknowledgment. Callers should use spawn_blocking.
@@ -268,22 +307,30 @@ fn prune_due(db: &Path, now: chrono::DateTime<chrono::Utc>) -> bool {
     }
 }
 
-fn emit_events(db: PathBuf, events: Vec<UsageEvent>) -> tokio::task::JoinHandle<()> {
+/// Persist one dispatch's events on the blocking pool. Resolves to `true` only
+/// when the Delivered event was stored, because that row is what a dispatch id
+/// names. Any failure resolves to `false` and never fails the dispatch.
+fn emit_events(db: PathBuf, events: Vec<UsageEvent>) -> tokio::task::JoinHandle<bool> {
     tokio::task::spawn_blocking(move || {
         if let Some(parent) = db.parent() {
             if let Err(error) = std::fs::create_dir_all(parent) {
                 tracing::debug!(%error, "skill dispatch: telemetry directory unavailable");
-                return;
+                return false;
             }
         }
-        let write = || -> Result<(), SkillUsageError> {
+        let write = || -> Result<bool, SkillUsageError> {
             let conn = rusqlite::Connection::open(&db)?;
             crate::storage::pragma::apply_acquire_pragmas(&conn)?;
             let writer = TelemetryWriter::new(&conn);
             writer.ensure_schema()?;
+            let mut delivered_stored = false;
             for event in events {
-                if let Err(error) = writer.record(&event, false) {
-                    tracing::debug!(%error, "skill dispatch: telemetry event dropped");
+                let is_delivered = event.stage == SkillStage::Delivered;
+                match writer.record(&event, false) {
+                    Ok(_) => delivered_stored |= is_delivered,
+                    Err(error) => {
+                        tracing::debug!(%error, "skill dispatch: telemetry event dropped");
+                    }
                 }
             }
             if prune_due(&db, chrono::Utc::now()) {
@@ -291,24 +338,34 @@ fn emit_events(db: PathBuf, events: Vec<UsageEvent>) -> tokio::task::JoinHandle<
                     tracing::debug!(%error, "skill dispatch: telemetry prune failed");
                 }
             }
-            Ok(())
+            Ok(delivered_stored)
         };
-        if let Err(error) = write() {
-            tracing::debug!(%error, "skill dispatch: telemetry unavailable");
+        match write() {
+            Ok(stored) => stored,
+            Err(error) => {
+                tracing::debug!(%error, "skill dispatch: telemetry unavailable");
+                false
+            }
         }
     })
 }
 
-fn dispatch_event(request: &SkillDispatchRequest, skill: &str, stage: SkillStage) -> UsageEvent {
-    let task_hash = crate::crypto::hex_encode(Sha256::digest(request.task.as_bytes()));
-    let task_key = &task_hash[..16];
+/// One dispatch's event. The dispatch id is the task key, so every row of a
+/// dispatch shares it; the event id hashes it with the skill and the stage, so
+/// the same task text in two workspaces never dedupes.
+fn dispatch_event(
+    dispatch_id: &str,
+    workspace: &str,
+    skill: &str,
+    stage: SkillStage,
+) -> UsageEvent {
     let event_id = crate::crypto::hex_encode(Sha256::digest(
-        format!("{task_key}:{skill}:{}", stage.as_str()).as_bytes(),
+        format!("{dispatch_id}:{skill}:{}", stage.as_str()).as_bytes(),
     ));
     UsageEvent::new(
         event_id,
-        request.project.as_deref().unwrap_or("default"),
-        task_key,
+        workspace,
+        dispatch_id,
         "xavier-dispatch",
         skill,
         stage,
@@ -468,7 +525,7 @@ impl SkillDispatcher {
             "Skill dispatched"
         );
 
-        let result = SkillDispatchResult {
+        let mut result = SkillDispatchResult {
             skill_name: skill.name,
             skill_description: skill.description,
             confidence,
@@ -483,19 +540,41 @@ impl SkillDispatcher {
             hidden_by_clearance,
             dispatch_id: None,
         };
+        // The id is returned only when its Delivered row is stored: an id that
+        // names no row could never be acknowledged. The wait is on the blocking
+        // pool's handle, so the async runtime is never blocked.
         if let Some(db) = &self.telemetry_db {
-            let mut events: Vec<_> = matches
+            let dispatch_id = uuid::Uuid::new_v4().to_string();
+            let workspace = self.telemetry_workspace(request);
+            let mut events: Vec<UsageEvent> = matches
                 .iter()
-                .map(|(_, skill)| dispatch_event(request, &skill.name, SkillStage::Selected))
+                .map(|(_, skill)| {
+                    dispatch_event(&dispatch_id, &workspace, &skill.name, SkillStage::Selected)
+                })
                 .collect();
             events.push(dispatch_event(
-                request,
+                &dispatch_id,
+                &workspace,
                 &result.skill_name,
                 SkillStage::Delivered,
             ));
-            drop(emit_events(db.clone(), events));
+            let stored = emit_events(db.clone(), events).await.unwrap_or(false);
+            result.dispatch_id = stored.then_some(dispatch_id);
         }
         Ok(result)
+    }
+
+    /// Workspace the telemetry rows belong to: the authorized memory workspace,
+    /// never the caller's `project`. Without memory there is no authorized
+    /// workspace, so the legacy caller-project identity is kept.
+    fn telemetry_workspace(&self, request: &SkillDispatchRequest) -> String {
+        match &self.memory {
+            Some(memory) => memory.workspace_id().to_string(),
+            None => request
+                .project
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
+        }
     }
 
     /// Gather scoped evidence for the task.

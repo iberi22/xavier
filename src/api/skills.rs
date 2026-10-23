@@ -21,7 +21,8 @@ pub fn skill_api_routes<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
         .route("/api/skill/dispatch", post(dispatch_skill))
         .route("/api/skill/list", get(list_skills))
         .route("/skills", get(list_skills))
-        .route("/api/skill/usage", get(skill_usage))
+        .route("/api/skill/usage", get(skill_usage_scoped))
+        .route("/api/skill/ack", post(ack_skill))
         .route("/api/skill/audit", get(audit_skills))
 }
 
@@ -60,6 +61,9 @@ pub struct DispatchResponse {
     pub confidence: f32,
     pub context_pack: ContextPackResponse,
     pub estimated_savings_pct: f32,
+    /// Present only when the Delivered row was stored: acknowledge with it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dispatch_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -129,6 +133,7 @@ pub async fn dispatch_skill(
                     total_tokens: result.context_pack.total_tokens,
                 },
                 estimated_savings_pct: result.estimated_savings_pct,
+                dispatch_id: result.dispatch_id,
             };
             Json(serde_json::json!({ "ok": true, "data": response }))
         }
@@ -246,6 +251,12 @@ pub fn skill_usage_db_path() -> PathBuf {
 
 /// Read only aggregate lifecycle counts; dispatch alone is not proof of use.
 pub fn usage_summary_blocking(db: &Path) -> Result<serde_json::Value, String> {
+    usage_summary_for(db, None)
+}
+
+/// [`usage_summary_blocking`] restricted to one workspace's events when
+/// `workspace` is given. Without it the output is exactly the unfiltered one.
+pub fn usage_summary_for(db: &Path, workspace: Option<&str>) -> Result<serde_json::Value, String> {
     use crate::context::skill_controller::telemetry::RetentionPolicy;
     let retention_days = match RetentionPolicy::default_policy() {
         RetentionPolicy::Expire { max_age_days } => Some(max_age_days),
@@ -264,11 +275,12 @@ pub fn usage_summary_blocking(db: &Path) -> Result<serde_json::Value, String> {
             .prepare(
                 "SELECT skill_name, SUM(stage = 'selected'), SUM(stage = 'delivered'),
                     SUM(stage = 'invoked'), SUM(stage = 'completed')
-             FROM skill_usage_events GROUP BY skill_name ORDER BY skill_name",
+             FROM skill_usage_events WHERE (?1 IS NULL OR workspace_id = ?1)
+             GROUP BY skill_name ORDER BY skill_name",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
-            .query_map([], |row| {
+            .query_map(rusqlite::params![workspace], |row| {
                 let invoked: u64 = row.get(3)?;
                 let completed: u64 = row.get(4)?;
                 Ok(serde_json::json!({
@@ -296,8 +308,31 @@ pub fn usage_summary_blocking(db: &Path) -> Result<serde_json::Value, String> {
     }))
 }
 
+/// Query of `GET /api/skill/usage`.
+#[derive(Debug, Default, Deserialize)]
+pub struct UsageQuery {
+    /// Optional workspace id: count only the events stored for it.
+    #[serde(default)]
+    pub workspace: Option<String>,
+}
+
 pub async fn skill_usage() -> axum::response::Response {
-    match tokio::task::spawn_blocking(|| usage_summary_blocking(&skill_usage_db_path())).await {
+    usage_response(None).await
+}
+
+/// `GET /api/skill/usage?workspace=<id>`: the scoped usage summary.
+pub async fn skill_usage_scoped(
+    axum::extract::Query(query): axum::extract::Query<UsageQuery>,
+) -> axum::response::Response {
+    usage_response(query.workspace).await
+}
+
+async fn usage_response(workspace: Option<String>) -> axum::response::Response {
+    match tokio::task::spawn_blocking(move || {
+        usage_summary_for(&skill_usage_db_path(), workspace.as_deref())
+    })
+    .await
+    {
         Ok(Ok(summary)) => (axum::http::StatusCode::OK, Json(summary)).into_response(),
         Ok(Err(error)) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -309,6 +344,41 @@ pub async fn skill_usage() -> axum::response::Response {
             Json(serde_json::json!({"error": "skill usage task failed"})),
         )
             .into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/skill/ack
+// ---------------------------------------------------------------------------
+
+/// Harness acknowledgment over HTTP: the twin of the MCP `xavier_skill_ack`
+/// tool. Both call the same validation and storage path, so they agree.
+pub async fn ack_skill(Json(body): Json<serde_json::Value>) -> axum::response::Response {
+    use crate::server::mcp::tools_context::{record_skill_ack, AckError};
+    let status =
+        |code: axum::http::StatusCode, body: serde_json::Value| (code, Json(body)).into_response();
+    match tokio::task::spawn_blocking(move || record_skill_ack(&skill_usage_db_path(), &body)).await
+    {
+        Ok(Ok(outcome)) => status(
+            axum::http::StatusCode::OK,
+            serde_json::json!({
+                "ok": true,
+                "recorded": outcome.applied,
+                "affected": outcome.affected,
+            }),
+        ),
+        Ok(Err(AckError::Rejected(error))) => status(
+            axum::http::StatusCode::BAD_REQUEST,
+            serde_json::json!({"ok": false, "error": error}),
+        ),
+        Ok(Err(AckError::Storage(error))) => status(
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({"ok": false, "error": error}),
+        ),
+        Err(_) => status(
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({"ok": false, "error": "skill ack task failed"}),
+        ),
     }
 }
 

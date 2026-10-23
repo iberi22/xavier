@@ -242,8 +242,8 @@ fn build_ack_event(arguments: &Value) -> Result<UsageEvent, String> {
         Some("completed") => SkillStage::Completed,
         _ => return Err("'stage' must be 'invoked' or 'completed'".to_string()),
     };
-    let (Some(skill_name), Some(task_id)) = (text("skill_name"), text("task_id")) else {
-        return Err("'skill_name' and 'task_id' are required".to_string());
+    let Some(skill_name) = text("skill_name") else {
+        return Err("'skill_name' is required, with 'task_id' or 'dispatch_id'".to_string());
     };
     // D12: opaque, bounded identifiers only; no free text reaches the telemetry DB.
     let opaque = |v: &str, max: usize| {
@@ -252,11 +252,35 @@ fn build_ack_event(arguments: &Value) -> Result<UsageEvent, String> {
             && v.chars()
                 .all(|c| c.is_ascii_alphanumeric() || "-_.:/".contains(c))
     };
-    if !opaque(&skill_name, 128) || !opaque(&task_id, 128) {
-        return Err(
-            "'skill_name' and 'task_id' must be opaque ids ([A-Za-z0-9-_.:/], max 128)".to_string(),
-        );
+    if !opaque(&skill_name, 128) {
+        return Err("'skill_name' must be an opaque id ([A-Za-z0-9-_.:/], max 128)".to_string());
     }
+    // The key names the delivery: a dispatch id (the stored row decides the
+    // workspace later) or the legacy opaque task id.
+    let key = match (arguments.get("dispatch_id"), text("task_id")) {
+        (Some(Value::String(id)), None) => {
+            if !is_dispatch_id(id) {
+                return Err(
+                    "'dispatch_id' must be a dispatch id returned by xavier_dispatch_skill"
+                        .to_string(),
+                );
+            }
+            id.clone()
+        }
+        (Some(_), Some(_)) => {
+            return Err("pass either 'dispatch_id' or 'task_id', not both".to_string())
+        }
+        (Some(_), None) => return Err("'dispatch_id' must be a string".to_string()),
+        (None, Some(task_id)) => {
+            if !opaque(&task_id, 128) {
+                return Err(
+                    "'task_id' must be an opaque id ([A-Za-z0-9-_.:/], max 128)".to_string()
+                );
+            }
+            task_id
+        }
+        (None, None) => return Err("'task_id' or 'dispatch_id' is required".to_string()),
+    };
     if let Some(outcome) = text("outcome") {
         if !(1..=32).contains(&outcome.len())
             || !outcome.chars().all(|c| c.is_ascii_lowercase() || c == '_')
@@ -265,12 +289,12 @@ fn build_ack_event(arguments: &Value) -> Result<UsageEvent, String> {
         }
     }
     let event_id = crate::crypto::hex_encode(sha2::Sha256::digest(
-        format!("{task_id}:{skill_name}:{}", stage.as_str()).as_bytes(),
+        format!("{key}:{skill_name}:{}", stage.as_str()).as_bytes(),
     ));
     let mut event = UsageEvent::new(
         event_id,
         text("project").unwrap_or_else(|| "default".to_string()),
-        task_id,
+        key,
         text("tool").unwrap_or_else(|| "mcp-harness".to_string()),
         skill_name,
         stage,
@@ -279,6 +303,46 @@ fn build_ack_event(arguments: &Value) -> Result<UsageEvent, String> {
         event.outcome = outcome;
     }
     Ok(event)
+}
+
+/// A dispatch id is a canonical lowercase UUID v4, the form the dispatcher mints.
+fn is_dispatch_id(id: &str) -> bool {
+    uuid::Uuid::parse_str(id).is_ok_and(|uuid| {
+        uuid.to_string() == id && uuid.get_version() == Some(uuid::Version::Random)
+    })
+}
+
+/// Why an acknowledgment was not recorded: the caller's input was refused, or
+/// the telemetry store failed.
+#[derive(Debug)]
+pub(crate) enum AckError {
+    Rejected(String),
+    Storage(String),
+}
+
+/// Validate and record one acknowledgment (MCP `xavier_skill_ack` and
+/// `POST /api/skill/ack` both use this). A `dispatch_id` goes through the
+/// stored Delivered row; a legacy `task_id` goes through the unchanged path.
+pub(crate) fn record_skill_ack(
+    db: &Path,
+    arguments: &Value,
+) -> Result<crate::context::skill_controller::telemetry::Outcome, AckError> {
+    use crate::context::skill_dispatcher::{record_ack, record_dispatch_ack, SkillUsageError};
+    let event = build_ack_event(arguments).map_err(AckError::Rejected)?;
+    let classify = |error: SkillUsageError| match error {
+        SkillUsageError::Telemetry(_) | SkillUsageError::Database(_) => {
+            AckError::Storage(error.to_string())
+        }
+        other => AckError::Rejected(other.to_string()),
+    };
+    if arguments.get("dispatch_id").is_some() {
+        let project = arguments.get("project").and_then(Value::as_str);
+        return record_dispatch_ack(db, &event, project).map_err(classify);
+    }
+    if let Some(parent) = db.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    record_ack(db, &event).map_err(classify)
 }
 
 /// Handle context tool.
@@ -739,8 +803,8 @@ pub async fn handle_context_tool(
                 })
                 .await
             {
-                Ok(result) => super::server::mcp_text_result(
-                    serde_json::to_string_pretty(&json!({
+                Ok(result) => {
+                    let mut payload = json!({
                         "ok": true,
                         "skill_name": result.skill_name,
                         "skill_description": result.skill_description,
@@ -754,9 +818,13 @@ pub async fn handle_context_tool(
                         },
                         "estimated_savings_pct": result.estimated_savings_pct,
                         "hidden_by_clearance": result.hidden_by_clearance,
-                    }))?,
-                    false,
-                ),
+                    });
+                    // Present only when the Delivered row was stored (see the dispatcher).
+                    if let Some(id) = &result.dispatch_id {
+                        payload["dispatch_id"] = json!(id);
+                    }
+                    super::server::mcp_text_result(serde_json::to_string_pretty(&payload)?, false)
+                }
                 // Fail-open: empty-skill verdict, never a throw across MCP.
                 Err(e) => super::server::mcp_text_result(
                     serde_json::to_string(&json!({
@@ -770,9 +838,15 @@ pub async fn handle_context_tool(
             }
         }
         "xavier_skill_usage" => {
-            let summary = tokio::task::spawn_blocking(|| {
-                crate::api::skills::usage_summary_blocking(
+            let workspace = match arguments.get("workspace") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(workspace)) => Some(workspace.clone()),
+                Some(_) => return invalid_argument("'workspace' must be a string"),
+            };
+            let summary = tokio::task::spawn_blocking(move || {
+                crate::api::skills::usage_summary_for(
                     &crate::api::skills::skill_usage_db_path(),
+                    workspace.as_deref(),
                 )
             })
             .await?;
@@ -787,23 +861,8 @@ pub async fn handle_context_tool(
             }
         }
         "xavier_skill_ack" => {
-            let event = match build_ack_event(&arguments) {
-                Ok(event) => event,
-                Err(error) => {
-                    return super::server::mcp_text_result(
-                        serde_json::to_string(&json!({"ok": false, "error": error}))?,
-                        true,
-                    )
-                }
-            };
             let outcome = tokio::task::spawn_blocking(move || {
-                if let Some(parent) = crate::api::skills::skill_usage_db_path().parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                crate::context::skill_dispatcher::record_ack(
-                    &crate::api::skills::skill_usage_db_path(),
-                    &event,
-                )
+                record_skill_ack(&crate::api::skills::skill_usage_db_path(), &arguments)
             })
             .await?;
             match outcome {
@@ -813,10 +872,12 @@ pub async fn handle_context_tool(
                     )?,
                     false,
                 ),
-                Err(error) => super::server::mcp_text_result(
-                    serde_json::to_string(&json!({"ok": false, "error": error.to_string()}))?,
-                    true,
-                ),
+                Err(AckError::Rejected(error) | AckError::Storage(error)) => {
+                    super::server::mcp_text_result(
+                        serde_json::to_string(&json!({"ok": false, "error": error}))?,
+                        true,
+                    )
+                }
             }
         }
         "xavier_skill_list" => {
