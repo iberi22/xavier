@@ -2435,6 +2435,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fragment_errors_are_typed() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let cases = [
+            ("memoryfragment_get", json!({}), ToolErrorKind::Validation),
+            (
+                "memoryfragment_get",
+                json!({"id": 7}),
+                ToolErrorKind::Validation,
+            ),
+            ("get_memory", json!({}), ToolErrorKind::Validation),
+            (
+                "memoryfragment_get",
+                json!({"id": "absent-fragment"}),
+                ToolErrorKind::NotFound,
+            ),
+            (
+                "get_memory",
+                json!({"id": "absent-memory"}),
+                ToolErrorKind::NotFound,
+            ),
+        ];
+        for (tool, args, kind) in cases {
+            let err = handle_memory_update(&state, &workspace, tool, &args)
+                .await
+                .unwrap_err();
+            let typed = err
+                .downcast_ref::<McpToolError>()
+                .unwrap_or_else(|| panic!("{tool} {args}: untyped error: {err:#}"));
+            assert_eq!(typed.kind, kind, "{tool} {args}: {err:#}");
+            assert_eq!(
+                typed.message,
+                err.to_string(),
+                "{tool} {args}: client-visible text must be the typed message"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn wrong_type_args_report_invalid_params() {
         let (state, workspace) = crate::server::mcp::tests::test_state().await;
 
