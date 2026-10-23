@@ -63,12 +63,15 @@ async fn test_iroh_accept_loop_handshake_flow() {
     assert_eq!(resp.node_id, identity_a.node_id);
 
     // T1: assert direct address loopback properties.
-    let addrs = addr_a.direct_addresses().collect::<Vec<_>>();
+    let addrs = addr_a.ip_addrs().collect::<Vec<_>>();
     assert!(!addrs.is_empty(), "Expected direct addresses");
     for addr in addrs {
         assert!(addr.ip().is_loopback(), "Expected loopback direct address");
     }
-    assert!(addr_a.relay_url().is_none(), "Expected no relay URL");
+    assert!(
+        addr_a.relay_urls().next().is_none(),
+        "Expected no relay URL"
+    );
 
     handle_a.abort();
     let _ = handle_a.await;

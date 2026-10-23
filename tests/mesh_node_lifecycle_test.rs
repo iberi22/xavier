@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 use xavier::mesh::node::NodeIdentity;
-use xavier::mesh::{start_mesh_node, start_mesh_node_with_transport, IrohTransport};
+use xavier::mesh::{start_mesh_node_with_transport, IrohTransport};
 
 #[tokio::test]
 async fn test_start_mesh_node_lifecycle_and_handshake() {
@@ -21,7 +21,7 @@ async fn test_start_mesh_node_lifecycle_and_handshake() {
 
     // 2. Obtain Node A address
     let addr_a = transport_a
-        .my_addr_string()
+        .direct_addr()
         .await
         .expect("Failed to retrieve address for Node A");
 
@@ -35,7 +35,7 @@ async fn test_start_mesh_node_lifecycle_and_handshake() {
 
     // 4. Perform P2P handshake from Node B to Node A
     let handshake_resp = transport_b
-        .handshake(&addr_a, "test-token", None)
+        .handshake_addr(addr_a, None)
         .await
         .expect("Handshake from Node B to Node A failed");
 

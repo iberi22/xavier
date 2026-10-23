@@ -235,6 +235,7 @@ pub async fn start_mesh_node_with_transport(
     (transport, handle)
 }
 
+#[cfg(feature = "mesh")]
 pub async fn start_mesh_node(
     identity: std::sync::Arc<NodeIdentity>,
     store: std::sync::Arc<dyn crate::memory::store::MemoryStore>,

@@ -438,21 +438,26 @@ impl IrohTransport {
         serde_json::from_value(resp).context("parse memory sync ack")
     }
 
-    /// Fetch the sync manifest from a peer over Iroh. Reads the address out of
-    /// `peer.iroh_addr`.
+    /// Fetch the sync manifest from a peer dialed by explicit address (id +
+    /// direct sockets).
     pub async fn fetch_manifest_addr(
         &self,
         addr: iroh::EndpointAddr,
         _token: &str,
     ) -> Result<MeshManifest> {
         let conn = self.connect_addr(addr).await?;
+        self.fetch_manifest_on(&conn).await
+    }
+
+    /// Signed `FetchManifest` round trip over an established connection.
+    async fn fetch_manifest_on(&self, conn: &Connection) -> Result<MeshManifest> {
         let timestamp = chrono::Utc::now().timestamp().to_string();
         let nonce = uuid::Uuid::new_v4().to_string();
         let message = format!("{}:{}", timestamp, nonce);
         let signature = crate::crypto::hex_encode(self.local_identity.sign(message.as_bytes()));
         let resp = self
             .round_trip(
-                &conn,
+                conn,
                 &MeshRequest::FetchManifest {
                     node_id: self.local_identity.node_id.to_string(),
                     timestamp,
@@ -467,9 +472,9 @@ impl IrohTransport {
     /// Fetch the sync manifest from a peer over Iroh. Reads the address out of
     /// `peer.iroh_addr`.
     pub async fn fetch_manifest(&self, peer: &PeerInfo, _token: &str) -> Result<MeshManifest> {
-        let addr_str = Self::addr_from_peer(peer)?;
-        let addr = iroh::EndpointAddr::from(addr_str.parse::<iroh::PublicKey>()?);
-        self.fetch_manifest_addr(addr, _token).await
+        let addr = Self::addr_from_peer(peer)?;
+        let conn = self.connect(&addr).await?;
+        self.fetch_manifest_on(&conn).await
     }
 
     /// Fetch specific chunks from a peer over Iroh.
