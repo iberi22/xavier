@@ -540,7 +540,9 @@ fn resolve_gitcore_project_path(
         .components()
         .any(|c| c == std::path::Component::ParentDir)
     {
-        anyhow::bail!("Path traversal rejected: '..' is not allowed in project_path");
+        return Err(anyhow::Error::new(McpToolError::validation(
+            "Path traversal rejected: '..' is not allowed in project_path",
+        )));
     }
 
     let raw_path = std::path::PathBuf::from(project_path);
@@ -566,9 +568,11 @@ fn resolve_gitcore_project_path(
     let canonical = if is_mock_fixture {
         target.clone()
     } else {
-        target
-            .canonicalize()
-            .map_err(|e| anyhow::anyhow!("cannot resolve project path {project_path}: {e}"))?
+        target.canonicalize().map_err(|e| {
+            anyhow::Error::new(McpToolError::validation(format!(
+                "cannot resolve project path {project_path}: {e}"
+            )))
+        })?
     };
     let allowed_roots = allowed_project_roots(workspace);
 
@@ -937,10 +941,19 @@ pub async fn handle_core_tool(
             ))?)
         }
         "sync_gitcore" => {
-            let project_path = arguments
-                .get("project_path")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing project_path"))?;
+            let project_path = match arguments.get("project_path") {
+                None => {
+                    return Err(anyhow::Error::new(McpToolError::validation(
+                        "Missing project_path",
+                    )))
+                }
+                Some(Value::String(p)) => p.as_str(),
+                Some(_) => {
+                    return Err(anyhow::Error::new(McpToolError::validation(
+                        "project_path must be a string",
+                    )))
+                }
+            };
 
             let root = resolve_gitcore_project_path(&workspace, project_path)?;
             #[cfg(not(test))]
@@ -948,7 +961,9 @@ pub async fn handle_core_tool(
             #[cfg(test)]
             let root_is_dir = root.is_dir() || project_path == "/non/existent/path";
             if !root_is_dir {
-                anyhow::bail!("project_path must be a directory: {project_path}");
+                return Err(anyhow::Error::new(McpToolError::validation(format!(
+                    "project_path must be a directory: {project_path}"
+                ))));
             }
             let mut created = 0usize;
             let mut updated = 0usize;

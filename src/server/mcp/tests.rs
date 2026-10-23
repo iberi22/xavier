@@ -4086,6 +4086,115 @@ fn error_contract_rows() -> Vec<(&'static str, Value, ProbeChannel, &'static str
             ProbeChannel::Rpc(-32602),
             "tool name",
         ),
+        (
+            "telecom_chat_history_unknown_room",
+            call(
+                11,
+                "telecom_get_chat_history",
+                json!({"room_id": "nonexistent_room_xyz"}),
+            ),
+            ProbeChannel::ToolError {
+                code: -32002,
+                kind: "not_found",
+            },
+            "unknown room: nonexistent_room_xyz",
+        ),
+        (
+            "sync_gitcore_nonexistent_path",
+            call(
+                12,
+                "sync_gitcore",
+                json!({"project_path": "/path/does/not/exist/at/all"}),
+            ),
+            ProbeChannel::ToolError {
+                code: -32001,
+                kind: "validation",
+            },
+            "cannot resolve project path",
+        ),
+        (
+            "sync_gitcore_traversal_path",
+            call(
+                13,
+                "sync_gitcore",
+                json!({"project_path": "../traversal/path"}),
+            ),
+            ProbeChannel::ToolError {
+                code: -32001,
+                kind: "validation",
+            },
+            "Path traversal rejected: '..' is not allowed in project_path",
+        ),
+        (
+            "memory_prune_no_filter",
+            call(14, "memory_prune", json!({})),
+            ProbeChannel::ToolError {
+                code: -32001,
+                kind: "validation",
+            },
+            "At least one filter required",
+        ),
+        (
+            "create_memory_traversal_path",
+            call(
+                15,
+                "create_memory",
+                json!({"path": "foo/../bar", "content": "valid content"}),
+            ),
+            ProbeChannel::ToolError {
+                code: -32001,
+                kind: "validation",
+            },
+            "path cannot contain '..' traversal segments",
+        ),
+        (
+            "create_memory_empty_content",
+            call(
+                16,
+                "create_memory",
+                json!({"path": "valid/path", "content": ""}),
+            ),
+            ProbeChannel::ToolError {
+                code: -32001,
+                kind: "validation",
+            },
+            "content cannot be empty",
+        ),
+        (
+            "save_fragment_empty_content",
+            call(
+                17,
+                "save_fragment",
+                json!({"agent_id": "test-agent", "context": "observation", "content": ""}),
+            ),
+            ProbeChannel::ToolError {
+                code: -32001,
+                kind: "validation",
+            },
+            "content cannot be empty",
+        ),
+        (
+            "issue_context_package_wrong_type_issue_id",
+            call(
+                18,
+                "xavier_issue_context_package",
+                json!({"issue_id": 123, "title": "Test Title", "body": "Test Body"}),
+            ),
+            ProbeChannel::ToolError {
+                code: -32001,
+                kind: "validation",
+            },
+            "issue_id must be a string",
+        ),
+        (
+            "context_search_wrong_type_query",
+            call(19, "xavier_context_search", json!({"query": 5})),
+            ProbeChannel::ToolError {
+                code: -32001,
+                kind: "validation",
+            },
+            "query must be a string",
+        ),
     ]
 }
 
@@ -4131,7 +4240,12 @@ fn assert_probe_channel(row: &str, body: &Value, expected: &ProbeChannel, messag
 
 #[tokio::test]
 async fn error_contract_probe_matrix_http() {
-    let (state, workspace) = test_state().await;
+    let (mut state, workspace) = test_state().await;
+    let data_dir = tempfile::tempdir().expect("tempdir");
+    let registry =
+        crate::telecom::mcp_tools::build_telecom_registry(data_dir.path(), "node-local-test")
+            .expect("telecom registry builds");
+    state.telecom = Some(Arc::new(tokio::sync::RwLock::new(registry)));
     let router = test_router(state, workspace);
     for (row, request, expected, message) in error_contract_rows() {
         let body = get_json_body(post_json(router.clone(), request).await).await;

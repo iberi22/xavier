@@ -578,10 +578,15 @@ pub async fn handle_context_tool(
             super::server::mcp_text_result(serde_json::to_string_pretty(&result)?, false)
         }
         "xavier_context_search" => {
-            let query = arguments
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let query = match arguments.get("query") {
+                Some(Value::String(q)) => q.as_str(),
+                Some(_) => {
+                    return Err(anyhow::Error::new(McpToolError::validation(
+                        "query must be a string",
+                    )))
+                }
+                None => "",
+            };
             let session_id = match arguments.get("session_id") {
                 None | Some(Value::Null) => None,
                 Some(Value::String(sid)) => Some(sid.as_str()),
@@ -728,10 +733,15 @@ pub async fn handle_context_tool(
             super::server::mcp_text_result(json_res, result.exit_code != 0)
         }
         "xavier_issue_context_package" => {
-            let issue_id = arguments
-                .get("issue_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let issue_id = match arguments.get("issue_id") {
+                Some(Value::String(id)) => id.as_str(),
+                Some(_) => {
+                    return Err(anyhow::Error::new(McpToolError::validation(
+                        "issue_id must be a string",
+                    )))
+                }
+                None => "",
+            };
             let title = match required_text(&arguments, "title") {
                 Ok(title) => title,
                 Err(message) => return invalid_argument(message),

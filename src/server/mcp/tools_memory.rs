@@ -566,7 +566,9 @@ fn validate_create_path(path: &str) -> anyhow::Result<()> {
         );
     }
     if path.split(['/', '\\']).any(|seg| seg == "..") {
-        anyhow::bail!("path cannot contain '..' traversal segments");
+        return Err(anyhow::Error::new(McpToolError::validation(
+            "path cannot contain '..' traversal segments",
+        )));
     }
     Ok(())
 }
@@ -1219,7 +1221,9 @@ async fn handle_create_memory(
     validate_create_path(path)?;
     let content = require_str_arg(arguments, "content")?;
     if content.is_empty() {
-        return Err(anyhow::anyhow!("content cannot be empty"));
+        return Err(anyhow::Error::new(McpToolError::validation(
+            "content cannot be empty",
+        )));
     }
     let metadata = arguments
         .get("metadata")
@@ -1365,7 +1369,9 @@ async fn handle_save_fragment(
     let agent_id = require_memoryfragment_component(arguments, "agent_id")?;
     let content = require_str_arg(arguments, "content")?;
     if content.is_empty() {
-        return Err(anyhow::anyhow!("content cannot be empty"));
+        return Err(anyhow::Error::new(McpToolError::validation(
+            "content cannot be empty",
+        )));
     }
     let content = match secure_mcp_external_input(state, "memoryfragment content", content).await? {
         Ok(content) => content,
@@ -1735,7 +1741,9 @@ pub async fn handle_memory_delete(
             };
 
             if kind.is_none() && path_prefix.is_none() && older_than_days <= 0 {
-                return Err(anyhow::anyhow!("At least one filter required"));
+                return Err(anyhow::Error::new(McpToolError::validation(
+                    "At least one filter required",
+                )));
             }
 
             // The full-store scan is CPU-bound: run it off the Tokio workers
