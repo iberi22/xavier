@@ -1,0 +1,325 @@
+name: Server Packages
+
+# Headless server channels: tarballs (gnu x86_64/aarch64), .deb, .rpm,
+# install.sh, the Dockerfile.headless image and the Nix flake. Every artifact is installed
+# in a clean environment and started before it counts as built.
+
+on:
+  pull_request:
+    branches: [main, 'sprint/**']
+    paths:
+      - 'packaging/**'
+      - 'Dockerfile.headless'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'docs/DEPLOY/LINUX_SERVER.md'
+      - '.github/workflows/server-packages.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packaging/**'
+      - 'Dockerfile.headless'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'docs/DEPLOY/LINUX_SERVER.md'
+      - '.github/workflows/server-packages.yml'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: Release tag used in artifact names (e.g. v0.3.0)
+        type: string
+        required: true
+      publish:
+        description: Push the image to GHCR
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-packages-${{ github.event.pull_request.number || github.ref }}-${{ inputs.version || 'ci' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  meta:
+    name: Version
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            v="$INPUT_VERSION"
+          else
+            v="v$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)-$(git rev-parse --short HEAD)"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: meta
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+    env:
+      CARGO_TARGET_DIR: target
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: System dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends protobuf-compiler pkg-config
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: server-${{ matrix.target }}
+      - name: Headless dependency graph has no desktop crates
+        run: |
+          cargo tree -p xavier --locked --target ${{ matrix.target }} \
+            --no-default-features --features headless -e normal \
+            --prefix none --format '{p}' > tree.txt
+          echo "$(sort -u tree.txt | wc -l) packages in the headless graph"
+          bad=0
+          for crate in ratatui crossterm tauri wry webkit2gtk gtk; do
+            if grep -qE "^${crate} v" tree.txt; then
+              echo "::error::${crate} is linked into the headless build"; bad=1
+            fi
+          done
+          exit "$bad"
+      - name: Build
+        run: >-
+          cargo build --release --locked --target ${{ matrix.target }}
+          -p xavier --bin xavier --no-default-features --features headless
+      - name: Smoke test
+        run: sh packaging/linux/smoke-test.sh target/${{ matrix.target }}/release/xavier
+      - name: Package
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          bin=target/${{ matrix.target }}/release/xavier
+          strip "$bin"
+          file "$bin"
+          ls -la "$bin"
+          # docs/DEPLOY/LINUX_SERVER.md promises glibc 2.34 (RHEL 9); fail before packaging a newer requirement.
+          max=$(objdump -T "$bin" | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -n1)
+          echo "highest glibc symbol: $max"
+          if [ "$(printf '%s\n' GLIBC_2.34 "$max" | sort -V | tail -n1)" != GLIBC_2.34 ]; then
+            echo "::error::$bin requires $max, newer than the documented GLIBC_2.34"
+            exit 1
+          fi
+          sh packaging/linux/make-tarball.sh "$bin" "$VERSION" ${{ matrix.target }} dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: server-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  packages:
+    name: deb/rpm ${{ matrix.target }}
+    needs: [meta, build]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: server-${{ matrix.target }}
+          path: dl
+      - name: Stage the built binary where the package metadata expects it
+        run: |
+          mkdir -p "target/${{ matrix.target }}/release"
+          tar -xzf dl/xavier-server-*.tar.gz -C dl
+          install -m 0755 dl/xavier-server-*/bin/xavier "target/${{ matrix.target }}/release/xavier"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb,cargo-generate-rpm
+      - name: Build .deb and .rpm
+        run: |
+          mkdir -p dist
+          cargo deb -p xavier --no-build --no-strip --target ${{ matrix.target }} --output dist/
+          cargo generate-rpm --target ${{ matrix.target }} --output dist/
+          ls -la dist
+      - name: Install and start the .deb on Debian 12
+        run: |
+          docker run --rm -v "$PWD:/src:ro" debian:bookworm sh -euxc '
+            apt-get update -qq
+            apt-get install -y -qq curl /src/dist/*.deb >/dev/null
+            xavier --version
+            test -f /lib/systemd/system/xavier.service
+            getent passwd xavier
+            test "$(stat -c "%a %U:%G" /etc/xavier/xavier.env)" = "640 root:xavier"
+            grep -qE "^XAVIER_TOKEN=[0-9a-f]{64}$" /etc/xavier/xavier.env
+            sh /src/packaging/linux/smoke-test.sh /usr/bin/xavier'
+      - name: Install and start the .rpm on Fedora
+        run: |
+          docker run --rm -v "$PWD:/src:ro" fedora:latest sh -euxc '
+            dnf install -y -q /src/dist/*.rpm >/dev/null
+            command -v curl >/dev/null || dnf install -y -q curl >/dev/null
+            xavier --version
+            test -f /usr/lib/systemd/system/xavier.service
+            getent passwd xavier
+            test "$(stat -c "%a %U:%G" /etc/xavier/xavier.env)" = "640 root:xavier"
+            grep -qE "^XAVIER_TOKEN=[0-9a-f]{64}$" /etc/xavier/xavier.env
+            sh /src/packaging/linux/smoke-test.sh /usr/bin/xavier'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: server-pkg-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  installer:
+    name: install.sh on ${{ matrix.image }}
+    needs: [meta, build]
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['debian:bookworm', 'ubuntu:24.04']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: server-x86_64-unknown-linux-gnu
+          path: dist
+      - name: Install, reinstall, reject a tampered archive, start
+        run: |
+          docker run --rm -v "$PWD:/src:ro" ${{ matrix.image }} sh -euxc '
+            apt-get update -qq && apt-get install -y -qq curl >/dev/null
+            archive=$(ls /src/dist/xavier-server-*.tar.gz)
+            sh /src/packaging/linux/install.sh --archive "$archive" --no-start
+            /usr/local/bin/xavier --version
+            grep -qx "ExecStart=/usr/local/bin/xavier http --no-ui" /etc/systemd/system/xavier.service
+            test "$(stat -c "%a %U:%G" /etc/xavier/xavier.env)" = "640 root:xavier"
+            before=$(sha256sum /etc/xavier/xavier.env)
+            sh /src/packaging/linux/install.sh --archive "$archive" --no-start
+            test "$before" = "$(sha256sum /etc/xavier/xavier.env)"
+            cp "$archive" /tmp/t.tar.gz
+            printf "%064d  t.tar.gz\n" 0 > /tmp/t.tar.gz.sha256
+            if sh /src/packaging/linux/install.sh --archive /tmp/t.tar.gz --no-start; then
+              echo "tampered archive was accepted"; exit 1
+            fi
+            sh /src/packaging/linux/smoke-test.sh /usr/local/bin/xavier'
+
+  docker:
+    name: Docker image (Dockerfile.headless)
+    needs: meta
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.headless
+          build-args: |
+            FEATURES=headless
+            BUILD_JOBS=4
+            XAVIER_VERSION=${{ needs.meta.outputs.version }}
+          load: true
+          tags: xavier:server-ci
+          cache-from: type=gha,scope=server-image
+          cache-to: type=gha,mode=max,scope=server-image
+      - name: Same master key after the container is recreated
+        run: |
+          set -eu
+          docker volume create xavier-ci
+          start() {
+            docker run -d --name xv --hostname xavier-ci -v xavier-ci:/data \
+              -e XAVIER_TOKEN=ci-token-0123456789abcdef -p 127.0.0.1:18006:8006 xavier:server-ci
+            for _ in $(seq 1 180); do
+              curl -fsS http://127.0.0.1:18006/health >/dev/null 2>&1 && return 0
+              sleep 1
+            done
+            docker logs xv 2>&1 | tail -n 80
+            return 1
+          }
+          stop() {
+            docker stop -t 30 xv
+            code=$(docker inspect -f '{{.State.ExitCode}}' xv)
+            docker rm xv
+            if [ "$code" = 137 ]; then echo "::error::container was killed instead of stopping"; return 1; fi
+          }
+          # tracing colours the key=value fields; strip ANSI before matching.
+          kcv() { docker logs xv 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -oE 'kcv=[0-9a-f]+' | head -n1; }
+          start
+          curl -fsS http://127.0.0.1:18006/ready
+          kcv1=$(kcv)
+          docker exec xv test -f /data/home/.xavier/master.key
+          stop
+          start
+          kcv2=$(kcv)
+          stop
+          echo "first=$kcv1 second=$kcv2"
+          test -n "$kcv1"
+          test "$kcv1" = "$kcv2"
+      - name: Log in to GHCR
+        if: ${{ inputs.publish }}
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish
+        if: ${{ inputs.publish }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.headless
+          build-args: |
+            FEATURES=headless
+            BUILD_JOBS=4
+            XAVIER_VERSION=${{ needs.meta.outputs.version }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/xavier:server-${{ needs.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/xavier:server-latest
+          cache-from: type=gha,scope=server-image
+
+  nix:
+    name: Nix package and NixOS module
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: experimental-features = nix-command flakes
+      - name: Flake check (module evaluation)
+        run: |
+          nix flake check --no-build -L
+          nix build -L .#checks.x86_64-linux.module-eval
+          cat result
+      - name: Build the package
+        run: nix build -L .#xavier-server
+      - name: Smoke test
+        run: sh packaging/linux/smoke-test.sh ./result/bin/xavier

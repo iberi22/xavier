@@ -9,10 +9,8 @@ use anyhow::Result;
 /// Register sqlite vec extension.
 pub fn register_sqlite_vec_extension() -> Result<()> {
     unsafe {
-        #[cfg(target_os = "android")]
-        type CharPtr = u8;
-        #[cfg(not(target_os = "android"))]
-        type CharPtr = i8;
+        // c_char is u8 on aarch64 Linux and Android, i8 on x86_64.
+        type CharPtr = std::ffi::c_char;
 
         let init = std::mem::transmute::<
             *const (),

@@ -94,6 +94,9 @@ pub mod domain;
 pub mod ports;
 pub mod time;
 
+#[cfg(all(test, unix))]
+mod packaging_contract;
+
 use std::sync::Arc;
 
 use memory::file_indexer::FileIndexer;

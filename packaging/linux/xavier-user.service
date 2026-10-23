@@ -1,0 +1,19 @@
+# Xavier headless server (systemd --user unit), installed by `install.sh --user`.
+[Unit]
+Description=Xavier memory server (headless, user)
+Documentation=https://github.com/iberi22/xavier/blob/main/docs/DEPLOY/LINUX_SERVER.md
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/xavier/xavier.env
+WorkingDirectory=%h/.local/share/xavier
+ExecStart=%h/.local/bin/xavier http --no-ui
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=60
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

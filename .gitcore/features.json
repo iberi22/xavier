@@ -3653,6 +3653,33 @@
         "REQ-012"
       ],
       "user_stories": []
+    },
+    "feat-headless-server-packaging": {
+      "category": "packaging",
+      "description": "Headless server build (`headless` feature) with verified Linux channels: tarball + install.sh, deb, rpm, container image and Nix flake/NixOS module.",
+      "id": "feat-headless-server-packaging",
+      "implemented_in": "packaging/linux/install.sh",
+      "name": "Headless Server Packaging",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [
+        "REQ-087"
+      ],
+      "spec_reference": "docs/features/specs/FEATURE-headless-server-packaging.md",
+      "status": "planned",
+      "steps": [
+        "Add the headless feature without TUI/panel/desktop crates",
+        "Ship install.sh, setup-host.sh and hardened systemd units",
+        "Add deb/rpm metadata, Dockerfile.headless state under /data, Nix flake and NixOS module",
+        "Verify every channel in server-packages.yml and attach them to tagged releases"
+      ],
+      "tests": [
+        "packaging_contract::headless_feature_excludes_tui_and_panel",
+        "packaging_contract::system_unit_runs_headless_as_dedicated_user",
+        "packaging_contract::installer_rejects_tampered_archive",
+        "packaging_contract::installer_user_mode_installs_binary_and_private_token"
+      ],
+      "user_stories": []
     }
   },
   "verification_commands": {
