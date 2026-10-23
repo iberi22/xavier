@@ -1523,7 +1523,7 @@ mod tests {
         let reqs_clone = requests.clone();
 
         let app = axum::Router::new().route(
-            "/bot123456:TEST/sendMessage",
+            "/bot123456:TEST/SendMessage",
             axum::routing::post(
                 |axum::extract::Json(body): axum::extract::Json<serde_json::Value>| async move {
                     reqs_clone.lock().await.push(body);
@@ -1865,7 +1865,7 @@ mod tests {
         assert!(text.contains("http://my\\-panel\\.test"));
 
         let db = crate::auth2::db::AuthDb::new(&db_path).unwrap();
-        let re = regex::Regex::new(r"code=([0-9]{6})").unwrap();
+        let re = regex::Regex::new(r"code\\?=([0-9]{6})").unwrap();
         let code = re.captures(text).unwrap().get(1).unwrap().as_str();
 
         let user = crate::auth2::login_code::redeem_login_code(
