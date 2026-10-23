@@ -2116,6 +2116,175 @@ pub(crate) mod tests {
             .contains("1000"));
     }
 
+    /// Seeds `contents` into project `project` through the `create_memory`
+    /// write path and returns the state and workspace to query them with.
+    async fn project_fixture(
+        project: &str,
+        contents: &[String],
+    ) -> (crate::AppState, crate::workspace::WorkspaceContext) {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        for (i, content) in contents.iter().enumerate() {
+            crate::server::mcp::tools_memory::handle_memory_tool(
+                state.clone(),
+                workspace.clone(),
+                "create_memory",
+                json!({
+                    "path": format!("{project}/budget/{i}"),
+                    "content": content,
+                    "namespace": { "project": project },
+                    "metadata": { "clearance": "UNCLASSIFIED" },
+                }),
+            )
+            .await
+            .expect("seed create_memory");
+        }
+        (state, workspace)
+    }
+
+    /// Runs `get_project_context` against a seeded fixture and returns its
+    /// `structuredContent`.
+    async fn project_context_on(
+        state: &crate::AppState,
+        workspace: &crate::workspace::WorkspaceContext,
+        args: Value,
+    ) -> Value {
+        let claims = admin_claims();
+        let out = handle_core_tool(
+            state.clone(),
+            workspace.clone(),
+            Some(&claims),
+            "get_project_context",
+            args,
+        )
+        .await
+        .expect("get_project_context");
+        out["structuredContent"].clone()
+    }
+
+    /// The rendered entries of a `content` string, split on the entry separator.
+    fn rendered_entries(content: &str) -> Vec<&str> {
+        if content.is_empty() {
+            Vec::new()
+        } else {
+            content.split("\n\n---\n\n").collect()
+        }
+    }
+
+    /// The ids named by the `Id:` header lines of a rendered `content` string.
+    fn rendered_ids(content: &str) -> Vec<String> {
+        content
+            .lines()
+            .filter_map(|line| line.strip_prefix("Id: ").map(str::to_string))
+            .collect()
+    }
+
+    /// Character length of an entry's header: everything up to and including
+    /// the `Content: ` label.
+    fn header_chars(entry: &str) -> usize {
+        let (header, _) = entry
+            .split_once("Content: ")
+            .expect("entry carries a Content: header line");
+        header.chars().count() + "Content: ".chars().count()
+    }
+
+    #[tokio::test]
+    async fn project_context_content_never_exceeds_max_chars() {
+        crate::isolate_test_process!();
+        let (state, workspace) = project_fixture(
+            "budget-p",
+            &["alpha".repeat(12), "bravo".repeat(18), "charlie".repeat(6)],
+        )
+        .await;
+        let full = project_context_on(
+            &state,
+            &workspace,
+            json!({ "project_id": "budget-p", "max_chars": 8000 }),
+        )
+        .await;
+        let entries = rendered_entries(full["content"].as_str().unwrap());
+        assert_eq!(
+            entries.len(),
+            3,
+            "all records fit a generous budget: {full}"
+        );
+        let e1 = entries[0].chars().count();
+        let e2 = entries[1].chars().count();
+        let h = header_chars(entries[0]);
+
+        for max in [1, 10, h, h + 1, e1, e1 + 5, e1 + e2 + 3, 8000] {
+            let out = project_context_on(
+                &state,
+                &workspace,
+                json!({ "project_id": "budget-p", "max_chars": max }),
+            )
+            .await;
+            let content = out["content"].as_str().unwrap();
+            assert!(
+                content.chars().count() <= max,
+                "max_chars={max}: content is {} chars: {out}",
+                content.chars().count()
+            );
+            let sources: Vec<String> = out["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["id"].as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(
+                sources,
+                rendered_ids(content),
+                "max_chars={max}: sources must name exactly the rendered entries: {out}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn project_context_tiny_budget_has_no_partial_header() {
+        crate::isolate_test_process!();
+        let (state, workspace) = project_fixture("budget-tiny", &["alpha".repeat(12)]).await;
+        let full = project_context_on(
+            &state,
+            &workspace,
+            json!({ "project_id": "budget-tiny", "max_chars": 8000 }),
+        )
+        .await;
+        let h = header_chars(rendered_entries(full["content"].as_str().unwrap())[0]);
+
+        for max in 1..h {
+            let out = project_context_on(
+                &state,
+                &workspace,
+                json!({ "project_id": "budget-tiny", "max_chars": max }),
+            )
+            .await;
+            let content = out["content"].as_str().unwrap();
+            assert!(
+                !content.contains("Id: "),
+                "max_chars={max} (header is {h} chars): partial header rendered: {content:?}"
+            );
+            assert_eq!(out["truncated"], true, "max_chars={max}: {out}");
+            assert!(
+                out["sources"].as_array().unwrap().is_empty(),
+                "max_chars={max}: no source may name an unrendered entry: {out}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn project_context_empty_message_is_bounded() {
+        crate::isolate_test_process!();
+        let out = project_context_call(json!({
+            "project_id": "budget-missing", "max_chars": 5
+        }))
+        .await
+        .expect("ok");
+        let content = out["structuredContent"]["content"].as_str().unwrap();
+        assert!(
+            content.chars().count() <= 5,
+            "the empty-result message must fit max_chars: {content:?}"
+        );
+    }
+
     fn root_claims() -> crate::security::auth::Claims {
         crate::security::auth::Claims::new(
             "root".to_string(),
