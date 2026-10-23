@@ -459,10 +459,16 @@ fn validate_search_query(query: &str) -> anyhow::Result<()> {
 
 fn require_str_arg<'a>(arguments: &'a Value, arg: &str) -> anyhow::Result<&'a str> {
     match arguments.get(arg) {
-        None => Err(anyhow::anyhow!("Missing {}", arg)),
-        Some(v) => v
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("'{}' must be a string", arg)),
+        None => Err(anyhow::Error::new(McpToolError::validation(format!(
+            "Missing {}",
+            arg
+        )))),
+        Some(v) => v.as_str().ok_or_else(|| {
+            anyhow::Error::new(McpToolError::validation(format!(
+                "'{}' must be a string",
+                arg
+            )))
+        }),
     }
 }
 
@@ -1596,7 +1602,9 @@ pub async fn handle_memory_update(
                         doc.metadata,
                     )
                 } else {
-                    return Err(anyhow::anyhow!("Memory not found: {id}"));
+                    return Err(anyhow::Error::new(McpToolError::not_found(format!(
+                        "Memory not found: {id}"
+                    ))));
                 };
 
             let public_meta = public_metadata(&metadata);
@@ -1645,7 +1653,9 @@ pub async fn handle_memory_update(
                         doc.metadata,
                     )
                 } else {
-                    return Err(anyhow::anyhow!("Memory not found: {id}"));
+                    return Err(anyhow::Error::new(McpToolError::not_found(format!(
+                        "Memory not found: {id}"
+                    ))));
                 };
 
             let public_meta = public_metadata(&metadata);
