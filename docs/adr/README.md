@@ -8,6 +8,7 @@
 
 *Lista de decisiones de arquitectura*
 
+- [ADR-047 — MCP error channels by phase](ADR-047-mcp-error-channels.md) — Propuesto, 2026-10-23
 - [ADR-046 — Marketplace currency, settlement and licensing](ADR-046-marketplace-currency-settlement-licensing.md) — Propuesto, 2026-10-16
 - [ADR-045 — Compaction opt-in and ingestion cursors](ADR-045-compaction-opt-in-and-ingestion-cursors.md) — Aceptado, 2026-10-12
 - [ADR-044 — Skill adapter discovery matrix](ADR-044-skill-adapter-discovery-matrix.md) — Propuesto, 2026-10-11
