@@ -12,6 +12,7 @@ pub mod model_routes;
 pub mod model_service;
 pub mod registry_route;
 pub mod rewards;
+pub mod roadmap_route;
 
 pub use hc_analyzer_bridge::{ChallengeEmbedder, HcAnalyzerBridge};
 pub use hc_cron_bridge::{HcCronBridge, HcCronBridgeConfig};
@@ -62,6 +63,7 @@ pub fn v1_maloca_router_with_maloca_store(
     Router::new()
         .merge(registry_route::router(registry_mgr))
         .merge(alignment_route::router())
+        .merge(roadmap_route::router(backlog_svc.clone()))
         .merge(backlog_route::router(backlog_svc))
         .merge(model_routes::router(model_svc))
         .merge(challenge_routes::router(challenge_state))
