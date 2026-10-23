@@ -119,7 +119,13 @@ jobs:
           strip "$bin"
           file "$bin"
           ls -la "$bin"
-          echo "highest glibc symbol: $(objdump -T "$bin" | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -n1)"
+          # docs/DEPLOY/LINUX_SERVER.md promises glibc 2.34 (RHEL 9); fail before packaging a newer requirement.
+          max=$(objdump -T "$bin" | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -n1)
+          echo "highest glibc symbol: $max"
+          if [ "$(printf '%s\n' GLIBC_2.34 "$max" | sort -V | tail -n1)" != GLIBC_2.34 ]; then
+            echo "::error::$bin requires $max, newer than the documented GLIBC_2.34"
+            exit 1
+          fi
           sh packaging/linux/make-tarball.sh "$bin" "$VERSION" ${{ matrix.target }} dist
       - uses: actions/upload-artifact@v7
         with:
