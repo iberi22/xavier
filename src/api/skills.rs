@@ -1093,6 +1093,157 @@ Follow these steps to analyze memory and debug issues.
         assert!(context_pack["total_tokens"].is_number());
     }
 
+    /// Workspace whose real memory is authorized to `workspace`: it holds
+    /// MEM-A (in scope) and MEM-B (another workspace's memory, must stay out).
+    async fn scoped_memory_workspace(root: &Path, workspace: &str) -> WorkspaceContext {
+        use crate::memory::qmd_memory::{MemoryDocument, QmdMemory};
+        let skill_dir = root.join("skills").join("trace-audit");
+        tokio::fs::create_dir_all(&skill_dir).await.unwrap();
+        tokio::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: trace-audit\ndescription: \"Audit the failed traces of a run\"\n---\n\nContent",
+        )
+        .await
+        .unwrap();
+        let document = |id: &str, owner: &str, body: &str| MemoryDocument {
+            id: Some(id.to_string()),
+            path: format!("sessions/{id}"),
+            content: body.to_string(),
+            metadata: serde_json::json!({
+                "kind": "observation",
+                "namespace": { "workspace_id": owner }
+            }),
+            ..Default::default()
+        };
+        let documents = Arc::new(tokio::sync::RwLock::new(vec![
+            document(
+                "mem-a",
+                workspace,
+                "trace audit insight inside the workspace",
+            ),
+            document(
+                "mem-b",
+                "ws-b",
+                "trace audit insight from another workspace",
+            ),
+        ]));
+        let memory = Arc::new(QmdMemory::new_with_workspace(documents, workspace));
+        let state = crate::workspace::WorkspaceState::new_minimal(
+            workspace.to_string(),
+            root.to_path_buf(),
+            memory,
+            Arc::new(crate::memory::store::InMemoryMemoryStore::default()),
+        )
+        .await;
+        WorkspaceContext {
+            workspace_id: root.to_string_lossy().to_string(),
+            workspace: Arc::new(state),
+        }
+    }
+
+    /// Send one request through a clone of the router; returns status and JSON.
+    async fn send(
+        app: &Router,
+        method: &str,
+        uri: &str,
+        body: Option<serde_json::Value>,
+    ) -> (StatusCode, serde_json::Value) {
+        let request = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(match body {
+                Some(body) => Body::from(body.to_string()),
+                None => Body::empty(),
+            })
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        )
+    }
+
+    #[tokio::test]
+    async fn skill_routes_dispatch_ack_and_usage_round_trip_is_workspace_scoped() {
+        crate::isolate_test_process!();
+        let _lock = crate::context::skill_registry::env_lock().lock().await;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _env_guard = EnvGuard::isolate(temp_dir.path());
+        let workspace = scoped_memory_workspace(temp_dir.path(), "ws-a").await;
+        let app = skill_api_routes::<()>()
+            .layer(Extension(ClearanceLevel::Confidential))
+            .layer(Extension(workspace));
+
+        let (status, dispatched) = send(
+            &app,
+            "POST",
+            "/api/skill/dispatch",
+            Some(serde_json::json!({
+                "task": "audit the failed traces",
+                "max_tokens": 4000
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{dispatched}");
+        assert_eq!(dispatched["data"]["skill_name"], "trace-audit");
+        let pack = dispatched["data"]["context_pack"].to_string();
+        assert!(
+            pack.contains("inside the workspace"),
+            "in-scope memory missing: {pack}"
+        );
+        assert!(
+            !pack.contains("another workspace"),
+            "another workspace's memory reached the pack: {pack}"
+        );
+        let dispatch_id = dispatched["data"]["dispatch_id"]
+            .as_str()
+            .expect("dispatch_id in the HTTP response")
+            .to_string();
+
+        // The Delivered row is stored before the response is returned.
+        let delivered: i64 = rusqlite::Connection::open(skill_usage_db_path())
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM skill_usage_events
+                 WHERE task_id = ?1 AND stage = 'delivered' AND workspace_id = 'ws-a'",
+                [&dispatch_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(delivered, 1);
+
+        let (status, acked) = send(
+            &app,
+            "POST",
+            "/api/skill/ack",
+            Some(serde_json::json!({
+                "dispatch_id": dispatch_id,
+                "skill_name": "trace-audit",
+                "stage": "invoked",
+                "tool": "http-test"
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{acked}");
+        assert_eq!(acked["ok"], true);
+
+        let (status, scoped) = send(&app, "GET", "/api/skill/usage?workspace=ws-a", None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(scoped["skills"][0]["skill_name"], "trace-audit");
+        assert_eq!(scoped["skills"][0]["invoked"], 1);
+        assert_eq!(scoped["skills"][0]["invocation_coverage"], "observed");
+        let (_, other) = send(&app, "GET", "/api/skill/usage?workspace=ws-b", None).await;
+        assert!(
+            other["skills"].as_array().unwrap().is_empty(),
+            "usage leaked across workspaces: {other}"
+        );
+    }
+
     #[tokio::test]
     async fn test_dispatch_skill_unmatched_retains_json_fields() {
         let _lock = crate::context::skill_registry::env_lock().lock().await;
