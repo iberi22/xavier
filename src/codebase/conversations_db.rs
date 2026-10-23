@@ -328,7 +328,16 @@ impl ConversationsDb {
                     created_at TEXT NOT NULL,
                     expires_at TEXT,
                     kind TEXT DEFAULT 'work'
-                );",
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_conversation_messages_thread_created
+                    ON conversation_messages (thread_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_checkpoints_project_state_created
+                    ON checkpoints (project_id, state, created_at);
+                CREATE INDEX IF NOT EXISTS idx_checkpoints_session_project
+                    ON checkpoints (session_id, project_id);
+                CREATE INDEX IF NOT EXISTS idx_deductions_project_created
+                    ON deductions (project_id, created_at);",
                 )
                 .context("failed to create conversations schema")?;
                 Ok(())
