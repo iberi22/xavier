@@ -5,6 +5,7 @@
 //! (telemetry keeps its original decrypted payload shape). The exporter composes the
 //! sources requested, then applies privacy scrubbing, k-anonymity and the split.
 
+use super::egress::{EgressPolicy, ExclusionReason};
 use super::privacy::PrivacyLevel;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -23,6 +24,8 @@ pub use telemetry::TelemetrySource;
 pub struct SourceContext {
     pub seed: u64,
     pub privacy_level: PrivacyLevel,
+    /// Egress policy of the grant this export runs under.
+    pub policy: EgressPolicy,
 }
 
 /// Records produced by one source plus the accounting the audit needs.
@@ -41,6 +44,15 @@ pub struct SourceBatch {
 impl SourceBatch {
     pub fn exclude(&mut self, reason: &str) {
         *self.excluded_other.entry(reason.to_string()).or_insert(0) += 1;
+    }
+
+    /// Count one egress exclusion. Counts only: no record id or content is stored.
+    pub fn record_exclusion(&mut self, reason: ExclusionReason) {
+        match reason {
+            ExclusionReason::NoConsent => self.excluded_no_consent += 1,
+            ExclusionReason::Revoked => self.excluded_revoked += 1,
+            other => self.exclude(&format!("egress:{}", other.as_str())),
+        }
     }
 }
 

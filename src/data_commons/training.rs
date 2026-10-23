@@ -1,3 +1,4 @@
+use super::egress::{exclusion_for, EgressGrant, EgressPolicy};
 use super::privacy::{
     check_k_anonymity, AnonymizationAudit, AuditCounts, AuditInput, PiiCounts, PrivacyConfig,
     PrivacyLevel, PrivacyPipeline,
@@ -5,6 +6,7 @@ use super::privacy::{
 pub use super::sources::{
     ChallengeSource, MemorySource, SourceBatch, SourceContext, TelemetrySource, TrainingSource,
 };
+use crate::security::clearance::ClearanceLevel;
 use chrono::{DateTime, Utc};
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -90,31 +92,57 @@ impl TrainingExporter {
         _generated_at: Option<DateTime<Utc>>,
     ) -> Result<TrainingBundle, String> {
         self.check_params(eval_ratio)?;
-        let batch = TelemetrySource::new(&self.db_path).collect_sync(seed)?;
+        let grant = EgressGrant::local_training(self.privacy_level);
+        let mut batch = TelemetrySource::new(&self.db_path).collect_sync(seed)?;
+        enforce_egress(grant.policy(), &mut batch);
         self.assemble(vec![("telemetry".to_string(), batch)], seed, eval_ratio)
     }
 
-    /// Compose the given sources into one bundle.
+    /// Compose the given sources into one bundle under a local-training grant.
     pub async fn generate_bundle_from_sources(
         &self,
         sources: &[Box<dyn TrainingSource>],
         seed: u64,
         eval_ratio: f32,
     ) -> Result<TrainingBundle, String> {
+        let grant = EgressGrant::local_training(self.privacy_level);
+        self.generate_bundle_from_sources_with_grant(&grant, sources, seed, eval_ratio)
+            .await
+    }
+
+    /// Compose the given sources into one bundle under an explicit egress grant.
+    /// Every batch goes through the central egress pass, so sources that do not check
+    /// flags themselves are still covered.
+    pub async fn generate_bundle_from_sources_with_grant(
+        &self,
+        grant: &EgressGrant,
+        sources: &[Box<dyn TrainingSource>],
+        seed: u64,
+        eval_ratio: f32,
+    ) -> Result<TrainingBundle, String> {
         self.check_params(eval_ratio)?;
+        if grant.privacy_level() != self.privacy_level {
+            return Err(format!(
+                "egress grant is {} but the exporter is {}",
+                grant.privacy_level().as_str(),
+                self.privacy_level.as_str()
+            ));
+        }
         if sources.is_empty() {
             return Err("at least one training source is required".to_string());
         }
         let ctx = SourceContext {
             seed,
             privacy_level: self.privacy_level,
+            policy: grant.policy(),
         };
         let mut batches = Vec::new();
         for source in sources {
-            let batch = source
+            let mut batch = source
                 .collect(&ctx)
                 .await
                 .map_err(|e| format!("source '{}': {}", source.name(), e))?;
+            enforce_egress(grant.policy(), &mut batch);
             batches.push((source.name().to_string(), batch));
         }
         self.assemble(batches, seed, eval_ratio)
@@ -229,6 +257,26 @@ impl TrainingExporter {
     #[cfg(test)]
     fn anonymize_id(&self, wallet: &str, seed: u64) -> String {
         TelemetrySource::anonymize_id(wallet, seed)
+    }
+}
+
+/// Central egress pass: re-checks every record's metadata under `policy` and moves
+/// excluded records into the batch counts. Clearance is read from the `clearance`
+/// key that the memory source stamps for Data Commons; a missing one fails closed.
+fn enforce_egress(policy: EgressPolicy, batch: &mut SourceBatch) {
+    let records = std::mem::take(&mut batch.records);
+    for record in records {
+        let metadata = record
+            .get("metadata")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let clearance = metadata
+            .get("clearance")
+            .and_then(|v| serde_json::from_value::<ClearanceLevel>(v.clone()).ok());
+        match exclusion_for(policy, &metadata, clearance) {
+            Some(reason) => batch.record_exclusion(reason),
+            None => batch.records.push(record),
+        }
     }
 }
 
@@ -764,6 +812,7 @@ mod tests {
         let ctx = SourceContext {
             seed: 1,
             privacy_level: PrivacyLevel::P2,
+            policy: EgressGrant::local_training(PrivacyLevel::P2).policy(),
         };
         let batch = src.collect(&ctx).await.unwrap();
         assert_eq!(batch.records.len(), 6);
@@ -829,6 +878,7 @@ mod tests {
             .collect(&SourceContext {
                 seed: 1,
                 privacy_level: PrivacyLevel::P3,
+                policy: EgressGrant::local_training(PrivacyLevel::P3).policy(),
             })
             .await
             .unwrap();
@@ -840,6 +890,7 @@ mod tests {
             .collect(&SourceContext {
                 seed: 1,
                 privacy_level: PrivacyLevel::P4,
+                policy: EgressGrant::local_training(PrivacyLevel::P4).policy(),
             })
             .await
             .unwrap();
@@ -946,5 +997,166 @@ mod tests {
             .generate_bundle_from_sources(&sources_of(store), 1, 0.2)
             .await;
         assert!(err.is_err());
+    }
+
+    // ---- G11: typed egress grant ------------------------------------------------------
+
+    use crate::data_commons::egress::DataCommonsConsent;
+
+    /// Memory record with extra metadata keys merged into the default `kind`/`title`.
+    fn mem_flagged(id: &str, extra: serde_json::Value) -> MemoryRecord {
+        let mut metadata = serde_json::json!({"kind": "file", "title": format!("module_{id}")});
+        metadata
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        MemoryRecord {
+            id: id.to_string(),
+            workspace_id: "ws1".to_string(),
+            path: format!("dev/{id}"),
+            content: format!("Module {id} parses the config and returns typed errors."),
+            metadata,
+            ..MemoryRecord::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn memory_source_excludes_revoked_and_private_under_local_grant() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileMemoryStore::new(dir.path().join("memories.json"))
+            .await
+            .unwrap();
+        store
+            .put(mem_flagged("a-clean", serde_json::json!({})))
+            .await
+            .unwrap();
+        store
+            .put(mem_flagged(
+                "b-revoked",
+                serde_json::json!({"revoked": true}),
+            ))
+            .await
+            .unwrap();
+        store
+            .put(mem_flagged(
+                "c-private",
+                serde_json::json!({"is_private": true}),
+            ))
+            .await
+            .unwrap();
+        store
+            .put(mem_flagged(
+                "d-visibility",
+                serde_json::json!({"visibility": "private"}),
+            ))
+            .await
+            .unwrap();
+        let store: Arc<dyn MemoryStore> = Arc::new(store);
+
+        let grant = EgressGrant::local_training(PrivacyLevel::P2);
+        let bundle = exporter()
+            .generate_bundle_from_sources_with_grant(&grant, &sources_of(store), 7, 0.0)
+            .await
+            .unwrap();
+        assert_eq!(bundle.audit_summary.total_records_found, 4);
+        assert_eq!(bundle.audit_summary.included_records, 1);
+        assert_eq!(bundle.audit_summary.excluded_records_revoked, 1);
+        assert_eq!(
+            bundle.audit_summary.excluded_other.get("egress:private"),
+            Some(&2)
+        );
+    }
+
+    #[tokio::test]
+    async fn data_commons_grant_requires_record_consent() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileMemoryStore::new(dir.path().join("memories.json"))
+            .await
+            .unwrap();
+        store
+            .put(mem_flagged(
+                "a-consented",
+                serde_json::json!({"consent_given": true}),
+            ))
+            .await
+            .unwrap();
+        store
+            .put(mem_flagged("b-no-consent", serde_json::json!({})))
+            .await
+            .unwrap();
+        store
+            .put(mem_flagged(
+                "c-consent-false",
+                serde_json::json!({"consent_given": false}),
+            ))
+            .await
+            .unwrap();
+        let store: Arc<dyn MemoryStore> = Arc::new(store);
+
+        let grant = EgressGrant::data_commons(
+            "ws1".to_string(),
+            PrivacyLevel::P2,
+            DataCommonsConsent::for_test(),
+        )
+        .unwrap();
+        let bundle = exporter()
+            .generate_bundle_from_sources_with_grant(&grant, &sources_of(store), 7, 0.0)
+            .await
+            .unwrap();
+        assert_eq!(bundle.audit_summary.included_records, 1);
+        assert_eq!(bundle.audit_summary.excluded_records_no_consent, 2);
+    }
+
+    /// Test-only source that emits a flagged record directly, bypassing the memory source.
+    struct FlaggedSource;
+
+    #[async_trait::async_trait]
+    impl TrainingSource for FlaggedSource {
+        fn name(&self) -> &'static str {
+            "flagged_fake"
+        }
+
+        async fn collect(&self, _ctx: &SourceContext) -> Result<SourceBatch, String> {
+            let clean = serde_json::json!({
+                "instruction": "What does the parser do?",
+                "response": "It parses the config and returns typed errors.",
+                "metadata": {"source": "fake"},
+            });
+            let flagged = serde_json::json!({
+                "instruction": "What does the cache do?",
+                "response": "It caches results for the session lifetime.",
+                "metadata": {"source": "fake", "revoked": true},
+            });
+            Ok(SourceBatch {
+                records: vec![clean, flagged],
+                total_found: 2,
+                ..SourceBatch::default()
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn central_pass_excludes_flagged_records_from_any_source() {
+        let sources: Vec<Box<dyn TrainingSource>> = vec![Box::new(FlaggedSource)];
+        let grant = EgressGrant::local_training(PrivacyLevel::P2);
+        let bundle = exporter()
+            .generate_bundle_from_sources_with_grant(&grant, &sources, 3, 0.0)
+            .await
+            .unwrap();
+        assert_eq!(bundle.audit_summary.total_records_found, 2);
+        assert_eq!(bundle.audit_summary.included_records, 1);
+        assert_eq!(bundle.audit_summary.excluded_records_revoked, 1);
+    }
+
+    #[tokio::test]
+    async fn grant_privacy_level_must_match_exporter() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempdir_store(dir.path(), 5, "file").await;
+        let grant = EgressGrant::local_training(PrivacyLevel::P3);
+        let err = exporter()
+            .with_privacy_level(PrivacyLevel::P2)
+            .generate_bundle_from_sources_with_grant(&grant, &sources_of(store), 1, 0.2)
+            .await;
+        assert!(err.is_err(), "a P3 grant must not drive a P2 export");
     }
 }

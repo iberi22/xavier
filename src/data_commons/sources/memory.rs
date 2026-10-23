@@ -14,6 +14,7 @@
 //! * Records are sorted by memory id so the export is deterministic.
 
 use super::{metadata_object, SourceBatch, SourceContext, TrainingSource};
+use crate::data_commons::egress::{exclusion_for, EgressPurpose};
 use crate::memory::store::{MemoryRecord, MemoryStore};
 use async_trait::async_trait;
 use serde_json::Value;
@@ -120,7 +121,7 @@ impl TrainingSource for MemorySource {
         "memory"
     }
 
-    async fn collect(&self, _ctx: &SourceContext) -> Result<SourceBatch, String> {
+    async fn collect(&self, ctx: &SourceContext) -> Result<SourceBatch, String> {
         let mut all = self
             .store
             .list(&self.workspace_id)
@@ -162,6 +163,11 @@ impl TrainingSource for MemorySource {
                 batch.exclude("memory:encrypted");
                 continue;
             }
+            // Raw flags (revoked, private, consent) are only visible here, so check them now.
+            if let Some(reason) = exclusion_for(ctx.policy, meta, Some(record.clearance)) {
+                batch.record_exclusion(reason);
+                continue;
+            }
             if record.clearance > self.max_clearance {
                 batch.exclude("memory:clearance_above_max");
                 continue;
@@ -184,6 +190,12 @@ impl TrainingSource for MemorySource {
                 ("domain", meta_str(meta, "domain")),
             ]);
             metadata["memory_id"] = Value::String(record.id.clone());
+            if ctx.policy.purpose == EgressPurpose::DataCommons {
+                // Carry the checked facts so the exporter's central pass can re-verify them.
+                metadata["consent_given"] = Value::Bool(true);
+                metadata["clearance"] =
+                    serde_json::to_value(record.clearance).unwrap_or(Value::Null);
+            }
             batch.records.push(serde_json::json!({
                 "instruction": instruction,
                 "response": response,
