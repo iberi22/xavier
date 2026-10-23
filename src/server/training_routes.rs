@@ -1,11 +1,12 @@
 //! Rest API routes for training datasets under `/v1/training/*`
 
 use crate::curation::CurationQueue;
+use crate::data_commons::egress::{exclusion_for, EgressGrant};
 use crate::data_commons::privacy::{PrivacyConfig, PrivacyLevel, DEFAULT_EPSILON, DEFAULT_K};
 use crate::data_commons::training::{
     load_dataset_audit, load_dataset_manifest, load_dataset_metadata, load_dataset_split,
-    scan_datasets, write_bundle_to_dir, ChallengeSource, MemorySource, TelemetrySource,
-    TrainingExporter, TrainingSource,
+    scan_datasets, write_bundle_to_dir, AuditSummary, ChallengeSource, MemorySource,
+    TelemetrySource, TrainingExporter, TrainingSource,
 };
 use crate::humanchallenge::store::HumanChallengeStore;
 use crate::memory::store::MemoryStore;
@@ -19,8 +20,13 @@ use axum::{
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+/// Response header of `POST /v1/training/export`: counts of what was included and excluded.
+/// Carries fixed reason labels and numbers only, never record ids or content.
+const EXPORT_AUDIT_HEADER: &str = "x-xavier-export-audit";
 
 #[derive(Clone, Debug)]
 pub struct TrainingState {
@@ -175,9 +181,54 @@ pub fn router_with_sources(state: TrainingState, sources: TrainingSources) -> Ro
         .layer(Extension(sources))
 }
 
-type ExportPlan = (TrainingExporter, Vec<Box<dyn TrainingSource>>);
+type ExportPlan = (TrainingExporter, Vec<Box<dyn TrainingSource>>, EgressGrant);
 
-/// Validate the request scope and build the exporter plus the requested sources.
+/// Export counts for the audit header. Keys are fixed reason labels, values are counts.
+#[derive(Default)]
+struct ExportAudit {
+    total: usize,
+    included: usize,
+    excluded: BTreeMap<String, usize>,
+}
+
+impl ExportAudit {
+    fn exclude(&mut self, reason: &str) {
+        *self.excluded.entry(reason.to_string()).or_insert(0) += 1;
+    }
+
+    fn header_value(&self) -> String {
+        serde_json::json!({
+            "total": self.total,
+            "included": self.included,
+            "excluded": self.excluded,
+        })
+        .to_string()
+    }
+
+    /// Counts of a bundle export. Egress reasons are reported without the `egress:` prefix.
+    fn from_summary(summary: &AuditSummary) -> Self {
+        let mut audit = Self {
+            total: summary.total_records_found,
+            included: summary.included_records,
+            excluded: BTreeMap::new(),
+        };
+        for (reason, n) in [
+            ("no_consent", summary.excluded_records_no_consent),
+            ("revoked", summary.excluded_records_revoked),
+        ] {
+            if n > 0 {
+                audit.excluded.insert(reason.to_string(), n);
+            }
+        }
+        for (reason, n) in &summary.excluded_other {
+            let label = reason.strip_prefix("egress:").unwrap_or(reason);
+            *audit.excluded.entry(label.to_string()).or_insert(0) += n;
+        }
+        audit
+    }
+}
+
+/// Validate the request scope and build the exporter, the requested sources and the grant.
 fn build_export(
     state: &TrainingState,
     sources: &TrainingSources,
@@ -250,7 +301,7 @@ fn build_export(
         .with_privacy_level(level)
         .with_privacy_config(config)
         .with_scope(scope.workspace.clone(), scope.domain.clone());
-    Ok((exporter, built))
+    Ok((exporter, built, EgressGrant::local_training(level)))
 }
 
 pub async fn get_bundle_audit_handler(
@@ -418,12 +469,12 @@ pub async fn generate_bundle_handler(
     Extension(sources): Extension<TrainingSources>,
     Json(payload): Json<GenerateBundleRequest>,
 ) -> impl IntoResponse {
-    let (exporter, built) = match build_export(&state, &sources, &payload.scope) {
+    let (exporter, built, grant) = match build_export(&state, &sources, &payload.scope) {
         Ok(v) => v,
         Err((code, msg)) => return (code, msg).into_response(),
     };
     match exporter
-        .generate_bundle_from_sources(&built, payload.seed, payload.eval_ratio)
+        .generate_bundle_from_sources_with_grant(&grant, &built, payload.seed, payload.eval_ratio)
         .await
     {
         Ok(bundle) => {
@@ -588,10 +639,27 @@ pub async fn export_handler(
             approved_items.truncate(limit);
         }
 
+        // Local-training policy: the exclusion depends only on the purpose, so the
+        // privacy level does not change it. A clearance is not consulted under this policy.
+        let policy = EgressGrant::local_training(PrivacyLevel::P2).policy();
         let redactor = RedactionEngine::default();
         let mut lines = Vec::new();
+        let mut audit = ExportAudit::default();
 
         for item in approved_items {
+            audit.total += 1;
+            // OWNER-GATED: `content_ref` is read as an inline snapshot of the item. If it
+            // ever references a live memory instead, the live record must be re-checked
+            // for revocation at export time. Flags are read from the raw metadata, before
+            // redaction.
+            let metadata = serde_json::from_str::<serde_json::Value>(&item.content_ref)
+                .ok()
+                .and_then(|v| v.get("metadata").cloned())
+                .unwrap_or(serde_json::Value::Null);
+            if let Some(reason) = exclusion_for(policy, &metadata, None) {
+                audit.exclude(reason.as_str());
+                continue;
+            }
             let redacted = redactor.redact(&item.content_ref);
             let obj = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&redacted) {
                 parsed
@@ -604,6 +672,7 @@ pub async fn export_handler(
             };
             if let Ok(line_str) = serde_json::to_string(&obj) {
                 lines.push(line_str);
+                audit.included += 1;
             }
         }
 
@@ -615,21 +684,23 @@ pub async fn export_handler(
 
         return axum::response::Response::builder()
             .header("content-type", "application/x-ndjson")
+            .header(EXPORT_AUDIT_HEADER, audit.header_value())
             .body(axum::body::Body::from(body_str))
             .unwrap_or_else(|e| {
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
             });
     }
 
-    let (exporter, built) = match build_export(&state, &sources, &payload.scope) {
+    let (exporter, built, grant) = match build_export(&state, &sources, &payload.scope) {
         Ok(v) => v,
         Err((code, msg)) => return (code, msg).into_response(),
     };
     match exporter
-        .generate_bundle_from_sources(&built, payload.seed, payload.eval_ratio)
+        .generate_bundle_from_sources_with_grant(&grant, &built, payload.seed, payload.eval_ratio)
         .await
     {
         Ok(bundle) => {
+            let audit_header = ExportAudit::from_summary(&bundle.audit_summary).header_value();
             if payload.format.as_deref() == Some("jsonl") {
                 let stream_records = bundle.train_split.into_iter().chain(bundle.eval_split);
 
@@ -641,6 +712,7 @@ pub async fn export_handler(
 
                 return axum::response::Response::builder()
                     .header("content-type", "application/x-ndjson")
+                    .header(EXPORT_AUDIT_HEADER, audit_header)
                     .body(axum::body::Body::from_stream(stream))
                     .unwrap_or_else(|e| {
                         (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
@@ -653,19 +725,22 @@ pub async fn export_handler(
                     return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
                 }
             };
-            Json(serde_json::json!({
-                "manifest": manifest,
-                "train_count": bundle.train_split.len(),
-                "eval_count": bundle.eval_split.len(),
-                "audit": {
-                    "total_records_found": bundle.audit_summary.total_records_found,
-                    "included_records": bundle.audit_summary.included_records,
-                    "excluded_no_consent": bundle.audit_summary.excluded_records_no_consent,
-                    "excluded_revoked": bundle.audit_summary.excluded_records_revoked
-                },
-                "anonymization_audit": bundle.audit
-            }))
-            .into_response()
+            (
+                [(EXPORT_AUDIT_HEADER, audit_header)],
+                Json(serde_json::json!({
+                    "manifest": manifest,
+                    "train_count": bundle.train_split.len(),
+                    "eval_count": bundle.eval_split.len(),
+                    "audit": {
+                        "total_records_found": bundle.audit_summary.total_records_found,
+                        "included_records": bundle.audit_summary.included_records,
+                        "excluded_no_consent": bundle.audit_summary.excluded_records_no_consent,
+                        "excluded_revoked": bundle.audit_summary.excluded_records_revoked
+                    },
+                    "anonymization_audit": bundle.audit
+                })),
+            )
+                .into_response()
         }
         Err(e) => (
             StatusCode::BAD_REQUEST,
@@ -1067,6 +1142,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn curated_export_excludes_revoked_and_private_items() {
+        let (db_file, data_dir) = setup_test_env();
+        let curation_dir = data_dir.path().join("curation");
+        std::fs::create_dir_all(&curation_dir).unwrap();
+        let mut queue = CurationQueue::new_with_path(curation_dir.join("queue.json"));
+
+        let contents = [
+            "Clean approved text about shipping routes.".to_string(),
+            serde_json::json!({
+                "instruction": "question",
+                "response": "revoked answer",
+                "metadata": {"revoked": true}
+            })
+            .to_string(),
+            serde_json::json!({
+                "instruction": "question",
+                "response": "private answer",
+                "metadata": {"is_private": true}
+            })
+            .to_string(),
+            serde_json::json!({
+                "instruction": "question",
+                "response": "scoped answer",
+                "metadata": {"visibility": "private"}
+            })
+            .to_string(),
+        ];
+        let mut item_ids = Vec::new();
+        for content in contents {
+            let item = queue.submit_for_curation(content, "INTERNAL".to_string(), None);
+            queue
+                .approve(&item.id, "curator_alice".to_string(), None, None)
+                .unwrap();
+            item_ids.push(item.id);
+        }
+        queue.save().unwrap();
+
+        let state = TrainingState {
+            db_path: db_file.path().to_path_buf(),
+            data_dir: data_dir.path().join("datasets"),
+        };
+        let app = router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/v1/training/export")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({"curated_only": true, "limit": 10}).to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let audit_header = resp
+            .headers()
+            .get("x-xavier-export-audit")
+            .map(|v| v.to_str().unwrap().to_string());
+        let body_bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+        let lines: Vec<&str> = body_str.lines().filter(|l| !l.is_empty()).collect();
+
+        assert_eq!(lines.len(), 1, "only the clean item may leave: {body_str}");
+        assert!(lines[0].contains("shipping routes"));
+        assert!(!body_str.contains("revoked answer"));
+        assert!(!body_str.contains("private answer"));
+        assert!(!body_str.contains("scoped answer"));
+
+        let audit_header = audit_header.unwrap_or_default();
+        assert!(
+            !audit_header.is_empty(),
+            "missing x-xavier-export-audit header"
+        );
+        let audit: serde_json::Value = serde_json::from_str(&audit_header).unwrap();
+        assert_eq!(audit["total"], 4, "{audit_header}");
+        assert_eq!(audit["included"], 1, "{audit_header}");
+        assert_eq!(audit["excluded"]["revoked"], 1, "{audit_header}");
+        assert_eq!(audit["excluded"]["private"], 2, "{audit_header}");
+        // Counts only: the header never carries item ids or content.
+        for id in &item_ids {
+            assert!(!audit_header.contains(id.as_str()));
+        }
+    }
+
+    #[tokio::test]
     async fn test_export_backward_compatibility() {
         let (db_file, data_dir) = setup_test_env();
         let state = TrainingState {
@@ -1416,6 +1575,108 @@ mod tests {
             },
         );
         (app, mem_dir, data_dir)
+    }
+
+    #[tokio::test]
+    async fn export_memory_source_excludes_flagged_via_http() {
+        use crate::memory::store::{FileMemoryStore, MemoryRecord};
+        let mem_dir = tempdir().unwrap();
+        let store = FileMemoryStore::new(mem_dir.path().join("m.json"))
+            .await
+            .unwrap();
+        let flagged = [
+            (
+                "revoked",
+                serde_json::json!({"kind": "file", "revoked": true}),
+            ),
+            (
+                "private",
+                serde_json::json!({"kind": "file", "is_private": true}),
+            ),
+        ];
+        let mut record_ids = Vec::new();
+        for i in 0..6 {
+            let id = format!("clean{i}");
+            store
+                .put(MemoryRecord {
+                    id: id.clone(),
+                    workspace_id: "ws1".to_string(),
+                    path: format!("dev/{id}"),
+                    content: format!("Function {i} validates input and returns an error."),
+                    metadata: serde_json::json!({"kind": "file", "title": format!("fn_{i}")}),
+                    ..MemoryRecord::default()
+                })
+                .await
+                .unwrap();
+            record_ids.push(id);
+        }
+        for (name, metadata) in flagged {
+            let id = format!("flagged_{name}");
+            store
+                .put(MemoryRecord {
+                    id: id.clone(),
+                    workspace_id: "ws1".to_string(),
+                    path: format!("dev/{id}"),
+                    content: format!("Function {name} must never leave the node."),
+                    metadata,
+                    ..MemoryRecord::default()
+                })
+                .await
+                .unwrap();
+            record_ids.push(id);
+        }
+        let data_dir = tempdir().unwrap();
+        let state = TrainingState {
+            db_path: data_dir.path().join("unused.sqlite3"),
+            data_dir: data_dir.path().to_path_buf(),
+        };
+        let app = router_with_sources(
+            state,
+            TrainingSources {
+                memory_store: Some(Arc::new(store)),
+                challenge_store: None,
+            },
+        );
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/v1/training/export")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "seed": 1, "eval_ratio": 0.2, "sources": ["memory"],
+                    "workspace": "ws1", "privacy_level": "P2"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        let status = resp.status();
+        let audit_header = resp
+            .headers()
+            .get("x-xavier-export-audit")
+            .map(|v| v.to_str().unwrap().to_string());
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["audit"]["excluded_revoked"], 1, "{body}");
+        assert_eq!(body["audit"]["included_records"], 6, "{body}");
+        assert_eq!(body["audit"]["total_records_found"], 8, "{body}");
+        assert!(!body.to_string().contains("must never leave the node"));
+
+        let audit_header = audit_header.unwrap_or_default();
+        assert!(
+            !audit_header.is_empty(),
+            "missing x-xavier-export-audit header"
+        );
+        let audit: serde_json::Value = serde_json::from_str(&audit_header).unwrap();
+        assert_eq!(audit["total"], 8, "{audit_header}");
+        assert_eq!(audit["included"], 6, "{audit_header}");
+        assert_eq!(audit["excluded"]["revoked"], 1, "{audit_header}");
+        assert_eq!(audit["excluded"]["private"], 1, "{audit_header}");
+        for id in &record_ids {
+            assert!(!audit_header.contains(id.as_str()));
+        }
     }
 
     #[tokio::test]
