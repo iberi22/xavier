@@ -412,40 +412,295 @@ mod tests {
     }
 
     #[test]
-    fn concurrent_duplicate_only_one_fresh() {
+    fn poisoned_mutex_returns_err() {
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+
+        let temp_db = NamedTempFile::new().unwrap();
+        let store = SqliteReplayStore::open(temp_db.path()).unwrap();
+        let store = std::sync::Arc::new(store);
+
+        let store_clone = store.clone();
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            let _guard = store_clone.conn.lock().unwrap();
+            panic!("Intentional panic to poison mutex");
+        }));
+
+        let res = store.claim("s1", "n1", 1000000, 1000000);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("poisoned"));
+    }
+
+    #[test]
+    fn missing_meta_row_or_table_is_err_and_inserts_nothing() {
+        // Test missing meta row
+        let temp_db1 = NamedTempFile::new().unwrap();
+        let path1 = temp_db1.path().to_str().unwrap();
+        let store1 = SqliteReplayStore::open(path1).unwrap();
+
+        {
+            let conn = rusqlite::Connection::open(path1).unwrap();
+            conn.execute("DELETE FROM meta", []).unwrap();
+        }
+
+        let now = 1000000;
+        let res1 = store1.claim("s1", "n1", now, now);
+        assert!(res1.is_err());
+
+        let conn1 = rusqlite::Connection::open(path1).unwrap();
+        let count1: i64 = conn1
+            .query_row("SELECT COUNT(*) FROM seen", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count1, 0);
+
+        // Test missing meta table
+        let temp_db2 = NamedTempFile::new().unwrap();
+        let path2 = temp_db2.path().to_str().unwrap();
+        let store2 = SqliteReplayStore::open(path2).unwrap();
+
+        {
+            let conn = rusqlite::Connection::open(path2).unwrap();
+            conn.execute("DROP TABLE meta", []).unwrap();
+        }
+
+        let res2 = store2.claim("s1", "n1", now, now);
+        assert!(res2.is_err());
+
+        let conn2 = rusqlite::Connection::open(path2).unwrap();
+        let count2: i64 = conn2
+            .query_row("SELECT COUNT(*) FROM seen", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count2, 0);
+    }
+
+    #[test]
+    fn non_sqlite_file_open_is_err() {
+        use std::io::Write;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file
+            .write_all(b"this is not a valid sqlite database")
+            .unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let res = SqliteReplayStore::open(path);
+        assert!(res.is_err());
+
+        let content = std::fs::read(path).unwrap();
+        assert_eq!(content, b"this is not a valid sqlite database");
+    }
+
+    #[test]
+    fn pragmas_are_wal_and_full() {
+        let temp_db = NamedTempFile::new().unwrap();
+        let path = temp_db.path().to_str().unwrap();
+        let store = SqliteReplayStore::open(path).unwrap();
+
+        let conn = store.conn.lock().unwrap();
+
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(journal_mode.to_lowercase(), "wal");
+
+        let synchronous: i64 = conn
+            .query_row("PRAGMA synchronous", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(synchronous, 2); // 2 is FULL
+    }
+
+    #[test]
+    fn cap_recovers_after_expiry_and_boundary_9999() {
+        let temp_db = NamedTempFile::new().unwrap();
+        let path = temp_db.path().to_str().unwrap();
+
+        let store = SqliteReplayStore::open(path).unwrap();
+        let now = 1000000;
+
+        {
+            let mut conn = store.conn.lock().unwrap();
+            let tx = conn.transaction().unwrap();
+            for i in 0..9999 {
+                tx.execute(
+                    "INSERT INTO seen (sender, nonce, ts) VALUES (?1, ?2, ?3)",
+                    rusqlite::params!["s1", format!("n{}", i), now],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+
+        // 10000th claim
+        let res_10000 = store.claim("s1", "n9999", now, now).unwrap();
+        assert_eq!(res_10000, Claim::Fresh);
+
+        // 10001st claim
+        let res_10001 = store.claim("s1", "n10000", now, now).unwrap();
+        assert_eq!(res_10001, Claim::Full);
+
+        // Verify n10000 wasn't inserted
+        {
+            let conn = store.conn.lock().unwrap();
+            let count_n10000: i64 = conn
+                .query_row(
+                    "SELECT COUNT(1) FROM seen WHERE sender = 's1' AND nonce = 'n10000'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count_n10000, 0);
+        }
+
+        // Fast forward clock > 601s (let's use 1000s)
+        let future_now = now + 1000;
+        let future_ts = future_now;
+
+        // This will trigger pruning of all rows with ts < effective_floor
+        // effective_floor = future_now - 301 = 1000000 + 1000 - 301 = 1000699
+        // Old rows had ts = 1000000
+        let res_future = store
+            .claim("s1", "n_future", future_ts, future_now)
+            .unwrap();
+        assert_eq!(res_future, Claim::Fresh);
+
+        {
+            let conn = store.conn.lock().unwrap();
+            let count_old: i64 = conn
+                .query_row(
+                    "SELECT COUNT(1) FROM seen WHERE sender = 's1' AND ts = ?1",
+                    rusqlite::params![now],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count_old, 0); // They should have been pruned
+
+            let floor: i64 = conn
+                .query_row("SELECT floor FROM meta WHERE id = 1", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(floor, 1000699);
+        }
+
+        // The row for n9999 was pruned above and its ts is below the advanced floor,
+        // so the replayed nonce must now be rejected fail-closed as Stale.
+        let res_replayed = store.claim("s1", "n9999", now, now).unwrap();
+        assert_eq!(res_replayed, Claim::Stale);
+    }
+
+    #[test]
+    fn concurrent_cap_and_duplicate_claims() {
         let temp_db = NamedTempFile::new().unwrap();
         let path = temp_db.path().to_path_buf();
 
-        // Init DB and open connections before spawning threads
+        // 50 rounds of duplicate claims
         let store1 = SqliteReplayStore::open(&path).unwrap();
         let store2 = SqliteReplayStore::open(&path).unwrap();
 
-        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let mut success = true;
+        for i in 0..50 {
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let b1 = barrier.clone();
+            let b2 = barrier;
 
-        let b1 = barrier.clone();
-        let t1 = thread::spawn(move || {
-            b1.wait();
-            store1.claim("s1", "concurrent_nonce", 1000000, 1000000)
+            let nonce = format!("concurrent_nonce_{}", i);
+            let n1 = nonce.clone();
+            let n2 = nonce;
+
+            // Re-open inside loop or outside? The instructions say:
+            // "strengthen duplicate test using independent open connections, opened before spawning threads, per-round unique nonces, >=50 rounds"
+            // Wait, we need to pass the stores, but we can't easily move them multiple times without Arc.
+            // Oh, we can just use scoped threads to borrow `store1` and `store2`.
+
+            let s1_ref = &store1;
+            let s2_ref = &store2;
+            let res = std::thread::scope(|s| {
+                let t1 = s.spawn(move || {
+                    b1.wait();
+                    s1_ref.claim("s1", &n1, 1000000, 1000000)
+                });
+
+                let t2 = s.spawn(move || {
+                    b2.wait();
+                    s2_ref.claim("s1", &n2, 1000000, 1000000)
+                });
+
+                let res1 = t1.join().unwrap();
+                let res2 = t2.join().unwrap();
+                (res1, res2)
+            });
+
+            let mut results = [res.0.unwrap(), res.1.unwrap()];
+            results.sort_by_key(|r| match r {
+                Claim::Fresh => 1,
+                Claim::Replayed => 2,
+                _ => 3,
+            });
+
+            if results[0] != Claim::Fresh || results[1] != Claim::Replayed {
+                success = false;
+                break;
+            }
+        }
+        assert!(success);
+
+        // Separate 9999 seeded cap race
+        let temp_db2 = NamedTempFile::new().unwrap();
+        let path2 = temp_db2.path().to_path_buf();
+
+        {
+            let store = SqliteReplayStore::open(&path2).unwrap();
+            let mut conn = store.conn.lock().unwrap();
+            let tx = conn.transaction().unwrap();
+            for i in 0..9999 {
+                tx.execute(
+                    "INSERT INTO seen (sender, nonce, ts) VALUES (?1, ?2, ?3)",
+                    rusqlite::params!["s2", format!("n{}", i), 1000000],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+
+        let store3 = SqliteReplayStore::open(&path2).unwrap();
+        let store4 = SqliteReplayStore::open(&path2).unwrap();
+        let barrier_cap = std::sync::Arc::new(std::sync::Barrier::new(2));
+
+        let s3_ref = &store3;
+        let s4_ref = &store4;
+        let res_cap = std::thread::scope(|s| {
+            let b1 = barrier_cap.clone();
+            let b2 = barrier_cap;
+
+            let t1 = s.spawn(move || {
+                b1.wait();
+                s3_ref.claim("s2", "n_race_1", 1000000, 1000000)
+            });
+
+            let t2 = s.spawn(move || {
+                b2.wait();
+                s4_ref.claim("s2", "n_race_2", 1000000, 1000000)
+            });
+
+            let r1 = t1.join().unwrap().unwrap();
+            let r2 = t2.join().unwrap().unwrap();
+            (r1, r2)
         });
 
-        let b2 = barrier;
-        let t2 = thread::spawn(move || {
-            b2.wait();
-            store2.claim("s1", "concurrent_nonce", 1000000, 1000000)
-        });
-
-        let res1 = t1.join().unwrap().unwrap();
-        let res2 = t2.join().unwrap().unwrap();
-
-        // One must be Fresh, the other must be Replayed (or block on lock and evaluate to Replayed)
-        let mut results = [res1, res2];
-        results.sort_by_key(|r| match r {
+        let mut results_cap = [res_cap.0, res_cap.1];
+        results_cap.sort_by_key(|r| match r {
             Claim::Fresh => 1,
-            Claim::Replayed => 2,
+            Claim::Full => 2,
             _ => 3,
         });
 
-        assert_eq!(results[0], Claim::Fresh);
-        assert_eq!(results[1], Claim::Replayed);
+        assert_eq!(results_cap[0], Claim::Fresh);
+        assert_eq!(results_cap[1], Claim::Full);
+
+        // final sender count 10000
+        let conn2 = rusqlite::Connection::open(&path2).unwrap();
+        let final_count: i64 = conn2
+            .query_row("SELECT COUNT(1) FROM seen WHERE sender = 's2'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(final_count, 10000);
     }
 }
