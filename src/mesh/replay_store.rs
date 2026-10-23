@@ -608,15 +608,17 @@ mod tests {
             // Wait, we need to pass the stores, but we can't easily move them multiple times without Arc.
             // Oh, we can just use scoped threads to borrow `store1` and `store2`.
 
+            let s1_ref = &store1;
+            let s2_ref = &store2;
             let res = std::thread::scope(|s| {
                 let t1 = s.spawn(move || {
                     b1.wait();
-                    store1.claim("s1", &n1, 1000000, 1000000)
+                    s1_ref.claim("s1", &n1, 1000000, 1000000)
                 });
 
                 let t2 = s.spawn(move || {
                     b2.wait();
-                    store2.claim("s1", &n2, 1000000, 1000000)
+                    s2_ref.claim("s1", &n2, 1000000, 1000000)
                 });
 
                 let res1 = t1.join().unwrap();
@@ -660,18 +662,20 @@ mod tests {
         let store4 = SqliteReplayStore::open(&path2).unwrap();
         let barrier_cap = std::sync::Arc::new(std::sync::Barrier::new(2));
 
+        let s3_ref = &store3;
+        let s4_ref = &store4;
         let res_cap = std::thread::scope(|s| {
             let b1 = barrier_cap.clone();
             let b2 = barrier_cap;
 
             let t1 = s.spawn(move || {
                 b1.wait();
-                store3.claim("s2", "n_race_1", 1000000, 1000000)
+                s3_ref.claim("s2", "n_race_1", 1000000, 1000000)
             });
 
             let t2 = s.spawn(move || {
                 b2.wait();
-                store4.claim("s2", "n_race_2", 1000000, 1000000)
+                s4_ref.claim("s2", "n_race_2", 1000000, 1000000)
             });
 
             let r1 = t1.join().unwrap().unwrap();
