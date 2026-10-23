@@ -31,12 +31,8 @@ export function useMalocaView() {
       const key = await obtainDeviceKeyViaWebAuthn();
       setDeviceKey(key);
     } catch (err: any) {
+      // No fallback key: a failed WebAuthn attempt must leave deviceKey null.
       setError(err?.message || "Failed to obtain WebAuthn key");
-      // Use fallback/mock for dev environment if webauthn fails due to missing https
-      console.warn("WebAuthn failed, falling back to mock key for development");
-      setTimeout(() => {
-        setDeviceKey("swal_dev_key_" + Math.random().toString(36).substring(2, 15));
-      }, 500);
     } finally {
       setIsWebAuthnLoading(false);
     }
