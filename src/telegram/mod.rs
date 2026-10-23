@@ -1622,7 +1622,7 @@ mod tests {
             Command::Login,
             config,
             std::sync::Arc::new(crate::ports::inbound::memory_port::MockMemoryQueryPort),
-            std::sync::Arc::new(crate::coordination::SimpleAgentRegistry::new(None)),
+            crate::coordination::SimpleAgentRegistry::new(None),
             std::sync::Arc::new(crate::app::security_service::SecurityService::new()),
             std::sync::Arc::new(RateLimiter::new(10, 60)),
         )
@@ -1678,7 +1678,7 @@ mod tests {
             Command::Login,
             config,
             std::sync::Arc::new(crate::ports::inbound::memory_port::MockMemoryQueryPort),
-            std::sync::Arc::new(crate::coordination::SimpleAgentRegistry::new(None)),
+            crate::coordination::SimpleAgentRegistry::new(None),
             std::sync::Arc::new(crate::app::security_service::SecurityService::new()),
             std::sync::Arc::new(RateLimiter::new(10, 60)),
         )
@@ -1734,7 +1734,7 @@ mod tests {
             Command::Login,
             config,
             std::sync::Arc::new(crate::ports::inbound::memory_port::MockMemoryQueryPort),
-            std::sync::Arc::new(crate::coordination::SimpleAgentRegistry::new(None)),
+            crate::coordination::SimpleAgentRegistry::new(None),
             std::sync::Arc::new(crate::app::security_service::SecurityService::new()),
             std::sync::Arc::new(RateLimiter::new(10, 60)),
         )
@@ -1790,7 +1790,7 @@ mod tests {
             Command::Login,
             config,
             std::sync::Arc::new(crate::ports::inbound::memory_port::MockMemoryQueryPort),
-            std::sync::Arc::new(crate::coordination::SimpleAgentRegistry::new(None)),
+            crate::coordination::SimpleAgentRegistry::new(None),
             std::sync::Arc::new(crate::app::security_service::SecurityService::new()),
             std::sync::Arc::new(RateLimiter::new(10, 60)),
         )
@@ -1849,7 +1849,7 @@ mod tests {
             Command::Login,
             config,
             std::sync::Arc::new(crate::ports::inbound::memory_port::MockMemoryQueryPort),
-            std::sync::Arc::new(crate::coordination::SimpleAgentRegistry::new(None)),
+            crate::coordination::SimpleAgentRegistry::new(None),
             std::sync::Arc::new(crate::app::security_service::SecurityService::new()),
             std::sync::Arc::new(RateLimiter::new(10, 60)),
         )
