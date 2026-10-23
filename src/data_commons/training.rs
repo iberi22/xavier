@@ -1,4 +1,4 @@
-use super::egress::EgressGrant;
+use super::egress::{exclusion_for, EgressGrant, EgressPolicy};
 use super::privacy::{
     check_k_anonymity, AnonymizationAudit, AuditCounts, AuditInput, PiiCounts, PrivacyConfig,
     PrivacyLevel, PrivacyPipeline,
@@ -6,6 +6,7 @@ use super::privacy::{
 pub use super::sources::{
     ChallengeSource, MemorySource, SourceBatch, SourceContext, TelemetrySource, TrainingSource,
 };
+use crate::security::clearance::ClearanceLevel;
 use chrono::{DateTime, Utc};
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -91,40 +92,27 @@ impl TrainingExporter {
         _generated_at: Option<DateTime<Utc>>,
     ) -> Result<TrainingBundle, String> {
         self.check_params(eval_ratio)?;
-        let batch = TelemetrySource::new(&self.db_path).collect_sync(seed)?;
+        let grant = EgressGrant::local_training(self.privacy_level);
+        let mut batch = TelemetrySource::new(&self.db_path).collect_sync(seed)?;
+        enforce_egress(grant.policy(), &mut batch);
         self.assemble(vec![("telemetry".to_string(), batch)], seed, eval_ratio)
     }
 
-    /// Compose the given sources into one bundle.
+    /// Compose the given sources into one bundle under a local-training grant.
     pub async fn generate_bundle_from_sources(
         &self,
         sources: &[Box<dyn TrainingSource>],
         seed: u64,
         eval_ratio: f32,
     ) -> Result<TrainingBundle, String> {
-        self.check_params(eval_ratio)?;
-        if sources.is_empty() {
-            return Err("at least one training source is required".to_string());
-        }
-        let ctx = SourceContext {
-            seed,
-            privacy_level: self.privacy_level,
-            policy: EgressGrant::local_training(self.privacy_level).policy(),
-        };
-        let mut batches = Vec::new();
-        for source in sources {
-            let batch = source
-                .collect(&ctx)
-                .await
-                .map_err(|e| format!("source '{}': {}", source.name(), e))?;
-            batches.push((source.name().to_string(), batch));
-        }
-        self.assemble(batches, seed, eval_ratio)
+        let grant = EgressGrant::local_training(self.privacy_level);
+        self.generate_bundle_from_sources_with_grant(&grant, sources, seed, eval_ratio)
+            .await
     }
 
     /// Compose the given sources into one bundle under an explicit egress grant.
-    /// STUB (commit 1, red): the grant is only passed to sources, with no central pass
-    /// and no privacy-level check. Real enforcement comes in commit 2.
+    /// Every batch goes through the central egress pass, so sources that do not check
+    /// flags themselves are still covered.
     pub async fn generate_bundle_from_sources_with_grant(
         &self,
         grant: &EgressGrant,
@@ -133,6 +121,13 @@ impl TrainingExporter {
         eval_ratio: f32,
     ) -> Result<TrainingBundle, String> {
         self.check_params(eval_ratio)?;
+        if grant.privacy_level() != self.privacy_level {
+            return Err(format!(
+                "egress grant is {} but the exporter is {}",
+                grant.privacy_level().as_str(),
+                self.privacy_level.as_str()
+            ));
+        }
         if sources.is_empty() {
             return Err("at least one training source is required".to_string());
         }
@@ -143,10 +138,11 @@ impl TrainingExporter {
         };
         let mut batches = Vec::new();
         for source in sources {
-            let batch = source
+            let mut batch = source
                 .collect(&ctx)
                 .await
                 .map_err(|e| format!("source '{}': {}", source.name(), e))?;
+            enforce_egress(grant.policy(), &mut batch);
             batches.push((source.name().to_string(), batch));
         }
         self.assemble(batches, seed, eval_ratio)
@@ -261,6 +257,26 @@ impl TrainingExporter {
     #[cfg(test)]
     fn anonymize_id(&self, wallet: &str, seed: u64) -> String {
         TelemetrySource::anonymize_id(wallet, seed)
+    }
+}
+
+/// Central egress pass: re-checks every record's metadata under `policy` and moves
+/// excluded records into the batch counts. Clearance is read from the `clearance`
+/// key that the memory source stamps for Data Commons; a missing one fails closed.
+fn enforce_egress(policy: EgressPolicy, batch: &mut SourceBatch) {
+    let records = std::mem::take(&mut batch.records);
+    for record in records {
+        let metadata = record
+            .get("metadata")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let clearance = metadata
+            .get("clearance")
+            .and_then(|v| serde_json::from_value::<ClearanceLevel>(v.clone()).ok());
+        match exclusion_for(policy, &metadata, clearance) {
+            Some(reason) => batch.record_exclusion(reason),
+            None => batch.records.push(record),
+        }
     }
 }
 

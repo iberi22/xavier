@@ -87,12 +87,16 @@ impl EgressGrant {
     }
 
     /// Data Commons grant. Fails closed for P4 (local-only) data.
-    /// STUB (commit 1, red): accepts every level. The P4 refusal comes in commit 2.
     pub fn data_commons(
         workspace_id: String,
         level: PrivacyLevel,
         _consent: DataCommonsConsent,
     ) -> Result<Self, EgressDenied> {
+        if level.is_local_only() {
+            return Err(EgressDenied {
+                reason: "P4 data is local-only",
+            });
+        }
         Ok(Self {
             purpose: EgressPurpose::DataCommons,
             privacy_level: level,
@@ -144,13 +148,42 @@ impl ExclusionReason {
 }
 
 /// Decide whether one record may leave under `policy`. `None` means included.
-/// STUB (commit 1, red): always includes. The real rules come in commit 2.
+///
+/// Order: `revoked` first, then private (`is_private` or `visibility == "private"`).
+/// Local training stops there. Data Commons also requires `consent_given`, refuses
+/// local-only markers, and requires a clearance at or below the policy ceiling
+/// (missing clearance fails closed). Only boolean flags count, as in
+/// `MemoryRecord::is_authorized_for_embedding`.
 pub fn exclusion_for(
-    _policy: EgressPolicy,
-    _metadata: &Value,
-    _clearance: Option<ClearanceLevel>,
+    policy: EgressPolicy,
+    metadata: &Value,
+    clearance: Option<ClearanceLevel>,
 ) -> Option<ExclusionReason> {
-    None
+    let flag = |key: &str| metadata.get(key).and_then(Value::as_bool) == Some(true);
+    if flag("revoked") {
+        return Some(ExclusionReason::Revoked);
+    }
+    let private =
+        flag("is_private") || metadata.get("visibility").and_then(Value::as_str) == Some("private");
+    let private_applies =
+        policy.purpose == EgressPurpose::DataCommons || LOCAL_TRAINING_EXCLUDES_PRIVATE;
+    if private && private_applies {
+        return Some(ExclusionReason::Private);
+    }
+    if policy.purpose == EgressPurpose::LocalTraining {
+        return None;
+    }
+    // Data Commons: fail closed.
+    if !flag("consent_given") {
+        return Some(ExclusionReason::NoConsent);
+    }
+    if flag("privacy_p4_local_only") || flag("local_only") {
+        return Some(ExclusionReason::LocalOnly);
+    }
+    match policy.max_clearance {
+        Some(ceiling) if clearance.is_some_and(|c| c <= ceiling) => None,
+        _ => Some(ExclusionReason::ClearanceAboveGrant),
+    }
 }
 
 #[cfg(test)]

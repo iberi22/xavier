@@ -47,8 +47,13 @@ impl SourceBatch {
     }
 
     /// Count one egress exclusion. Counts only: no record id or content is stored.
-    /// STUB (commit 1, red): does not count yet. The real mapping comes in commit 2.
-    pub fn record_exclusion(&mut self, _reason: ExclusionReason) {}
+    pub fn record_exclusion(&mut self, reason: ExclusionReason) {
+        match reason {
+            ExclusionReason::NoConsent => self.excluded_no_consent += 1,
+            ExclusionReason::Revoked => self.excluded_revoked += 1,
+            other => self.exclude(&format!("egress:{}", other.as_str())),
+        }
+    }
 }
 
 #[async_trait]
