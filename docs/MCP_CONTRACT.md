@@ -365,9 +365,7 @@ MemoryFragment inputs enforce strict validation:
 
 ## Error Handling and Codes
 
-Xavier uses standard JSON-RPC 2.0 error codes and custom Xavier-specific codes for MCP tool calls. The channel a failure uses depends on the phase where it happens, as decided in [ADR-047](adr/ADR-047-mcp-error-channels.md) (Proposed). The numeric codes do not change.
-
-> **Status:** this table is the target contract. Until the ADR-047 implementation lands, wrong-type and invalid-value arguments and absent entities still return JSON-RPC errors (see the note under the channel table).
+Xavier uses standard JSON-RPC 2.0 error codes and custom Xavier-specific codes for MCP tool calls. The channel a failure uses depends on the phase where it happens, as decided in [ADR-047](adr/ADR-047-mcp-error-channels.md) (Accepted). The numeric codes do not change.
 
 ### Channel by phase
 
@@ -382,7 +380,7 @@ Xavier uses standard JSON-RPC 2.0 error codes and custom Xavier-specific codes f
 | Content security policy | prompt-injection block | tool result, `isError: true` | `-32000` | `security_policy` |
 | Other execution failures (in-tool clearance, rate limit, internal) | — | JSON-RPC error | `-32000` / `-32603` | — |
 
-At HEAD, a missing required argument already returns a tool result. Wrong-type and invalid-value arguments and absent entities still return JSON-RPC errors (`-32001`, `-32002`) until the implementation lands.
+> **Known gaps at HEAD.** This list is not exhaustive. Known gaps include handler validation errors that are still untyped and go out as JSON-RPC `-32603`: a `..` path in `create_memory`, empty content, `memory_prune` with no filter, a `project_path` that contains `..`, cannot be resolved, or lies outside the allowed roots, an unknown `edge_type` in `trace_path`, and too many tags in `memoryfragment_save`. Other failures return `isError: true` with no `structuredContent` at all: argument errors in the context, espacio, `log_scan` and `ticket_create` tools, a missing saved context for a session, `memoryfragment_delete` with an absent id, and embedded-secret blocks in `memoryfragment_search` and `memoryfragment_save`, which are raised inside the handler and carry no code or `kind` (prompt-injection blocks are caught earlier by the argument pre-scan and do return `security_policy`). These are known gaps, not ADR exclusions. Separately, as ADR-047 §4 states, handlers that build their own tool-result errors with a string-valued `structuredContent.error` are not normalised by this ADR.
 
 ### Tool-result error shape
 
