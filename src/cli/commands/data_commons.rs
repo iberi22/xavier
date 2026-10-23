@@ -47,8 +47,9 @@ async fn export_training_bundle(output: PathBuf, seed: u64, eval_ratio: f32) -> 
     }
 
     let exporter = TrainingExporter::new(db_path);
+    let grant = crate::data_commons::egress::EgressGrant::local_training(exporter.privacy_level);
 
-    match exporter.generate_bundle(seed, eval_ratio, None) {
+    match exporter.generate_bundle_with_grant(&grant, seed, eval_ratio, None) {
         Ok(bundle) => {
             // Create output directory if it doesn't exist
             if !output.exists() {

@@ -988,10 +988,23 @@ pub async fn training_export_handler(
             approved_items.truncate(limit);
         }
 
+        // Local-training policy, the same exclusion the training router applies: revoked
+        // and private items never leave the node.
+        let policy = crate::data_commons::egress::EgressGrant::local_training(
+            crate::data_commons::privacy::PrivacyLevel::P2,
+        )
+        .policy();
         let redactor = crate::security::redaction::RedactionEngine::default();
         let mut lines = Vec::new();
 
         for item in approved_items {
+            let metadata = serde_json::from_str::<serde_json::Value>(&item.content_ref)
+                .ok()
+                .and_then(|v| v.get("metadata").cloned())
+                .unwrap_or(serde_json::Value::Null);
+            if crate::data_commons::egress::exclusion_for(policy, &metadata, None).is_some() {
+                continue;
+            }
             let redacted = redactor.redact(&item.content_ref);
             let obj = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&redacted) {
                 parsed
@@ -1035,10 +1048,12 @@ pub async fn training_export_handler(
     }
 
     let exporter = crate::data_commons::training::TrainingExporter::new(&db_path);
-    let bundle = match exporter.generate_bundle(payload.seed, payload.eval_ratio, None) {
-        Ok(b) => b,
-        Err(e) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
-    };
+    let grant = crate::data_commons::egress::EgressGrant::local_training(exporter.privacy_level);
+    let bundle =
+        match exporter.generate_bundle_with_grant(&grant, payload.seed, payload.eval_ratio, None) {
+            Ok(b) => b,
+            Err(e) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        };
 
     let manifest = match serde_json::to_value(&bundle.manifest) {
         Ok(m) => m,
@@ -2673,6 +2688,85 @@ mod route_tests {
             .to_bytes();
         let parsed: serde_json::Value = serde_json::from_slice(&body).expect("parse list response");
         assert!(parsed.is_array());
+    }
+
+    /// Curated export over the top-level router: revoked and private items never leave.
+    /// The curated branch reads `data/curation/queue.json` relative to the working
+    /// directory, so the test runs inside a tempdir (restored on drop).
+    #[tokio::test]
+    async fn curated_export_excludes_revoked_and_private_items() {
+        use crate::curation::CurationQueue;
+
+        struct RestoreCwd(std::path::PathBuf);
+        impl Drop for RestoreCwd {
+            fn drop(&mut self) {
+                let _ = std::env::set_current_dir(&self.0);
+            }
+        }
+        let work = tempfile::tempdir().unwrap();
+        let _restore = RestoreCwd(std::env::current_dir().unwrap());
+        std::env::set_current_dir(work.path()).unwrap();
+        let curation_dir = work.path().join("data/curation");
+        std::fs::create_dir_all(&curation_dir).unwrap();
+        let mut queue = CurationQueue::new_with_path(curation_dir.join("queue.json"));
+
+        let contents = [
+            "Clean approved text about shipping routes.".to_string(),
+            serde_json::json!({
+                "instruction": "question",
+                "response": "revoked answer",
+                "metadata": {"revoked": true}
+            })
+            .to_string(),
+            serde_json::json!({
+                "instruction": "question",
+                "response": "private answer",
+                "metadata": {"is_private": true}
+            })
+            .to_string(),
+            serde_json::json!({
+                "instruction": "question",
+                "response": "scoped answer",
+                "metadata": {"visibility": "private"}
+            })
+            .to_string(),
+        ];
+        for content in contents {
+            let item = queue.submit_for_curation(content, "INTERNAL".to_string(), None);
+            queue
+                .approve(&item.id, "curator_alice".to_string(), None, None)
+                .unwrap();
+        }
+        queue.save().unwrap();
+
+        let resp = create_router()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/v1/training/export")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({"curated_only": true, "limit": 10}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let body_str = String::from_utf8(body.to_vec()).unwrap();
+        let lines: Vec<&str> = body_str.lines().filter(|l| !l.is_empty()).collect();
+
+        assert_eq!(lines.len(), 1, "only the clean item may leave: {body_str}");
+        assert!(lines[0].contains("shipping routes"));
+        assert!(!body_str.contains("revoked answer"));
+        assert!(!body_str.contains("private answer"));
+        assert!(!body_str.contains("scoped answer"));
     }
 
     #[tokio::test]
