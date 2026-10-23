@@ -6,10 +6,11 @@
 
 use super::params::network_parameters;
 use super::types::*;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -149,12 +150,24 @@ impl MalocaStore {
         })
     }
 
-    fn persist(&self, state: &PersistedState) {
+    fn persist(&self, state: &PersistedState) -> Result<()> {
         if let Some(parent) = self.path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
         }
-        if let Ok(raw) = serde_json::to_string_pretty(state) {
-            let _ = std::fs::write(&self.path, raw);
+        let raw = serde_json::to_string_pretty(state)?;
+        write_atomic(&self.path, raw.as_bytes())
+    }
+
+    /// Persists the state, logging a failure instead of propagating it. The
+    /// in-memory state stays authoritative for the running process.
+    fn persist_or_log(&self, state: &PersistedState) {
+        if let Err(err) = self.persist(state) {
+            tracing::error!(
+                path = %self.path.display(),
+                error = %err,
+                "MalocaStore: failed to persist store.json; keeping in-memory state"
+            );
         }
     }
 
@@ -222,7 +235,7 @@ impl MalocaStore {
         };
         let mut g = self.inner.write();
         g.support.insert(0, ticket.clone());
-        self.persist(&g);
+        self.persist_or_log(&g);
         ticket
     }
 
@@ -249,7 +262,7 @@ impl MalocaStore {
         offer.claimed_by = Some(node_id.to_string());
         offer.microtask.status = "claimed".into();
         let out = offer.clone();
-        self.persist(&g);
+        self.persist_or_log(&g);
         Ok(out)
     }
 
@@ -280,7 +293,7 @@ impl MalocaStore {
             }
         }
         g.rewards.insert(0, receipt.clone());
-        self.persist(&g);
+        self.persist_or_log(&g);
         Ok(receipt)
     }
 
@@ -363,7 +376,7 @@ impl MalocaStore {
             }),
         );
         g.proposals.insert(0, proposal.clone());
-        self.persist(&g);
+        self.persist_or_log(&g);
         proposal
     }
 
@@ -447,7 +460,7 @@ impl MalocaStore {
             }),
         );
         g.votes.insert(0, vote.clone());
-        self.persist(&g);
+        self.persist_or_log(&g);
         Ok(vote)
     }
 
@@ -505,7 +518,7 @@ impl MalocaStore {
             serde_json::json!({ "reason": body.reason, "adds_vote_weight": false }),
         );
         g.manager_actions.insert(0, action.clone());
-        self.persist(&g);
+        self.persist_or_log(&g);
         Ok(action)
     }
 
@@ -515,12 +528,40 @@ impl MalocaStore {
         if let Some(n) = g.nodes.iter_mut().find(|n| n.node_id == node_id) {
             n.active = active;
         }
-        self.persist(&g);
+        self.persist_or_log(&g);
     }
 }
 
 fn short_id() -> String {
     Uuid::new_v4().to_string()[..8].to_string()
+}
+
+/// Writes `bytes` to `path` atomically: the content goes to a sibling temp file
+/// that is fsynced and then renamed over `path`, so a crash leaves either the
+/// old or the new file, never a torn one. The parent directory is fsynced
+/// afterwards where the platform supports it.
+fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .context("store path has no file name")?
+        .to_string_lossy()
+        .into_owned();
+    let tmp = parent.join(format!("{file_name}.{}.tmp", Uuid::new_v4()));
+    let written = (|| -> std::io::Result<()> {
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        std::fs::rename(&tmp, path)
+    })();
+    if let Err(err) = written {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(err).with_context(|| format!("failed to write {}", path.display()));
+    }
+    if let Ok(dir) = std::fs::File::open(parent) {
+        let _ = dir.sync_all();
+    }
+    Ok(())
 }
 
 /// Renames an unparsable `store.json` out of the way (`store.json.corrupt-<ts>`)
@@ -989,6 +1030,106 @@ mod tests {
         let err_completed = store.complete("offer-seed-1").unwrap_err();
         assert!(err_completed.to_string().contains("already completed"));
 
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn support_body(title: &str) -> CreateSupportBody {
+        CreateSupportBody {
+            title: title.into(),
+            body: "atomic persist test".into(),
+            feature_id: None,
+        }
+    }
+
+    #[test]
+    fn persisted_store_json_is_valid_json_after_write() {
+        let dir = std::env::temp_dir().join(format!("maloca-atomic-json-{}", short_id()));
+        let store = MalocaStore::open(&dir);
+        store.create_support(support_body("valid json ticket"));
+
+        let raw = std::fs::read_to_string(dir.join("maloca").join("store.json")).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&raw).expect("store.json must be valid JSON after a write");
+        assert!(parsed.is_object());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn persist_leaves_no_tmp_files_after_success() {
+        let dir = std::env::temp_dir().join(format!("maloca-atomic-tmp-{}", short_id()));
+        let store = MalocaStore::open(&dir);
+        store.create_support(support_body("first"));
+        store.create_support(support_body("second"));
+
+        let leftovers: Vec<String> = std::fs::read_dir(dir.join("maloca"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".tmp"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "successful persist must not leave temp files behind: {leftovers:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The store file must be replaced by rename, not rewritten in place. An
+    /// in-place `fs::write` keeps the same inode, so a changed inode proves the
+    /// temp-file-then-rename path ran.
+    #[cfg(unix)]
+    #[test]
+    fn persist_replaces_store_file_by_rename_not_in_place() {
+        use std::os::unix::fs::MetadataExt;
+
+        let dir = std::env::temp_dir().join(format!("maloca-atomic-rename-{}", short_id()));
+        let store = MalocaStore::open(&dir);
+        let path = dir.join("maloca").join("store.json");
+
+        store.create_support(support_body("first"));
+        let inode_before = std::fs::metadata(&path).unwrap().ino();
+
+        store.create_support(support_body("second"));
+        let inode_after = std::fs::metadata(&path).unwrap().ino();
+
+        assert_ne!(
+            inode_before, inode_after,
+            "store.json must be swapped in via rename; an in-place write keeps the inode"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A write that cannot create its temp file must surface as an error from
+    /// `persist()` rather than panicking.
+    #[cfg(unix)]
+    #[test]
+    fn persist_into_read_only_directory_returns_error_without_panicking() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("maloca-atomic-ro-{}", short_id()));
+        let maloca_dir = dir.join("maloca");
+        std::fs::create_dir_all(&maloca_dir).unwrap();
+        let store = MalocaStore::open(&dir);
+
+        std::fs::set_permissions(&maloca_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let state = store.inner.read();
+        let result = store.persist(&state);
+        drop(state);
+        assert!(
+            result.is_err(),
+            "persist into a read-only directory must return an error"
+        );
+        assert!(
+            !maloca_dir.join("store.json").exists(),
+            "a failed persist must not create store.json"
+        );
+
+        // Restore write permission so the tempdir can be cleaned up.
+        std::fs::set_permissions(&maloca_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _ = std::fs::remove_dir_all(dir);
     }
 }
