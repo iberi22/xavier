@@ -1030,7 +1030,18 @@ impl WorkspaceState {
     }
     /// Delete memory record.
     pub async fn delete_memory_record(&self, id: &str) -> Result<Option<MemoryRecord>> {
-        self.store.delete(&self.config.id, id).await
+        let res = self.store.delete(&self.config.id, id).await?;
+        // Evict from in-memory index so subsequent get and search requests do not serve stale data.
+        self.memory.index_remove(id).await?;
+        if let Some(record) = &res {
+            if record.id != id {
+                self.memory.index_remove(&record.id).await?;
+            }
+            if record.path != id {
+                self.memory.index_remove(&record.path).await?;
+            }
+        }
+        Ok(res)
     }
 
     /// Update primary memory.

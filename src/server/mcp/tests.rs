@@ -656,6 +656,156 @@ async fn fragment_tools_integration() {
 }
 
 #[tokio::test]
+async fn memoryfragment_delete_evicts_get_and_search() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // save_fragment
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "save_fragment",
+                "arguments": {
+                    "agent_id": "agent1",
+                    "content": "unique_eviction_needle content to delete",
+                    "context": "observation",
+                    "tags": ["evict_tag"]
+                }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // search to extract id
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "memoryfragment_search",
+                "arguments": {
+                    "query": "unique_eviction_needle",
+                    "agent_id": "agent1"
+                }
+            }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let structured_id = body["result"]
+        .get("structuredContent")
+        .and_then(|v| v.get("candidates"))
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let text_opt = body["result"]["content"][0]
+        .get("text")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let id: String = if let Some(cid) = structured_id {
+        cid
+    } else {
+        let search_text = text_opt.expect("missing search text");
+        search_text
+            .split('\n')
+            .next()
+            .expect("missing Id line")
+            .strip_prefix("Id: ")
+            .expect("missing Id: prefix")
+            .to_string()
+    };
+
+    // memoryfragment_delete
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "memoryfragment_delete",
+                "arguments": { "id": &id }
+            }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    assert!(body["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("Deleted memory fragment"));
+
+    // memoryfragment_get must return an error / isError true after deletion
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "memoryfragment_get",
+                "arguments": { "id": &id }
+            }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let is_err = body.get("error").is_some() || body["result"]["isError"].as_bool() == Some(true);
+    assert!(
+        is_err,
+        "expected memoryfragment_get to report error after delete, got: {body}"
+    );
+
+    // memoryfragment_search for content must no longer contain the id
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {
+                "name": "memoryfragment_search",
+                "arguments": {
+                    "query": "unique_eviction_needle",
+                    "agent_id": "agent1"
+                }
+            }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    if let Some(candidates) = body["result"]
+        .get("structuredContent")
+        .and_then(|v| v.get("candidates"))
+        .and_then(|v| v.as_array())
+    {
+        assert!(
+            candidates
+                .iter()
+                .all(|c| c.get("id").and_then(|v| v.as_str()) != Some(&id)),
+            "deleted id {id} still returned in structured candidates: {body}"
+        );
+    }
+    if let Some(text) = body["result"]["content"][0]
+        .get("text")
+        .and_then(|v| v.as_str())
+    {
+        assert!(
+            !text.contains(&id),
+            "deleted id {id} still returned in text: {body}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn memoryfragment_search_only_returns_fragments() {
     let (state, workspace) = test_state().await;
     let router = test_router(state, workspace);
