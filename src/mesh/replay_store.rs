@@ -579,9 +579,10 @@ mod tests {
             assert_eq!(floor, 1000699);
         }
 
-        // test before pruning happens
+        // The row for n9999 was pruned above and its ts is below the advanced floor,
+        // so the replayed nonce must now be rejected fail-closed as Stale.
         let res_replayed = store.claim("s1", "n9999", now, now).unwrap();
-        assert_eq!(res_replayed, Claim::Replayed);
+        assert_eq!(res_replayed, Claim::Stale);
     }
 
     #[test]
