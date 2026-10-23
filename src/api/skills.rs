@@ -21,7 +21,8 @@ pub fn skill_api_routes<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
         .route("/api/skill/dispatch", post(dispatch_skill))
         .route("/api/skill/list", get(list_skills))
         .route("/skills", get(list_skills))
-        .route("/api/skill/usage", get(skill_usage))
+        .route("/api/skill/usage", get(skill_usage_scoped))
+        .route("/api/skill/ack", post(ack_skill))
         .route("/api/skill/audit", get(audit_skills))
 }
 
@@ -60,6 +61,9 @@ pub struct DispatchResponse {
     pub confidence: f32,
     pub context_pack: ContextPackResponse,
     pub estimated_savings_pct: f32,
+    /// Present only when the Delivered row was stored: acknowledge with it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dispatch_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -129,6 +133,7 @@ pub async fn dispatch_skill(
                     total_tokens: result.context_pack.total_tokens,
                 },
                 estimated_savings_pct: result.estimated_savings_pct,
+                dispatch_id: result.dispatch_id,
             };
             Json(serde_json::json!({ "ok": true, "data": response }))
         }
@@ -246,6 +251,12 @@ pub fn skill_usage_db_path() -> PathBuf {
 
 /// Read only aggregate lifecycle counts; dispatch alone is not proof of use.
 pub fn usage_summary_blocking(db: &Path) -> Result<serde_json::Value, String> {
+    usage_summary_for(db, None)
+}
+
+/// [`usage_summary_blocking`] restricted to one workspace's events when
+/// `workspace` is given. Without it the output is exactly the unfiltered one.
+pub fn usage_summary_for(db: &Path, workspace: Option<&str>) -> Result<serde_json::Value, String> {
     use crate::context::skill_controller::telemetry::RetentionPolicy;
     let retention_days = match RetentionPolicy::default_policy() {
         RetentionPolicy::Expire { max_age_days } => Some(max_age_days),
@@ -264,11 +275,12 @@ pub fn usage_summary_blocking(db: &Path) -> Result<serde_json::Value, String> {
             .prepare(
                 "SELECT skill_name, SUM(stage = 'selected'), SUM(stage = 'delivered'),
                     SUM(stage = 'invoked'), SUM(stage = 'completed')
-             FROM skill_usage_events GROUP BY skill_name ORDER BY skill_name",
+             FROM skill_usage_events WHERE (?1 IS NULL OR workspace_id = ?1)
+             GROUP BY skill_name ORDER BY skill_name",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
-            .query_map([], |row| {
+            .query_map(rusqlite::params![workspace], |row| {
                 let invoked: u64 = row.get(3)?;
                 let completed: u64 = row.get(4)?;
                 Ok(serde_json::json!({
@@ -296,8 +308,31 @@ pub fn usage_summary_blocking(db: &Path) -> Result<serde_json::Value, String> {
     }))
 }
 
+/// Query of `GET /api/skill/usage`.
+#[derive(Debug, Default, Deserialize)]
+pub struct UsageQuery {
+    /// Optional workspace id: count only the events stored for it.
+    #[serde(default)]
+    pub workspace: Option<String>,
+}
+
 pub async fn skill_usage() -> axum::response::Response {
-    match tokio::task::spawn_blocking(|| usage_summary_blocking(&skill_usage_db_path())).await {
+    usage_response(None).await
+}
+
+/// `GET /api/skill/usage?workspace=<id>`: the scoped usage summary.
+pub async fn skill_usage_scoped(
+    axum::extract::Query(query): axum::extract::Query<UsageQuery>,
+) -> axum::response::Response {
+    usage_response(query.workspace).await
+}
+
+async fn usage_response(workspace: Option<String>) -> axum::response::Response {
+    match tokio::task::spawn_blocking(move || {
+        usage_summary_for(&skill_usage_db_path(), workspace.as_deref())
+    })
+    .await
+    {
         Ok(Ok(summary)) => (axum::http::StatusCode::OK, Json(summary)).into_response(),
         Ok(Err(error)) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -309,6 +344,41 @@ pub async fn skill_usage() -> axum::response::Response {
             Json(serde_json::json!({"error": "skill usage task failed"})),
         )
             .into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/skill/ack
+// ---------------------------------------------------------------------------
+
+/// Harness acknowledgment over HTTP: the twin of the MCP `xavier_skill_ack`
+/// tool. Both call the same validation and storage path, so they agree.
+pub async fn ack_skill(Json(body): Json<serde_json::Value>) -> axum::response::Response {
+    use crate::server::mcp::tools_context::{record_skill_ack, AckError};
+    let status =
+        |code: axum::http::StatusCode, body: serde_json::Value| (code, Json(body)).into_response();
+    match tokio::task::spawn_blocking(move || record_skill_ack(&skill_usage_db_path(), &body)).await
+    {
+        Ok(Ok(outcome)) => status(
+            axum::http::StatusCode::OK,
+            serde_json::json!({
+                "ok": true,
+                "recorded": outcome.applied,
+                "affected": outcome.affected,
+            }),
+        ),
+        Ok(Err(AckError::Rejected(error))) => status(
+            axum::http::StatusCode::BAD_REQUEST,
+            serde_json::json!({"ok": false, "error": error}),
+        ),
+        Ok(Err(AckError::Storage(error))) => status(
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({"ok": false, "error": error}),
+        ),
+        Err(_) => status(
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({"ok": false, "error": "skill ack task failed"}),
+        ),
     }
 }
 
@@ -1091,6 +1161,157 @@ Follow these steps to analyze memory and debug issues.
         assert!(context_pack["relevant_memories"].is_array());
         assert!(context_pack["prior_decisions"].is_array());
         assert!(context_pack["total_tokens"].is_number());
+    }
+
+    /// Workspace whose real memory is authorized to `workspace`: it holds
+    /// MEM-A (in scope) and MEM-B (another workspace's memory, must stay out).
+    async fn scoped_memory_workspace(root: &Path, workspace: &str) -> WorkspaceContext {
+        use crate::memory::qmd_memory::{MemoryDocument, QmdMemory};
+        let skill_dir = root.join("skills").join("trace-audit");
+        tokio::fs::create_dir_all(&skill_dir).await.unwrap();
+        tokio::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: trace-audit\ndescription: \"Audit the failed traces of a run\"\n---\n\nContent",
+        )
+        .await
+        .unwrap();
+        let document = |id: &str, owner: &str, body: &str| MemoryDocument {
+            id: Some(id.to_string()),
+            path: format!("sessions/{id}"),
+            content: body.to_string(),
+            metadata: serde_json::json!({
+                "kind": "observation",
+                "namespace": { "workspace_id": owner }
+            }),
+            ..Default::default()
+        };
+        let documents = Arc::new(tokio::sync::RwLock::new(vec![
+            document(
+                "mem-a",
+                workspace,
+                "trace audit insight inside the workspace",
+            ),
+            document(
+                "mem-b",
+                "ws-b",
+                "trace audit insight from another workspace",
+            ),
+        ]));
+        let memory = Arc::new(QmdMemory::new_with_workspace(documents, workspace));
+        let state = crate::workspace::WorkspaceState::new_minimal(
+            workspace.to_string(),
+            root.to_path_buf(),
+            memory,
+            Arc::new(crate::memory::store::InMemoryMemoryStore::default()),
+        )
+        .await;
+        WorkspaceContext {
+            workspace_id: root.to_string_lossy().to_string(),
+            workspace: Arc::new(state),
+        }
+    }
+
+    /// Send one request through a clone of the router; returns status and JSON.
+    async fn send(
+        app: &Router,
+        method: &str,
+        uri: &str,
+        body: Option<serde_json::Value>,
+    ) -> (StatusCode, serde_json::Value) {
+        let request = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(match body {
+                Some(body) => Body::from(body.to_string()),
+                None => Body::empty(),
+            })
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        )
+    }
+
+    #[tokio::test]
+    async fn skill_routes_dispatch_ack_and_usage_round_trip_is_workspace_scoped() {
+        crate::isolate_test_process!();
+        let _lock = crate::context::skill_registry::env_lock().lock().await;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _env_guard = EnvGuard::isolate(temp_dir.path());
+        let workspace = scoped_memory_workspace(temp_dir.path(), "ws-a").await;
+        let app = skill_api_routes::<()>()
+            .layer(Extension(ClearanceLevel::Confidential))
+            .layer(Extension(workspace));
+
+        let (status, dispatched) = send(
+            &app,
+            "POST",
+            "/api/skill/dispatch",
+            Some(serde_json::json!({
+                "task": "audit the failed traces",
+                "max_tokens": 4000
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{dispatched}");
+        assert_eq!(dispatched["data"]["skill_name"], "trace-audit");
+        let pack = dispatched["data"]["context_pack"].to_string();
+        assert!(
+            pack.contains("inside the workspace"),
+            "in-scope memory missing: {pack}"
+        );
+        assert!(
+            !pack.contains("another workspace"),
+            "another workspace's memory reached the pack: {pack}"
+        );
+        let dispatch_id = dispatched["data"]["dispatch_id"]
+            .as_str()
+            .expect("dispatch_id in the HTTP response")
+            .to_string();
+
+        // The Delivered row is stored before the response is returned.
+        let delivered: i64 = rusqlite::Connection::open(skill_usage_db_path())
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM skill_usage_events
+                 WHERE task_id = ?1 AND stage = 'delivered' AND workspace_id = 'ws-a'",
+                [&dispatch_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(delivered, 1);
+
+        let (status, acked) = send(
+            &app,
+            "POST",
+            "/api/skill/ack",
+            Some(serde_json::json!({
+                "dispatch_id": dispatch_id,
+                "skill_name": "trace-audit",
+                "stage": "invoked",
+                "tool": "http-test"
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{acked}");
+        assert_eq!(acked["ok"], true);
+
+        let (status, scoped) = send(&app, "GET", "/api/skill/usage?workspace=ws-a", None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(scoped["skills"][0]["skill_name"], "trace-audit");
+        assert_eq!(scoped["skills"][0]["invoked"], 1);
+        assert_eq!(scoped["skills"][0]["invocation_coverage"], "observed");
+        let (_, other) = send(&app, "GET", "/api/skill/usage?workspace=ws-b", None).await;
+        assert!(
+            other["skills"].as_array().unwrap().is_empty(),
+            "usage leaked across workspaces: {other}"
+        );
     }
 
     #[tokio::test]

@@ -130,7 +130,12 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
         MCPTool {
             name: "xavier_skill_usage".to_string(),
             description: "Read skill lifecycle counts and harness acknowledgment coverage".to_string(),
-            input_schema: json!({"type": "object", "properties": {}}),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "workspace": { "type": "string", "description": "Optional workspace id; counts only events stored for it" }
+                }
+            }),
         },
         MCPTool {
             name: "xavier_skill_ack".to_string(),
@@ -140,12 +145,13 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
                 "properties": {
                     "skill_name": { "type": "string", "description": "Skill name from the registry" },
                     "stage": { "type": "string", "enum": ["invoked", "completed"] },
-                    "task_id": { "type": "string", "description": "Opaque task identifier, never task text" },
+                    "dispatch_id": { "type": "string", "description": "Id returned by xavier_dispatch_skill; names one delivery and replaces task_id" },
+                    "task_id": { "type": "string", "description": "Opaque task identifier, never task text (required without dispatch_id)" },
                     "tool": { "type": "string", "description": "Harness identifier" },
-                    "project": { "type": "string", "description": "Optional opaque project id, default 'default'" },
+                    "project": { "type": "string", "description": "Optional opaque project id, default 'default'; with dispatch_id it must match the delivering workspace" },
                     "outcome": { "type": "string", "description": "Bounded outcome label, default ok" }
                 },
-                "required": ["skill_name", "stage", "task_id"]
+                "required": ["skill_name", "stage"]
             }),
         },
     ]
@@ -236,8 +242,8 @@ fn build_ack_event(arguments: &Value) -> Result<UsageEvent, String> {
         Some("completed") => SkillStage::Completed,
         _ => return Err("'stage' must be 'invoked' or 'completed'".to_string()),
     };
-    let (Some(skill_name), Some(task_id)) = (text("skill_name"), text("task_id")) else {
-        return Err("'skill_name' and 'task_id' are required".to_string());
+    let Some(skill_name) = text("skill_name") else {
+        return Err("'skill_name' is required, with 'task_id' or 'dispatch_id'".to_string());
     };
     // D12: opaque, bounded identifiers only; no free text reaches the telemetry DB.
     let opaque = |v: &str, max: usize| {
@@ -246,11 +252,35 @@ fn build_ack_event(arguments: &Value) -> Result<UsageEvent, String> {
             && v.chars()
                 .all(|c| c.is_ascii_alphanumeric() || "-_.:/".contains(c))
     };
-    if !opaque(&skill_name, 128) || !opaque(&task_id, 128) {
-        return Err(
-            "'skill_name' and 'task_id' must be opaque ids ([A-Za-z0-9-_.:/], max 128)".to_string(),
-        );
+    if !opaque(&skill_name, 128) {
+        return Err("'skill_name' must be an opaque id ([A-Za-z0-9-_.:/], max 128)".to_string());
     }
+    // The key names the delivery: a dispatch id (the stored row decides the
+    // workspace later) or the legacy opaque task id.
+    let key = match (arguments.get("dispatch_id"), text("task_id")) {
+        (Some(Value::String(id)), None) => {
+            if !is_dispatch_id(id) {
+                return Err(
+                    "'dispatch_id' must be a dispatch id returned by xavier_dispatch_skill"
+                        .to_string(),
+                );
+            }
+            id.clone()
+        }
+        (Some(_), Some(_)) => {
+            return Err("pass either 'dispatch_id' or 'task_id', not both".to_string())
+        }
+        (Some(_), None) => return Err("'dispatch_id' must be a string".to_string()),
+        (None, Some(task_id)) => {
+            if !opaque(&task_id, 128) {
+                return Err(
+                    "'task_id' must be an opaque id ([A-Za-z0-9-_.:/], max 128)".to_string()
+                );
+            }
+            task_id
+        }
+        (None, None) => return Err("'task_id' or 'dispatch_id' is required".to_string()),
+    };
     if let Some(outcome) = text("outcome") {
         if !(1..=32).contains(&outcome.len())
             || !outcome.chars().all(|c| c.is_ascii_lowercase() || c == '_')
@@ -259,12 +289,12 @@ fn build_ack_event(arguments: &Value) -> Result<UsageEvent, String> {
         }
     }
     let event_id = crate::crypto::hex_encode(sha2::Sha256::digest(
-        format!("{task_id}:{skill_name}:{}", stage.as_str()).as_bytes(),
+        format!("{key}:{skill_name}:{}", stage.as_str()).as_bytes(),
     ));
     let mut event = UsageEvent::new(
         event_id,
         text("project").unwrap_or_else(|| "default".to_string()),
-        task_id,
+        key,
         text("tool").unwrap_or_else(|| "mcp-harness".to_string()),
         skill_name,
         stage,
@@ -273,6 +303,46 @@ fn build_ack_event(arguments: &Value) -> Result<UsageEvent, String> {
         event.outcome = outcome;
     }
     Ok(event)
+}
+
+/// A dispatch id is a canonical lowercase UUID v4, the form the dispatcher mints.
+fn is_dispatch_id(id: &str) -> bool {
+    uuid::Uuid::parse_str(id).is_ok_and(|uuid| {
+        uuid.to_string() == id && uuid.get_version() == Some(uuid::Version::Random)
+    })
+}
+
+/// Why an acknowledgment was not recorded: the caller's input was refused, or
+/// the telemetry store failed.
+#[derive(Debug)]
+pub(crate) enum AckError {
+    Rejected(String),
+    Storage(String),
+}
+
+/// Validate and record one acknowledgment (MCP `xavier_skill_ack` and
+/// `POST /api/skill/ack` both use this). A `dispatch_id` goes through the
+/// stored Delivered row; a legacy `task_id` goes through the unchanged path.
+pub(crate) fn record_skill_ack(
+    db: &Path,
+    arguments: &Value,
+) -> Result<crate::context::skill_controller::telemetry::Outcome, AckError> {
+    use crate::context::skill_dispatcher::{record_ack, record_dispatch_ack, SkillUsageError};
+    let event = build_ack_event(arguments).map_err(AckError::Rejected)?;
+    let classify = |error: SkillUsageError| match error {
+        SkillUsageError::Telemetry(_) | SkillUsageError::Database(_) => {
+            AckError::Storage(error.to_string())
+        }
+        other => AckError::Rejected(other.to_string()),
+    };
+    if arguments.get("dispatch_id").is_some() {
+        let project = arguments.get("project").and_then(Value::as_str);
+        return record_dispatch_ack(db, &event, project).map_err(classify);
+    }
+    if let Some(parent) = db.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    record_ack(db, &event).map_err(classify)
 }
 
 /// Handle context tool.
@@ -733,8 +803,8 @@ pub async fn handle_context_tool(
                 })
                 .await
             {
-                Ok(result) => super::server::mcp_text_result(
-                    serde_json::to_string_pretty(&json!({
+                Ok(result) => {
+                    let mut payload = json!({
                         "ok": true,
                         "skill_name": result.skill_name,
                         "skill_description": result.skill_description,
@@ -748,9 +818,13 @@ pub async fn handle_context_tool(
                         },
                         "estimated_savings_pct": result.estimated_savings_pct,
                         "hidden_by_clearance": result.hidden_by_clearance,
-                    }))?,
-                    false,
-                ),
+                    });
+                    // Present only when the Delivered row was stored (see the dispatcher).
+                    if let Some(id) = &result.dispatch_id {
+                        payload["dispatch_id"] = json!(id);
+                    }
+                    super::server::mcp_text_result(serde_json::to_string_pretty(&payload)?, false)
+                }
                 // Fail-open: empty-skill verdict, never a throw across MCP.
                 Err(e) => super::server::mcp_text_result(
                     serde_json::to_string(&json!({
@@ -764,9 +838,15 @@ pub async fn handle_context_tool(
             }
         }
         "xavier_skill_usage" => {
-            let summary = tokio::task::spawn_blocking(|| {
-                crate::api::skills::usage_summary_blocking(
+            let workspace = match arguments.get("workspace") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(workspace)) => Some(workspace.clone()),
+                Some(_) => return invalid_argument("'workspace' must be a string"),
+            };
+            let summary = tokio::task::spawn_blocking(move || {
+                crate::api::skills::usage_summary_for(
                     &crate::api::skills::skill_usage_db_path(),
+                    workspace.as_deref(),
                 )
             })
             .await?;
@@ -781,23 +861,8 @@ pub async fn handle_context_tool(
             }
         }
         "xavier_skill_ack" => {
-            let event = match build_ack_event(&arguments) {
-                Ok(event) => event,
-                Err(error) => {
-                    return super::server::mcp_text_result(
-                        serde_json::to_string(&json!({"ok": false, "error": error}))?,
-                        true,
-                    )
-                }
-            };
             let outcome = tokio::task::spawn_blocking(move || {
-                if let Some(parent) = crate::api::skills::skill_usage_db_path().parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                crate::context::skill_dispatcher::record_ack(
-                    &crate::api::skills::skill_usage_db_path(),
-                    &event,
-                )
+                record_skill_ack(&crate::api::skills::skill_usage_db_path(), &arguments)
             })
             .await?;
             match outcome {
@@ -807,10 +872,12 @@ pub async fn handle_context_tool(
                     )?,
                     false,
                 ),
-                Err(error) => super::server::mcp_text_result(
-                    serde_json::to_string(&json!({"ok": false, "error": error.to_string()}))?,
-                    true,
-                ),
+                Err(AckError::Rejected(error) | AckError::Storage(error)) => {
+                    super::server::mcp_text_result(
+                        serde_json::to_string(&json!({"ok": false, "error": error}))?,
+                        true,
+                    )
+                }
             }
         }
         "xavier_skill_list" => {
@@ -966,9 +1033,10 @@ mod tests {
             .find(|tool| tool["name"] == "xavier_skill_usage")
             .unwrap();
         assert_eq!(
-            tool["inputSchema"],
-            json!({"type": "object", "properties": {}})
+            tool["inputSchema"]["properties"]["workspace"]["type"], "string",
+            "the usage filter is optional and declared"
         );
+        assert_eq!(tool["inputSchema"]["required"], Value::Null);
         let response = super::super::session::dispatch_mcp_value(
             state,
             workspace,
@@ -1785,5 +1853,178 @@ mod tests {
         ] {
             assert!(build_ack_event(&bad).is_err(), "accepted {bad}");
         }
+    }
+
+    /// Restores `XAVIER_DATA_DIR` on drop, so the usage database of a test lands
+    /// in its own tempdir and the override never leaks into sibling tests.
+    struct DataDirOverride(Option<std::ffi::OsString>);
+
+    impl DataDirOverride {
+        fn set(dir: &std::path::Path) -> Self {
+            let previous = std::env::var_os("XAVIER_DATA_DIR");
+            std::env::set_var("XAVIER_DATA_DIR", dir);
+            Self(previous)
+        }
+    }
+
+    impl Drop for DataDirOverride {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(value) => std::env::set_var("XAVIER_DATA_DIR", value),
+                None => std::env::remove_var("XAVIER_DATA_DIR"),
+            }
+        }
+    }
+
+    /// (stage, task_id, workspace_id) of every stored row, read without
+    /// creating the database; empty while none exists.
+    fn stored_usage_rows(db: &std::path::Path) -> Vec<(String, String, String)> {
+        if !db.exists() {
+            return Vec::new();
+        }
+        let conn =
+            rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT stage, task_id, workspace_id FROM skill_usage_events ORDER BY event_id",
+            )
+            .unwrap();
+        stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .unwrap()
+        .map(|row| row.unwrap())
+        .collect()
+    }
+
+    /// Dispatch id from the MCP skill tool path: a real dispatcher whose memory
+    /// is authorized to `ws-a`, with telemetry in the usage database.
+    async fn stored_dispatch_id(db: &std::path::Path, root: &std::path::Path) -> String {
+        use crate::context::skill_dispatcher::{SkillDispatchRequest, SkillDispatcher};
+        use crate::memory::qmd_memory::QmdMemory;
+        let skills = root.join("skills").join("trace-audit");
+        std::fs::create_dir_all(&skills).unwrap();
+        std::fs::write(
+            skills.join("SKILL.md"),
+            "---\nname: trace-audit\ndescription: \"Audit the failed traces of a run\"\n---\n\nContent",
+        )
+        .unwrap();
+        let mut registry =
+            crate::context::skill_registry::SkillRegistry::new(vec![root.join("skills")]);
+        registry.reindex().await.unwrap();
+        let memory = std::sync::Arc::new(QmdMemory::new_with_workspace(
+            std::sync::Arc::new(tokio::sync::RwLock::new(Vec::new())),
+            "ws-a",
+        ));
+        SkillDispatcher::new(registry, Some(memory))
+            .with_telemetry_db(db.to_path_buf())
+            .dispatch(&SkillDispatchRequest {
+                task: "audit the failed traces".to_string(),
+                model_hint: None,
+                max_tokens: Some(4000),
+                project: None,
+            })
+            .await
+            .unwrap()
+            .dispatch_id
+            .expect("the Delivered row is stored, so the dispatch has an id")
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skill_ack_by_dispatch_id_is_scoped_and_rejects_misuse_without_writes() {
+        crate::isolate_test_process!();
+        let _home = IsolatedHome::acquire().await;
+        let temp = tempfile::tempdir().unwrap();
+        let _data_dir = DataDirOverride::set(temp.path());
+        let db = crate::api::skills::skill_usage_db_path();
+        let id = stored_dispatch_id(&db, temp.path()).await;
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let ack = |args: Value| {
+            let (state, workspace) = (state.clone(), workspace.clone());
+            async move {
+                handle_context_tool(state, workspace, "xavier_skill_ack", args)
+                    .await
+                    .expect("ack is a tool result")
+            }
+        };
+
+        // Positive control: the dispatch id is accepted and the stored ack
+        // takes the workspace of the Delivered row (ws-a), not a caller value.
+        let accepted = ack(json!({
+            "skill_name": "trace-audit",
+            "stage": "invoked",
+            "dispatch_id": id,
+            "tool": "mcp-test"
+        }))
+        .await;
+        assert_eq!(accepted["isError"], false, "{accepted}");
+        let before = stored_usage_rows(&db);
+        assert!(
+            before
+                .iter()
+                .any(|row| row.0 == "invoked" && row.2 == "ws-a"),
+            "{before:?}"
+        );
+
+        // Cross-workspace: a caller project must match the delivering workspace.
+        let cross = ack(json!({
+            "skill_name": "trace-audit",
+            "stage": "completed",
+            "dispatch_id": id,
+            "project": "ws-b"
+        }))
+        .await;
+        assert_eq!(cross["isError"], true, "{cross}");
+
+        // Misuse: only invoked and completed are acknowledgments.
+        for stage in ["delivered", "selected"] {
+            let out = ack(json!({
+                "skill_name": "trace-audit",
+                "stage": stage,
+                "dispatch_id": id
+            }))
+            .await;
+            assert_eq!(out["isError"], true, "{stage}: {out}");
+        }
+
+        // Unknown dispatch id: an error, not a silent accept.
+        let unknown = ack(json!({
+            "skill_name": "trace-audit",
+            "stage": "invoked",
+            "dispatch_id": "00000000-0000-4000-8000-000000000000"
+        }))
+        .await;
+        assert_eq!(unknown["isError"], true, "{unknown}");
+        assert_eq!(
+            stored_usage_rows(&db),
+            before,
+            "rejected acks must write nothing"
+        );
+
+        // Legacy task_id acknowledgments keep working unchanged.
+        let legacy = ack(json!({
+            "skill_name": "trace-audit",
+            "stage": "completed",
+            "task_id": "legacy-task-1"
+        }))
+        .await;
+        assert_eq!(legacy["isError"], false, "{legacy}");
+
+        // The MCP usage tool honours the workspace filter.
+        let usage = handle_context_tool(
+            state,
+            workspace,
+            "xavier_skill_usage",
+            json!({"workspace": "ws-b"}),
+        )
+        .await
+        .expect("usage is a tool result");
+        assert_eq!(mcp_payload(&usage)["skills"], json!([]), "{usage}");
     }
 }
