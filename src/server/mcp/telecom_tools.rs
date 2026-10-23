@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::server::mcp::types::{MCPTool, MCPToolResult};
+use crate::server::mcp::types::{MCPTool, MCPToolResult, McpToolError};
 use crate::telecom::mcp_tools::TelecomMcpRegistry;
 
 /// Returns the expanded suite of Telecom MCP Tools.
@@ -73,11 +73,21 @@ pub async fn handle_telecom_tool(
     registry: Option<Arc<RwLock<TelecomMcpRegistry>>>,
 ) -> anyhow::Result<Value> {
     let registry = registry.ok_or_else(|| anyhow::anyhow!("telecom backend unavailable"))?;
-    let res = registry
+    let res = match registry
         .read()
         .await
         .execute_telecom_tool(name, arguments)
-        .await?;
+        .await
+    {
+        Ok(res) => res,
+        Err(err) => {
+            let msg = err.to_string();
+            if name == "telecom_get_chat_history" && msg.contains("unknown room:") {
+                return Err(anyhow::Error::new(McpToolError::not_found(msg)));
+            }
+            return Err(err.into());
+        }
+    };
     Ok(serde_json::to_value(MCPToolResult::structured(res, false))?)
 }
 
