@@ -2890,6 +2890,115 @@ mod tests {
         assert!(e.contains("Either 'query' or 'ids'"), "{e}");
     }
 
+    /// Seeds three ~300-char docs under distinct paths; returns (id, path, content).
+    async fn seed_budget_docs(workspace: &WorkspaceContext) -> Vec<(String, String, String)> {
+        let mut docs = Vec::new();
+        for n in 1..=3 {
+            let path = format!("ctx/budget_{n}");
+            let content = format!("doc {n} {}", "lorem ipsum dolor ".repeat(16));
+            let id = workspace
+                .workspace
+                .ingest_typed(path.clone(), content.clone(), json!({}), None, None, false)
+                .await
+                .expect("ingest");
+            docs.push((id, path, content));
+        }
+        docs
+    }
+
+    #[tokio::test]
+    async fn mem_context_live_route_never_exceeds_budget() {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let docs = seed_budget_docs(&workspace).await;
+        let ids: Vec<String> = docs.iter().map(|d| d.0.clone()).collect();
+        for tool in ["memory_context", "mem_context"] {
+            for max_chars in [32u64, 40, 60, 100, 250, 700] {
+                let args =
+                    json!({ "ids": ids.clone(), "max_chars": max_chars, "max_chars_per_doc": 800 });
+                let out = handle_memory_tool(state.clone(), workspace.clone(), tool, args)
+                    .await
+                    .unwrap();
+                let payload = &out["structuredContent"];
+                let content = payload["content"].as_str().unwrap();
+                let sources = payload["sources"].as_array().unwrap();
+                let chars = content.chars().count();
+                assert!(
+                    chars <= max_chars as usize,
+                    "{tool} max_chars={max_chars}: {chars} chars exceeds budget: {content:?}"
+                );
+                assert_eq!(
+                    content.matches("### ").count(),
+                    sources.len(),
+                    "{tool} max_chars={max_chars}: headers vs sources: {content:?}"
+                );
+                for src in sources {
+                    let header = format!(
+                        "### {} (id: {})\n",
+                        src["path"].as_str().unwrap(),
+                        src["id"].as_str().unwrap()
+                    );
+                    assert!(
+                        content.contains(&header),
+                        "{tool} max_chars={max_chars}: whole header {header:?} missing: {content:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn mem_context_sources_are_rendered_only() {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let docs = seed_budget_docs(&workspace).await;
+        let ids: Vec<String> = docs.iter().map(|d| d.0.clone()).collect();
+        for tool in ["memory_context", "mem_context"] {
+            let full = handle_memory_tool(
+                state.clone(),
+                workspace.clone(),
+                tool,
+                json!({ "ids": ids.clone(), "max_chars": 16000, "max_chars_per_doc": 800 }),
+            )
+            .await
+            .unwrap();
+            let full_content = full["structuredContent"]["content"].as_str().unwrap();
+            // Title + first block (header, body, separator) is everything before the second header.
+            let first_header = full_content.find("### ").expect("first header");
+            let second_header = full_content[first_header + 4..]
+                .find("### ")
+                .map(|i| first_header + 4 + i)
+                .expect("second header");
+            let one_block_chars = full_content[..second_header].chars().count();
+            // Budget that fits exactly one block once the truncation marker (20 chars) is reserved.
+            let max_chars = one_block_chars + "\n[... truncated ...]".chars().count();
+            let out = handle_memory_tool(
+                state.clone(),
+                workspace.clone(),
+                tool,
+                json!({ "ids": ids.clone(), "max_chars": max_chars, "max_chars_per_doc": 800 }),
+            )
+            .await
+            .unwrap();
+            let payload = &out["structuredContent"];
+            let content = payload["content"].as_str().unwrap();
+            let sources = payload["sources"].as_array().unwrap();
+            assert!(
+                content.chars().count() <= max_chars,
+                "{tool}: content exceeds {max_chars}: {content:?}"
+            );
+            assert_eq!(
+                sources.len(),
+                1,
+                "{tool}: only rendered blocks are sources: {payload}"
+            );
+            assert_eq!(sources[0]["id"], json!(docs[0].0), "{tool}: {payload}");
+            assert_eq!(content.matches("### ").count(), 1, "{tool}: {content:?}");
+        }
+    }
+
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn recent_fragments_agent_filter_excludes_other_agents() {
