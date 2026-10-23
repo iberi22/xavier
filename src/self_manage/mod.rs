@@ -1766,9 +1766,11 @@ mod ticket_create_tests {
 
     #[test]
     fn test_ticket_deduplication_and_rate_limiting() {
-        // Clear local registry for testing
-        let reg = CreatedTicketsRegistry::default();
-        save_tickets_registry(&reg);
+        // Tickets go to a fake backend and a tempdir registry: never the real
+        // Maloca store or ~/.xavier/state.
+        let dir = tempfile::tempdir().unwrap();
+        let reg = dir.path().join("tickets.json");
+        let fake = FakeBackends::new(true);
 
         let args1 = TicketCreateArgs {
             title: "Test incident issue".into(),
@@ -1780,11 +1782,11 @@ mod ticket_create_tests {
         };
 
         // First creation succeeds
-        let res1 = ticket_create(args1.clone()).unwrap();
+        let res1 = ticket_create_with(args1.clone(), Some(&reg), &fake).unwrap();
         assert!(!res1.deduplicated);
 
         // Second creation of duplicate triggers deduplication
-        let res2 = ticket_create(args1.clone()).unwrap();
+        let res2 = ticket_create_with(args1.clone(), Some(&reg), &fake).unwrap();
         assert!(res2.deduplicated);
         assert_eq!(res1.id, res2.id);
 
@@ -1797,7 +1799,7 @@ mod ticket_create_tests {
             fingerprint: None,
             backend: Some("maloca".into()),
         };
-        let _ = ticket_create(args2).unwrap();
+        let _ = ticket_create_with(args2, Some(&reg), &fake).unwrap();
 
         let args3 = TicketCreateArgs {
             title: "Test incident issue 3".into(),
@@ -1807,7 +1809,7 @@ mod ticket_create_tests {
             fingerprint: None,
             backend: Some("maloca".into()),
         };
-        let _ = ticket_create(args3).unwrap();
+        let _ = ticket_create_with(args3, Some(&reg), &fake).unwrap();
 
         // 4th distinct creation should fail with rate-limit
         let args4 = TicketCreateArgs {
@@ -1818,15 +1820,16 @@ mod ticket_create_tests {
             fingerprint: None,
             backend: Some("maloca".into()),
         };
-        let res4 = ticket_create(args4);
+        let res4 = ticket_create_with(args4, Some(&reg), &fake);
         assert!(res4.is_err());
         assert!(res4
             .unwrap_err()
             .to_string()
             .contains("Rate limit exceeded"));
 
-        // Clean up tickets registry
-        save_tickets_registry(&CreatedTicketsRegistry::default());
+        // Only the three accepted creations reached the backend.
+        assert_eq!(fake.maloca_calls.get(), 3);
+        assert_eq!(fake.github_calls.get(), 0);
     }
 
     /// Records calls instead of reaching GitHub or the real Maloca store.
