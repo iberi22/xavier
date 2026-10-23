@@ -189,6 +189,74 @@ pub struct ToolExecuteRequest {
     pub args: serde_json::Value,
 }
 
+const SQLITE_HEADER_MAGIC: &[u8; 16] = b"SQLite format 3\0";
+
+/// Read-only preflight run before any writable SQLite open.
+///
+/// SQLite's writable open/cleanup path can delete the `-wal` sidecar of a
+/// database it considers corrupt, so an existing database that is not a clean
+/// SQLite file is rejected here, without opening it through SQLite and without
+/// creating, renaming, deleting or writing any file.
+fn preflight_code_graph_db(db_path: &std::path::Path) -> Result<(), String> {
+    let sidecars_present = ["-wal", "-shm"].iter().try_fold(false, |found, suffix| {
+        let sidecar = std::path::PathBuf::from(format!("{}{}", db_path.display(), suffix));
+        sidecar
+            .try_exists()
+            .map(|exists| found || exists)
+            .map_err(|e| format!("cannot inspect {}: {e}", sidecar.display()))
+    })?;
+
+    let mut file = match std::fs::File::open(db_path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if sidecars_present {
+                return Err(format!(
+                    "code graph database {} is missing but has WAL/SHM sidecars; left unchanged",
+                    db_path.display()
+                ));
+            }
+            return Ok(());
+        }
+        Err(e) => {
+            return Err(format!(
+                "cannot read code graph database {}: {e}",
+                db_path.display()
+            ))
+        }
+    };
+
+    let len = file
+        .metadata()
+        .map_err(|e| format!("cannot stat code graph database {}: {e}", db_path.display()))?
+        .len();
+    if len == 0 {
+        if sidecars_present {
+            return Err(format!(
+                "code graph database {} is empty but has WAL/SHM sidecars; left unchanged",
+                db_path.display()
+            ));
+        }
+        return Ok(());
+    }
+
+    let mut header = [0u8; 16];
+    match std::io::Read::read_exact(&mut file, &mut header) {
+        Ok(()) if &header == SQLITE_HEADER_MAGIC => Ok(()),
+        Ok(()) => Err(format!(
+            "code graph database {} is not a SQLite database; left unchanged",
+            db_path.display()
+        )),
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Err(format!(
+            "code graph database {} is not a SQLite database; left unchanged",
+            db_path.display()
+        )),
+        Err(e) => Err(format!(
+            "cannot read code graph database {}: {e}",
+            db_path.display()
+        )),
+    }
+}
+
 fn open_code_graph_db(
     workspace: &std::path::Path,
 ) -> Result<std::sync::Arc<code_graph::db::CodeGraphDB>, String> {
@@ -196,6 +264,7 @@ fn open_code_graph_db(
     if let Some(parent) = db_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+    preflight_code_graph_db(&db_path)?;
     code_graph::db::CodeGraphDB::new(&db_path)
         .map(std::sync::Arc::new)
         .map_err(|e| e.to_string())
