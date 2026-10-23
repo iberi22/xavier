@@ -10,7 +10,6 @@ use std::time::Instant;
 use crate::memory::qmd_memory::config::EMBEDDING_CACHE;
 use crate::memory::qmd_memory::config::EMBEDDING_CACHE_TTL_SECS;
 use crate::memory::qmd_memory::query_builder::normalize_query;
-use crate::memory::qmd_memory::search::lexical_score;
 use crate::memory::qmd_memory::types::{
     CachedSearchResult, EmbeddingCacheEntry, MemoryDocument, MemoryUsage, SearchCacheKey,
 };
@@ -205,6 +204,7 @@ pub async fn search_with_cache_filtered(
     let cancelled = tokio_util::sync::CancellationToken::new();
     let _cancel_on_drop = cancelled.clone().drop_guard();
     let documents = tokio::task::spawn_blocking(move || {
+        let lq = crate::memory::qmd::search::scoring::LexicalQuery::new(&scoring_query);
         let mut scored: Vec<(f32, usize)> = docs
             .iter()
             .enumerate()
@@ -221,7 +221,7 @@ pub async fn search_with_cache_filtered(
                 if !include_activity && crate::memory::schema::is_noise_content(&doc.content) {
                     return None;
                 }
-                let score = lexical_score(doc, &scoring_query);
+                let score = crate::memory::qmd::search::scoring::lexical_score_with_query(doc, &lq);
                 (score > 0.0).then_some((score, index))
             })
             .collect();
@@ -424,5 +424,226 @@ mod latency_regression {
             .unwrap();
         assert!(cached.cache_hit);
         assert_eq!(cached.documents[0].path, "docs/0000");
+    }
+
+    #[tokio::test]
+    async fn test_search_with_cache_filtered_ranking_equivalence() {
+        // Build ~200 mixed docs
+        let words = [
+            "alpha",
+            "beta",
+            "gamma",
+            "delta",
+            "epsilon",
+            "zeta",
+            "eta",
+            "theta",
+            "sunrise",
+            "support group",
+            "counsel",
+            "charity race",
+            "single",
+            "transgender",
+            "rendimiento",
+            "memoria",
+            "optimización",
+            "búsqueda",
+        ];
+        let mut docs = Vec::with_capacity(200);
+        for i in 0..200 {
+            let mut content = format!("Document {} notes: ", i);
+            for w in 0..10 {
+                let word = words[(i * 3 + w * 7) % words.len()];
+                content.push_str(word);
+                content.push(' ');
+            }
+            let mut metadata = serde_json::Map::new();
+            if i % 3 == 0 {
+                metadata.insert(
+                    "memory_kind".to_string(),
+                    serde_json::Value::String("fact_atom".to_string()),
+                );
+            }
+            if i % 5 == 0 {
+                metadata.insert(
+                    "category".to_string(),
+                    serde_json::Value::String("conversation".to_string()),
+                );
+            }
+            metadata.insert(
+                "created_at".to_string(),
+                serde_json::Value::String("2026-05-15T10:00:00Z".to_string()),
+            );
+
+            docs.push(MemoryDocument {
+                id: Some(format!("doc-{}", i)),
+                path: format!("memory/{}/note.md", i),
+                content,
+                metadata: serde_json::Value::Object(metadata),
+                ..Default::default()
+            });
+        }
+
+        let memory = QmdMemory::new(Arc::new(RwLock::new(docs.clone())));
+
+        let queries = [
+            "sunrise support group",
+            "rendimiento de memoria",
+            "alpha beta gamma",
+            "counsel and charity race",
+            "nonexistent query string",
+        ];
+
+        for query in queries {
+            let normalized_query = normalize_query(query);
+            // Compute reference ranking using reference_lexical_score
+            let mut ref_scored: Vec<(f32, usize)> = docs
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, doc)| {
+                    let s = crate::memory::qmd::search::scoring::reference_lexical_score(
+                        doc,
+                        &normalized_query,
+                    );
+                    (s > 0.0).then_some((s, idx))
+                })
+                .collect();
+            let compare = |left: &(f32, usize), right: &(f32, usize)| {
+                right
+                    .0
+                    .partial_cmp(&left.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| docs[left.1].path.cmp(&docs[right.1].path))
+                    .then_with(|| left.1.cmp(&right.1))
+            };
+            ref_scored.sort_by(compare);
+            ref_scored.truncate(10);
+            let expected_paths: Vec<String> = ref_scored
+                .into_iter()
+                .map(|(_, idx)| docs[idx].path.clone())
+                .collect();
+
+            // Clear cache and search with search_with_cache_filtered
+            memory.search_cache.write().await.clear();
+            let result = search_with_cache_filtered(&memory, query, 10, None)
+                .await
+                .unwrap();
+            let actual_paths: Vec<String> = result.documents.into_iter().map(|d| d.path).collect();
+
+            assert_eq!(
+                expected_paths, actual_paths,
+                "Ranking mismatch for query '{}'",
+                query
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn lexical_scan_bench_532k() {
+        println!("Generating 532,000 synthetic MemoryDocuments...");
+        let words = [
+            "performance",
+            "memoria",
+            "rendimiento",
+            "búsqueda",
+            "ranking",
+            "optimización",
+            "execution",
+            "sistema",
+            "configuración",
+            "parámetro",
+            "vector",
+            "algoritmo",
+            "documento",
+            "archivo",
+            "registro",
+            "contexto",
+            "consulta",
+            "híbrido",
+            "lexical",
+            "puntuación",
+            "Xavier",
+            "Rust",
+            "mem_search",
+            "context_search",
+            "evaluación",
+            "análisis",
+            "desarrollo",
+            "servidor",
+            "proceso",
+            "índice",
+        ];
+        let total_docs = 532_000;
+        let mut docs = Vec::with_capacity(total_docs);
+        for i in 0..total_docs {
+            let num_words = 30 + (i % 180); // ~200 - 1500 chars
+            let mut content = String::with_capacity(num_words * 10);
+            for w in 0..num_words {
+                let word = words[(i * 7 + w * 13) % words.len()];
+                if w > 0 {
+                    content.push(' ');
+                }
+                content.push_str(word);
+            }
+
+            let mut metadata = serde_json::Map::new();
+            if i % 10 == 0 {
+                let kind = match (i / 10) % 4 {
+                    0 => "fact_atom",
+                    1 => "entity_state",
+                    2 => "temporal_event",
+                    _ => "summary_fact",
+                };
+                metadata.insert(
+                    "memory_kind".to_string(),
+                    serde_json::Value::String(kind.to_string()),
+                );
+                metadata.insert(
+                    "category".to_string(),
+                    serde_json::Value::String("conversation".to_string()),
+                );
+                metadata.insert(
+                    "created_at".to_string(),
+                    serde_json::Value::String("2026-05-15T10:00:00Z".to_string()),
+                );
+            }
+
+            docs.push(MemoryDocument {
+                id: Some(format!("doc-{}", i)),
+                path: format!("memory/{}/note.md", i),
+                content,
+                metadata: serde_json::Value::Object(metadata),
+                ..Default::default()
+            });
+        }
+
+        let memory = QmdMemory::new(Arc::new(RwLock::new(docs)));
+
+        let queries = [
+            "rendimiento de busqueda en rust",
+            "Xavier memory ranking optimization",
+            "analisis y desarrollo de algoritmo hibrido",
+        ];
+
+        println!("Running benchmark on 532k documents (limit 10)...");
+        for (idx, q) in queries.iter().enumerate() {
+            // Evict cache before query to ensure cache miss each time
+            memory.search_cache.write().await.clear();
+
+            let start = Instant::now();
+            let res = search_with_cache_filtered(&memory, q, 10, None)
+                .await
+                .unwrap();
+            let elapsed = start.elapsed();
+            println!(
+                "Query {} (\"{}\"): {:.2} ms (returned {} docs, cache_hit: {})",
+                idx + 1,
+                q,
+                elapsed.as_secs_f64() * 1000.0,
+                res.documents.len(),
+                res.cache_hit
+            );
+        }
     }
 }

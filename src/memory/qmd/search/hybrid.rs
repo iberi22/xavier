@@ -16,7 +16,7 @@ use crate::memory::qmd_memory::utils::*;
 use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::schema::MemoryQueryFilters;
 
-use super::scoring::{contextual_boost, lexical_score};
+use super::scoring::contextual_boost;
 use super::vector::{vsearch, vsearch_filtered};
 
 /// A single fused search candidate.
@@ -605,11 +605,12 @@ pub async fn bm25_search(
 ) -> Result<Vec<MemoryDocument>> {
     let normalized = normalize_query(query);
     let docs = memory.docs.read().await;
+    let lq = super::scoring::LexicalQuery::new(&normalized);
 
     let mut scores: Vec<(f32, MemoryDocument)> = docs
         .iter()
         .filter_map(|doc| {
-            let score = lexical_score(doc, &normalized);
+            let score = super::scoring::lexical_score_with_query(doc, &lq);
             if score > 0.0 {
                 let mut d = doc.clone();
                 d.score = score;
