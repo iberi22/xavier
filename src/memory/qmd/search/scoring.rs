@@ -12,12 +12,12 @@ use super::resolution::resolved_doc_metadata;
 /// Precomputed query context for fast lexical scoring across many documents.
 #[derive(Clone, Debug)]
 pub struct LexicalQuery<'a> {
-    pub normalized_query: &'a str,
-    pub query_terms: Vec<&'a str>,
-    pub half_life_days: f32,
-    pub has_multi_word: bool,
-    pub active_signals: Vec<(&'static str, f32)>,
-    pub reject_ac: Option<aho_corasick::AhoCorasick>,
+    pub(crate) normalized_query: &'a str,
+    pub(crate) query_terms: Vec<&'a str>,
+    pub(crate) half_life_days: f32,
+    pub(crate) has_multi_word: bool,
+    pub(crate) active_signals: Vec<(&'static str, f32)>,
+    pub(crate) reject_ac: Option<aho_corasick::AhoCorasick>,
 }
 
 impl<'a> LexicalQuery<'a> {
@@ -139,8 +139,10 @@ pub fn lexical_score_with_query(doc: &MemoryDocument, lq: &LexicalQuery<'_>) -> 
 
     let mut matched_terms = 0usize;
     let mut score = 0.0f32;
+    let content: Option<String>;
 
     if can_reject_content {
+        content = None;
         // Content hits and content-dependent bonuses are provably 0.0
         for term in &lq.query_terms {
             let path_hits = path.matches(term).count() as f32 * 2.0;
@@ -150,16 +152,16 @@ pub fn lexical_score_with_query(doc: &MemoryDocument, lq: &LexicalQuery<'_>) -> 
             score += path_hits;
         }
     } else {
-        let content = doc.content.to_lowercase();
+        let lowered_content = doc.content.to_lowercase();
 
         const BM25_K1: f32 = 1.5;
         const BM25_B: f32 = 0.75;
         const AVG_DOC_LEN_WORDS: f32 = 220.0;
-        let doc_len_words = content.split_whitespace().count().max(1) as f32;
+        let doc_len_words = lowered_content.split_whitespace().count().max(1) as f32;
         let length_norm = (1.0 - BM25_B) + BM25_B * (doc_len_words / AVG_DOC_LEN_WORDS);
 
         for term in &lq.query_terms {
-            let raw_content_hits = content.matches(term).count() as f32;
+            let raw_content_hits = lowered_content.matches(term).count() as f32;
             let content_hits = if raw_content_hits > 0.0 {
                 (raw_content_hits * (BM25_K1 + 1.0)) / (raw_content_hits + BM25_K1 * length_norm)
             } else {
@@ -172,6 +174,12 @@ pub fn lexical_score_with_query(doc: &MemoryDocument, lq: &LexicalQuery<'_>) -> 
             score += content_hits + path_hits;
         }
 
+        content = Some(lowered_content);
+    }
+
+    score += (matched_terms * matched_terms) as f32;
+
+    if let Some(content) = &content {
         if lq.has_multi_word && content.contains(lq.normalized_query) {
             score += 6.0;
         }
@@ -182,8 +190,6 @@ pub fn lexical_score_with_query(doc: &MemoryDocument, lq: &LexicalQuery<'_>) -> 
             }
         }
     }
-
-    score += (matched_terms * matched_terms) as f32;
 
     let memory_kind = doc
         .metadata
@@ -671,174 +677,169 @@ pub fn memory_decay_penalty(document: &MemoryDocument) -> f32 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+pub(crate) fn reference_lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
+    if normalized_query.is_empty() {
+        return 0.0;
+    }
 
-    /// Verbatim copy of original `lexical_score` before optimization.
-    fn reference_lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
-        if normalized_query.is_empty() {
-            return 0.0;
+    if is_locomo_document(&doc.path, &doc.metadata) {
+        return locomo_lexical_score(doc, normalized_query);
+    }
+
+    let content = doc.content.to_lowercase();
+    let path = doc.path.to_lowercase();
+    let query_terms: Vec<&str> = normalized_query
+        .split_whitespace()
+        .filter(|term| !term.is_empty())
+        .collect();
+
+    const BM25_K1: f32 = 1.5;
+    const BM25_B: f32 = 0.75;
+    const AVG_DOC_LEN_WORDS: f32 = 220.0;
+    let doc_len_words = content.split_whitespace().count().max(1) as f32;
+    let length_norm = (1.0 - BM25_B) + BM25_B * (doc_len_words / AVG_DOC_LEN_WORDS);
+
+    let mut matched_terms = 0usize;
+    let mut score = 0.0f32;
+    for term in &query_terms {
+        let raw_content_hits = content.matches(term).count() as f32;
+        let content_hits = if raw_content_hits > 0.0 {
+            (raw_content_hits * (BM25_K1 + 1.0)) / (raw_content_hits + BM25_K1 * length_norm)
+        } else {
+            0.0
+        };
+        let path_hits = path.matches(term).count() as f32 * 2.0;
+        if content_hits > 0.0 || path_hits > 0.0 {
+            matched_terms += 1;
         }
+        score += content_hits + path_hits;
+    }
+    score += (matched_terms * matched_terms) as f32;
 
-        if is_locomo_document(&doc.path, &doc.metadata) {
-            return locomo_lexical_score(doc, normalized_query);
+    let memory_kind = doc
+        .metadata
+        .get("memory_kind")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let resolved = resolved_doc_metadata(doc);
+    let category = doc
+        .metadata
+        .get("category")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+
+    if normalized_query.split_whitespace().count() >= 2 && content.contains(normalized_query) {
+        score += 6.0;
+    }
+
+    for (query_signal, content_signal, bonus) in [
+        ("sunrise", "sunrise", 12.0),
+        ("support", "support group", 12.0),
+        ("charity", "charity race", 12.0),
+        ("camping", "camping", 12.0),
+        ("identity", "transgender", 10.0),
+        ("relationship", "single", 10.0),
+        ("research", "adoption agenc", 8.0),
+        ("field", "counsel", 8.0),
+        ("pursue", "counsel", 8.0),
+        ("what", "what", 2.0),
+        ("who", "who", 3.0),
+        ("how", "how", 2.0),
+        ("why", "why", 2.0),
+        ("which", "which", 2.0),
+    ] {
+        if normalized_query.contains(query_signal) && content.contains(content_signal) {
+            score += bonus;
         }
+    }
 
-        let content = doc.content.to_lowercase();
-        let path = doc.path.to_lowercase();
-        let query_terms: Vec<&str> = normalized_query
-            .split_whitespace()
-            .filter(|term| !term.is_empty())
-            .collect();
+    if matches!(
+        memory_kind,
+        "fact_atom" | "entity_state" | "temporal_event" | "summary_fact"
+    ) {
+        score += 5.0;
+    }
 
-        const BM25_K1: f32 = 1.5;
-        const BM25_B: f32 = 0.75;
-        const AVG_DOC_LEN_WORDS: f32 = 220.0;
-        let doc_len_words = content.split_whitespace().count().max(1) as f32;
-        let length_norm = (1.0 - BM25_B) + BM25_B * (doc_len_words / AVG_DOC_LEN_WORDS);
-
-        let mut matched_terms = 0usize;
-        let mut score = 0.0f32;
-        for term in &query_terms {
-            let raw_content_hits = content.matches(term).count() as f32;
-            let content_hits = if raw_content_hits > 0.0 {
-                (raw_content_hits * (BM25_K1 + 1.0)) / (raw_content_hits + BM25_K1 * length_norm)
-            } else {
-                0.0
-            };
-            let path_hits = path.matches(term).count() as f32 * 2.0;
-            if content_hits > 0.0 || path_hits > 0.0 {
-                matched_terms += 1;
+    if let Some(resolved) = &resolved {
+        match resolved.kind {
+            MemoryKind::Repo | MemoryKind::File | MemoryKind::Symbol | MemoryKind::Url => {
+                score += 5.0;
             }
-            score += content_hits + path_hits;
-        }
-        score += (matched_terms * matched_terms) as f32;
-
-        let memory_kind = doc
-            .metadata
-            .get("memory_kind")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default();
-        let resolved = resolved_doc_metadata(doc);
-        let category = doc
-            .metadata
-            .get("category")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default();
-
-        if normalized_query.split_whitespace().count() >= 2 && content.contains(normalized_query) {
-            score += 6.0;
-        }
-
-        for (query_signal, content_signal, bonus) in [
-            ("sunrise", "sunrise", 12.0),
-            ("support", "support group", 12.0),
-            ("charity", "charity race", 12.0),
-            ("camping", "camping", 12.0),
-            ("identity", "transgender", 10.0),
-            ("relationship", "single", 10.0),
-            ("research", "adoption agenc", 8.0),
-            ("field", "counsel", 8.0),
-            ("pursue", "counsel", 8.0),
-            ("what", "what", 2.0),
-            ("who", "who", 3.0),
-            ("how", "how", 2.0),
-            ("why", "why", 2.0),
-            ("which", "which", 2.0),
-        ] {
-            if normalized_query.contains(query_signal) && content.contains(content_signal) {
-                score += bonus;
-            }
-        }
-
-        if matches!(
-            memory_kind,
-            "fact_atom" | "entity_state" | "temporal_event" | "summary_fact"
-        ) {
-            score += 5.0;
-        }
-
-        if let Some(resolved) = &resolved {
-            match resolved.kind {
-                MemoryKind::Repo | MemoryKind::File | MemoryKind::Symbol | MemoryKind::Url => {
-                    score += 5.0;
-                }
-                MemoryKind::Decision | MemoryKind::Task | MemoryKind::Fact
-                    if query_terms.len() >= 2 =>
-                {
-                    score += 3.0;
-                }
-                _ => {}
-            }
-
-            if let Some(evidence_kind) = resolved.evidence_kind {
-                match evidence_kind {
-                    EvidenceKind::SourceTurn => score += 6.0,
-                    EvidenceKind::FactAtom | EvidenceKind::EntityState => score += 8.0,
-                    EvidenceKind::TemporalEvent if normalized_query.contains("when") => {
-                        score += 10.0
-                    }
-                    EvidenceKind::SessionSummary => score *= 0.5,
-                    _ => {}
-                }
-            }
-
-            for exact in [
-                resolved.provenance.symbol.as_ref(),
-                resolved.provenance.file_path.as_ref(),
-                resolved.provenance.repo_url.as_ref(),
-                resolved.provenance.url.as_ref(),
-                resolved.namespace.session_id.as_ref(),
-                resolved.namespace.agent_id.as_ref(),
-                resolved.namespace.user_id.as_ref(),
-                resolved.namespace.project.as_ref(),
-            ]
-            .into_iter()
-            .flatten()
+            MemoryKind::Decision | MemoryKind::Task | MemoryKind::Fact
+                if query_terms.len() >= 2 =>
             {
-                let lowered = exact.to_ascii_lowercase();
-                if !lowered.is_empty() && normalized_query.contains(&lowered) {
-                    score += 18.0;
-                }
+                score += 3.0;
             }
-        }
-
-        if doc
-            .metadata
-            .get("normalized_value")
-            .and_then(|value| value.as_str())
-            .is_some()
-        {
-            score += 2.0;
-        }
-
-        match category {
-            "session_summary" => score *= 0.2,
-            "conversation" => score *= 1.2,
-            "observation" => score *= 0.8,
             _ => {}
         }
 
-        let created_at = doc
-            .metadata
-            .get("created_at")
-            .or_else(|| doc.metadata.get("timestamp"))
-            .or_else(|| doc.metadata.get("updated_at"))
-            .and_then(|value| value.as_str());
-        let half_life_days = std::env::var("XAVIER_TEMPORAL_HALF_LIFE_DAYS")
-            .ok()
-            .and_then(|v| v.parse::<f32>().ok())
-            .unwrap_or(30.0);
-        let decay = temporal_decay_multiplier(created_at, half_life_days);
+        if let Some(evidence_kind) = resolved.evidence_kind {
+            match evidence_kind {
+                EvidenceKind::SourceTurn => score += 6.0,
+                EvidenceKind::FactAtom | EvidenceKind::EntityState => score += 8.0,
+                EvidenceKind::TemporalEvent if normalized_query.contains("when") => score += 10.0,
+                EvidenceKind::SessionSummary => score *= 0.5,
+                _ => {}
+            }
+        }
 
-        score * decay
+        for exact in [
+            resolved.provenance.symbol.as_ref(),
+            resolved.provenance.file_path.as_ref(),
+            resolved.provenance.repo_url.as_ref(),
+            resolved.provenance.url.as_ref(),
+            resolved.namespace.session_id.as_ref(),
+            resolved.namespace.agent_id.as_ref(),
+            resolved.namespace.user_id.as_ref(),
+            resolved.namespace.project.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let lowered = exact.to_ascii_lowercase();
+            if !lowered.is_empty() && normalized_query.contains(&lowered) {
+                score += 18.0;
+            }
+        }
     }
+
+    if doc
+        .metadata
+        .get("normalized_value")
+        .and_then(|value| value.as_str())
+        .is_some()
+    {
+        score += 2.0;
+    }
+
+    match category {
+        "session_summary" => score *= 0.2,
+        "conversation" => score *= 1.2,
+        "observation" => score *= 0.8,
+        _ => {}
+    }
+
+    let created_at = doc
+        .metadata
+        .get("created_at")
+        .or_else(|| doc.metadata.get("timestamp"))
+        .or_else(|| doc.metadata.get("updated_at"))
+        .and_then(|value| value.as_str());
+    let half_life_days = std::env::var("XAVIER_TEMPORAL_HALF_LIFE_DAYS")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(30.0);
+    let decay = temporal_decay_multiplier(created_at, half_life_days);
+
+    score * decay
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     #[test]
     fn test_lexical_score_exact_equivalence() {
-        // Set env var to test default or fixed half-life
-        std::env::set_var("XAVIER_TEMPORAL_HALF_LIFE_DAYS", "30.0");
-
         let mut test_docs = Vec::new();
 
         // 1. Basic uppercase/lowercase & mixed content
@@ -1066,6 +1067,79 @@ mod tests {
                     "Mismatch between reference and lexical_score_with_query for query '{}' on doc '{}': {} vs {}",
                     query, doc.path, ref_score, fast_score
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn test_lexical_score_signals_accumulation_order_equivalence() {
+        // Equivalence test with active signal words and N filler words (N swept 1..400)
+        let queries = [
+            "identity",
+            "relationship",
+            "single",
+            "sunrise",
+            "support",
+            "charity",
+            "camping",
+            "research",
+            "field",
+            "pursue",
+            "what",
+            "who",
+            "how",
+            "why",
+            "which",
+        ];
+
+        let prefixes = [
+            "identity transgender ",
+            "relationship single ",
+            "support group sunrise ",
+            "charity race camping ",
+            "research adoption agenc field counsel pursue ",
+        ];
+
+        let filler_words = [
+            "filler", "word", "document", "text", "lorem", "ipsum", "test", "content", "sample",
+            "corpus", "data", "buffer",
+        ];
+
+        for prefix in prefixes {
+            for n in 1..=400 {
+                let mut content = String::with_capacity(prefix.len() + n * 8);
+                content.push_str(prefix);
+                for i in 0..n {
+                    content.push_str(filler_words[i % filler_words.len()]);
+                    content.push(' ');
+                }
+
+                let doc = MemoryDocument {
+                    path: "memory/note.md".to_string(),
+                    content,
+                    ..Default::default()
+                };
+
+                for query in queries {
+                    let normalized = query.to_lowercase();
+                    let lq = LexicalQuery::new(&normalized);
+                    let ref_score = reference_lexical_score(&doc, &normalized);
+                    let new_score = lexical_score(&doc, &normalized);
+                    let fast_score = lexical_score_with_query(&doc, &lq);
+
+                    assert_eq!(
+                        ref_score.to_bits(),
+                        new_score.to_bits(),
+                        "Mismatch between ref and lexical_score for query '{}' with prefix '{}' and N={}",
+                        query, prefix, n
+                    );
+                    assert_eq!(
+                        ref_score.to_bits(),
+                        fast_score.to_bits(),
+                        "Mismatch between ref and lexical_score_with_query for query '{}' with prefix '{}' and N={}",
+                        query, prefix, n
+                    );
+                }
             }
         }
     }

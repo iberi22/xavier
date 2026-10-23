@@ -10,7 +10,6 @@ use std::time::Instant;
 use crate::memory::qmd_memory::config::EMBEDDING_CACHE;
 use crate::memory::qmd_memory::config::EMBEDDING_CACHE_TTL_SECS;
 use crate::memory::qmd_memory::query_builder::normalize_query;
-use crate::memory::qmd_memory::search::lexical_score;
 use crate::memory::qmd_memory::types::{
     CachedSearchResult, EmbeddingCacheEntry, MemoryDocument, MemoryUsage, SearchCacheKey,
 };
@@ -502,8 +501,10 @@ mod latency_regression {
                 .iter()
                 .enumerate()
                 .filter_map(|(idx, doc)| {
-                    let s =
-                        crate::memory::qmd::search::scoring::lexical_score(doc, &normalized_query);
+                    let s = crate::memory::qmd::search::scoring::reference_lexical_score(
+                        doc,
+                        &normalized_query,
+                    );
                     (s > 0.0).then_some((s, idx))
                 })
                 .collect();

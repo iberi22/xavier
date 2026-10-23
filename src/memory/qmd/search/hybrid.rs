@@ -16,7 +16,7 @@ use crate::memory::qmd_memory::utils::*;
 use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::schema::MemoryQueryFilters;
 
-use super::scoring::{contextual_boost, lexical_score};
+use super::scoring::contextual_boost;
 use super::vector::{vsearch, vsearch_filtered};
 
 /// A single fused search candidate.
