@@ -1,6 +1,6 @@
 # Xavier 1.0 MCP Contract
 
-**Last Updated:** 2026-09-27
+**Last Updated:** 2026-10-23
 **Protocol Version:** 2025-03-26
 **Server Name:** `xavier-memory`
 
@@ -365,11 +365,52 @@ MemoryFragment inputs enforce strict validation:
 
 ## Error Handling and Codes
 
-Xavier uses standard JSON-RPC 2.0 error codes and custom Xavier-specific codes for MCP tool calls.
+Xavier uses standard JSON-RPC 2.0 error codes and custom Xavier-specific codes for MCP tool calls. The channel a failure uses depends on the phase where it happens, as decided in [ADR-047](adr/ADR-047-mcp-error-channels.md) (Proposed). The numeric codes do not change.
+
+> **Status:** this table is the target contract. Until the ADR-047 implementation lands, wrong-type and invalid-value arguments and absent entities still return JSON-RPC errors (see the note under the channel table).
+
+### Channel by phase
+
+| Phase | Examples | Channel | Code | `kind` |
+|-------|----------|---------|------|--------|
+| Framing | parse error, invalid request shape | JSON-RPC error | `-32700` / `-32600` | — |
+| Routing | unknown method | JSON-RPC error | `-32601` | — |
+| `tools/call` envelope | params not an object, missing `name`, unknown tool, `arguments` not an object | JSON-RPC error | `-32602` / `-32001` | — |
+| Pre-dispatch authorization | anonymous caller, role check, local identity | JSON-RPC error | `-32000` | — |
+| Argument validation | missing required argument, wrong type, invalid value | tool result, `isError: true` | `-32001` | `validation` |
+| Entity absent | memory or fragment not found | tool result, `isError: true` | `-32002` | `not_found` |
+| Content security policy | prompt-injection block | tool result, `isError: true` | `-32000` | `security_policy` |
+| Other execution failures (in-tool clearance, rate limit, internal) | — | JSON-RPC error | `-32000` / `-32603` | — |
+
+At HEAD, a missing required argument already returns a tool result. Wrong-type and invalid-value arguments and absent entities still return JSON-RPC errors (`-32001`, `-32002`) until the implementation lands.
+
+### Tool-result error shape
+
+Rows that use a tool result return:
+
+```json
+{
+  "content": [{ "type": "text", "text": "<message>" }],
+  "structuredContent": {
+    "error": { "code": -32002, "kind": "not_found", "message": "<message>" }
+  },
+  "isError": true
+}
+```
+
+- `content[0].text` equals `structuredContent.error.message`.
+- There is no top-level `error` member on this channel.
+- `kind` is one of `validation`, `not_found`, `security_policy`.
+
+### Compatibility note
+
+Clients that treat only a top-level JSON-RPC `error` as a failure will read not-found and argument-validation failures as successful results. Check `isError` on tool results. The numeric code is preserved in `structuredContent.error.code`.
+
+### Codes
 
 | Code | Name | Description |
 |------|------|-------------|
-| `-32000` | `XAVIER_ERROR_SECURITY` | Security policy violation (e.g., prompt injection) |
+| `-32000` | `XAVIER_ERROR_SECURITY` | Security policy violation (for example prompt injection), or pre-dispatch authorization failure |
 | `-32001` | `XAVIER_ERROR_VALIDATION` | Missing parameters or invalid argument format |
 | `-32002` | `XAVIER_ERROR_NOT_FOUND` | Requested resource (memory, project) not found |
 | `-32601` | `Method not found` | Standard JSON-RPC error for unknown methods |
