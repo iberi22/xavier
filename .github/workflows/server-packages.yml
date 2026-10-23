@@ -95,7 +95,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends protobuf-compiler pkg-config
           if [ "${{ matrix.target }}" = x86_64-unknown-linux-musl ]; then
-            sudo apt-get install -y -qq --no-install-recommends musl-tools
+            sudo apt-get install -y -qq --no-install-recommends musl-tools linux-libc-dev
+            # musl-gcc hides /usr/include; aws-lc-sys needs the (libc-independent) kernel headers.
+            musl_inc=/usr/include/x86_64-linux-musl
+            sudo ln -sfn /usr/include/linux "$musl_inc/linux"
+            sudo ln -sfn /usr/include/asm-generic "$musl_inc/asm-generic"
+            sudo ln -sfn /usr/include/x86_64-linux-gnu/asm "$musl_inc/asm"
           fi
       - uses: Swatinem/rust-cache@v2
         with:
