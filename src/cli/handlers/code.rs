@@ -4199,4 +4199,139 @@ mod tests {
             "duplicate names must be deduped: {names:?}"
         );
     }
+
+    /// Minimal Git repository whose `src/lib.rs` declares one symbol. Both W1
+    /// fixtures use this same relative path, so only the symbol tells them apart.
+    ///
+    /// The file mtime is pinned to one fixed second. The incremental indexer keys
+    /// on whole-second mtimes, so two same-second checkouts (or preserved mtimes)
+    /// are what make a shared graph skip the second repo's file and keep the first
+    /// repo's rows. Leaving the mtime to the clock makes that outcome timing-dependent.
+    fn w1_git_repo(dir: &std::path::Path, symbol: &str) {
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let file = dir.join("src").join("lib.rs");
+        std::fs::write(&file, format!("pub fn {symbol}() {{}}\n")).unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000))
+            .unwrap();
+        let status = std::process::Command::new("git")
+            .arg("init")
+            .arg("--quiet")
+            .arg(dir)
+            .status()
+            .expect("git must be installed for the W1 scan fixtures");
+        assert!(status.success(), "git init failed in {}", dir.display());
+    }
+
+    /// Row snapshot of a code-graph DB file: sorted `(name, file_path)` symbol
+    /// pairs and the edge count. A missing file snapshots as empty.
+    fn w1_db_rows(db_path: &std::path::Path) -> (Vec<(String, String)>, usize) {
+        if !db_path.exists() {
+            return (Vec::new(), 0);
+        }
+        let db = code_graph::db::CodeGraphDB::new(db_path).unwrap();
+        let mut symbols: Vec<(String, String)> = db
+            .get_all_symbols()
+            .unwrap()
+            .into_iter()
+            .map(|s| (s.name, s.file_path))
+            .collect();
+        symbols.sort();
+        (symbols, db.get_all_edges().unwrap().len())
+    }
+
+    /// Test state whose shared (whole-workspace) code graph is a file under
+    /// `state_dir`, so its rows can be snapshotted before and after each scan.
+    async fn w1_state(workspace: &std::path::Path, state_dir: &std::path::Path) -> CliState {
+        let state = xav01_test_state_in(workspace.to_path_buf(), state_dir).await;
+        let shared = Arc::new(
+            code_graph::db::CodeGraphDB::new(&state_dir.join("shared_code_graph.db")).unwrap(),
+        );
+        *state.code_graph.write().await = crate::cli::state::CodeGraphState {
+            db: Arc::clone(&shared),
+            indexer: Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&shared))),
+            query: Arc::new(code_graph::query::QueryEngine::new(shared)),
+        };
+        state
+    }
+
+    /// W1 (O03 island): scanning a Git target must index into that repo's own
+    /// `<root>/.xavier/code_graph.db`. Before the fix the scan wrote the shared
+    /// whole-workspace graph and then copied all of it into the per-repo DB, so
+    /// repo B picked up repo A's symbols and the shared DB was written.
+    #[tokio::test]
+    async fn w1_scan_indexes_each_git_repo_into_its_own_graph() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let state_dir = tempfile::tempdir().unwrap();
+        let dir_a = workspace.join("w1-repo-a");
+        let dir_b = workspace.join("w1-repo-b");
+        w1_git_repo(&dir_a, "w1_only_in_repo_a");
+        w1_git_repo(&dir_b, "w1_only_in_repo_b");
+
+        let state = w1_state(&workspace, state_dir.path()).await;
+        let shared_path = state_dir.path().join("shared_code_graph.db");
+        let db_a = dir_a.join(".xavier").join("code_graph.db");
+        let db_b = dir_b.join(".xavier").join("code_graph.db");
+        let shared_before = w1_db_rows(&shared_path);
+
+        let scan = |root: &std::path::Path| {
+            axum::Json(CodeScanPayload {
+                path: Some(root.to_string_lossy().into_owned()),
+            })
+        };
+
+        let body_a = xav01_body(code_scan_handler(State(state.clone()), scan(&dir_a))).await;
+        assert_eq!(body_a["status"], "ok", "scan of A failed: {body_a}");
+        let rows_a = w1_db_rows(&db_a);
+        assert!(
+            rows_a.0.iter().any(|(name, _)| name == "w1_only_in_repo_a"),
+            "A.db must index A's own symbol: {rows_a:?}"
+        );
+
+        let body_b = xav01_body(code_scan_handler(State(state.clone()), scan(&dir_b))).await;
+        assert_eq!(body_b["status"], "ok", "scan of B failed: {body_b}");
+        assert_eq!(
+            body_b["codegraph_dump_success"], true,
+            "B's dump must be produced: {body_b}"
+        );
+
+        let mut violations = Vec::new();
+
+        // (a) B's graph must hold B's symbol and no symbol from A.
+        let rows_b = w1_db_rows(&db_b);
+        if !rows_b.0.iter().any(|(name, _)| name == "w1_only_in_repo_b") {
+            violations.push("B.db is missing B's own symbol".to_string());
+        }
+        if rows_b.0.iter().any(|(name, _)| name == "w1_only_in_repo_a") {
+            violations.push(format!("B.db contains A's symbol: {:?}", rows_b.0));
+        }
+        let dump_b = std::fs::read_to_string(dir_b.join(".xavier").join("codegraph.json"))
+            .unwrap_or_default();
+        if dump_b.contains("w1_only_in_repo_a") {
+            violations.push("B's dump contains A's symbol".to_string());
+        }
+
+        // (b) the shared whole-workspace DB must be exactly as it was before the scans.
+        if w1_db_rows(&shared_path) != shared_before {
+            violations.push(format!(
+                "shared DB rows changed during per-repo scans: {:?}",
+                w1_db_rows(&shared_path).0
+            ));
+        }
+
+        // (c) A's graph must be untouched by the scan of B.
+        if w1_db_rows(&db_a) != rows_a {
+            violations.push("A.db changed during the scan of B".to_string());
+        }
+
+        assert!(
+            violations.is_empty(),
+            "W1 per-repo isolation violated: {violations:#?}"
+        );
+    }
 }
