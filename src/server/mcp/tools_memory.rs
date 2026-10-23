@@ -1906,7 +1906,11 @@ pub async fn handle_memory_context(
                     total_records: 0,
                     truncated: false,
                     truncated_reason: None,
-                    content: "No relevant context found for query/ids".to_string(),
+                    content: crate::memory::snippet::clip_chars(
+                        "No relevant context found for query/ids",
+                        max_chars,
+                    )
+                    .to_string(),
                     sources: Vec::new(),
                     estimated_tokens: 0,
                     page: None,
