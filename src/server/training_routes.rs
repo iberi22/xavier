@@ -1067,6 +1067,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn curated_export_excludes_revoked_and_private_items() {
+        let (db_file, data_dir) = setup_test_env();
+        let curation_dir = data_dir.path().join("curation");
+        std::fs::create_dir_all(&curation_dir).unwrap();
+        let mut queue = CurationQueue::new_with_path(curation_dir.join("queue.json"));
+
+        let contents = [
+            "Clean approved text about shipping routes.".to_string(),
+            serde_json::json!({
+                "instruction": "question",
+                "response": "revoked answer",
+                "metadata": {"revoked": true}
+            })
+            .to_string(),
+            serde_json::json!({
+                "instruction": "question",
+                "response": "private answer",
+                "metadata": {"is_private": true}
+            })
+            .to_string(),
+            serde_json::json!({
+                "instruction": "question",
+                "response": "scoped answer",
+                "metadata": {"visibility": "private"}
+            })
+            .to_string(),
+        ];
+        let mut item_ids = Vec::new();
+        for content in contents {
+            let item = queue.submit_for_curation(content, "INTERNAL".to_string(), None);
+            queue
+                .approve(&item.id, "curator_alice".to_string(), None, None)
+                .unwrap();
+            item_ids.push(item.id);
+        }
+        queue.save().unwrap();
+
+        let state = TrainingState {
+            db_path: db_file.path().to_path_buf(),
+            data_dir: data_dir.path().join("datasets"),
+        };
+        let app = router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/v1/training/export")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({"curated_only": true, "limit": 10}).to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let audit_header = resp
+            .headers()
+            .get("x-xavier-export-audit")
+            .map(|v| v.to_str().unwrap().to_string());
+        let body_bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+        let lines: Vec<&str> = body_str.lines().filter(|l| !l.is_empty()).collect();
+
+        assert_eq!(lines.len(), 1, "only the clean item may leave: {body_str}");
+        assert!(lines[0].contains("shipping routes"));
+        assert!(!body_str.contains("revoked answer"));
+        assert!(!body_str.contains("private answer"));
+        assert!(!body_str.contains("scoped answer"));
+
+        let audit_header = audit_header.unwrap_or_default();
+        assert!(
+            !audit_header.is_empty(),
+            "missing x-xavier-export-audit header"
+        );
+        let audit: serde_json::Value = serde_json::from_str(&audit_header).unwrap();
+        assert_eq!(audit["total"], 4, "{audit_header}");
+        assert_eq!(audit["included"], 1, "{audit_header}");
+        assert_eq!(audit["excluded"]["revoked"], 1, "{audit_header}");
+        assert_eq!(audit["excluded"]["private"], 2, "{audit_header}");
+        // Counts only: the header never carries item ids or content.
+        for id in &item_ids {
+            assert!(!audit_header.contains(id.as_str()));
+        }
+    }
+
+    #[tokio::test]
     async fn test_export_backward_compatibility() {
         let (db_file, data_dir) = setup_test_env();
         let state = TrainingState {
@@ -1416,6 +1500,108 @@ mod tests {
             },
         );
         (app, mem_dir, data_dir)
+    }
+
+    #[tokio::test]
+    async fn export_memory_source_excludes_flagged_via_http() {
+        use crate::memory::store::{FileMemoryStore, MemoryRecord};
+        let mem_dir = tempdir().unwrap();
+        let store = FileMemoryStore::new(mem_dir.path().join("m.json"))
+            .await
+            .unwrap();
+        let flagged = [
+            (
+                "revoked",
+                serde_json::json!({"kind": "file", "revoked": true}),
+            ),
+            (
+                "private",
+                serde_json::json!({"kind": "file", "is_private": true}),
+            ),
+        ];
+        let mut record_ids = Vec::new();
+        for i in 0..6 {
+            let id = format!("clean{i}");
+            store
+                .put(MemoryRecord {
+                    id: id.clone(),
+                    workspace_id: "ws1".to_string(),
+                    path: format!("dev/{id}"),
+                    content: format!("Function {i} validates input and returns an error."),
+                    metadata: serde_json::json!({"kind": "file", "title": format!("fn_{i}")}),
+                    ..MemoryRecord::default()
+                })
+                .await
+                .unwrap();
+            record_ids.push(id);
+        }
+        for (name, metadata) in flagged {
+            let id = format!("flagged_{name}");
+            store
+                .put(MemoryRecord {
+                    id: id.clone(),
+                    workspace_id: "ws1".to_string(),
+                    path: format!("dev/{id}"),
+                    content: format!("Function {name} must never leave the node."),
+                    metadata,
+                    ..MemoryRecord::default()
+                })
+                .await
+                .unwrap();
+            record_ids.push(id);
+        }
+        let data_dir = tempdir().unwrap();
+        let state = TrainingState {
+            db_path: data_dir.path().join("unused.sqlite3"),
+            data_dir: data_dir.path().to_path_buf(),
+        };
+        let app = router_with_sources(
+            state,
+            TrainingSources {
+                memory_store: Some(Arc::new(store)),
+                challenge_store: None,
+            },
+        );
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/v1/training/export")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "seed": 1, "eval_ratio": 0.2, "sources": ["memory"],
+                    "workspace": "ws1", "privacy_level": "P2"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        let status = resp.status();
+        let audit_header = resp
+            .headers()
+            .get("x-xavier-export-audit")
+            .map(|v| v.to_str().unwrap().to_string());
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["audit"]["excluded_revoked"], 1, "{body}");
+        assert_eq!(body["audit"]["included_records"], 6, "{body}");
+        assert_eq!(body["audit"]["total_records_found"], 8, "{body}");
+        assert!(!body.to_string().contains("must never leave the node"));
+
+        let audit_header = audit_header.unwrap_or_default();
+        assert!(
+            !audit_header.is_empty(),
+            "missing x-xavier-export-audit header"
+        );
+        let audit: serde_json::Value = serde_json::from_str(&audit_header).unwrap();
+        assert_eq!(audit["total"], 8, "{audit_header}");
+        assert_eq!(audit["included"], 6, "{audit_header}");
+        assert_eq!(audit["excluded"]["revoked"], 1, "{audit_header}");
+        assert_eq!(audit["excluded"]["private"], 1, "{audit_header}");
+        for id in &record_ids {
+            assert!(!audit_header.contains(id.as_str()));
+        }
     }
 
     #[tokio::test]
