@@ -1,6 +1,6 @@
 name: Server Packages
 
-# Headless server channels: tarballs (gnu x86_64/aarch64, musl x86_64), .deb, .rpm,
+# Headless server channels: tarballs (gnu x86_64/aarch64), .deb, .rpm,
 # install.sh, the Dockerfile.headless image and the Nix flake. Every artifact is installed
 # in a clean environment and started before it counts as built.
 
@@ -72,19 +72,14 @@ jobs:
     name: Build ${{ matrix.target }}
     needs: meta
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, experimental: false }
-          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, experimental: false }
-          - { os: ubuntu-22.04, target: x86_64-unknown-linux-musl, experimental: true }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
     env:
       CARGO_TARGET_DIR: target
-      CC_x86_64_unknown_linux_musl: musl-gcc
-      # sqlite-vec typedefs uint8_t from the BSD u_int8_t names, which musl does not declare.
-      CFLAGS_x86_64_unknown_linux_musl: -include stdint.h -Du_int8_t=uint8_t -Du_int16_t=uint16_t -Du_int64_t=uint64_t
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -94,14 +89,6 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends protobuf-compiler pkg-config
-          if [ "${{ matrix.target }}" = x86_64-unknown-linux-musl ]; then
-            sudo apt-get install -y -qq --no-install-recommends musl-tools linux-libc-dev
-            # musl-gcc hides /usr/include; aws-lc-sys needs the (libc-independent) kernel headers.
-            musl_inc=/usr/include/x86_64-linux-musl
-            sudo ln -sfn /usr/include/linux "$musl_inc/linux"
-            sudo ln -sfn /usr/include/asm-generic "$musl_inc/asm-generic"
-            sudo ln -sfn /usr/include/x86_64-linux-gnu/asm "$musl_inc/asm"
-          fi
       - uses: Swatinem/rust-cache@v2
         with:
           key: server-${{ matrix.target }}
@@ -130,9 +117,7 @@ jobs:
           strip "$bin"
           file "$bin"
           ls -la "$bin"
-          if [ "${{ matrix.target }}" != x86_64-unknown-linux-musl ]; then
-            echo "highest glibc symbol: $(objdump -T "$bin" | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -n1)"
-          fi
+          echo "highest glibc symbol: $(objdump -T "$bin" | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -n1)"
           sh packaging/linux/make-tarball.sh "$bin" "${{ needs.meta.outputs.version }}" ${{ matrix.target }} dist
       - uses: actions/upload-artifact@v7
         with:

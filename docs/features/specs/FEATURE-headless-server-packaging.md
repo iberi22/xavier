@@ -20,7 +20,7 @@ Xavier is a server core as well as a desktop app. This feature adds a headless b
 - **`.github/workflows/server-packages.yml`:** runs on PRs that touch these paths, and from `release.yml` on tags. On tags it publishes to GHCR.
 
 ## Verification
-- **Build matrix:** gnu x86_64 and aarch64 on Ubuntu 22.04 (glibc 2.35), and an experimental musl x86_64. For each target, CI checks the dependency graph, builds the binary and runs `smoke-test.sh`. The smoke test checks `/health`, `/ready`, no `/panel`, and exit within 30 s of SIGTERM.
+- **Build matrix:** gnu x86_64 and aarch64 on Ubuntu 22.04 (binaries need glibc ≥ 2.34). For each target, CI checks the dependency graph, builds the binary and runs `smoke-test.sh`. The smoke test checks `/health`, `/ready`, no `/panel`, and exit within 30 s of SIGTERM.
 - **Packages:** installs the `.deb` on `debian:bookworm` and the `.rpm` on `fedora:latest`. It checks the user, the env file mode and the token, then runs the smoke test.
 - **install.sh:** runs on `debian:bookworm` and `ubuntu:24.04` covering install, reinstall (the token is kept), a tampered archive (refused) and the smoke test.
 - **Docker:** starts, stops and recreates the container on the same volume and hostname. The master key KCV must match, and the container must not be killed with 137.
@@ -31,3 +31,4 @@ Xavier is a server core as well as a desktop app. This feature adds a headless b
 - An explicit keystore mode for servers (`LoadCredential`/KMS) in place of the host-derived fallback. That is a separate feature.
 - Multi-arch container images (only amd64 is published), Homebrew and winget.
 - Splitting the crate (ADR-005).
+- A static musl build: `sqlite-vec` 0.1.9 typedefs `uint8_t` from the BSD `u_int*_t` names, which musl lacks.

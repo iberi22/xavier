@@ -2,7 +2,7 @@
 # Xavier headless server installer.
 #
 #   curl -fsSL https://raw.githubusercontent.com/iberi22/xavier/main/packaging/linux/install.sh | sh
-#   sh install.sh [--version vX.Y.Z] [--archive FILE [--sha256 FILE]] [--user] [--static] [--no-start] [--force]
+#   sh install.sh [--version vX.Y.Z] [--archive FILE [--sha256 FILE]] [--user] [--no-start] [--force]
 #
 # As root it installs a system service (user "xavier", /var/lib/xavier, /etc/xavier/xavier.env).
 # As a normal user, or with --user, it installs into ~/.local and a systemd --user unit.
@@ -14,7 +14,6 @@ version=""
 archive=""
 sha_file=""
 mode=""
-static=0
 start=1
 force=0
 
@@ -28,7 +27,6 @@ while [ $# -gt 0 ]; do
         --sha256) sha_file="${2:?}"; shift 2 ;;
         --user) mode=user; shift ;;
         --system) mode=system; shift ;;
-        --static) static=1; shift ;;
         --no-start) start=0; shift ;;
         --force) force=1; shift ;;
         -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
@@ -59,12 +57,7 @@ detect_target() {
         *) die "unsupported architecture: $(uname -m)" ;;
     esac
     [ "$(uname -s)" = Linux ] || die "this installer targets Linux"
-    if [ "$static" -eq 1 ]; then
-        [ "$arch" = x86_64 ] || die "--static (musl) builds exist only for x86_64"
-        echo "x86_64-unknown-linux-musl"
-    else
-        echo "${arch}-unknown-linux-gnu"
-    fi
+    echo "${arch}-unknown-linux-gnu"
 }
 
 tmp=$(mktemp -d)

@@ -14,7 +14,7 @@ It serves HTTP, MCP and the CLI. It has no TUI and no panel routes, and it needs
 | Nix | `nix run github:iberi22/xavier#xavier-server -- http --no-ui` | A package; for a service, use the NixOS module `services.xavier` |
 | Tarball | `xavier-server-<ver>-<target>.tar.gz` from the release page | Run `install.sh --archive <file>` from inside it |
 
-Release targets are `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`, both built on glibc 2.35. `x86_64-unknown-linux-musl` is a static build that `install.sh --static` selects.
+Release targets are `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`. Both are built on Ubuntu 22.04 and need glibc 2.34 or newer (Debian 12, Ubuntu 22.04, RHEL/Alma 9 and later). A static musl build is not available yet: `sqlite-vec` does not compile against musl.
 
 ## install.sh
 
