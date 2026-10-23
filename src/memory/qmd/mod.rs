@@ -842,6 +842,45 @@ mod tests {
     use std::env;
 
     #[tokio::test]
+    async fn expand_depth_finds_parent_of_freshly_written_doc() {
+        let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(Vec::new())));
+        let parent_id = memory
+            .add_document(
+                "docs/c2/parent".to_string(),
+                "parent note describing the release plan".to_string(),
+                serde_json::json!({ "clearance": "UNCLASSIFIED" }),
+            )
+            .await
+            .expect("test assertion");
+        let child_id = memory
+            .add_document(
+                "docs/c2/child".to_string(),
+                "child note with one release detail".to_string(),
+                serde_json::json!({ "parent_id": parent_id, "clearance": "UNCLASSIFIED" }),
+            )
+            .await
+            .expect("test assertion");
+        let child = memory
+            .get(&child_id)
+            .await
+            .expect("test assertion")
+            .expect("freshly written child is readable");
+
+        let expanded = memory
+            .expand_depth(std::slice::from_ref(&child), 1, None)
+            .await
+            .expect("test assertion");
+
+        let paths: Vec<&str> = expanded.iter().map(|doc| doc.path.as_str()).collect();
+        assert!(
+            expanded
+                .iter()
+                .any(|doc| doc.id.as_deref() == Some(parent_id.as_str())),
+            "depth 1 must add the parent of a freshly written doc, got {paths:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn repeated_searches_hit_cache() {
         let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(Vec::new())));
         memory

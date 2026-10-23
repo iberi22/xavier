@@ -2130,12 +2130,22 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn project_context_echoes_depth_applied_zero() {
+    async fn project_context_depth_applied_reports_clamped_depth() {
         crate::isolate_test_process!();
+        let applied = |depth: Value| async move {
+            project_context_call(json!({ "project_id": "p", "depth": depth }))
+                .await
+                .expect("ok")["structuredContent"]["depth_applied"]
+                .clone()
+        };
+        assert_eq!(applied(json!(0)).await, 0);
+        assert_eq!(applied(json!(1)).await, 1);
+        assert_eq!(applied(json!(2)).await, 2);
+        assert_eq!(applied(json!(5)).await, 2, "depth above 2 is clamped to 2");
+        assert_eq!(applied(json!(null)).await, 0, "null means depth 0");
         let out = project_context_call(json!({ "project_id": "p", "depth": 2 }))
             .await
             .expect("ok");
-        assert_eq!(out["structuredContent"]["depth_applied"], 0);
         assert_eq!(out["structuredContent"]["truncated"], false);
     }
 
@@ -2321,6 +2331,282 @@ pub(crate) mod tests {
             content.chars().count() <= 5,
             "the empty-result message must fit max_chars: {content:?}"
         );
+    }
+
+    /// Seeds one record into `project` through the workspace ingest path, which
+    /// (unlike `create_memory`) can set a `cluster_id`. `extra` is merged over
+    /// the UNCLASSIFIED clearance and the project namespace. Returns the stored id.
+    async fn seed_record(
+        workspace: &crate::workspace::WorkspaceContext,
+        project: &str,
+        path: &str,
+        content: &str,
+        cluster: Option<&str>,
+        extra: Value,
+    ) -> String {
+        let mut metadata = json!({
+            "clearance": "UNCLASSIFIED",
+            "namespace": { "project": project },
+        });
+        if let Some(extra) = extra.as_object() {
+            metadata
+                .as_object_mut()
+                .expect("metadata is an object")
+                .extend(extra.clone());
+        }
+        let typed = crate::memory::schema::TypedMemoryPayload {
+            namespace: Some(crate::memory::schema::MemoryNamespace {
+                project: Some(project.to_string()),
+                ..Default::default()
+            }),
+            cluster_id: cluster.map(str::to_string),
+            ..Default::default()
+        };
+        workspace
+            .workspace
+            .ingest_typed(
+                path.to_string(),
+                content.to_string(),
+                metadata,
+                Some(typed),
+                Some(Vec::new()),
+                false,
+            )
+            .await
+            .expect("seed ingest_typed")
+    }
+
+    #[tokio::test]
+    async fn project_context_depth1_adds_parent_from_next_page() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let parent = seed_record(
+            &workspace,
+            "dp1",
+            "dp1/rel/parent",
+            "parent-text-older",
+            None,
+            json!({}),
+        )
+        .await;
+        let child = seed_record(
+            &workspace,
+            "dp1",
+            "dp1/rel/child",
+            "child-text-newer",
+            None,
+            json!({ "parent_id": parent }),
+        )
+        .await;
+        let page_args =
+            |depth: u64| json!({ "project_id": "dp1", "max_records": 1, "depth": depth });
+
+        let page0 = project_context_on(&state, &workspace, page_args(0)).await;
+        assert_eq!(
+            rendered_ids(page0["content"].as_str().unwrap()),
+            vec![child.clone()],
+            "depth 0 renders only the newest record: {page0}"
+        );
+
+        let page1 = project_context_on(&state, &workspace, page_args(1)).await;
+        assert_eq!(page1["depth_applied"], 1, "{page1}");
+        assert_eq!(page1["related_records"], 1, "{page1}");
+        assert_eq!(
+            rendered_ids(page1["content"].as_str().unwrap()),
+            vec![child.clone(), parent.clone()],
+            "the parent from the next page follows the page entry: {page1}"
+        );
+        let source = |id: &str| {
+            page1["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|s| s["id"].as_str() == Some(id))
+                .cloned()
+                .unwrap_or(Value::Null)
+        };
+        assert_eq!(
+            source(&parent)["provenance"]["retrieval_method"],
+            "depth_expansion"
+        );
+        assert_eq!(source(&child)["provenance"]["retrieval_method"], "exact");
+    }
+
+    #[tokio::test]
+    async fn project_context_depth_never_crosses_project() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let foreign = seed_record(
+            &workspace,
+            "dq",
+            "dq/rel/parent",
+            "foreign-parent-text",
+            None,
+            json!({}),
+        )
+        .await;
+        seed_record(
+            &workspace,
+            "dn",
+            "dn/rel/child",
+            "child-text-in-dn",
+            None,
+            json!({ "parent_id": foreign }),
+        )
+        .await;
+
+        let out = project_context_on(
+            &state,
+            &workspace,
+            json!({ "project_id": "dn", "depth": 1 }),
+        )
+        .await;
+        assert_eq!(out["depth_applied"], 1, "{out}");
+        assert_eq!(out["related_records"], 0, "{out}");
+        let content = out["content"].as_str().unwrap();
+        assert!(
+            !content.contains("foreign-parent-text"),
+            "a record of project dq must not leak into dn: {out}"
+        );
+        assert!(
+            !rendered_ids(content).contains(&foreign),
+            "the foreign parent must not be rendered: {out}"
+        );
+    }
+
+    #[tokio::test]
+    async fn project_context_related_capped_by_max_records() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        for i in 0..60 {
+            seed_record(
+                &workspace,
+                "cp",
+                &format!("cp/rel/peer-{i}"),
+                &format!("peer-text-{i}"),
+                Some("cluster-1"),
+                json!({}),
+            )
+            .await;
+        }
+
+        let out = project_context_on(
+            &state,
+            &workspace,
+            json!({ "project_id": "cp", "max_records": 3, "depth": 1 }),
+        )
+        .await;
+        assert_eq!(
+            out["related_records"], 3,
+            "related is capped at max_records: {out}"
+        );
+        assert_eq!(
+            rendered_ids(out["content"].as_str().unwrap()).len(),
+            6,
+            "3 page entries plus 3 related entries: {out}"
+        );
+        assert_eq!(out["truncated"], true, "{out}");
+        let reason = out["truncatedReason"].as_str().unwrap_or_default();
+        assert!(
+            reason.contains("related"),
+            "the reason must name the related cap: {out}"
+        );
+    }
+
+    #[tokio::test]
+    async fn project_context_depth_respects_budget() {
+        crate::isolate_test_process!();
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let root = seed_record(
+            &workspace,
+            "db",
+            "db/rel/root",
+            "root-note-alpha-alpha-alpha",
+            None,
+            json!({}),
+        )
+        .await;
+        let mid = seed_record(
+            &workspace,
+            "db",
+            "db/rel/mid",
+            "mid-note-bravo-bravo",
+            None,
+            json!({ "parent_id": root }),
+        )
+        .await;
+        let leaf = seed_record(
+            &workspace,
+            "db",
+            "db/rel/leaf",
+            "leaf-note-charlie-charlie-charlie",
+            None,
+            json!({ "parent_id": mid }),
+        )
+        .await;
+        let newest = seed_record(
+            &workspace,
+            "db",
+            "db/rel/newest",
+            "newest-note-delta",
+            None,
+            json!({}),
+        )
+        .await;
+
+        // Page of 2 (newest, leaf) plus two hops reaching mid and root.
+        let full = project_context_on(
+            &state,
+            &workspace,
+            json!({ "project_id": "db", "max_records": 2, "depth": 2, "max_chars": 8000 }),
+        )
+        .await;
+        let full_content = full["content"].as_str().unwrap();
+        assert_eq!(
+            rendered_ids(full_content),
+            vec![newest.clone(), leaf.clone(), mid.clone(), root.clone()],
+            "depth 2 renders the page then both hops: {full}"
+        );
+        let entries = rendered_entries(full_content);
+        let e: Vec<usize> = entries.iter().map(|entry| entry.chars().count()).collect();
+        let h = header_chars(entries[0]);
+
+        let budgets = [
+            1,
+            10,
+            h,
+            h + 1,
+            e[0],
+            e[0] + 5,
+            e[0] + e[1] + 3,
+            e[0] + e[1] + e[2] + 6,
+            8000,
+        ];
+        for max in budgets {
+            let out = project_context_on(
+                &state,
+                &workspace,
+                json!({ "project_id": "db", "max_records": 2, "depth": 2, "max_chars": max }),
+            )
+            .await;
+            let content = out["content"].as_str().unwrap();
+            assert!(
+                content.chars().count() <= max,
+                "max_chars={max}: content is {} chars: {out}",
+                content.chars().count()
+            );
+            let sources: Vec<String> = out["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["id"].as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(
+                sources,
+                rendered_ids(content),
+                "max_chars={max}: sources must name exactly the rendered entries: {out}"
+            );
+        }
     }
 
     fn root_claims() -> crate::security::auth::Claims {
