@@ -9,55 +9,180 @@ use crate::memory::schema::{EvidenceKind, MemoryKind};
 
 use super::resolution::resolved_doc_metadata;
 
-/// Lexical scoring for general (non-LOCOMO) documents.
-pub fn lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
-    if normalized_query.is_empty() {
+/// Precomputed query context for fast lexical scoring across many documents.
+#[derive(Clone, Debug)]
+pub struct LexicalQuery<'a> {
+    pub normalized_query: &'a str,
+    pub query_terms: Vec<&'a str>,
+    pub half_life_days: f32,
+    pub has_multi_word: bool,
+    pub active_signals: Vec<(&'static str, f32)>,
+    pub reject_ac: Option<aho_corasick::AhoCorasick>,
+}
+
+impl<'a> LexicalQuery<'a> {
+    pub fn new(normalized_query: &'a str) -> Self {
+        let half_life_days = std::env::var("XAVIER_TEMPORAL_HALF_LIFE_DAYS")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(30.0);
+
+        if normalized_query.is_empty() {
+            return Self {
+                normalized_query,
+                query_terms: Vec::new(),
+                half_life_days,
+                has_multi_word: false,
+                active_signals: Vec::new(),
+                reject_ac: None,
+            };
+        }
+
+        let query_terms: Vec<&'a str> = normalized_query
+            .split_whitespace()
+            .filter(|term| !term.is_empty())
+            .collect();
+
+        let has_multi_word = query_terms.len() >= 2;
+
+        const SIGNALS_TABLE: [(&str, &str, f32); 14] = [
+            ("sunrise", "sunrise", 12.0),
+            ("support", "support group", 12.0),
+            ("charity", "charity race", 12.0),
+            ("camping", "camping", 12.0),
+            ("identity", "transgender", 10.0),
+            ("relationship", "single", 10.0),
+            ("research", "adoption agenc", 8.0),
+            ("field", "counsel", 8.0),
+            ("pursue", "counsel", 8.0),
+            ("what", "what", 2.0),
+            ("who", "who", 3.0),
+            ("how", "how", 2.0),
+            ("why", "why", 2.0),
+            ("which", "which", 2.0),
+        ];
+
+        let mut active_signals = Vec::new();
+        for (query_signal, content_signal, bonus) in SIGNALS_TABLE {
+            if normalized_query.contains(query_signal) {
+                active_signals.push((content_signal, bonus));
+            }
+        }
+
+        // Check if all needles (query terms, phrase if multi-word, active content_signals) are ASCII
+        let all_terms_ascii = query_terms.iter().all(|t| t.is_ascii());
+        let phrase_ascii = if has_multi_word {
+            normalized_query.is_ascii()
+        } else {
+            true
+        };
+        let signals_ascii = active_signals.iter().all(|(s, _)| s.is_ascii());
+
+        let reject_ac =
+            if all_terms_ascii && phrase_ascii && signals_ascii && !query_terms.is_empty() {
+                let mut patterns: Vec<&str> =
+                    Vec::with_capacity(query_terms.len() + 1 + active_signals.len());
+                for term in &query_terms {
+                    patterns.push(term);
+                }
+                if has_multi_word {
+                    patterns.push(normalized_query);
+                }
+                for (signal, _) in &active_signals {
+                    patterns.push(signal);
+                }
+                aho_corasick::AhoCorasickBuilder::new()
+                    .ascii_case_insensitive(true)
+                    .build(patterns)
+                    .ok()
+            } else {
+                None
+            };
+
+        Self {
+            normalized_query,
+            query_terms,
+            half_life_days,
+            has_multi_word,
+            active_signals,
+            reject_ac,
+        }
+    }
+}
+
+/// Lexical scoring for general (non-LOCOMO) documents using precomputed query context.
+pub fn lexical_score_with_query(doc: &MemoryDocument, lq: &LexicalQuery<'_>) -> f32 {
+    if lq.normalized_query.is_empty() {
         return 0.0;
     }
 
     if is_locomo_document(&doc.path, &doc.metadata) {
-        return locomo_lexical_score(doc, normalized_query);
+        return locomo_lexical_score(doc, lq.normalized_query);
     }
 
-    let content = doc.content.to_lowercase();
     let path = doc.path.to_lowercase();
-    let query_terms: Vec<&str> = normalized_query
-        .split_whitespace()
-        .filter(|term| !term.is_empty())
-        .collect();
 
-    // BM25-style term-frequency saturation + document-length normalization.
-    // Root cause: raw `content.matches(term).count()` grows unbounded with
-    // document length, so long auto-generated documents that happen to
-    // repeat many query-adjacent words (e.g. verbose self-reflection
-    // summaries) out-scored short, precisely-relevant docs purely by being
-    // long — independent of the activity/gestalt-thinking namespace
-    // exclusion above. `k1` bounds how much repeats of the same term can
-    // contribute; `b`/`avg_doc_len_words` penalize documents longer than a
-    // typical memory record.
-    const BM25_K1: f32 = 1.5;
-    const BM25_B: f32 = 0.75;
-    const AVG_DOC_LEN_WORDS: f32 = 220.0;
-    let doc_len_words = content.split_whitespace().count().max(1) as f32;
-    let length_norm = (1.0 - BM25_B) + BM25_B * (doc_len_words / AVG_DOC_LEN_WORDS);
+    // Cheap reject: test whether we can skip content lowercasing and word count
+    let mut can_reject_content = false;
+    if let Some(ac) = &lq.reject_ac {
+        let content_bytes = doc.content.as_bytes();
+        // Reject is only allowed when content contains no byte sequence for
+        // U+212A KELVIN SIGN (E2 84 AA) and no U+0130 (C4 B0)
+        let has_special_unicode = (content_bytes.contains(&0xE2) || content_bytes.contains(&0xC4))
+            && (content_bytes.windows(3).any(|w| w == b"\xE2\x84\xAA")
+                || content_bytes.windows(2).any(|w| w == b"\xC4\xB0"));
+
+        if !has_special_unicode && ac.find(&doc.content).is_none() {
+            can_reject_content = true;
+        }
+    }
 
     let mut matched_terms = 0usize;
     let mut score = 0.0f32;
-    for term in &query_terms {
-        let raw_content_hits = content.matches(term).count() as f32;
-        let content_hits = if raw_content_hits > 0.0 {
-            (raw_content_hits * (BM25_K1 + 1.0)) / (raw_content_hits + BM25_K1 * length_norm)
-        } else {
-            0.0
-        };
-        // Path hits stay raw: paths are short and exact-segment matches are
-        // a strong, length-independent relevance signal.
-        let path_hits = path.matches(term).count() as f32 * 2.0;
-        if content_hits > 0.0 || path_hits > 0.0 {
-            matched_terms += 1;
+
+    if can_reject_content {
+        // Content hits and content-dependent bonuses are provably 0.0
+        for term in &lq.query_terms {
+            let path_hits = path.matches(term).count() as f32 * 2.0;
+            if path_hits > 0.0 {
+                matched_terms += 1;
+            }
+            score += path_hits;
         }
-        score += content_hits + path_hits;
+    } else {
+        let content = doc.content.to_lowercase();
+
+        const BM25_K1: f32 = 1.5;
+        const BM25_B: f32 = 0.75;
+        const AVG_DOC_LEN_WORDS: f32 = 220.0;
+        let doc_len_words = content.split_whitespace().count().max(1) as f32;
+        let length_norm = (1.0 - BM25_B) + BM25_B * (doc_len_words / AVG_DOC_LEN_WORDS);
+
+        for term in &lq.query_terms {
+            let raw_content_hits = content.matches(term).count() as f32;
+            let content_hits = if raw_content_hits > 0.0 {
+                (raw_content_hits * (BM25_K1 + 1.0)) / (raw_content_hits + BM25_K1 * length_norm)
+            } else {
+                0.0
+            };
+            let path_hits = path.matches(term).count() as f32 * 2.0;
+            if content_hits > 0.0 || path_hits > 0.0 {
+                matched_terms += 1;
+            }
+            score += content_hits + path_hits;
+        }
+
+        if lq.has_multi_word && content.contains(lq.normalized_query) {
+            score += 6.0;
+        }
+
+        for (content_signal, bonus) in &lq.active_signals {
+            if content.contains(content_signal) {
+                score += bonus;
+            }
+        }
     }
+
     score += (matched_terms * matched_terms) as f32;
 
     let memory_kind = doc
@@ -72,31 +197,6 @@ pub fn lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
         .and_then(|value| value.as_str())
         .unwrap_or_default();
 
-    if normalized_query.split_whitespace().count() >= 2 && content.contains(normalized_query) {
-        score += 6.0;
-    }
-
-    for (query_signal, content_signal, bonus) in [
-        ("sunrise", "sunrise", 12.0),
-        ("support", "support group", 12.0),
-        ("charity", "charity race", 12.0),
-        ("camping", "camping", 12.0),
-        ("identity", "transgender", 10.0),
-        ("relationship", "single", 10.0),
-        ("research", "adoption agenc", 8.0),
-        ("field", "counsel", 8.0),
-        ("pursue", "counsel", 8.0),
-        ("what", "what", 2.0),
-        ("who", "who", 3.0),
-        ("how", "how", 2.0),
-        ("why", "why", 2.0),
-        ("which", "which", 2.0),
-    ] {
-        if normalized_query.contains(query_signal) && content.contains(content_signal) {
-            score += bonus;
-        }
-    }
-
     if matches!(
         memory_kind,
         "fact_atom" | "entity_state" | "temporal_event" | "summary_fact"
@@ -110,7 +210,7 @@ pub fn lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
                 score += 5.0;
             }
             MemoryKind::Decision | MemoryKind::Task | MemoryKind::Fact
-                if query_terms.len() >= 2 =>
+                if lq.query_terms.len() >= 2 =>
             {
                 score += 3.0;
             }
@@ -121,7 +221,9 @@ pub fn lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
             match evidence_kind {
                 EvidenceKind::SourceTurn => score += 6.0,
                 EvidenceKind::FactAtom | EvidenceKind::EntityState => score += 8.0,
-                EvidenceKind::TemporalEvent if normalized_query.contains("when") => score += 10.0,
+                EvidenceKind::TemporalEvent if lq.normalized_query.contains("when") => {
+                    score += 10.0
+                }
                 EvidenceKind::SessionSummary => score *= 0.5,
                 _ => {}
             }
@@ -141,7 +243,7 @@ pub fn lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
         .flatten()
         {
             let lowered = exact.to_ascii_lowercase();
-            if !lowered.is_empty() && normalized_query.contains(&lowered) {
+            if !lowered.is_empty() && lq.normalized_query.contains(&lowered) {
                 score += 18.0;
             }
         }
@@ -169,13 +271,15 @@ pub fn lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
         .or_else(|| doc.metadata.get("timestamp"))
         .or_else(|| doc.metadata.get("updated_at"))
         .and_then(|value| value.as_str());
-    let half_life_days = std::env::var("XAVIER_TEMPORAL_HALF_LIFE_DAYS")
-        .ok()
-        .and_then(|v| v.parse::<f32>().ok())
-        .unwrap_or(30.0);
-    let decay = temporal_decay_multiplier(created_at, half_life_days);
+    let decay = temporal_decay_multiplier(created_at, lq.half_life_days);
 
     score * decay
+}
+
+/// Lexical scoring for general (non-LOCOMO) documents.
+pub fn lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
+    let lq = LexicalQuery::new(normalized_query);
+    lexical_score_with_query(doc, &lq)
 }
 
 /// Lexical scoring for LOCOMO documents with structured metadata.
@@ -569,6 +673,402 @@ pub fn memory_decay_penalty(document: &MemoryDocument) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Verbatim copy of original `lexical_score` before optimization.
+    fn reference_lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
+        if normalized_query.is_empty() {
+            return 0.0;
+        }
+
+        if is_locomo_document(&doc.path, &doc.metadata) {
+            return locomo_lexical_score(doc, normalized_query);
+        }
+
+        let content = doc.content.to_lowercase();
+        let path = doc.path.to_lowercase();
+        let query_terms: Vec<&str> = normalized_query
+            .split_whitespace()
+            .filter(|term| !term.is_empty())
+            .collect();
+
+        const BM25_K1: f32 = 1.5;
+        const BM25_B: f32 = 0.75;
+        const AVG_DOC_LEN_WORDS: f32 = 220.0;
+        let doc_len_words = content.split_whitespace().count().max(1) as f32;
+        let length_norm = (1.0 - BM25_B) + BM25_B * (doc_len_words / AVG_DOC_LEN_WORDS);
+
+        let mut matched_terms = 0usize;
+        let mut score = 0.0f32;
+        for term in &query_terms {
+            let raw_content_hits = content.matches(term).count() as f32;
+            let content_hits = if raw_content_hits > 0.0 {
+                (raw_content_hits * (BM25_K1 + 1.0)) / (raw_content_hits + BM25_K1 * length_norm)
+            } else {
+                0.0
+            };
+            let path_hits = path.matches(term).count() as f32 * 2.0;
+            if content_hits > 0.0 || path_hits > 0.0 {
+                matched_terms += 1;
+            }
+            score += content_hits + path_hits;
+        }
+        score += (matched_terms * matched_terms) as f32;
+
+        let memory_kind = doc
+            .metadata
+            .get("memory_kind")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let resolved = resolved_doc_metadata(doc);
+        let category = doc
+            .metadata
+            .get("category")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+
+        if normalized_query.split_whitespace().count() >= 2 && content.contains(normalized_query) {
+            score += 6.0;
+        }
+
+        for (query_signal, content_signal, bonus) in [
+            ("sunrise", "sunrise", 12.0),
+            ("support", "support group", 12.0),
+            ("charity", "charity race", 12.0),
+            ("camping", "camping", 12.0),
+            ("identity", "transgender", 10.0),
+            ("relationship", "single", 10.0),
+            ("research", "adoption agenc", 8.0),
+            ("field", "counsel", 8.0),
+            ("pursue", "counsel", 8.0),
+            ("what", "what", 2.0),
+            ("who", "who", 3.0),
+            ("how", "how", 2.0),
+            ("why", "why", 2.0),
+            ("which", "which", 2.0),
+        ] {
+            if normalized_query.contains(query_signal) && content.contains(content_signal) {
+                score += bonus;
+            }
+        }
+
+        if matches!(
+            memory_kind,
+            "fact_atom" | "entity_state" | "temporal_event" | "summary_fact"
+        ) {
+            score += 5.0;
+        }
+
+        if let Some(resolved) = &resolved {
+            match resolved.kind {
+                MemoryKind::Repo | MemoryKind::File | MemoryKind::Symbol | MemoryKind::Url => {
+                    score += 5.0;
+                }
+                MemoryKind::Decision | MemoryKind::Task | MemoryKind::Fact
+                    if query_terms.len() >= 2 =>
+                {
+                    score += 3.0;
+                }
+                _ => {}
+            }
+
+            if let Some(evidence_kind) = resolved.evidence_kind {
+                match evidence_kind {
+                    EvidenceKind::SourceTurn => score += 6.0,
+                    EvidenceKind::FactAtom | EvidenceKind::EntityState => score += 8.0,
+                    EvidenceKind::TemporalEvent if normalized_query.contains("when") => {
+                        score += 10.0
+                    }
+                    EvidenceKind::SessionSummary => score *= 0.5,
+                    _ => {}
+                }
+            }
+
+            for exact in [
+                resolved.provenance.symbol.as_ref(),
+                resolved.provenance.file_path.as_ref(),
+                resolved.provenance.repo_url.as_ref(),
+                resolved.provenance.url.as_ref(),
+                resolved.namespace.session_id.as_ref(),
+                resolved.namespace.agent_id.as_ref(),
+                resolved.namespace.user_id.as_ref(),
+                resolved.namespace.project.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                let lowered = exact.to_ascii_lowercase();
+                if !lowered.is_empty() && normalized_query.contains(&lowered) {
+                    score += 18.0;
+                }
+            }
+        }
+
+        if doc
+            .metadata
+            .get("normalized_value")
+            .and_then(|value| value.as_str())
+            .is_some()
+        {
+            score += 2.0;
+        }
+
+        match category {
+            "session_summary" => score *= 0.2,
+            "conversation" => score *= 1.2,
+            "observation" => score *= 0.8,
+            _ => {}
+        }
+
+        let created_at = doc
+            .metadata
+            .get("created_at")
+            .or_else(|| doc.metadata.get("timestamp"))
+            .or_else(|| doc.metadata.get("updated_at"))
+            .and_then(|value| value.as_str());
+        let half_life_days = std::env::var("XAVIER_TEMPORAL_HALF_LIFE_DAYS")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(30.0);
+        let decay = temporal_decay_multiplier(created_at, half_life_days);
+
+        score * decay
+    }
+
+    #[test]
+    fn test_lexical_score_exact_equivalence() {
+        // Set env var to test default or fixed half-life
+        std::env::set_var("XAVIER_TEMPORAL_HALF_LIFE_DAYS", "30.0");
+
+        let mut test_docs = Vec::new();
+
+        // 1. Basic uppercase/lowercase & mixed content
+        test_docs.push(MemoryDocument {
+            path: "memory/doc1.md".to_string(),
+            content: "Hello WORLD this IS a TEST of Lexical Scoring".to_string(),
+            ..Default::default()
+        });
+
+        // 2. Accented Spanish text
+        test_docs.push(MemoryDocument {
+            path: "memory/spanish.md".to_string(),
+            content: "El rendimiento de la búsqueda y optimización en memoria es rápido"
+                .to_string(),
+            ..Default::default()
+        });
+
+        // 3. Special characters: Kelvin sign (U+212A) and U+0130
+        test_docs.push(MemoryDocument {
+            path: "memory/special_unicode.md".to_string(),
+            content: "Here is temperature 300 \u{212A} and Istanbul \u{0130} capital".to_string(),
+            ..Default::default()
+        });
+
+        // 4. Matches ONLY in the path
+        test_docs.push(MemoryDocument {
+            path: "memory/search_target/unique_path.md".to_string(),
+            content: "Completely unrelated content about cooking recipes".to_string(),
+            ..Default::default()
+        });
+
+        // 5. Multi-word phrase matches
+        test_docs.push(MemoryDocument {
+            path: "memory/phrase.md".to_string(),
+            content: "we have support group meetings every sunrise for camping and charity race"
+                .to_string(),
+            ..Default::default()
+        });
+
+        // 6. Signal table entries: each signal
+        let signals = [
+            ("sunrise", "sunrise"),
+            ("support", "support group"),
+            ("charity", "charity race"),
+            ("camping", "camping"),
+            ("identity", "transgender"),
+            ("relationship", "single"),
+            ("research", "adoption agenc"),
+            ("field", "counsel"),
+            ("pursue", "counsel"),
+            ("what", "what"),
+            ("who", "who"),
+            ("how", "how"),
+            ("why", "why"),
+            ("which", "which"),
+        ];
+        for (q_sig, c_sig) in signals {
+            test_docs.push(MemoryDocument {
+                path: format!("memory/signal_{}.md", q_sig),
+                content: format!("Note with signal phrase: {} included here.", c_sig),
+                ..Default::default()
+            });
+        }
+
+        // 7. memory_kind branches
+        for kind in [
+            "fact_atom",
+            "entity_state",
+            "temporal_event",
+            "summary_fact",
+            "other_kind",
+        ] {
+            let mut metadata = serde_json::Map::new();
+            metadata.insert(
+                "memory_kind".to_string(),
+                serde_json::Value::String(kind.to_string()),
+            );
+            test_docs.push(MemoryDocument {
+                path: format!("memory/kind_{}.md", kind),
+                content: "Some random information words".to_string(),
+                metadata: serde_json::Value::Object(metadata),
+                ..Default::default()
+            });
+        }
+
+        // 8. category branches
+        for cat in [
+            "session_summary",
+            "conversation",
+            "observation",
+            "unknown_category",
+        ] {
+            let mut metadata = serde_json::Map::new();
+            metadata.insert(
+                "category".to_string(),
+                serde_json::Value::String(cat.to_string()),
+            );
+            test_docs.push(MemoryDocument {
+                path: format!("memory/cat_{}.md", cat),
+                content: "Some random category content".to_string(),
+                metadata: serde_json::Value::Object(metadata),
+                ..Default::default()
+            });
+        }
+
+        // 9. created_at present vs absent, timestamps, updated_at
+        let mut meta_created = serde_json::Map::new();
+        meta_created.insert(
+            "created_at".to_string(),
+            serde_json::Value::String("2026-05-15T10:00:00Z".to_string()),
+        );
+        test_docs.push(MemoryDocument {
+            path: "memory/created.md".to_string(),
+            content: "Timestamped content".to_string(),
+            metadata: serde_json::Value::Object(meta_created),
+            ..Default::default()
+        });
+
+        let mut meta_ts = serde_json::Map::new();
+        meta_ts.insert(
+            "timestamp".to_string(),
+            serde_json::Value::String("2026-04-10 12:00:00".to_string()),
+        );
+        test_docs.push(MemoryDocument {
+            path: "memory/ts.md".to_string(),
+            content: "Timestamp 2".to_string(),
+            metadata: serde_json::Value::Object(meta_ts),
+            ..Default::default()
+        });
+
+        // 10. normalized_value present
+        let mut meta_norm = serde_json::Map::new();
+        meta_norm.insert(
+            "normalized_value".to_string(),
+            serde_json::Value::String("val".to_string()),
+        );
+        test_docs.push(MemoryDocument {
+            path: "memory/norm.md".to_string(),
+            content: "Normalized val content".to_string(),
+            metadata: serde_json::Value::Object(meta_norm),
+            ..Default::default()
+        });
+
+        // 11. Resolved metadata kind & evidence kind branches
+        for kind in [
+            MemoryKind::Repo,
+            MemoryKind::File,
+            MemoryKind::Decision,
+            MemoryKind::Fact,
+        ] {
+            for evidence in [
+                Some(EvidenceKind::SourceTurn),
+                Some(EvidenceKind::FactAtom),
+                Some(EvidenceKind::TemporalEvent),
+                Some(EvidenceKind::SessionSummary),
+                None,
+            ] {
+                let mut metadata = serde_json::Map::new();
+                let kind_str = format!("{:?}", kind).to_lowercase();
+                metadata.insert(
+                    "memory_kind".to_string(),
+                    serde_json::Value::String(kind_str),
+                );
+                if let Some(ev) = evidence {
+                    let ev_str = match ev {
+                        EvidenceKind::SourceTurn => "source_turn",
+                        EvidenceKind::FactAtom => "fact_atom",
+                        EvidenceKind::TemporalEvent => "temporal_event",
+                        EvidenceKind::SessionSummary => "session_summary",
+                        _ => "other",
+                    };
+                    metadata.insert(
+                        "evidence_kind".to_string(),
+                        serde_json::Value::String(ev_str.to_string()),
+                    );
+                }
+                metadata.insert(
+                    "file_path".to_string(),
+                    serde_json::Value::String("src/main.rs".to_string()),
+                );
+                test_docs.push(MemoryDocument {
+                    path: "memory/resolved_doc.md".to_string(),
+                    content: "Code and repo reference content".to_string(),
+                    metadata: serde_json::Value::Object(metadata),
+                    ..Default::default()
+                });
+            }
+        }
+
+        // Test queries
+        let queries = [
+            "", // empty query
+            "hello",
+            "hello world test",
+            "rendimiento búsqueda optimización",
+            "kelvin \u{212A} istanbul",
+            "search_target",
+            "support group sunrise",
+            "charity race camping",
+            "identity transgender relationship single",
+            "research adoption agenc field counsel pursue",
+            "what who how why which when",
+            "src/main.rs",
+            "nonexistent_term_xyz",
+            "búsqueda con acento y palabras largas",
+        ];
+
+        for query in queries {
+            let normalized = query.to_lowercase();
+            let lq = LexicalQuery::new(&normalized);
+            for doc in &test_docs {
+                let ref_score = reference_lexical_score(doc, &normalized);
+                let new_score = lexical_score(doc, &normalized);
+                let fast_score = lexical_score_with_query(doc, &lq);
+
+                assert_eq!(
+                    ref_score.to_bits(),
+                    new_score.to_bits(),
+                    "Mismatch between reference and lexical_score for query '{}' on doc '{}': {} vs {}",
+                    query, doc.path, ref_score, new_score
+                );
+                assert_eq!(
+                    ref_score.to_bits(),
+                    fast_score.to_bits(),
+                    "Mismatch between reference and lexical_score_with_query for query '{}' on doc '{}': {} vs {}",
+                    query, doc.path, ref_score, fast_score
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_temporal_decay_multiplier_math() {
