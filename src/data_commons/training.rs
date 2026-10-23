@@ -1159,4 +1159,42 @@ mod tests {
             .await;
         assert!(err.is_err(), "a P3 grant must not drive a P2 export");
     }
+
+    // ---- G11 / D3: no grant-less export entry point ------------------------------------
+
+    /// Every export definition and call site under `src/` must take an `EgressGrant`.
+    /// The needles are assembled at runtime so this file does not match itself.
+    #[test]
+    fn no_grantless_export_entry_points_remain() {
+        let needles = [
+            ["fn generate_bundle", "("].concat(),
+            ["fn generate_bundle_from_sources", "("].concat(),
+            [".generate_bundle", "("].concat(),
+            [".generate_bundle_from_sources", "("].concat(),
+        ];
+        let mut offenders = Vec::new();
+        let mut pending = vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("src")];
+        while let Some(dir) = pending.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    pending.push(path);
+                    continue;
+                }
+                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path).unwrap();
+                for (idx, line) in text.lines().enumerate() {
+                    if needles.iter().any(|n| line.contains(n.as_str())) {
+                        offenders.push(format!("{}:{}", path.display(), idx + 1));
+                    }
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "grant-less export entry points remain: {offenders:#?}"
+        );
+    }
 }
