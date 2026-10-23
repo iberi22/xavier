@@ -1086,7 +1086,16 @@ async fn not_found_returns_standard_code() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert_eq!(body["error"]["code"], super::types::XAVIER_ERROR_NOT_FOUND);
+    assert_eq!(body["result"]["isError"], true, "{body}");
+    assert!(body.get("error").is_none_or(Value::is_null), "{body}");
+    assert_eq!(
+        body["result"]["structuredContent"]["error"]["code"],
+        super::types::XAVIER_ERROR_NOT_FOUND
+    );
+    assert_eq!(
+        body["result"]["structuredContent"]["error"]["kind"],
+        "not_found"
+    );
 }
 
 #[tokio::test]
@@ -3823,4 +3832,255 @@ async fn mcp_missing_required_argument_sets_is_error() {
         .as_str()
         .unwrap()
         .contains("query"));
+}
+
+// ── G09: MCP error contract (channel by phase) ───────────────────────────
+
+/// Wire channel a probe row must use.
+enum ProbeChannel {
+    /// Top-level JSON-RPC `error` with this code, and no `result`.
+    Rpc(i32),
+    /// Tool result with `isError: true`; code and kind sit in `structuredContent.error`.
+    ToolError { code: i32, kind: &'static str },
+}
+
+/// Probe rows: (name, request body, expected channel, substring of the message).
+fn error_contract_rows() -> Vec<(&'static str, Value, ProbeChannel, &'static str)> {
+    let call = |id: u64, name: &str, arguments: Value| {
+        json!({
+            "jsonrpc": "2.0", "id": id, "method": "tools/call",
+            "params": {"name": name, "arguments": arguments}
+        })
+    };
+    vec![
+        (
+            "invalid_id_type",
+            call(1, "memoryfragment_get", json!({"id": 17})),
+            ProbeChannel::ToolError {
+                code: -32001,
+                kind: "validation",
+            },
+            "must be a string",
+        ),
+        (
+            "invalid_query_type",
+            call(2, "search_memory", json!({"query": 17})),
+            ProbeChannel::ToolError {
+                code: -32001,
+                kind: "validation",
+            },
+            "must be a string",
+        ),
+        (
+            "absent_fragment",
+            call(3, "memoryfragment_get", json!({"id": "absent-fragment"})),
+            ProbeChannel::ToolError {
+                code: -32002,
+                kind: "not_found",
+            },
+            "Memory not found",
+        ),
+        (
+            "missing_required_content",
+            call(4, "create_memory", json!({"path": "test"})),
+            ProbeChannel::ToolError {
+                code: -32001,
+                kind: "validation",
+            },
+            "Missing required parameter: content",
+        ),
+        (
+            "missing_required_query",
+            call(5, "search_memory", json!({})),
+            ProbeChannel::ToolError {
+                code: -32001,
+                kind: "validation",
+            },
+            "query",
+        ),
+        (
+            "invalid_tool_name",
+            call(6, "no_such_tool_xyz", json!({})),
+            ProbeChannel::Rpc(-32602),
+            "no_such_tool_xyz",
+        ),
+        (
+            "unknown_method",
+            json!({"jsonrpc": "2.0", "id": 7, "method": "no/such/method"}),
+            ProbeChannel::Rpc(-32601),
+            "no/such/method",
+        ),
+        (
+            "invalid_param_shape",
+            json!({
+                "jsonrpc": "2.0", "id": 8, "method": "tools/call",
+                "params": {"name": "create_memory", "arguments": "not-an-object"}
+            }),
+            ProbeChannel::Rpc(-32001),
+            "arguments must be a JSON object",
+        ),
+        (
+            "params_not_object",
+            json!({
+                "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+                "params": "not-an-object"
+            }),
+            ProbeChannel::Rpc(-32602),
+            "params must be an object",
+        ),
+        (
+            "missing_tool_name",
+            json!({
+                "jsonrpc": "2.0", "id": 10, "method": "tools/call",
+                "params": {"arguments": {}}
+            }),
+            ProbeChannel::Rpc(-32602),
+            "tool name",
+        ),
+    ]
+}
+
+/// Asserts one response has exactly the channel, code and kind the contract names.
+fn assert_probe_channel(row: &str, body: &Value, expected: &ProbeChannel, message: &str) {
+    match expected {
+        ProbeChannel::Rpc(code) => {
+            assert_eq!(body["error"]["code"], *code, "{row}: {body}");
+            assert!(body["result"].is_null(), "{row}: {body}");
+            assert!(
+                body["error"]["message"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains(message),
+                "{row}: {body}"
+            );
+        }
+        ProbeChannel::ToolError { code, kind } => {
+            assert!(
+                body.get("error").is_none_or(Value::is_null),
+                "{row} must not carry a top-level error: {body}"
+            );
+            assert_eq!(body["result"]["isError"], true, "{row}: {body}");
+            assert_eq!(
+                body["result"]["structuredContent"]["error"]["code"], *code,
+                "{row}: {body}"
+            );
+            assert_eq!(
+                body["result"]["structuredContent"]["error"]["kind"], *kind,
+                "{row}: {body}"
+            );
+            let text = body["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap_or_default();
+            assert_eq!(
+                body["result"]["structuredContent"]["error"]["message"], text,
+                "{row}: {body}"
+            );
+            assert!(text.contains(message), "{row}: {body}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn error_contract_probe_matrix_http() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+    for (row, request, expected, message) in error_contract_rows() {
+        let body = get_json_body(post_json(router.clone(), request).await).await;
+        assert_probe_channel(row, &body, &expected, message);
+    }
+}
+
+#[tokio::test]
+async fn error_contract_probe_matrix_stdio() {
+    crate::isolate_test_process!();
+    let (state, workspace) = test_state().await;
+    let router = test_router(state.clone(), workspace.clone());
+    for row in ["invalid_id_type", "invalid_query_type", "absent_fragment"] {
+        let (_, request, expected, message) = error_contract_rows()
+            .into_iter()
+            .find(|(name, ..)| *name == row)
+            .expect("probe row exists");
+        let http = get_json_body(post_json(router.clone(), request.clone()).await).await;
+        let stdio = crate::server::mcp_stdio::dispatch_stdio_value(
+            state.clone(),
+            workspace.clone(),
+            request,
+        )
+        .await
+        .expect("stdio dispatch")
+        .expect("stdio response");
+        assert_probe_channel(row, &stdio, &expected, message);
+        assert_eq!(
+            serde_json::to_string(&stdio["result"]).unwrap(),
+            serde_json::to_string(&http["result"]).unwrap(),
+            "{row}: stdio and HTTP results differ"
+        );
+    }
+}
+
+#[tokio::test]
+async fn error_contract_aliases_agree() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+    // Each alias pair must produce the same expected code and kind.
+    let pairs = [
+        (
+            ("get_memory", json!({"id": "absent-alias"})),
+            ("memoryfragment_get", json!({"id": "absent-alias"})),
+            (super::types::XAVIER_ERROR_NOT_FOUND, "not_found"),
+        ),
+        (
+            ("search_memory", json!({"query": 17})),
+            ("mem_search", json!({"query": 17})),
+            (super::types::XAVIER_ERROR_VALIDATION, "validation"),
+        ),
+    ];
+    for (left, right, (code, kind)) in pairs {
+        for (name, arguments) in [left, right] {
+            let body = get_json_body(
+                post_json(
+                    router.clone(),
+                    json!({
+                        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                        "params": {"name": name, "arguments": arguments}
+                    }),
+                )
+                .await,
+            )
+            .await;
+            assert_eq!(body["result"]["isError"], true, "{name}: {body}");
+            assert_eq!(
+                body["result"]["structuredContent"]["error"]["code"], code,
+                "{name}: {body}"
+            );
+            assert_eq!(
+                body["result"]["structuredContent"]["error"]["kind"], kind,
+                "{name}: {body}"
+            );
+        }
+    }
+}
+
+#[test]
+fn classify_prefers_typed_error() {
+    use super::session::{classify_mcp_error, ToolFailure};
+    use super::types::{McpToolError, ToolErrorKind, XAVIER_ERROR_VALIDATION};
+
+    // A typed kind survives a context wrapper added by a caller.
+    let wrapped = anyhow::Error::new(McpToolError::not_found("x")).context("wrap");
+    assert!(matches!(
+        classify_mcp_error(wrapped),
+        ToolFailure::ToolResult(_, ToolErrorKind::NotFound)
+    ));
+
+    // A typed Validation wins over the substring that would read as not_found.
+    match classify_mcp_error(anyhow::Error::new(McpToolError::validation(
+        "thing not found",
+    ))) {
+        ToolFailure::ToolResult(error, ToolErrorKind::Validation) => {
+            assert_eq!(error.code, XAVIER_ERROR_VALIDATION);
+            assert_eq!(error.message, "thing not found");
+        }
+        _ => panic!("typed validation must not fall back to the substring match"),
+    }
 }
