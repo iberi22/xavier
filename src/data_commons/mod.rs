@@ -27,6 +27,7 @@
 //! ⚠️ **FASE 0–1.** Tipos + wallet parcial; marketplace multi-app en roadmap.
 //! Ver monorepo `docs/SWAL/README.md`.
 
+pub mod egress;
 pub mod funnel;
 pub mod governance;
 pub mod ivn;
