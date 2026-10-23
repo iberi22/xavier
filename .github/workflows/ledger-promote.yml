@@ -48,7 +48,7 @@ jobs:
             --dry-run > /tmp/ledger-report.json 2> /tmp/ledger-report.md
           cat /tmp/ledger-report.md >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve evidence and report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ledger-promoter-evidence
           path: |
