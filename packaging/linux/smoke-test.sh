@@ -4,6 +4,7 @@
 # Usage: smoke-test.sh <xavier-binary> [port]
 set -eu
 bin="$1"
+case "$bin" in /*) ;; *) bin="$PWD/$bin" ;; esac
 port="${2:-18006}"
 work=$(mktemp -d)
 log="$work/xavier.log"

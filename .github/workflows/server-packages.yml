@@ -83,6 +83,8 @@ jobs:
     env:
       CARGO_TARGET_DIR: target
       CC_x86_64_unknown_linux_musl: musl-gcc
+      # sqlite-vec typedefs uint8_t from the BSD u_int8_t names, which musl does not declare.
+      CFLAGS_x86_64_unknown_linux_musl: -include stdint.h -Du_int8_t=uint8_t -Du_int16_t=uint16_t -Du_int64_t=uint64_t
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -270,13 +272,15 @@ jobs:
             docker rm xv
             if [ "$code" = 137 ]; then echo "::error::container was killed instead of stopping"; return 1; fi
           }
+          # tracing colours the key=value fields; strip ANSI before matching.
+          kcv() { docker logs xv 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -oE 'kcv=[0-9a-f]+' | head -n1; }
           start
           curl -fsS http://127.0.0.1:18006/ready
-          kcv1=$(docker logs xv 2>&1 | grep -oE 'kcv=[0-9a-f]+' | head -n1)
+          kcv1=$(kcv)
           docker exec xv test -f /data/home/.xavier/master.key
           stop
           start
-          kcv2=$(docker logs xv 2>&1 | grep -oE 'kcv=[0-9a-f]+' | head -n1)
+          kcv2=$(kcv)
           stop
           echo "first=$kcv1 second=$kcv2"
           test -n "$kcv1"
