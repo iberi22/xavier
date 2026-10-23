@@ -189,6 +189,74 @@ pub struct ToolExecuteRequest {
     pub args: serde_json::Value,
 }
 
+const SQLITE_HEADER_MAGIC: &[u8; 16] = b"SQLite format 3\0";
+
+/// Read-only preflight run before any writable SQLite open.
+///
+/// SQLite's writable open/cleanup path can delete the `-wal` sidecar of a
+/// database it considers corrupt, so an existing database that is not a clean
+/// SQLite file is rejected here, without opening it through SQLite and without
+/// creating, renaming, deleting or writing any file.
+fn preflight_code_graph_db(db_path: &std::path::Path) -> Result<(), String> {
+    let sidecars_present = ["-wal", "-shm"].iter().try_fold(false, |found, suffix| {
+        let sidecar = std::path::PathBuf::from(format!("{}{}", db_path.display(), suffix));
+        sidecar
+            .try_exists()
+            .map(|exists| found || exists)
+            .map_err(|e| format!("cannot inspect {}: {e}", sidecar.display()))
+    })?;
+
+    let mut file = match std::fs::File::open(db_path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if sidecars_present {
+                return Err(format!(
+                    "code graph database {} is missing but has WAL/SHM sidecars; left unchanged",
+                    db_path.display()
+                ));
+            }
+            return Ok(());
+        }
+        Err(e) => {
+            return Err(format!(
+                "cannot read code graph database {}: {e}",
+                db_path.display()
+            ))
+        }
+    };
+
+    let len = file
+        .metadata()
+        .map_err(|e| format!("cannot stat code graph database {}: {e}", db_path.display()))?
+        .len();
+    if len == 0 {
+        if sidecars_present {
+            return Err(format!(
+                "code graph database {} is empty but has WAL/SHM sidecars; left unchanged",
+                db_path.display()
+            ));
+        }
+        return Ok(());
+    }
+
+    let mut header = [0u8; 16];
+    match std::io::Read::read_exact(&mut file, &mut header) {
+        Ok(()) if &header == SQLITE_HEADER_MAGIC => Ok(()),
+        Ok(()) => Err(format!(
+            "code graph database {} is not a SQLite database; left unchanged",
+            db_path.display()
+        )),
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Err(format!(
+            "code graph database {} is not a SQLite database; left unchanged",
+            db_path.display()
+        )),
+        Err(e) => Err(format!(
+            "cannot read code graph database {}: {e}",
+            db_path.display()
+        )),
+    }
+}
+
 fn open_code_graph_db(
     workspace: &std::path::Path,
 ) -> Result<std::sync::Arc<code_graph::db::CodeGraphDB>, String> {
@@ -196,8 +264,8 @@ fn open_code_graph_db(
     if let Some(parent) = db_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+    preflight_code_graph_db(&db_path)?;
     code_graph::db::CodeGraphDB::new(&db_path)
-        .or_else(|_| code_graph::db::CodeGraphDB::create_new(&db_path))
         .map(std::sync::Arc::new)
         .map_err(|e| e.to_string())
 }
@@ -412,7 +480,9 @@ mod tests {
     use axum::response::IntoResponse;
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_execute_tool_code_scan_returns_real_result() {
+        let _env = crate::settings::tests::TempEnv::new();
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("src");
         std::fs::create_dir_all(&src).unwrap();
@@ -441,6 +511,104 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
+    async fn headless_open_error_preserves_corrupt_db() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().unwrap();
+
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+
+        let db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(dir.path());
+        let wal_path = std::path::PathBuf::from(format!("{}-wal", db_path.display()));
+
+        if let Some(p) = db_path.parent() {
+            let _ = std::fs::create_dir_all(p);
+        }
+
+        // Write corrupt DB
+        std::fs::write(&db_path, b"NOT A SQLITE DATABASE, CORRUPTED BYTES HERE").unwrap();
+        // Write a WAL file marker to ensure it's not deleted
+        std::fs::write(&wal_path, b"WAL MARKER").unwrap();
+
+        let shared_db_path =
+            crate::settings::XavierSettings::resolve_data_dir().join("code_graph.db");
+        let shared_db_snapshot = if shared_db_path.exists() {
+            Some(std::fs::read(&shared_db_path).unwrap())
+        } else {
+            None
+        };
+
+        let req = ToolExecuteRequest {
+            args: serde_json::json!({ "path": dir.path().to_string_lossy() }),
+        };
+
+        // Call code_stats
+        let response = execute_tool("code_stats".to_string(), req)
+            .await
+            .into_response();
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["code"], 500);
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("code graph db open failed"));
+
+        // Call code_scan
+        let req2 = ToolExecuteRequest {
+            args: serde_json::json!({ "path": dir.path().to_string_lossy() }),
+        };
+        let response2 = execute_tool("code_scan".to_string(), req2)
+            .await
+            .into_response();
+        assert_eq!(
+            response2.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let bytes2 = axum::body::to_bytes(response2.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let body2: serde_json::Value = serde_json::from_slice(&bytes2).unwrap();
+        assert_eq!(body2["code"], 500);
+        assert!(body2["error"]
+            .as_str()
+            .unwrap()
+            .contains("code graph db open failed"));
+
+        // Assert DB and WAL are preserved
+        assert!(db_path.exists(), "db file should still exist");
+        assert_eq!(
+            std::fs::read(&db_path).unwrap(),
+            b"NOT A SQLITE DATABASE, CORRUPTED BYTES HERE",
+            "db file bytes should be preserved"
+        );
+        assert!(wal_path.exists(), "wal file should still exist");
+        assert_eq!(
+            std::fs::read(&wal_path).unwrap(),
+            b"WAL MARKER",
+            "wal file bytes should be preserved"
+        );
+
+        if let Some(snapshot) = shared_db_snapshot {
+            assert_eq!(
+                std::fs::read(&shared_db_path).unwrap(),
+                snapshot,
+                "shared db unchanged"
+            );
+        } else {
+            assert!(!shared_db_path.exists(), "shared db absent");
+        }
+
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+    }
+
+    #[tokio::test]
     async fn test_execute_tool_other_returns_200() {
         let req = ToolExecuteRequest {
             args: serde_json::json!({ "query": "test" }),
@@ -452,7 +620,9 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
     async fn test_execute_tool_code_scan_current_thread() {
+        let _env = crate::settings::tests::TempEnv::new();
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("src");
         std::fs::create_dir_all(&src).unwrap();
@@ -477,6 +647,276 @@ mod tests {
         assert_eq!(body["status"], "ok");
         assert!(body["indexed_files"].as_u64().unwrap_or(0) >= 1);
 
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+    }
+
+    /// Calls a code tool against `workspace` and returns (status, JSON body).
+    async fn code_tool_json(
+        name: &str,
+        workspace: &std::path::Path,
+    ) -> (axum::http::StatusCode, serde_json::Value) {
+        let req = ToolExecuteRequest {
+            args: serde_json::json!({ "path": workspace.to_string_lossy() }),
+        };
+        let response = execute_tool(name.to_string(), req).await.into_response();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap())
+    }
+
+    /// Asserts the tool fails closed with the code graph open error.
+    async fn assert_db_open_rejected(workspace: &std::path::Path, tool: &str) {
+        let (status, body) = code_tool_json(tool, workspace).await;
+        assert_eq!(
+            status,
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "{tool} should fail closed"
+        );
+        assert_eq!(body["code"], 500);
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap()
+                .contains("code graph db open failed"),
+            "{tool} error should report the open failure: {body}"
+        );
+    }
+
+    /// Sorted file names in `dir`, used to prove fail-closed paths create nothing.
+    fn list_dir_names(dir: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn headless_valid_db_opens_and_keeps_rows() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().unwrap();
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+
+        // The resolver places an external workspace DB under <ws>/.xavier.
+        let db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(dir.path());
+        assert_eq!(db_path, dir.path().join(".xavier").join("code_graph.db"));
+
+        // 1. Create a valid DB and add a symbol (via code_scan on a real rust file)
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("main.rs"), "fn special_target_symbol() {}").unwrap();
+
+        let req_scan = ToolExecuteRequest {
+            args: serde_json::json!({ "path": dir.path().to_string_lossy() }),
+        };
+        let response_scan = execute_tool("code_scan".to_string(), req_scan)
+            .await
+            .into_response();
+        assert_eq!(response_scan.status(), axum::http::StatusCode::OK);
+        assert!(db_path.exists(), "code_scan should create the resolved DB");
+
+        // 2. Query it to prove the rows survived and are readable
+        let req_find = ToolExecuteRequest {
+            args: serde_json::json!({ "query": "special_target_symbol", "path": dir.path().to_string_lossy() }),
+        };
+        let response_find = execute_tool("code_find".to_string(), req_find)
+            .await
+            .into_response();
+        assert_eq!(response_find.status(), axum::http::StatusCode::OK);
+        let bytes = axum::body::to_bytes(response_find.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["symbols"][0]["name"], "special_target_symbol");
+
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn headless_missing_db_creates_fresh_database() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().unwrap();
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+
+        let db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(dir.path());
+        assert_eq!(db_path, dir.path().join(".xavier").join("code_graph.db"));
+        assert!(!db_path.exists());
+
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("lib.rs"), "pub fn hello() {}\n").unwrap();
+
+        // Run code_scan to initialize the database
+        let (status, body) = code_tool_json("code_scan", dir.path()).await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["indexed_files"], 1);
+
+        // Assert it was created
+        assert!(db_path.exists());
+
+        // The created DB must be usable by a follow-up call.
+        let (status, body) = code_tool_json("code_stats", dir.path()).await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["total_files"], 1);
+
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn headless_valid_header_corrupt_db_is_preserved() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().unwrap();
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+
+        let db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(dir.path());
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        // Valid SQLite magic followed by garbage: it passes the header preflight,
+        // so the rejection has to come from the SQLite open itself.
+        let mut corrupt = b"SQLite format 3\0".to_vec();
+        corrupt.extend_from_slice(&[b'X'; 100]);
+        std::fs::write(&db_path, &corrupt).unwrap();
+
+        assert_db_open_rejected(dir.path(), "code_stats").await;
+        assert_db_open_rejected(dir.path(), "code_scan").await;
+
+        assert_eq!(
+            std::fs::read(&db_path).unwrap(),
+            corrupt,
+            "db bytes should be preserved"
+        );
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn headless_missing_db_with_wal_sidecar_fails_closed() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().unwrap();
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+
+        let db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(dir.path());
+        let xavier_dir = db_path.parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(&xavier_dir).unwrap();
+        let wal_path = std::path::PathBuf::from(format!("{}-wal", db_path.display()));
+        std::fs::write(&wal_path, b"WAL MARKER").unwrap();
+        let before = list_dir_names(&xavier_dir);
+
+        assert_db_open_rejected(dir.path(), "code_stats").await;
+        assert_db_open_rejected(dir.path(), "code_scan").await;
+
+        assert!(!db_path.exists(), "missing db must not be created");
+        assert_eq!(
+            std::fs::read(&wal_path).unwrap(),
+            b"WAL MARKER",
+            "wal bytes should be preserved"
+        );
+        assert_eq!(
+            list_dir_names(&xavier_dir),
+            before,
+            "no files created or removed"
+        );
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn headless_empty_db_with_sidecars_fails_closed() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().unwrap();
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+
+        let db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(dir.path());
+        let xavier_dir = db_path.parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(&xavier_dir).unwrap();
+        let shm_path = std::path::PathBuf::from(format!("{}-shm", db_path.display()));
+        let wal_path = std::path::PathBuf::from(format!("{}-wal", db_path.display()));
+        std::fs::write(&db_path, b"").unwrap();
+        std::fs::write(&shm_path, b"SHM MARKER").unwrap();
+        std::fs::write(&wal_path, b"WAL MARKER").unwrap();
+        let before = list_dir_names(&xavier_dir);
+
+        assert_db_open_rejected(dir.path(), "code_stats").await;
+        assert_db_open_rejected(dir.path(), "code_scan").await;
+
+        assert_eq!(
+            std::fs::read(&db_path).unwrap(),
+            b"",
+            "db bytes should be preserved"
+        );
+        assert_eq!(
+            std::fs::read(&shm_path).unwrap(),
+            b"SHM MARKER",
+            "shm bytes should be preserved"
+        );
+        assert_eq!(
+            std::fs::read(&wal_path).unwrap(),
+            b"WAL MARKER",
+            "wal bytes should be preserved"
+        );
+        assert_eq!(
+            list_dir_names(&xavier_dir),
+            before,
+            "no files created or removed"
+        );
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn headless_short_header_db_fails_closed() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().unwrap();
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+
+        let db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(dir.path());
+        let xavier_dir = db_path.parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(&xavier_dir).unwrap();
+        std::fs::write(&db_path, b"SQLite").unwrap();
+        let before = list_dir_names(&xavier_dir);
+
+        assert_db_open_rejected(dir.path(), "code_stats").await;
+        assert_db_open_rejected(dir.path(), "code_scan").await;
+
+        assert_eq!(
+            std::fs::read(&db_path).unwrap(),
+            b"SQLite",
+            "db bytes should be preserved"
+        );
+        assert_eq!(
+            list_dir_names(&xavier_dir),
+            before,
+            "no files created or removed"
+        );
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn headless_empty_db_without_sidecars_opens_fresh() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().unwrap();
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
+
+        let db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(dir.path());
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        std::fs::write(&db_path, b"").unwrap();
+
+        let (status, body) = code_tool_json("code_scan", dir.path()).await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+
+        let (status, body) = code_tool_json("code_stats", dir.path()).await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+        assert_eq!(body["status"], "ok");
         std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
     }
 }
