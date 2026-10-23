@@ -139,7 +139,7 @@ impl Default for ModelSettings {
             provider: "local".to_string(),
             api_flavor: "openai-compatible".to_string(),
             local_llm_url: "http://localhost:11434/v1".to_string(),
-            local_llm_model: "qwen3-coder".to_string(),
+            local_llm_model: String::new(),
             embedding_url: "http://localhost:11434/v1".to_string(),
             embedding_model: "embeddinggemma".to_string(),
             router_retrieved_model: String::new(),

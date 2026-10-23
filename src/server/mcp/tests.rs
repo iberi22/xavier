@@ -2188,6 +2188,12 @@ async fn xavier_local_status_tool_integration() {
     assert!(sc["embedding_reachable"].is_boolean());
     assert!(sc["ollama_reachable"].is_boolean());
     assert_eq!(sc["fallback_chain"], json!([]));
+
+    assert!(sc["llm"].is_object());
+    assert!(sc["llm"]["configured"].is_boolean());
+    let raw_body = serde_json::to_string(&body).unwrap();
+    assert!(!raw_body.contains("sk-secret"));
+    assert!(!raw_body.contains("\"api_key\":\"sk-"));
 }
 
 #[tokio::test]

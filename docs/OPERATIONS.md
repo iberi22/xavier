@@ -58,13 +58,13 @@ curl http://localhost:11434/api/tags
 
 ### 1.3 Manage Required Models
 Xavier requires a language model (LLM) and a local embeddings model in its base configuration:
-- **Default LLM:** `qwen3-coder` (or another compatible local model like `llama3`)
+- **Local LLM:** No built-in default; configure via `XAVIER_LOCAL_LLM_MODEL` (example only: `<any model your server lists at /v1/models>`)
 - **Recommended embedder:** `embeddinggemma`, `nomic-embed-text` or `mxbai-embed-large-v1`
 
 #### Download models manually:
 ```bash
-# Download code/text generation model
-ollama pull qwen3-coder
+# Download code/text generation model (example only: <any model your server lists at /v1/models>)
+ollama pull <any model your server lists at /v1/models>
 # Download local embeddings model
 ollama pull embeddinggemma
 ```
@@ -96,7 +96,7 @@ Xavier has a native fallback system that transparently switches between local ex
 | `OPENAI_API_KEY` | `sk-proj-...` | Access token for OpenAI (takes precedence over OpenRouter). |
 | `XAVIER_MODEL_PROVIDER` | `local` \| `cloud` | Indicates primary provider for LLM. |
 | `XAVIER_LOCAL_LLM_URL` | `http://localhost:11434/v1` | Base URL for local LLM API. |
-| `XAVIER_LOCAL_LLM_MODEL` | `qwen3-coder` | Local language model configured for inference. |
+| `XAVIER_LOCAL_LLM_MODEL` | `""` | Local language model configured for inference (no built-in default; example only: `<any model your server lists at /v1/models>`). |
 
 ### 2.2 Embeddings Fallback Flow (Auto-Fallback)
 

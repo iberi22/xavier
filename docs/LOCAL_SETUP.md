@@ -19,9 +19,9 @@ The quickstart to get Xavier running offline and locally involves installing Oll
 
 Run the following commands in your terminal to prepare models and start Xavier:
 
-1.  **Download the local LLM for chat and reasoning:**
+1.  **Download the local LLM for chat and reasoning (example only: `<any model your server lists at /v1/models>`):**
     ```bash
-    ollama pull qwen3-coder
+    ollama pull <any model your server lists at /v1/models>
     ```
 
 2.  **Download the local model for semantic embeddings:**
@@ -55,7 +55,7 @@ To simplify Xavier + Ollama deployment 100% locally, you can use Docker Compose.
     *(Note: Be sure to edit `docker/.env` to set your `XAVIER_TOKEN` or change options like `XAVIER_LOG_LEVEL` if needed).*
 
 2.  **Download local models (first time only):**
-    Use the `init` profile to bring up Ollama and automatically download the required LLM (`qwen3-coder`) and embeddings (`embeddinggemma`) models:
+    Use the `init` profile to bring up Ollama and automatically download the configured LLM and embeddings (`embeddinggemma`) models:
     ```bash
     docker compose -f docker/docker-compose.local.yml --env-file docker/.env --profile init up --build
     ```
@@ -86,7 +86,7 @@ On startup, Xavier scans system capabilities (including Ollama and its models). 
 
 ```text
 🟢 Xavier started — mode: LOCAL
-   LLM:        ollama/qwen3-coder @ http://localhost:11434/v1 [reachable]
+   LLM:        ollama/<your-model-id> @ http://localhost:11434/v1 [reachable]
    Embeddings: ollama/embeddinggemma @ localhost:11434 [reachable]
    Vector DB:  sqlite_vec (vec-store.sqlite3)
 ```
@@ -107,7 +107,7 @@ Xavier is designed not to interrupt user workflow on provider outages.
 1.  **Mixed-Priority Fallback Chain:**
     If you configure both cloud providers (like OpenAI or Anthropic) and local, the internal fallback chain evaluates cloud first and local as last resort (or vice versa if you force strict local mode).
 2.  **Transparent Transition:**
-    If the primary configured provider (e.g. OpenAI) experiences an outage or quota exhaustion, Xavier automatically and transparently redirects the chat request to the local Ollama backend (`qwen3-coder`).
+    If the primary configured provider (e.g. OpenAI) experiences an outage or quota exhaustion, Xavier automatically and transparently redirects the chat request to the local Ollama backend.
 
 ---
 
@@ -137,8 +137,8 @@ XAVIER_MODEL_PROVIDER=local
 # Local LLM endpoint URL (Ollama exposes OpenAI-compatible API at /v1)
 XAVIER_LOCAL_LLM_URL=http://localhost:11434/v1
 
-# Exact language model name downloaded in Ollama
-XAVIER_LOCAL_LLM_MODEL=qwen3-coder
+# Exact language model name downloaded in Ollama (no built-in default; example only: <any model your server lists at /v1/models>)
+XAVIER_LOCAL_LLM_MODEL=<any model your server lists at /v1/models>
 
 # Embedding provider mode (values: local for Ollama, local-gllm for native Candle, cloud)
 XAVIER_EMBEDDING_PROVIDER_MODE=local
@@ -159,7 +159,7 @@ If you suspect Ollama is not responding, run the following in your terminal to l
 ```bash
 curl http://localhost:11434/api/tags
 ```
-You should receive a JSON response containing `qwen3-coder` and `embeddinggemma`.
+You should receive a JSON response containing your configured models and `embeddinggemma`.
 
 ### UI Badge Shows `⚠️ Degraded`
 1.  Verify Ollama is running in background (`lsof -i :11434` or `Get-Process ollama` on Windows).

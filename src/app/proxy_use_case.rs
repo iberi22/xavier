@@ -888,7 +888,7 @@ mod tests {
         let event_bus = crate::coordination::events::XavierEventBus::new(10);
 
         let cmd = ProxyChatCommand {
-            model: "qwen3-coder".to_string(),
+            model: "test-model".to_string(),
             messages: vec![serde_json::json!({"role": "user", "content": "hello"})],
             temperature: None,
             max_tokens: None,
@@ -912,7 +912,7 @@ mod tests {
             result
         );
         let completion = result.unwrap();
-        assert_eq!(completion.model, "qwen3-coder");
+        assert_eq!(completion.model, "test-model");
         assert_eq!(
             completion.choices[0].message.content,
             "mocked local response"
@@ -987,7 +987,7 @@ mod tests {
         let event_bus = crate::coordination::events::XavierEventBus::new(10);
 
         let cmd = ProxyChatCommand {
-            model: "qwen3-coder".to_string(),
+            model: "test-model".to_string(),
             messages: vec![serde_json::json!({"role": "user", "content": "hello"})],
             temperature: None,
             max_tokens: None,

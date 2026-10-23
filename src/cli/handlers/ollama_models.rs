@@ -195,12 +195,13 @@ pub async fn set_active_handler(Json(payload): Json<SetActivePayload>) -> Respon
 /// GET /v1/ollama/active
 pub async fn get_active_handler() -> Response {
     let settings = crate::settings::XavierSettings::current();
-    let llm = std::env::var("XAVIER_LOCAL_LLM_MODEL")
+    let llm: Option<String> = std::env::var("XAVIER_LOCAL_LLM_MODEL")
         .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
         .ok()
         .or_else(|| Some(settings.models.local_llm_model.clone()))
         .or_else(|| settings.models.llm_model.clone())
-        .unwrap_or_else(|| "qwen3-coder".to_string());
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
 
     let embedding = std::env::var("XAVIER_EMBEDDING_MODEL")
         .ok()

@@ -91,7 +91,7 @@ Controls LLM and embedding model configuration.
 | `provider` | `string` | `"local"` | `"local"` | `XAVIER_MODEL_PROVIDER` | LLM provider: `"local"`, `"cloud"`, `"disabled"`, or explicit `"openai"`/`"anthropic"`/`"deepseek"`/`"minimax"`/`"gemini"` |
 | `api_flavor` | `string` | `"openai-compatible"` | `"openai-compatible"` | `XAVIER_API_FLAVOR` | API protocol: `"openai-compatible"` or `"anthropic-compatible"` |
 | `local_llm_url` | `string` | `"http://localhost:11434/v1"` | _default_ | `XAVIER_LOCAL_LLM_URL` | Local LLM endpoint URL |
-| `local_llm_model` | `string` | `"qwen3-coder"` | _default_ | `XAVIER_LOCAL_LLM_MODEL` | Local LLM model name |
+| `local_llm_model` | `string` | _none (required)_ | _none_ | `XAVIER_LOCAL_LLM_MODEL` | Local LLM model name (example only: `<any model your server lists at /v1/models>`) |
 | `embedding_url` | `string` | `"http://localhost:11434/v1"` | _default_ | `XAVIER_EMBEDDING_URL` | Embedding endpoint URL |
 | `embedding_model` | `string` | `"embeddinggemma"` | _default_ | `XAVIER_EMBEDDING_MODEL` | Embedding model name |
 | `router_retrieved_model` | `string` | `""` | _default_ | `XAVIER_ROUTER_RETRIEVED_MODEL` | Model override for retrieved-augmented queries |

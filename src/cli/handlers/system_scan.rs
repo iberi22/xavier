@@ -674,7 +674,7 @@ mod scanner_tests {
             .mock("GET", "/api/tags")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"models": [{"name": "qwen3-coder:latest"}, {"name": "llama3:latest"}]}"#)
+            .with_body(r#"{"models": [{"name": "test-model:latest"}, {"name": "llama3:latest"}]}"#)
             .create_async()
             .await;
 
@@ -682,7 +682,7 @@ mod scanner_tests {
         assert!(status.running);
         assert!(status.version.is_some());
         assert_eq!(status.version.unwrap(), "0.1.48");
-        assert!(status.models.contains(&"qwen3-coder:latest".to_string()));
+        assert!(status.models.contains(&"test-model:latest".to_string()));
         assert!(status.models.contains(&"llama3:latest".to_string()));
     }
 
@@ -710,13 +710,13 @@ mod scanner_tests {
         let _m_v1_mock = server
             .mock("GET", "/v1/models")
             .with_status(200)
-            .with_body(r#"{"data": [{"id": "qwen3-coder"}]}"#)
+            .with_body(r#"{"data": [{"id": "test-model"}]}"#)
             .create_async()
             .await;
 
         let status = detect_ollama().await;
         assert!(status.running);
-        assert!(status.models.contains(&"qwen3-coder".to_string()));
+        assert!(status.models.contains(&"test-model".to_string()));
     }
 
     #[test]

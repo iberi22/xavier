@@ -198,7 +198,7 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
             description: "Report Xavier local-first operation mode and reachability. \
                           Returns: mode (local-healthy|local-degraded|cloud-fallback|disabled), \
                           provider_setting, llm_reachable (bool), embedding_reachable (bool), \
-                          ollama_reachable (bool). Use this before delegating reasoning to Xavier."
+                          ollama_reachable (bool), llm (status object). Use this before delegating reasoning to Xavier."
                 .to_string(),
             input_schema: json!({"type": "object", "properties": {}}),
         },
@@ -1215,11 +1215,24 @@ pub async fn handle_core_tool(
             let health = crate::observability::health::HEALTH.get_status().await;
             let llm_reachable = health.llm.reachable;
             let embedding_reachable = shared_embedding_probe().await;
-            let ollama_ok = llm_reachable && (provider == "local" || provider == "ollama");
+            let config = crate::agents::provider::ModelProviderConfig::from_env();
+            let ollama_ok = llm_reachable
+                && config.provider_mode == crate::agents::provider::types::ProviderMode::Local;
             let mode_str = serde_json::to_value(&mode)
                 .ok()
                 .and_then(|v| v.as_str().map(|s| s.to_string()))
                 .unwrap_or_else(|| format!("{:?}", mode).to_lowercase());
+
+            let llm_val = json!({
+                "provider": health.llm.provider,
+                "model": health.llm.model,
+                "endpoint": health.llm.endpoint,
+                "configured": health.llm.configured,
+                "api_key": health.llm.api_key,
+                "reachable": health.llm.reachable,
+                "model_available": health.llm.model_available,
+                "error": health.llm.error,
+            });
 
             let val = json!({
                 "mode": mode_str,
@@ -1228,6 +1241,7 @@ pub async fn handle_core_tool(
                 "embedding_reachable": embedding_reachable,
                 "ollama_reachable": ollama_ok,
                 "fallback_chain": [],
+                "llm": llm_val,
             });
 
             Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)

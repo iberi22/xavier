@@ -33,6 +33,14 @@ pub struct LlmHealth {
     pub endpoint: String,
     pub reachable: bool,
     pub status: HealthLevel,
+    #[serde(default)]
+    pub configured: bool,
+    #[serde(default)]
+    pub api_key: String, // "set" | "unset"
+    #[serde(default)]
+    pub model_available: Option<bool>,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -279,6 +287,10 @@ impl Default for HealthStatus {
                 endpoint: "unknown".into(),
                 reachable: false,
                 status: HealthLevel::Healthy,
+                configured: false,
+                api_key: "unset".into(),
+                model_available: None,
+                error: None,
             },
             vector_db: VectorDbHealth {
                 backend: "unknown".into(),
@@ -782,63 +794,83 @@ impl HealthMonitor {
     async fn check_llm(&self) -> LlmHealth {
         let config = crate::agents::provider::ModelProviderConfig::from_env();
         let provider = config.provider_label.clone();
-        let model = config.model.clone();
-        let endpoint = config
+        let api_key = config.api_key_state().to_string();
+
+        let raw_endpoint = config
             .base_url
             .clone()
             .unwrap_or_else(|| "none".to_string());
-        let mut reachable = false;
-        let mut status = HealthLevel::Healthy;
+        let endpoint = if let Ok(mut u) = url::Url::parse(&raw_endpoint) {
+            let _ = u.set_username("");
+            let _ = u.set_password(None);
+            u.to_string()
+        } else {
+            raw_endpoint
+        };
 
-        if config.provider_mode == crate::agents::provider::types::ProviderMode::Local
-            || config.provider_mode == crate::agents::provider::types::ProviderMode::ManagedLocal
+        if let Some(r) = config.unconfigured_reason() {
+            return LlmHealth {
+                provider,
+                model: String::new(),
+                endpoint,
+                reachable: false,
+                status: HealthLevel::Degraded,
+                configured: false,
+                api_key,
+                model_available: None,
+                error: Some(r),
+            };
+        }
+
+        let model = config.model.clone();
+        let mut p = config.probe().await;
+
+        if (config.provider_mode == crate::agents::provider::types::ProviderMode::Local
+            || config.provider_mode == crate::agents::provider::types::ProviderMode::ManagedLocal)
+            && p.reachability
+                != crate::agents::provider::types::ProviderReachability::ConfiguredAndReachable
         {
             if let Some(url) = &config.get_resolved_base_url() {
-                // No adivinar por el puerto: un Ollama puede vivir en cualquier host:puerto (p.ej.
-                // un segundo servidor con sus propios modelos). Antes solo se probaba
-                // `/api/version` si la URL contenia "11434"; para cualquier otro puerto se hacia
-                // GET a `/v1`, que devuelve 404, y el proveedor local se marcaba como NO
-                // alcanzable aunque estuviera perfectamente vivo (el nodo entero pasaba a
-                // "unhealthy"). Se prueban los endpoints habituales y basta con que uno responda.
                 let trimmed = url.trim_end_matches('/');
                 let base = trimmed.trim_end_matches("/v1");
-                let candidates = [
-                    format!("{}/api/version", base), // Ollama nativo
-                    format!("{}/models", trimmed),   // OpenAI-compatible
-                ];
-
-                let mut probe_ok = false;
-                for check_url in &candidates {
-                    if let Ok(resp) = self.http_client.get(check_url).send().await {
-                        if resp.status().is_success() {
-                            probe_ok = true;
-                            break;
-                        }
-                    }
-                }
-
-                if probe_ok {
-                    reachable = true;
-                    let mut fail_count = self.llm_failure_count.write().await;
-                    *fail_count = 0;
-                } else {
-                    reachable = false;
-                    let mut fail_count = self.llm_failure_count.write().await;
-                    *fail_count += 1;
-                    if *fail_count >= 3 {
-                        SYSTEM_ALERTS.push_alert(
-                            "ERROR",
-                            "Ollama local no responde — modo degradado",
-                            "llm",
-                        );
-                        status = HealthLevel::Unhealthy;
-                    } else {
-                        status = HealthLevel::Degraded;
+                let legacy_url = format!("{}/api/version", base);
+                if let Ok(resp) = self.http_client.get(&legacy_url).send().await {
+                    if resp.status().is_success() {
+                        p.reachability = crate::agents::provider::types::ProviderReachability::ConfiguredAndReachable;
                     }
                 }
             }
-        } else if config.provider_mode == crate::agents::provider::types::ProviderMode::Cloud {
-            reachable = true; // Assume cloud is reachable if configured for now
+        }
+
+        let reachable = p.reachability
+            == crate::agents::provider::types::ProviderReachability::ConfiguredAndReachable;
+        let mut status = HealthLevel::Healthy;
+
+        if reachable {
+            let mut fail_count = self.llm_failure_count.write().await;
+            *fail_count = 0;
+        } else {
+            let mut fail_count = self.llm_failure_count.write().await;
+            *fail_count += 1;
+            if *fail_count >= 3 {
+                SYSTEM_ALERTS.push_alert(
+                    "ERROR",
+                    &format!("LLM provider '{provider}' is not responding; degraded mode"),
+                    "llm",
+                );
+                status = HealthLevel::Unhealthy;
+            } else {
+                status = HealthLevel::Degraded;
+            }
+        }
+
+        let mut error = (!reachable)
+            .then(|| format!("LLM provider '{provider}' is not reachable at {endpoint}"));
+        if p.model_listed == Some(false) {
+            status = HealthLevel::Degraded;
+            error = Some(format!(
+                "model '{model}' is not listed by {provider} at {endpoint}"
+            ));
         }
 
         LlmHealth {
@@ -847,6 +879,10 @@ impl HealthMonitor {
             endpoint,
             reachable,
             status,
+            configured: true,
+            api_key,
+            model_available: p.model_listed,
+            error,
         }
     }
 
@@ -1192,5 +1228,49 @@ mod tests {
         status.status = tgd_consolidation_level(status.tgd_consolidation.as_ref());
         assert_eq!(status.status, HealthLevel::Healthy);
         assert!(status.compute_degraded_reasons().is_empty());
+    }
+
+    #[tokio::test]
+    async fn check_llm_unconfigured_is_degraded() {
+        let prev_path = std::env::var("XAVIER_CONFIG_PATH").ok();
+        std::env::set_var(
+            "XAVIER_CONFIG_PATH",
+            "/tmp/nonexistent-xavier-ci-defaults.json",
+        );
+        const CLEARED: [&str; 7] = [
+            "XAVIER_MODEL_PROVIDER",
+            "XAVIER_LOCAL_LLM_MODEL",
+            "XAVIER_LLM_MODEL",
+            "GROQ_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "XAVIER_LLM_API_KEY",
+        ];
+        let saved: Vec<(&str, Option<String>)> = CLEARED
+            .iter()
+            .map(|k| (*k, std::env::var(k).ok()))
+            .collect();
+        for k in CLEARED {
+            std::env::remove_var(k);
+        }
+
+        let cm = ConnectionManager::global();
+        let monitor = HealthMonitor::new(cm);
+        let llm_health = monitor.check_llm().await;
+
+        match prev_path {
+            Some(p) => std::env::set_var("XAVIER_CONFIG_PATH", p),
+            None => std::env::remove_var("XAVIER_CONFIG_PATH"),
+        }
+        for (k, v) in saved {
+            if let Some(v) = v {
+                std::env::set_var(k, v);
+            }
+        }
+
+        assert_eq!(llm_health.configured, false);
+        assert_eq!(llm_health.status, HealthLevel::Degraded);
+        assert!(llm_health.error.is_some());
+        assert_eq!(llm_health.api_key, "unset");
     }
 }

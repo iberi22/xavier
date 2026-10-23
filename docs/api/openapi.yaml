@@ -36,7 +36,7 @@ paths:
                 mode: "LOCAL"
                 llm:
                   provider: "ollama"
-                  model: "qwen3-coder"
+                  model: "your-model-id"
                   endpoint: "http://localhost:11434"
                   reachable: false
                   status: "unhealthy"
@@ -841,7 +841,7 @@ paths:
                 id: "chatcmpl-98127398127"
                 object: "chat.completion"
                 created: 1718192301
-                model: "qwen3-coder"
+                model: "your-model-id"
                 choices:
                   - message:
                       role: "assistant"

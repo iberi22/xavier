@@ -84,7 +84,7 @@ pub enum Command {
         /// Maximum number of contextual memory fragments to retrieve
         #[arg(short, long, default_value_t = 5)]
         limit: usize,
-        /// Override LLM model (e.g. qwen3-coder, openrouter/auto, etc.)
+        /// Override LLM model (any id your configured provider serves)
         #[arg(short, long)]
         model: Option<String>,
     },
@@ -270,6 +270,9 @@ pub enum Command {
         /// Run 100% local guided flow (Ollama)
         #[arg(long)]
         local: bool,
+        /// Override LLM model (any id your configured provider serves)
+        #[arg(long)]
+        model: Option<String>,
     },
 
     /// Diagnose local-first health (Ollama, models, DB, config, vector store)

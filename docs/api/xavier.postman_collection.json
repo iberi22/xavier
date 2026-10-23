@@ -618,7 +618,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"model\": \"qwen3-coder\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"How do I sync signed mesh manifests?\"\n    }\n  ],\n  \"stream\": false\n}"
+              "raw": "{\n  \"model\": \"your-model-id\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"How do I sync signed mesh manifests?\"\n    }\n  ],\n  \"stream\": false\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/v1/chat/completions",

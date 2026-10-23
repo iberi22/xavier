@@ -2391,12 +2391,34 @@ async fn start_http_server_inner(
     info!("Xavier HTTP server listening on http://{}", bound_addr);
     println!("Xavier HTTP server listening on http://{}", bound_addr);
 
+    let general_cfg = xavier::agents::provider::ModelProviderConfig::from_env();
+    if let Some(r) = general_cfg.unconfigured_reason() {
+        tracing::warn!(
+            "No general LLM configured: {r}. ask_expert's general fallback will return an error until a model is set. Xavier no longer ships a default model."
+        );
+    }
+    {
+        // Keys are read from the config file only for backward compatibility.
+        let models = &XavierSettings::current().models;
+        let from_file = |v: &Option<String>, env: &str| {
+            v.as_deref().is_some_and(|k| !k.trim().is_empty())
+                && std::env::var(env).map_or(true, |e| e.trim().is_empty())
+        };
+        if from_file(&models.llm_api_key, "XAVIER_LLM_API_KEY")
+            || from_file(&models.local_llm_api_key, "XAVIER_LOCAL_LLM_API_KEY")
+        {
+            tracing::warn!(
+                "an API key is set in the config file; move it to the environment (config-file keys are deprecated)"
+            );
+        }
+    }
+
     tracing::info!(
         target: "xavier::boot",
         event = "server_ready",
         version = env!("CARGO_PKG_VERSION"),
         provider = %std::env::var("XAVIER_MODEL_PROVIDER").unwrap_or_default(),
-        llm_model = %std::env::var("XAVIER_LOCAL_LLM_MODEL").unwrap_or_default(),
+        llm_model = %general_cfg.model,
         embedding_model = %std::env::var("XAVIER_EMBEDDING_MODEL").unwrap_or_default(),
         port = %port,
         "Xavier server ready"
@@ -2428,7 +2450,9 @@ async fn start_http_server_inner(
         // If Ollama/local provider should be up but doesn't respond
         let provider_setting =
             std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
-        if provider_setting == "local" || provider_setting == "ollama" {
+        if (provider_setting == "local" || provider_setting == "ollama")
+            && local_config.is_configured()
+        {
             xavier::server::alerts::SYSTEM_ALERTS.push_alert(
                 "ERROR",
                 "Local provider (Ollama) is configured but unreachable",
@@ -2628,28 +2652,14 @@ async fn start_http_server_inner(
                     result.ollama.models.join(", ")
                 );
 
-                // El default NO se hard-codea a un modelo que puede no existir en el
-                // nodo (pasó con qwen3-coder y luego con qwen2.5-coder:7b: 122 avisos/
-                // día en cada nodo aunque el usuario tuviera otro modelo). Se lee el
-                // modelo realmente configurado, con el mismo orden de resolución que
-                // ollama_models.rs: env XAVIER_LOCAL_LLM_MODEL -> settings.local_llm_model
-                // -> DEFAULT_LOCAL_MODEL del crate.
-                let default_model = std::env::var("XAVIER_LOCAL_LLM_MODEL")
-                    .ok()
-                    .filter(|m| !m.trim().is_empty())
-                    .unwrap_or_else(|| {
-                        let settings = crate::settings::XavierSettings::current();
-                        if settings.models.local_llm_model.trim().is_empty() {
-                            xavier::agents::provider::local::DEFAULT_LOCAL_MODEL.to_string()
-                        } else {
-                            settings.models.local_llm_model.clone()
-                        }
-                    });
-                if !result
-                    .ollama
-                    .models
-                    .iter()
-                    .any(|m| m.to_lowercase().contains(&default_model.to_lowercase()))
+                let default_model =
+                    xavier::agents::provider::ModelProviderConfig::for_provider("local").model;
+                if !default_model.trim().is_empty()
+                    && !result
+                        .ollama
+                        .models
+                        .iter()
+                        .any(|m| m.to_lowercase().contains(&default_model.to_lowercase()))
                 {
                     tracing::warn!(
                         "⚠️ Configured local LLM '{}' not found in Ollama. Run: ollama pull {}",
