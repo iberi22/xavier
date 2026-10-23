@@ -15,6 +15,39 @@ homepage = "https://github.com/iberi22/xavier"
 keywords = ["memory", "ai-agents", "vector-database", "rag", "embeddings"]
 categories = ["database", "science", "data-structures"]
 
+[package.metadata.deb]
+name = "xavier-server"
+maintainer = "BELA <bela@swal.dev>"
+copyright = "SWAL"
+license-file = ["LICENSE", "0"]
+extended-description = "Headless Xavier memory server (HTTP + MCP + CLI), without TUI or desktop panel."
+section = "database"
+priority = "optional"
+maintainer-scripts = "packaging/linux/deb/"
+assets = [
+    ["target/release/xavier", "usr/bin/xavier", "755"],
+    ["packaging/linux/xavier.service", "lib/systemd/system/xavier.service", "644"],
+    ["packaging/linux/xavier.env.example", "usr/share/xavier/xavier.env.example", "644"],
+    ["packaging/linux/setup-host.sh", "usr/share/xavier/setup-host.sh", "755"],
+    ["docs/DEPLOY/LINUX_SERVER.md", "usr/share/doc/xavier-server/LINUX_SERVER.md", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "xavier-server"
+summary = "Headless Xavier memory server"
+license = "AGPL-3.0-only"
+post_install_script = "packaging/linux/rpm/postinstall.sh"
+assets = [
+    { source = "target/release/xavier", dest = "/usr/bin/xavier", mode = "755" },
+    { source = "packaging/linux/xavier.service", dest = "/usr/lib/systemd/system/xavier.service", mode = "644" },
+    { source = "packaging/linux/xavier.env.example", dest = "/usr/share/xavier/xavier.env.example", mode = "644" },
+    { source = "packaging/linux/setup-host.sh", dest = "/usr/share/xavier/setup-host.sh", mode = "755" },
+    { source = "docs/DEPLOY/LINUX_SERVER.md", dest = "/usr/share/doc/xavier-server/LINUX_SERVER.md", mode = "644", doc = true },
+]
+
+[package.metadata.generate-rpm.requires]
+shadow-utils = "*"
+
 [package.metadata.tarpaulin]
 out = ["Html", "Xml"]
 output-dir = "coverage"
@@ -63,7 +96,10 @@ members = [
 ]
 
 [features]
-default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "self-manage", "panel-ui", "pageindex"]
+default = ["headless", "cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "panel-ui"]
+# Server build: HTTP + MCP + CLI only, no TUI and no panel routes. Build it with
+# `--no-default-features --features headless` (see docs/DEPLOY/LINUX_SERVER.md).
+headless = ["self-manage", "pageindex"]
 panel-ui = []
 notification-in-app = []
 notification-webhook = []

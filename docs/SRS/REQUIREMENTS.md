@@ -1540,3 +1540,31 @@ Each product repo with explicit opt-in SHALL own a physical SQLite memory store 
 *WAVE-10 (2026-09-21): REQ-060..065 added (skill-injection wave: scan-paths, semantic-rank, loader-fate, fusion-gates, MCP-tools, ledger-docs). Implemented live: registry scans canonical store, cosine rank w/ keyword tiebreak, fusion gate 0.5 + ack-gate, MCP dispatch/list tools. Measured: Recall@3 0.950 / MRR 0.950 (20-query offline eval), live E2E post 0.2.5 restart. Full `verify-pipeline` green deferred: pre-existing zero-match filters outside the wave need ledger-wide cleanup (see rescan report).*
 
 *Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence. REQ-047 added 2026-09-05 for RTK Kernel CLI Proxy. WAVE-8 2026-09-12: REQ-048..052 added (HumanChallenge curation pipeline, introspection mode, privacy pipeline, informed consent). Module: humanchallenge + data_commons + enterprise + panel-ui. WAVE-9 (2026-09-18): REQ-053..059 added (ripwire+graphify extraction O1-O7: honest-confidence, language-registry, blast-testgate, incremental-ids, budget-query, pagerank-router, contracts-arch; US-101..US-114; specs docs/features/specs/FEATURE-feat-cg-*.md; doc docs/EXTRACTION-RIPWIRE-GRAPHIFY.md; ADR-032/033).*
+
+---
+
+## REQ-087: Headless server distribution
+
+- **Category:** Non-functional (portability, deployability)
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Files:** `Cargo.toml` (`headless` feature, deb/rpm metadata), `packaging/linux/`, `packaging/nix/`, `flake.nix`, `Dockerfile.headless`, `.github/workflows/server-packages.yml`, `docs/DEPLOY/LINUX_SERVER.md`
+- **Features:** `feat-headless-server-packaging`
+
+### Description
+
+Xavier SHALL be installable as a headless server, with HTTP, MCP and the CLI but no TUI, panel or desktop dependencies, on Linux x86_64 and aarch64. The channels are a verified tarball with `install.sh`, `.deb`, `.rpm`, a container image and a Nix flake with a NixOS module.
+
+### Requirements
+
+- REQ-087.1: The `headless` feature SHALL NOT pull ratatui, crossterm, tauri, wry, webkit2gtk or gtk into the dependency graph.
+- REQ-087.2: `install.sh` SHALL refuse an archive whose SHA-256 does not match its `.sha256`, and SHALL never overwrite an existing env file or token.
+- REQ-087.3: Packaged services SHALL run `xavier http --no-ui` as a dedicated `xavier` user, with HOME (and `master.key`) on persistent state, and a hardened unit (`NoNewPrivileges`, `ProtectSystem=strict`).
+- REQ-087.4: The container image SHALL keep `master.key` and data under the `/data` volume, so that recreating the container on the same volume and hostname loads the same key.
+- REQ-087.5: Every channel SHALL be installed in a clean environment and started by CI before a release publishes it.
+
+### Acceptance criteria
+
+- [ ] `server-packages.yml` is green: tarball builds, deb on Debian 12, rpm on Fedora, install.sh on Debian 12 and Ubuntu 24.04, Docker key persistence, Nix build and module evaluation
+- [ ] `packaging_contract` tests pass under `ci-safe`
+- [ ] A tagged release attaches the server tarballs, `.deb` and `.rpm`, and pushes `ghcr.io/<owner>/xavier:server-<tag>`

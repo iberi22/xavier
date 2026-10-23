@@ -1,0 +1,37 @@
+# Xavier headless server (system unit). Installed by the .deb/.rpm packages and by install.sh.
+# Secrets and overrides live in /etc/xavier/xavier.env (mode 0640, root:xavier).
+[Unit]
+Description=Xavier memory server (headless)
+Documentation=https://github.com/iberi22/xavier/blob/main/docs/DEPLOY/LINUX_SERVER.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xavier
+Group=xavier
+# HOME holds ~/.xavier/master.key: keep it on persistent storage and in your backups.
+Environment=HOME=/var/lib/xavier
+Environment=XAVIER_DATA_DIR=/var/lib/xavier/data
+EnvironmentFile=/etc/xavier/xavier.env
+WorkingDirectory=/var/lib/xavier
+StateDirectory=xavier
+StateDirectoryMode=0750
+ExecStart=/usr/bin/xavier http --no-ui
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/xavier
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

@@ -8,7 +8,9 @@
 # Stage 1: Builder
 FROM rust:1.94-bookworm AS builder
 
-ARG FEATURES=ci-safe
+ARG FEATURES=headless
+# Parallel rustc jobs; CI passes the runner's core count.
+ARG BUILD_JOBS=1
 
 WORKDIR /app
 
@@ -26,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY Cargo.toml Cargo.lock ./
 COPY LICENSE ./
 COPY benches/ benches/
+COPY tests/ tests/
 COPY src/ src/
 COPY code-graph/ code-graph/
 COPY codegraph-types/ codegraph-types/
@@ -34,7 +37,7 @@ COPY vendor/maloca-core/ vendor/maloca-core/
 COPY panel-ui/src-tauri/ panel-ui/src-tauri/
 
 # Build headless xavier binary with no default features or specified FEATURES
-RUN cargo build --release --bin xavier -j 1 --no-default-features --features "${FEATURES}"
+RUN cargo build --release --locked --bin xavier -j "${BUILD_JOBS}" --no-default-features --features "${FEATURES}"
 
 # Strip debug symbols to reduce binary size
 RUN strip -s /app/target/release/xavier
@@ -57,7 +60,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Create data directory and drop root (see Dockerfile for rationale).
 RUN useradd --create-home --shell /usr/sbin/nologin xavier \
-    && mkdir -p /data /app \
+    && mkdir -p /data/home /data/data /app \
     && chown -R xavier:xavier /data /app
 
 WORKDIR /app
@@ -76,7 +79,13 @@ ENV XAVIER_PORT=8006 \
     XAVIER_URL=http://localhost:8006 \
     RUST_LOG=info \
     XAVIER_VERSION=${XAVIER_VERSION} \
-    XAVIER_WORKSPACE_ID=default
+    XAVIER_WORKSPACE_ID=default \
+    HOME=/data/home \
+    XAVIER_DATA_DIR=/data/data
+
+# master.key lives in $HOME/.xavier: keep /data on a volume and run with a fixed
+# --hostname, or the key cannot be unwrapped after the container is recreated.
+VOLUME ["/data"]
 
 # Run headless with --no-ui flag
 USER xavier
