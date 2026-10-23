@@ -2913,6 +2913,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn mem_context_empty_result_never_exceeds_budget() {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let full = "No relevant context found for query/ids";
+        let full_chars = full.chars().count();
+        for tool in ["memory_context", "mem_context"] {
+            for max_chars in [1u64, 32, 33, 38, 39, 100] {
+                let args = json!({ "query": "zq-nothing-stored-here", "max_chars": max_chars });
+                let out = handle_memory_tool(state.clone(), workspace.clone(), tool, args)
+                    .await
+                    .unwrap();
+                let payload = &out["structuredContent"];
+                let content = payload["content"].as_str().unwrap();
+                let effective = (max_chars as usize).max(CONTEXT_MIN_MAX_CHARS);
+                let chars = content.chars().count();
+                assert!(
+                    chars <= effective,
+                    "{tool} max_chars={max_chars}: {chars} chars exceeds effective budget {effective}: {content:?}"
+                );
+                assert!(
+                    full.starts_with(content),
+                    "{tool} max_chars={max_chars}: empty-result text must be a prefix of the full message: {content:?}"
+                );
+                if effective >= full_chars {
+                    assert_eq!(content, full, "{tool} max_chars={max_chars}: {payload}");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn recent_fragments_agent_filter_excludes_other_agents() {
         let _env = crate::settings::tests::TempEnv::new();
