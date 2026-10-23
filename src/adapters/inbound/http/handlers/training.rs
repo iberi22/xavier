@@ -170,8 +170,9 @@ pub async fn create_bundle_handler(Json(payload): Json<CreateBundlePayload>) -> 
     let db_path = get_db_path();
     let data_dir = get_data_dir();
     let exporter = TrainingExporter::new(&db_path);
+    let grant = crate::data_commons::egress::EgressGrant::local_training(exporter.privacy_level);
 
-    match exporter.generate_bundle(payload.seed, payload.eval_ratio, None) {
+    match exporter.generate_bundle_with_grant(&grant, payload.seed, payload.eval_ratio, None) {
         Ok(bundle) => {
             let id = format!(
                 "dataset_{}_{}",

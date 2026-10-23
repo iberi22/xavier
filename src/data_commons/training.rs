@@ -84,30 +84,19 @@ impl TrainingExporter {
         self
     }
 
-    /// Telemetry-only bundle (original behavior).
-    pub fn generate_bundle(
+    /// Telemetry-only bundle (original behavior) under an explicit egress grant.
+    pub fn generate_bundle_with_grant(
         &self,
+        grant: &EgressGrant,
         seed: u64,
         eval_ratio: f32,
         _generated_at: Option<DateTime<Utc>>,
     ) -> Result<TrainingBundle, String> {
         self.check_params(eval_ratio)?;
-        let grant = EgressGrant::local_training(self.privacy_level);
+        self.check_grant(grant)?;
         let mut batch = TelemetrySource::new(&self.db_path).collect_sync(seed)?;
         enforce_egress(grant.policy(), &mut batch);
         self.assemble(vec![("telemetry".to_string(), batch)], seed, eval_ratio)
-    }
-
-    /// Compose the given sources into one bundle under a local-training grant.
-    pub async fn generate_bundle_from_sources(
-        &self,
-        sources: &[Box<dyn TrainingSource>],
-        seed: u64,
-        eval_ratio: f32,
-    ) -> Result<TrainingBundle, String> {
-        let grant = EgressGrant::local_training(self.privacy_level);
-        self.generate_bundle_from_sources_with_grant(&grant, sources, seed, eval_ratio)
-            .await
     }
 
     /// Compose the given sources into one bundle under an explicit egress grant.
@@ -121,13 +110,7 @@ impl TrainingExporter {
         eval_ratio: f32,
     ) -> Result<TrainingBundle, String> {
         self.check_params(eval_ratio)?;
-        if grant.privacy_level() != self.privacy_level {
-            return Err(format!(
-                "egress grant is {} but the exporter is {}",
-                grant.privacy_level().as_str(),
-                self.privacy_level.as_str()
-            ));
-        }
+        self.check_grant(grant)?;
         if sources.is_empty() {
             return Err("at least one training source is required".to_string());
         }
@@ -153,6 +136,18 @@ impl TrainingExporter {
             return Err("eval_ratio must be between 0.0 and 1.0".to_string());
         }
         self.privacy_config.validate()
+    }
+
+    /// A grant is only valid for the exporter's own privacy level.
+    fn check_grant(&self, grant: &EgressGrant) -> Result<(), String> {
+        if grant.privacy_level() != self.privacy_level {
+            return Err(format!(
+                "egress grant is {} but the exporter is {}",
+                grant.privacy_level().as_str(),
+                self.privacy_level.as_str()
+            ));
+        }
+        Ok(())
     }
 
     fn assemble(
@@ -560,7 +555,14 @@ mod tests {
         let exporter = TrainingExporter::new(db_file.path());
         let seed = 42;
         let now = Utc::now();
-        let bundle = exporter.generate_bundle(seed, 0.2, Some(now)).unwrap();
+        let bundle = exporter
+            .generate_bundle_with_grant(
+                &EgressGrant::local_training(exporter.privacy_level),
+                seed,
+                0.2,
+                Some(now),
+            )
+            .unwrap();
 
         assert_eq!(bundle.audit_summary.total_records_found, 10);
         assert_eq!(bundle.audit_summary.included_records, 10);
@@ -597,9 +599,30 @@ mod tests {
         let seed = 99;
         let now = Utc::now();
 
-        let bundle1 = exporter.generate_bundle(seed, 0.2, Some(now)).unwrap();
-        let bundle2 = exporter.generate_bundle(seed, 0.2, Some(now)).unwrap();
-        let bundle3 = exporter.generate_bundle(100, 0.2, Some(now)).unwrap();
+        let bundle1 = exporter
+            .generate_bundle_with_grant(
+                &EgressGrant::local_training(exporter.privacy_level),
+                seed,
+                0.2,
+                Some(now),
+            )
+            .unwrap();
+        let bundle2 = exporter
+            .generate_bundle_with_grant(
+                &EgressGrant::local_training(exporter.privacy_level),
+                seed,
+                0.2,
+                Some(now),
+            )
+            .unwrap();
+        let bundle3 = exporter
+            .generate_bundle_with_grant(
+                &EgressGrant::local_training(exporter.privacy_level),
+                100,
+                0.2,
+                Some(now),
+            )
+            .unwrap();
 
         // Same seed should produce same split
         assert_eq!(bundle1.train_split, bundle2.train_split);
@@ -702,7 +725,14 @@ mod tests {
         // 1. Export with P2 (Default) -> Should scrub email & set manifest privacy_level to P2
         let exporter_p2 =
             TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P2);
-        let bundle_p2 = exporter_p2.generate_bundle(123, 0.0, None).unwrap();
+        let bundle_p2 = exporter_p2
+            .generate_bundle_with_grant(
+                &EgressGrant::local_training(exporter_p2.privacy_level),
+                123,
+                0.0,
+                None,
+            )
+            .unwrap();
         assert_eq!(bundle_p2.manifest.privacy_level, "P2");
         assert_eq!(bundle_p2.train_split.len(), 1);
         let record_p2 = &bundle_p2.train_split[0];
@@ -712,7 +742,14 @@ mod tests {
         // 2. Export with P3 -> Should scrub email, wallet, path, pseudonymize entity & add Laplace noise
         let exporter_p3 =
             TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P3);
-        let bundle_p3 = exporter_p3.generate_bundle(123, 0.0, None).unwrap();
+        let bundle_p3 = exporter_p3
+            .generate_bundle_with_grant(
+                &EgressGrant::local_training(exporter_p3.privacy_level),
+                123,
+                0.0,
+                None,
+            )
+            .unwrap();
         assert_eq!(bundle_p3.manifest.privacy_level, "P3");
         assert_eq!(bundle_p3.train_split.len(), 1);
         let record_p3 = &bundle_p3.train_split[0];
@@ -729,7 +766,14 @@ mod tests {
         // 3. Export with P4 (Local Only) -> Should NOT scrub email & set manifest privacy_level to P4
         let exporter_p4 =
             TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P4);
-        let bundle_p4 = exporter_p4.generate_bundle(123, 0.0, None).unwrap();
+        let bundle_p4 = exporter_p4
+            .generate_bundle_with_grant(
+                &EgressGrant::local_training(exporter_p4.privacy_level),
+                123,
+                0.0,
+                None,
+            )
+            .unwrap();
         assert_eq!(bundle_p4.manifest.privacy_level, "P4");
         assert_eq!(bundle_p4.train_split.len(), 1);
         let record_p4 = &bundle_p4.train_split[0];
@@ -907,7 +951,12 @@ mod tests {
         let store = tempdir_store(dir.path(), 8, "file").await;
         let bundle = exporter()
             .with_privacy_level(PrivacyLevel::P4)
-            .generate_bundle_from_sources(&sources_of(store), 7, 0.25)
+            .generate_bundle_from_sources_with_grant(
+                &EgressGrant::local_training(PrivacyLevel::P4),
+                &sources_of(store),
+                7,
+                0.25,
+            )
             .await
             .unwrap();
         assert!(bundle.audit.local_only);
@@ -935,7 +984,12 @@ mod tests {
         let store = tempdir_store(dir.path(), 8, "file").await;
         let ok = exporter()
             .with_privacy_level(PrivacyLevel::P3)
-            .generate_bundle_from_sources(&sources_of(store.clone()), 7, 0.25)
+            .generate_bundle_from_sources_with_grant(
+                &EgressGrant::local_training(PrivacyLevel::P3),
+                &sources_of(store.clone()),
+                7,
+                0.25,
+            )
             .await
             .unwrap();
         assert!(ok.audit.passed, "reasons: {:?}", ok.audit.reasons);
@@ -956,7 +1010,12 @@ mod tests {
             .unwrap();
         let bad = exporter()
             .with_privacy_level(PrivacyLevel::P3)
-            .generate_bundle_from_sources(&sources_of(store.clone()), 7, 0.25)
+            .generate_bundle_from_sources_with_grant(
+                &EgressGrant::local_training(PrivacyLevel::P3),
+                &sources_of(store.clone()),
+                7,
+                0.25,
+            )
             .await
             .unwrap();
         assert!(!bad.audit.passed);
@@ -971,7 +1030,12 @@ mod tests {
                 epsilon: 0.5,
                 ..PrivacyConfig::default()
             })
-            .generate_bundle_from_sources(&sources_of(store), 7, 0.25)
+            .generate_bundle_from_sources_with_grant(
+                &EgressGrant::local_training(PrivacyLevel::P3),
+                &sources_of(store),
+                7,
+                0.25,
+            )
             .await
             .unwrap();
         assert!(relaxed.audit.passed);
@@ -994,7 +1058,12 @@ mod tests {
                 epsilon: 0.0,
                 ..PrivacyConfig::default()
             })
-            .generate_bundle_from_sources(&sources_of(store), 1, 0.2)
+            .generate_bundle_from_sources_with_grant(
+                &EgressGrant::local_training(PrivacyLevel::P3),
+                &sources_of(store),
+                1,
+                0.2,
+            )
             .await;
         assert!(err.is_err());
     }

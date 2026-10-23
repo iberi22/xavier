@@ -988,10 +988,23 @@ pub async fn training_export_handler(
             approved_items.truncate(limit);
         }
 
+        // Local-training policy, the same exclusion the training router applies: revoked
+        // and private items never leave the node.
+        let policy = crate::data_commons::egress::EgressGrant::local_training(
+            crate::data_commons::privacy::PrivacyLevel::P2,
+        )
+        .policy();
         let redactor = crate::security::redaction::RedactionEngine::default();
         let mut lines = Vec::new();
 
         for item in approved_items {
+            let metadata = serde_json::from_str::<serde_json::Value>(&item.content_ref)
+                .ok()
+                .and_then(|v| v.get("metadata").cloned())
+                .unwrap_or(serde_json::Value::Null);
+            if crate::data_commons::egress::exclusion_for(policy, &metadata, None).is_some() {
+                continue;
+            }
             let redacted = redactor.redact(&item.content_ref);
             let obj = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&redacted) {
                 parsed
@@ -1035,10 +1048,12 @@ pub async fn training_export_handler(
     }
 
     let exporter = crate::data_commons::training::TrainingExporter::new(&db_path);
-    let bundle = match exporter.generate_bundle(payload.seed, payload.eval_ratio, None) {
-        Ok(b) => b,
-        Err(e) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
-    };
+    let grant = crate::data_commons::egress::EgressGrant::local_training(exporter.privacy_level);
+    let bundle =
+        match exporter.generate_bundle_with_grant(&grant, payload.seed, payload.eval_ratio, None) {
+            Ok(b) => b,
+            Err(e) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        };
 
     let manifest = match serde_json::to_value(&bundle.manifest) {
         Ok(m) => m,
