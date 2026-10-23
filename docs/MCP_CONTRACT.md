@@ -380,6 +380,8 @@ Xavier uses standard JSON-RPC 2.0 error codes and custom Xavier-specific codes f
 | Content security policy | prompt-injection block | tool result, `isError: true` | `-32000` | `security_policy` |
 | Other execution failures (in-tool clearance, rate limit, internal) | — | JSON-RPC error | `-32000` / `-32603` | — |
 
+> **Known gaps at HEAD.** A few handler validation errors are still untyped and go out as JSON-RPC `-32603`: a `..` path in `create_memory`, empty content, `memory_prune` with no filter, and a `project_path` containing `..`. Argument errors in the context tools and `memoryfragment_delete` with an absent id return `isError: true` without `structuredContent.error`. As ADR-047 §4 states, handlers that build their own tool-result errors with a string-valued `structuredContent.error` are not normalised by this ADR.
+
 ### Tool-result error shape
 
 Rows that use a tool result return:

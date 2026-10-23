@@ -3,10 +3,9 @@
 | Campo | Valor |
 |-------|--------|
 | **ID** | ADR-047 |
-| **Estado** | Aceptado |
+| **Estado** | Aceptado (Brahyan, 2026-10-23) |
 | **Fecha** | 2026-10-23 |
 | **Autores** | Xavier architecture contributors |
-| **Aceptación** | Brahyan accepted it, Oct 23 2026 |
 | **Relacionados** | `docs/MCP_CONTRACT.md` (Error Handling and Codes); ADR-046 (format reference) |
 
 ## Context
@@ -16,7 +15,7 @@ Xavier's JSON-RPC MCP endpoint reports a failed `tools/call` on two channels:
 - a JSON-RPC `error` object, or
 - a successful JSON-RPC `result` whose payload has `isError: true` (a tool-level failure).
 
-At the current HEAD the channel is chosen by the code path that raised the failure, not by the kind of failure. The result is that clients see some failures the same way and others differently:
+Before #3496 the channel was chosen by the code path that raised the failure, not by the kind of failure. The result is that clients see some failures the same way and others differently:
 
 - A missing required argument is returned as a tool result with `isError: true`.
 - A wrong-type or invalid-value argument is returned as a JSON-RPC error with code -32001.
@@ -68,14 +67,14 @@ Constraints:
 
 ## Simulation
 
-Not run. The template requires a multi-scenario simulation before acceptance; the owner waived it when accepting this ADR (Oct 23 2026). The decision is a protocol-channel rule, and its behaviour is pinned by the probe-matrix tests added in the implementation change (#3496) instead.
+Not run. The template requires a multi-scenario simulation before acceptance; the owner waived it when accepting this ADR (2026-10-23). The decision is a protocol-channel rule, and its behaviour is pinned by the probe-matrix tests added in the implementation change (#3496) instead.
 
 ## Assumptions
 
 | Parameter | Value used | Source |
 |-----------|------------|--------|
 | Missing-required arguments already return tool results | true at HEAD | existing missing-argument tests in `src/server/mcp/tests.rs` |
-| Known clients read `isError` on tool results | assumed; not verified for every client | ASSUMPTION — accepted by the owner on Oct 23 2026 without a per-client check |
+| Known clients read `isError` on tool results | assumed; not verified for every client | ASSUMPTION — accepted by the owner on 2026-10-23 without a per-client check |
 | Renumbering codes is unnecessary | `kind` carries the category | Decision 1 |
 
 ## Consequences
@@ -97,4 +96,4 @@ Not run. The template requires a multi-scenario simulation before acceptance; th
 - The implementation change adds a probe matrix over the HTTP and stdio transports. Each row checks channel, code and `kind`, and the two transports must return the same result payload.
 - Alias pairs (for example the two names of the same memory lookup) must return the same code and `kind`.
 - A unit test checks that a typed error wins over message-based classification.
-- The implementation landed in #3496. The owner accepted this ADR on Oct 23 2026.
+- The implementation landed in #3496. The owner accepted this ADR on 2026-10-23.
