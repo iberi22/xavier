@@ -112,13 +112,15 @@ jobs:
       - name: Smoke test
         run: sh packaging/linux/smoke-test.sh target/${{ matrix.target }}/release/xavier
       - name: Package
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
         run: |
           bin=target/${{ matrix.target }}/release/xavier
           strip "$bin"
           file "$bin"
           ls -la "$bin"
           echo "highest glibc symbol: $(objdump -T "$bin" | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -n1)"
-          sh packaging/linux/make-tarball.sh "$bin" "${{ needs.meta.outputs.version }}" ${{ matrix.target }} dist
+          sh packaging/linux/make-tarball.sh "$bin" "$VERSION" ${{ matrix.target }} dist
       - uses: actions/upload-artifact@v7
         with:
           name: server-${{ matrix.target }}

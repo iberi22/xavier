@@ -94,7 +94,7 @@ pub mod domain;
 pub mod ports;
 pub mod time;
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod packaging_contract;
 
 use std::sync::Arc;

@@ -34,10 +34,11 @@ in
     };
 
     environmentFile = lib.mkOption {
-      type = lib.types.path;
+      # A string, not a path: a Nix path literal would copy the token into the world-readable store.
+      type = lib.types.strMatching "/.+";
       example = "/run/secrets/xavier.env";
       description = ''
-        File with at least `XAVIER_TOKEN=…`. Kept out of the Nix store on purpose.
+        Absolute path to a file with at least `XAVIER_TOKEN=…`. It stays outside the Nix store.
       '';
     };
 
