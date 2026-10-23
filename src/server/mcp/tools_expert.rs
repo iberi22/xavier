@@ -315,9 +315,19 @@ mod tests {
         assert_eq!(res["isError"], true);
         assert!(res["structuredContent"]["answer"].is_null());
         assert_eq!(res["structuredContent"]["expert"], "no expert");
-        assert!(res["structuredContent"]["error"]
+        // The HTTP status from the provider must reach the caller, but not the
+        // request URL (some providers put the API key in the query string).
+        let err = res["structuredContent"]["error"]
             .as_str()
-            .is_some_and(|e| e.contains("500") || e.contains("boom")));
+            .unwrap_or_default();
+        assert!(
+            err.contains("500"),
+            "error should carry the HTTP status, got: {err}"
+        );
+        assert!(
+            !err.contains(&server.host_with_port()),
+            "error must not leak the provider URL, got: {err}"
+        );
 
         // Also flagged with unknown domain
         let res_domain = run_ask_expert(&router, json!({"prompt": "hi", "domain": "unknown"}))

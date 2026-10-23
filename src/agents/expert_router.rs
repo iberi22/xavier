@@ -347,7 +347,9 @@ impl ExpertRouter {
 
         match tokio::time::timeout(timeout, call).await {
             Ok(resp) => {
-                let answer = resp?.text;
+                let answer = resp
+                    .map_err(|e| anyhow::anyhow!("{}", describe_provider_error(&e)))?
+                    .text;
                 Ok((answer, label, model_id))
             }
             Err(_) => anyhow::bail!(
@@ -371,6 +373,32 @@ impl ExpertRouter {
             matched_by: Some(m.matched_by.to_string()),
         })
     }
+}
+
+/// Flattens a provider error chain into one caller-facing message.
+///
+/// The outermost context alone ("OpenAI-compatible API returned an error") hides
+/// the HTTP status, so the chain is kept. `reqwest` errors are reduced to their
+/// status / kind because their `Display` embeds the request URL, and some
+/// providers carry the API key in the query string.
+pub(crate) fn describe_provider_error(err: &anyhow::Error) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for cause in err.chain() {
+        let part = match cause.downcast_ref::<reqwest::Error>() {
+            Some(re) => match re.status() {
+                Some(status) => format!("HTTP {status}"),
+                None if re.is_timeout() => "request timed out".to_string(),
+                None if re.is_connect() => "connection failed".to_string(),
+                None if re.is_decode() => "invalid response body".to_string(),
+                None => "request failed".to_string(),
+            },
+            None => cause.to_string(),
+        };
+        if !parts.contains(&part) {
+            parts.push(part);
+        }
+    }
+    parts.join(": ")
 }
 
 #[cfg(test)]
