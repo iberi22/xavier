@@ -10,7 +10,7 @@ use tracing::{info, warn};
 
 use crate::cli::code_dump::{perform_dump, perform_load};
 use crate::cli::security::secure_optional_request_field;
-use crate::cli::state::CliState;
+use crate::cli::state::{CliState, CodeGraphState};
 use crate::cli::types::*;
 use crate::cli::utils::estimate_tokens;
 use code_graph::types::{CodeEdge, Symbol, SymbolKind};
@@ -693,6 +693,22 @@ pub async fn code_load_handler(
     response.into_response()
 }
 
+/// Opens the per-repo code graph `<root>/.xavier/code_graph.db` with a fresh
+/// indexer over it. A Git target is scanned and dumped through this graph only,
+/// so no other repo's rows can reach it.
+fn open_repo_code_graph(root: &std::path::Path) -> anyhow::Result<CodeGraphState> {
+    let db_path = xavier::codebase::repo_identity::code_graph_db_path_for_root(root);
+    if let Some(parent) = db_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let db = Arc::new(ConnectionManager::global().get_code_graph_db(&db_path)?);
+    Ok(CodeGraphState {
+        indexer: Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&db))),
+        query: Arc::new(code_graph::query::QueryEngine::new(Arc::clone(&db))),
+        db,
+    })
+}
+
 /// Code scan handler.
 pub async fn code_scan_handler(
     State(state): State<CliState>,
@@ -760,39 +776,40 @@ pub async fn code_scan_handler(
     // Consent-first Colby sidecar (server usually non-TTY → skip/honour env). Soft-fail.
     let sidecar = ensure_sidecar_for_workspace(&state.workspace_dir);
 
-    let code_graph = state.code_graph.read().await;
-    match code_graph
-        .indexer
-        .index(std::path::Path::new(&path), true)
-        .await
-    {
+    // A Git target is indexed into its own repo graph, `<root>/.xavier/code_graph.db`,
+    // through a fresh per-repo indexer. The shared whole-workspace graph is not
+    // written for it, and nothing is copied from it into the repo DB.
+    // Non-Git targets have no repo DB and keep the legacy behaviour: they are
+    // indexed into, and dumped from, the shared workspace graph.
+    let repo_root = xavier::codebase::repo_identity::find_repo_root(std::path::Path::new(&path))
+        .map(|root| root.canonicalize().unwrap_or(root));
+    let repo_graph = match repo_root.as_deref().map(open_repo_code_graph) {
+        Some(Ok(graph)) => Some(graph),
+        Some(Err(error)) => {
+            return axum::Json(serde_json::json!({
+                "status": "error",
+                "message": format!("cannot open repo code graph: {error}"),
+                "indexed_files": 0,
+                "indexed_symbols": 0,
+                "indexed_imports": 0,
+                "paths": [path],
+                "codegraph_sidecar": sidecar.message,
+                "codegraph_available": sidecar.available,
+            }));
+        }
+        None => None,
+    };
+    let shared = state.code_graph.read().await;
+    let graph: &CodeGraphState = repo_graph.as_ref().unwrap_or(&*shared);
+
+    match graph.indexer.index(std::path::Path::new(&path), true).await {
         Ok(stats) => {
             if let Some(bin) = sidecar.bin_path.as_ref() {
                 maybe_sync_colby_project(std::path::Path::new(&path), bin);
             }
 
-            // Persist the scanned graph to the per-repo database file `<repo_root>/.xavier/code_graph.db`
-            if let Some(repo_root) =
-                xavier::codebase::repo_identity::find_repo_root(std::path::Path::new(&path))
-            {
-                let canonical = repo_root
-                    .canonicalize()
-                    .unwrap_or_else(|_| repo_root.clone());
-                let db_path =
-                    xavier::codebase::repo_identity::code_graph_db_path_for_root(&canonical);
-                if let Some(parent) = db_path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                if let Ok(repo_db) = ConnectionManager::global().get_code_graph_db(&db_path) {
-                    if let (Ok(symbols), Ok(edges)) = (
-                        code_graph.db.get_all_symbols(),
-                        code_graph.db.get_all_edges(),
-                    ) {
-                        let _ = repo_db.insert_symbols(&symbols);
-                        let _ = repo_db.insert_edges(&edges);
-                    }
-                }
-                if let Some(head) = xavier::codebase::repo_identity::git_head(&canonical) {
+            if let Some(canonical) = repo_root.as_deref() {
+                if let Some(head) = xavier::codebase::repo_identity::git_head(canonical) {
                     let checkpoint = canonical
                         .join(".xavier")
                         .join(xavier::codebase::repo_identity::SYNC_CHECKPOINT_FILE);
@@ -800,16 +817,15 @@ pub async fn code_scan_handler(
                 }
             }
 
-            // Automatically trigger soft dump after successful scan
-            let (dump_msg, dump_path_str, dump_success) =
-                match perform_dump(&code_graph, &path).await {
-                    Ok(dump_path) => (
-                        format!(" (Dumped to {})", dump_path.display()),
-                        Some(dump_path.to_string_lossy().into_owned()),
-                        true,
-                    ),
-                    Err(e) => (format!(" (Dump failed: {})", e), None, false),
-                };
+            // Automatically trigger soft dump after successful scan, from the same graph
+            let (dump_msg, dump_path_str, dump_success) = match perform_dump(graph, &path).await {
+                Ok(dump_path) => (
+                    format!(" (Dumped to {})", dump_path.display()),
+                    Some(dump_path.to_string_lossy().into_owned()),
+                    true,
+                ),
+                Err(e) => (format!(" (Dump failed: {})", e), None, false),
+            };
 
             axum::Json(serde_json::json!({
                 "status": "ok",
@@ -4217,13 +4233,27 @@ mod tests {
             .unwrap()
             .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000))
             .unwrap();
-        let status = std::process::Command::new("git")
+        // Git hooks export GIT_DIR, and `git init <dir>` then silently re-targets
+        // the parent repo instead of creating `<dir>/.git`. Drop inherited GIT_*
+        // variables so the fixture is always a real, independent repository.
+        let mut git = std::process::Command::new("git");
+        for (key, _) in std::env::vars_os() {
+            if key.to_string_lossy().starts_with("GIT_") {
+                git.env_remove(key);
+            }
+        }
+        let status = git
             .arg("init")
             .arg("--quiet")
             .arg(dir)
             .status()
             .expect("git must be installed for the W1 scan fixtures");
         assert!(status.success(), "git init failed in {}", dir.display());
+        assert!(
+            dir.join(".git").is_dir(),
+            "fixture {} must own a .git directory",
+            dir.display()
+        );
     }
 
     /// Row snapshot of a code-graph DB file: sorted `(name, file_path)` symbol
