@@ -4060,3 +4060,27 @@ async fn error_contract_aliases_agree() {
         }
     }
 }
+
+#[test]
+fn classify_prefers_typed_error() {
+    use super::session::{classify_mcp_error, ToolFailure};
+    use super::types::{McpToolError, ToolErrorKind, XAVIER_ERROR_VALIDATION};
+
+    // A typed kind survives a context wrapper added by a caller.
+    let wrapped = anyhow::Error::new(McpToolError::not_found("x")).context("wrap");
+    assert!(matches!(
+        classify_mcp_error(wrapped),
+        ToolFailure::ToolResult(_, ToolErrorKind::NotFound)
+    ));
+
+    // A typed Validation wins over the substring that would read as not_found.
+    match classify_mcp_error(anyhow::Error::new(McpToolError::validation(
+        "thing not found",
+    ))) {
+        ToolFailure::ToolResult(error, ToolErrorKind::Validation) => {
+            assert_eq!(error.code, XAVIER_ERROR_VALIDATION);
+            assert_eq!(error.message, "thing not found");
+        }
+        _ => panic!("typed validation must not fall back to the substring match"),
+    }
+}

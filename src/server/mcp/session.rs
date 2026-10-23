@@ -871,7 +871,9 @@ async fn handle_mcp_request(
                     result: None,
                     error: Some(error),
                 }),
-                Err(ArgError::Tool(error)) => Some(tool_error_response(id, error)),
+                Err(ArgError::Tool(error)) => {
+                    Some(tool_error_response(id, ToolErrorKind::Validation, error))
+                }
                 Ok(()) => Some(
                     match super::server::handle_tool_call(state, workspace, claims, name, arguments)
                         .await
@@ -882,22 +884,17 @@ async fn handle_mcp_request(
                             result: Some(result),
                             error: None,
                         },
-                        Err(error) => {
-                            let error = classify_mcp_error(error);
-                            if error.code == XAVIER_ERROR_SECURITY
-                                && (error.message.contains("Security policy violation")
-                                    || error.message.contains("blocked by security policy"))
-                            {
-                                tool_error_response(id, error)
-                            } else {
-                                MCPResponse {
-                                    jsonrpc: "2.0".to_string(),
-                                    id,
-                                    result: None,
-                                    error: Some(error),
-                                }
+                        Err(error) => match classify_mcp_error(error) {
+                            ToolFailure::ToolResult(error, kind) => {
+                                tool_error_response(id, kind, error)
                             }
-                        }
+                            ToolFailure::Rpc(error) => MCPResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id,
+                                result: None,
+                                error: Some(error),
+                            },
+                        },
                     },
                 ),
             }
@@ -916,16 +913,20 @@ async fn handle_mcp_request(
     }
 }
 
-/// Tool execution failure: a normal result with `isError: true` that keeps the
-/// JSON-RPC style error object under `structuredContent`.
-fn tool_error_response(id: Value, error: MCPError) -> MCPResponse {
+/// Tool execution failure: a normal result with `isError: true`. The error keeps
+/// its numeric code and adds the stable `kind` under `structuredContent.error`.
+fn tool_error_response(id: Value, kind: ToolErrorKind, error: MCPError) -> MCPResponse {
     let result = serde_json::to_value(MCPToolResult {
         content: vec![MCPContent::Text(MCPTextContent {
             content_type: "text".to_string(),
             text: error.message.clone(),
         })],
         structured_content: Some(serde_json::json!({
-            "error": { "code": error.code, "message": error.message }
+            "error": {
+                "code": error.code,
+                "kind": kind.as_str(),
+                "message": error.message
+            }
         })),
         is_error: Some(true),
     })
@@ -951,37 +952,90 @@ fn error_response(id: Option<Value>, code: i32, message: String) -> Option<MCPRe
     })
 }
 
-fn classify_mcp_error(err: anyhow::Error) -> MCPError {
-    let mut message = err.to_string();
-    let code = if let Some(tool) = message.strip_prefix("Tool not implemented: ") {
-        message = format!("Unknown tool: {tool}");
-        -32602
-    } else if message.contains("Memory clearance exceeds caller clearance")
+/// Where a handler failure goes on the wire (ADR-047, channel by phase).
+pub(super) enum ToolFailure {
+    /// JSON-RPC `error` object, no `result`.
+    Rpc(MCPError),
+    /// Tool result with `isError: true` carrying the stable kind.
+    ToolResult(MCPError, ToolErrorKind),
+}
+
+/// Maps a handler failure to its channel. A typed `McpToolError` anywhere in the
+/// chain decides the kind; errors without one fall back to the message match.
+pub(super) fn classify_mcp_error(err: anyhow::Error) -> ToolFailure {
+    let message = err.to_string();
+    let (code, kind, message) = match err
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<McpToolError>())
+    {
+        Some(typed) => (typed.kind.code(), Some(typed.kind), message),
+        None => classify_by_message(message),
+    };
+
+    let error = MCPError {
+        code,
+        message,
+        data: None,
+    };
+    match kind {
+        Some(
+            kind @ (ToolErrorKind::Validation
+            | ToolErrorKind::NotFound
+            | ToolErrorKind::SecurityPolicy),
+        ) => ToolFailure::ToolResult(error, kind),
+        _ => ToolFailure::Rpc(error),
+    }
+}
+
+/// Fallback for handler errors without a typed kind: the legacy substring match.
+/// `None` means the error is a protocol-level tool name failure.
+fn classify_by_message(message: String) -> (i32, Option<ToolErrorKind>, String) {
+    if let Some(tool) = message.strip_prefix("Tool not implemented: ") {
+        let unknown = format!("Unknown tool: {tool}");
+        return (-32602, None, unknown);
+    }
+    if message.contains("Memory clearance exceeds caller clearance")
         || message.contains("Security policy violation")
         || message.contains("blocked by security policy")
         || message.contains("Forbidden")
         || message.contains("Insufficient permissions")
     {
-        XAVIER_ERROR_SECURITY
-    } else if message.contains("Memory write rate limit exceeded") {
-        // types.rs has no rate-limit code. The message stays; the code stays internal.
-        XAVIER_ERROR_INTERNAL
-    } else if message.contains("Missing")
-        || message.contains("must be")
-        || message.contains("Invalid")
-    {
-        XAVIER_ERROR_VALIDATION
-    } else if message.contains("not found") || message.contains("Memory not found") {
-        XAVIER_ERROR_NOT_FOUND
-    } else {
-        XAVIER_ERROR_INTERNAL
-    };
-
-    MCPError {
-        code,
-        message,
-        data: None,
+        let policy = message.contains("Security policy violation")
+            || message.contains("blocked by security policy");
+        let kind = if policy {
+            ToolErrorKind::SecurityPolicy
+        } else {
+            ToolErrorKind::Forbidden
+        };
+        return (XAVIER_ERROR_SECURITY, Some(kind), message);
     }
+    if message.contains("Memory write rate limit exceeded") {
+        // The message stays; the code stays internal (no rate-limit code is published).
+        return (
+            XAVIER_ERROR_INTERNAL,
+            Some(ToolErrorKind::RateLimited),
+            message,
+        );
+    }
+    if message.contains("Missing") || message.contains("must be") || message.contains("Invalid") {
+        return (
+            XAVIER_ERROR_VALIDATION,
+            Some(ToolErrorKind::Validation),
+            message,
+        );
+    }
+    if message.contains("not found") || message.contains("Memory not found") {
+        return (
+            XAVIER_ERROR_NOT_FOUND,
+            Some(ToolErrorKind::NotFound),
+            message,
+        );
+    }
+    (
+        XAVIER_ERROR_INTERNAL,
+        Some(ToolErrorKind::Internal),
+        message,
+    )
 }
 
 /// Read a named Xavier MCP resource by URI.

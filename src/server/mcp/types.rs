@@ -13,6 +13,91 @@ pub const XAVIER_ERROR_VALIDATION: i32 = -32001;
 pub const XAVIER_ERROR_NOT_FOUND: i32 = -32002;
 pub const XAVIER_ERROR_INTERNAL: i32 = -32603;
 
+/// Stable identifier of a tool-level failure, published as
+/// `structuredContent.error.kind`. The numeric code stays in `code`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolErrorKind {
+    Validation,
+    NotFound,
+    SecurityPolicy,
+    Forbidden,
+    RateLimited,
+    Internal,
+}
+
+impl ToolErrorKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Validation => "validation",
+            Self::NotFound => "not_found",
+            Self::SecurityPolicy => "security_policy",
+            Self::Forbidden => "forbidden",
+            Self::RateLimited => "rate_limited",
+            Self::Internal => "internal",
+        }
+    }
+
+    pub fn code(self) -> i32 {
+        match self {
+            Self::Validation => XAVIER_ERROR_VALIDATION,
+            Self::NotFound => XAVIER_ERROR_NOT_FOUND,
+            Self::SecurityPolicy | Self::Forbidden => XAVIER_ERROR_SECURITY,
+            Self::RateLimited | Self::Internal => XAVIER_ERROR_INTERNAL,
+        }
+    }
+}
+
+/// Typed handler failure. Attach it to an `anyhow::Error`; the classifier reads
+/// the kind from the chain before it falls back to matching the message text.
+#[allow(dead_code)] // Constructors are used by typed handlers (E1b) and by tests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpToolError {
+    pub kind: ToolErrorKind,
+    pub message: String,
+}
+
+#[allow(dead_code)] // See the struct: constructors beyond the ones in use are kept for E1b.
+impl McpToolError {
+    pub fn new(kind: ToolErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+        }
+    }
+
+    pub fn validation(message: impl Into<String>) -> Self {
+        Self::new(ToolErrorKind::Validation, message)
+    }
+
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(ToolErrorKind::NotFound, message)
+    }
+
+    pub fn security_policy(message: impl Into<String>) -> Self {
+        Self::new(ToolErrorKind::SecurityPolicy, message)
+    }
+
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(ToolErrorKind::Forbidden, message)
+    }
+
+    pub fn rate_limited(message: impl Into<String>) -> Self {
+        Self::new(ToolErrorKind::RateLimited, message)
+    }
+
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::new(ToolErrorKind::Internal, message)
+    }
+}
+
+impl std::fmt::Display for McpToolError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for McpToolError {}
+
 // ── JSON-RPC envelopes ──────────────────────────────────────────────
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
