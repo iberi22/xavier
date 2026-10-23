@@ -17,6 +17,20 @@ use uuid::Uuid;
 
 const CONVERSATIONS_DIR: &str = "conversations";
 
+// Hot read queries. The query sites and the index tests share these strings,
+// so the planner checks run against exactly the SQL that ships.
+const SQL_THREAD_MESSAGES: &str = "SELECT id, thread_id, role, content, tool_calls, openui_lang, xui_json, metadata, created_at, tokens
+                 FROM conversation_messages
+                 WHERE thread_id = ?1
+                 ORDER BY created_at ASC";
+const SQL_SESSION_EXISTS: &str = "SELECT EXISTS(SELECT 1 FROM conversation_threads WHERE id = ?1)
+                     OR EXISTS(SELECT 1 FROM conversation_messages WHERE thread_id = ?1)
+                     OR EXISTS(SELECT 1 FROM checkpoints WHERE session_id = ?1 AND project_id = ?2)";
+const SQL_DEDUCTIONS_BY_PROJECT: &str = "SELECT id, project_id, source_thread, deduction, confidence, created_at, last_accessed, category
+                 FROM deductions WHERE project_id = ?1 ORDER BY created_at DESC LIMIT ?2";
+const SQL_CHECKPOINTS_ACTIVE: &str = "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
+                 FROM checkpoints WHERE project_id = ?1 AND state = 'active' ORDER BY created_at DESC LIMIT ?2";
+
 // ---------------------------------------------------------------------------
 // Data types
 // ---------------------------------------------------------------------------
@@ -314,7 +328,16 @@ impl ConversationsDb {
                     created_at TEXT NOT NULL,
                     expires_at TEXT,
                     kind TEXT DEFAULT 'work'
-                );",
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_conversation_messages_thread_created
+                    ON conversation_messages (thread_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_checkpoints_project_state_created
+                    ON checkpoints (project_id, state, created_at);
+                CREATE INDEX IF NOT EXISTS idx_checkpoints_session_project
+                    ON checkpoints (session_id, project_id);
+                CREATE INDEX IF NOT EXISTS idx_deductions_project_created
+                    ON deductions (project_id, created_at);",
                 )
                 .context("failed to create conversations schema")?;
                 Ok(())
@@ -566,34 +589,31 @@ impl ConversationsDb {
         self.ensure_schema().await?;
         let tid = thread_id.to_string();
         let sealer = self.sealer()?;
-        ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, thread_id, role, content, tool_calls, openui_lang, xui_json, metadata, created_at, tokens
-                 FROM conversation_messages
-                 WHERE thread_id = ?1
-                 ORDER BY created_at ASC",
-            )?;
+        ConnectionManager::global()
+            .with_conn(&self.full_project_id, move |conn| {
+                let mut stmt = conn.prepare(SQL_THREAD_MESSAGES)?;
 
-            let mut rows = stmt.query(params![tid])?;
+                let mut rows = stmt.query(params![tid])?;
 
-            let mut results = Vec::new();
-            while let Some(row) = rows.next()? {
-                let id: String = row.get(0)?;
-                results.push(Message {
-                    thread_id: row.get(1)?,
-                    role: row.get(2)?,
-                    content: sealer.open("conv.msg.content", &id, row.get(3)?)?,
-                    tool_calls: sealer.open_opt("conv.msg.tool_calls", &id, row.get(4)?)?,
-                    openui_lang: sealer.open_opt("conv.msg.openui_lang", &id, row.get(5)?)?,
-                    xui_json: sealer.open_opt("conv.msg.xui_json", &id, row.get(6)?)?,
-                    metadata: sealer.open_opt("conv.msg.metadata", &id, row.get(7)?)?,
-                    id,
-                    created_at: parse_datetime(&row.get::<_, String>(8)?),
-                    tokens: row.get(9)?,
-                });
-            }
-            Ok(results)
-        }).await
+                let mut results = Vec::new();
+                while let Some(row) = rows.next()? {
+                    let id: String = row.get(0)?;
+                    results.push(Message {
+                        thread_id: row.get(1)?,
+                        role: row.get(2)?,
+                        content: sealer.open("conv.msg.content", &id, row.get(3)?)?,
+                        tool_calls: sealer.open_opt("conv.msg.tool_calls", &id, row.get(4)?)?,
+                        openui_lang: sealer.open_opt("conv.msg.openui_lang", &id, row.get(5)?)?,
+                        xui_json: sealer.open_opt("conv.msg.xui_json", &id, row.get(6)?)?,
+                        metadata: sealer.open_opt("conv.msg.metadata", &id, row.get(7)?)?,
+                        id,
+                        created_at: parse_datetime(&row.get::<_, String>(8)?),
+                        tokens: row.get(9)?,
+                    });
+                }
+                Ok(results)
+            })
+            .await
     }
 
     /// Whether a thread, its messages, or a checkpoint exists for this session id.
@@ -603,13 +623,8 @@ impl ConversationsDb {
         let pid = self.project_id.clone();
         ConnectionManager::global()
             .with_conn(&self.full_project_id, move |conn| {
-                let exists: bool = conn.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM conversation_threads WHERE id = ?1)
-                     OR EXISTS(SELECT 1 FROM conversation_messages WHERE thread_id = ?1)
-                     OR EXISTS(SELECT 1 FROM checkpoints WHERE session_id = ?1 AND project_id = ?2)",
-                    params![sid, pid],
-                    |row| row.get(0),
-                )?;
+                let exists: bool =
+                    conn.query_row(SQL_SESSION_EXISTS, params![sid, pid], |row| row.get(0))?;
                 Ok(exists)
             })
             .await
@@ -667,30 +682,29 @@ impl ConversationsDb {
         self.ensure_schema().await?;
         let sealer = self.sealer()?;
         let pid = self.project_id.clone();
-        ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, project_id, source_thread, deduction, confidence, created_at, last_accessed, category
-                 FROM deductions WHERE project_id = ?1 ORDER BY created_at DESC LIMIT ?2",
-            )?;
+        ConnectionManager::global()
+            .with_conn(&self.full_project_id, move |conn| {
+                let mut stmt = conn.prepare(SQL_DEDUCTIONS_BY_PROJECT)?;
 
-            let mut rows = stmt.query(params![pid, limit as i64])?;
+                let mut rows = stmt.query(params![pid, limit as i64])?;
 
-            let mut results = Vec::new();
-            while let Some(row) = rows.next()? {
-                let id: String = row.get(0)?;
-                results.push(Deduction {
-                    project_id: row.get(1)?,
-                    source_thread: row.get(2)?,
-                    deduction: sealer.open("conv.deduction.text", &id, row.get(3)?)?,
-                    id,
-                    confidence: row.get(4)?,
-                    created_at: parse_datetime(&row.get::<_, String>(5)?),
-                    last_accessed: row.get::<_, Option<String>>(6)?.map(|s| parse_datetime(&s)),
-                    category: row.get(7)?,
-                });
-            }
-            Ok(results)
-        }).await
+                let mut results = Vec::new();
+                while let Some(row) = rows.next()? {
+                    let id: String = row.get(0)?;
+                    results.push(Deduction {
+                        project_id: row.get(1)?,
+                        source_thread: row.get(2)?,
+                        deduction: sealer.open("conv.deduction.text", &id, row.get(3)?)?,
+                        id,
+                        confidence: row.get(4)?,
+                        created_at: parse_datetime(&row.get::<_, String>(5)?),
+                        last_accessed: row.get::<_, Option<String>>(6)?.map(|s| parse_datetime(&s)),
+                        category: row.get(7)?,
+                    });
+                }
+                Ok(results)
+            })
+            .await
     }
 
     // ------------------------------------------------------------------
@@ -920,28 +934,30 @@ impl ConversationsDb {
     pub async fn list_checkpoints(&self, limit: usize) -> Result<Vec<Checkpoint>> {
         self.ensure_schema().await?;
         let pid = self.project_id.clone();
-        ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
-                 FROM checkpoints WHERE project_id = ?1 AND state = 'active' ORDER BY created_at DESC LIMIT ?2",
-            )?;
+        ConnectionManager::global()
+            .with_conn(&self.full_project_id, move |conn| {
+                let mut stmt = conn.prepare(SQL_CHECKPOINTS_ACTIVE)?;
 
-            let mut rows = stmt.query(params![pid, limit as i64])?;
+                let mut rows = stmt.query(params![pid, limit as i64])?;
 
-            let mut results = Vec::new();
-            while let Some(row) = rows.next()? {
-                results.push(Checkpoint {
-                    id: row.get(0)?, project_id: row.get(1)?,
-                    workspace_id: row.get(2)?, session_id: row.get(3)?,
-                    task_id: row.get(4)?, name: row.get(5)?,
-                    state: row.get(6)?,
-                    created_at: parse_datetime(&row.get::<_, String>(7)?),
-                    expires_at: row.get::<_, Option<String>>(8)?.map(|s| parse_datetime(&s)),
-                    kind: row.get(9)?,
-                });
-            }
-            Ok(results)
-        }).await
+                let mut results = Vec::new();
+                while let Some(row) = rows.next()? {
+                    results.push(Checkpoint {
+                        id: row.get(0)?,
+                        project_id: row.get(1)?,
+                        workspace_id: row.get(2)?,
+                        session_id: row.get(3)?,
+                        task_id: row.get(4)?,
+                        name: row.get(5)?,
+                        state: row.get(6)?,
+                        created_at: parse_datetime(&row.get::<_, String>(7)?),
+                        expires_at: row.get::<_, Option<String>>(8)?.map(|s| parse_datetime(&s)),
+                        kind: row.get(9)?,
+                    });
+                }
+                Ok(results)
+            })
+            .await
     }
 
     // ------------------------------------------------------------------
@@ -1489,5 +1505,168 @@ mod tests {
             })
             .unwrap();
         assert!(stored.starts_with("xcn1:"), "legacy row was not re-sealed");
+    }
+
+    /// `EXPLAIN QUERY PLAN` detail lines for `sql` on the live schema.
+    async fn query_plan(db: &ConversationsDb, sql: &'static str) -> Vec<String> {
+        ConnectionManager::global()
+            .with_conn(&db.full_project_id, move |conn| {
+                let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}"))?;
+                // The plan does not depend on bound values; bind NULLs to fill ?1..?n.
+                let nulls = vec![rusqlite::types::Value::Null; stmt.parameter_count()];
+                let details = stmt
+                    .query_map(rusqlite::params_from_iter(nulls), |row| {
+                        row.get::<_, String>(3)
+                    })?
+                    .collect::<rusqlite::Result<Vec<String>>>()?;
+                Ok(details)
+            })
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn conversation_queries_use_indexes() {
+        let db = ConversationsDb::open_in_memory("idx-plan").await.unwrap();
+        db.create_schema().await.unwrap();
+
+        // (label, shared SQL, tables that must be searched by index, ORDER BY query?)
+        let cases: [(&str, &'static str, &[&str], bool); 4] = [
+            (
+                "thread messages",
+                SQL_THREAD_MESSAGES,
+                &["conversation_messages"],
+                true,
+            ),
+            (
+                "active checkpoints",
+                SQL_CHECKPOINTS_ACTIVE,
+                &["checkpoints"],
+                true,
+            ),
+            (
+                "session exists",
+                SQL_SESSION_EXISTS,
+                &[
+                    "conversation_threads",
+                    "conversation_messages",
+                    "checkpoints",
+                ],
+                false,
+            ),
+            (
+                "deductions",
+                SQL_DEDUCTIONS_BY_PROJECT,
+                &["deductions"],
+                true,
+            ),
+        ];
+        for (label, sql, tables, ordered) in cases {
+            let plan = query_plan(&db, sql).await;
+            for table in tables {
+                let scan = format!("SCAN {table}");
+                assert!(
+                    !plan.iter().any(|line| line.starts_with(&scan)),
+                    "{label}: full table scan of {table}; plan = {plan:?}"
+                );
+                assert!(
+                    plan.iter().any(|line| {
+                        line.contains(table)
+                            && (line.contains("USING INDEX")
+                                || line.contains("USING COVERING INDEX"))
+                    }),
+                    "{label}: {table} is not searched by an index; plan = {plan:?}"
+                );
+            }
+            if ordered {
+                assert!(
+                    !plan.iter().any(|line| line.contains("TEMP B-TREE")),
+                    "{label}: ORDER BY needs a temp sort; plan = {plan:?}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn index_migration_is_idempotent_on_existing_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        {
+            // A database written before the indexes existed: tables and rows only.
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE conversation_threads (
+                    id TEXT PRIMARY KEY, project_id TEXT, title TEXT,
+                    started_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    last_preview TEXT, model TEXT, source TEXT);
+                 CREATE TABLE conversation_messages (
+                    id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, role TEXT NOT NULL,
+                    content TEXT NOT NULL, tool_calls TEXT, openui_lang TEXT, xui_json TEXT,
+                    metadata TEXT, created_at TEXT NOT NULL, tokens INTEGER,
+                    FOREIGN KEY (thread_id) REFERENCES conversation_threads(id));
+                 CREATE TABLE deductions (
+                    id TEXT PRIMARY KEY, project_id TEXT, source_thread TEXT,
+                    deduction TEXT NOT NULL, confidence REAL DEFAULT 0.0,
+                    created_at TEXT NOT NULL, last_accessed TEXT, category TEXT);
+                 CREATE TABLE checkpoints (
+                    id TEXT PRIMARY KEY, project_id TEXT, workspace_id TEXT,
+                    session_id TEXT, task_id TEXT, name TEXT, state TEXT NOT NULL,
+                    created_at TEXT NOT NULL, expires_at TEXT, kind TEXT DEFAULT 'work');
+                 INSERT INTO conversation_threads (id, project_id, title, started_at, updated_at)
+                    VALUES ('t1', 'idx-migrate', 'old', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                 INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+                    VALUES ('m1', 't1', 'user', 'old one', '2026-01-01T00:00:00Z'),
+                           ('m2', 't1', 'assistant', 'old two', '2026-01-01T00:00:01Z');
+                 INSERT INTO deductions (id, project_id, deduction, created_at)
+                    VALUES ('d1', 'idx-migrate', 'old deduction', '2026-01-01T00:00:00Z');
+                 INSERT INTO checkpoints (id, project_id, session_id, name, state, created_at)
+                    VALUES ('c1', 'idx-migrate', 's1', 'old checkpoint', 'active', '2026-01-01T00:00:00Z');",
+            )
+            .unwrap();
+        }
+
+        // First open migrates the file; a second create_schema and a reopen must be no-ops.
+        let db = ConversationsDb::open_at("idx-migrate", &path)
+            .await
+            .unwrap();
+        db.create_schema().await.unwrap();
+        db.create_schema().await.unwrap();
+        drop(db);
+        let db = ConversationsDb::open_at("idx-migrate", &path)
+            .await
+            .unwrap();
+        db.create_schema().await.unwrap();
+        drop(db);
+
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        for name in [
+            "idx_conversation_messages_thread_created",
+            "idx_checkpoints_project_state_created",
+            "idx_checkpoints_session_project",
+            "idx_deductions_project_created",
+        ] {
+            let found: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?1",
+                    params![name],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(found, 1, "index {name} missing after migration");
+        }
+
+        let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+        assert_eq!(count("SELECT COUNT(*) FROM conversation_threads"), 1);
+        assert_eq!(count("SELECT COUNT(*) FROM conversation_messages"), 2);
+        assert_eq!(count("SELECT COUNT(*) FROM deductions"), 1);
+        assert_eq!(count("SELECT COUNT(*) FROM checkpoints"), 1);
+        let content: String = conn
+            .query_row(
+                "SELECT content FROM conversation_messages WHERE id = 'm2'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(content, "old two");
     }
 }
