@@ -28,7 +28,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY Cargo.toml Cargo.lock ./
 COPY LICENSE ./
 COPY benches/ benches/
-COPY tests/ tests/
 COPY src/ src/
 COPY code-graph/ code-graph/
 COPY codegraph-types/ codegraph-types/
