@@ -228,11 +228,18 @@ pub async fn connect_active_transport(
 
 /// Initialize active Iroh transport and start the background accept loop.
 #[cfg(feature = "mesh")]
+pub async fn start_mesh_node_with_transport(
+    transport: IrohTransport,
+) -> (IrohTransport, tokio::task::JoinHandle<()>) {
+    let handle = transport.spawn_accept_loop().await;
+    (transport, handle)
+}
+
+#[cfg(feature = "mesh")]
 pub async fn start_mesh_node(
     identity: std::sync::Arc<NodeIdentity>,
     store: std::sync::Arc<dyn crate::memory::store::MemoryStore>,
 ) -> (IrohTransport, tokio::task::JoinHandle<()>) {
     let transport = init_active_transport(identity, store);
-    let handle = transport.spawn_accept_loop().await;
-    (transport, handle)
+    start_mesh_node_with_transport(transport).await
 }
