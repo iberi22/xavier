@@ -459,10 +459,16 @@ fn validate_search_query(query: &str) -> anyhow::Result<()> {
 
 fn require_str_arg<'a>(arguments: &'a Value, arg: &str) -> anyhow::Result<&'a str> {
     match arguments.get(arg) {
-        None => Err(anyhow::anyhow!("Missing {}", arg)),
-        Some(v) => v
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("'{}' must be a string", arg)),
+        None => Err(anyhow::Error::new(McpToolError::validation(format!(
+            "Missing {}",
+            arg
+        )))),
+        Some(v) => v.as_str().ok_or_else(|| {
+            anyhow::Error::new(McpToolError::validation(format!(
+                "'{}' must be a string",
+                arg
+            )))
+        }),
     }
 }
 
@@ -1596,7 +1602,9 @@ pub async fn handle_memory_update(
                         doc.metadata,
                     )
                 } else {
-                    return Err(anyhow::anyhow!("Memory not found: {id}"));
+                    return Err(anyhow::Error::new(McpToolError::not_found(format!(
+                        "Memory not found: {id}"
+                    ))));
                 };
 
             let public_meta = public_metadata(&metadata);
@@ -1645,7 +1653,9 @@ pub async fn handle_memory_update(
                         doc.metadata,
                     )
                 } else {
-                    return Err(anyhow::anyhow!("Memory not found: {id}"));
+                    return Err(anyhow::Error::new(McpToolError::not_found(format!(
+                        "Memory not found: {id}"
+                    ))));
                 };
 
             let public_meta = public_metadata(&metadata);
@@ -2431,6 +2441,44 @@ mod tests {
                 .to_string();
                 assert!(err.contains("must be a positive integer"), "{tool}: {err}");
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn fragment_errors_are_typed() {
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let cases = [
+            ("memoryfragment_get", json!({}), ToolErrorKind::Validation),
+            (
+                "memoryfragment_get",
+                json!({"id": 7}),
+                ToolErrorKind::Validation,
+            ),
+            ("get_memory", json!({}), ToolErrorKind::Validation),
+            (
+                "memoryfragment_get",
+                json!({"id": "absent-fragment"}),
+                ToolErrorKind::NotFound,
+            ),
+            (
+                "get_memory",
+                json!({"id": "absent-memory"}),
+                ToolErrorKind::NotFound,
+            ),
+        ];
+        for (tool, args, kind) in cases {
+            let err = handle_memory_update(&state, &workspace, tool, &args)
+                .await
+                .unwrap_err();
+            let typed = err
+                .downcast_ref::<McpToolError>()
+                .unwrap_or_else(|| panic!("{tool} {args}: untyped error: {err:#}"));
+            assert_eq!(typed.kind, kind, "{tool} {args}: {err:#}");
+            assert_eq!(
+                typed.message,
+                err.to_string(),
+                "{tool} {args}: client-visible text must be the typed message"
+            );
         }
     }
 
