@@ -28,6 +28,11 @@
 #   SWAL_BUILD_SLOTS (default: 1 slot, where slot 0 is cargo.lock). If GameMode is
 #   active (ClientCount > 0), SLOTS is forced to 1 and jobs are capped to 2. Test
 #   executions run without holding the build-slot lock.
+#   When a `build-run` wrapper is on PATH, compile steps run through it (it places them
+#   in a throttled cgroup instead of letting the host freeze them).
+#   While $SWAL_DEFER_MARK exists and is non-empty (default /tmp/game-paused.since, written
+#   by the host's foreground-priority mode), cargo steps are skipped and reported as
+#   deferred to CI, never as passed. SWAL_FORCE_LOCAL=1 runs them anyway.
 set -uo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -157,7 +162,9 @@ get_slot_file() {
 run_build() {
     # Hooks export GIT_DIR/GIT_INDEX_FILE; a test that runs git in a tempdir would
     # otherwise write to this repository (its config, index and branch).
-    local cmd=(env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR
+    local runner=()
+    command -v build-run >/dev/null 2>&1 && runner=(build-run)
+    local cmd=("${runner[@]}" env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR
         -u GIT_OBJECT_DIRECTORY -u GIT_PREFIX TMPDIR=/tmp cargo "$@")
     if [ "$DRY" -eq 1 ]; then
         printf 'DRY: %s\n' "${cmd[*]}"
@@ -210,6 +217,13 @@ run_test_unlocked() {
     fi
     env TMPDIR=/tmp "$@"
 }
+
+DEFER_MARK="${SWAL_DEFER_MARK:-/tmp/game-paused.since}"
+if [ "$DRY" -eq 0 ] && [ "${SWAL_FORCE_LOCAL:-0}" != 1 ] && [ -s "$DEFER_MARK" ] \
+    && { [ "${#RS_CHANGED[@]}" -gt 0 ] || [ "$CHECK_ONLY" -eq 1 ]; }; then
+    echo "⏸  affected-tests: host in foreground-priority mode ($DEFER_MARK); cargo checks NOT run locally, deferred to CI (SWAL_FORCE_LOCAL=1 to run them)"
+    exit 0
+fi
 
 RC=0
 
