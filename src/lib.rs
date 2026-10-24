@@ -39,6 +39,7 @@ pub mod embedding;
 pub mod enterprise;
 pub mod error;
 pub mod espacio;
+pub mod explain;
 pub mod gateways;
 pub mod governance;
 pub mod health;
