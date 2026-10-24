@@ -60,6 +60,10 @@ pub async fn serve_gated<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
+    // MUTATION: serve only after init, as the old code did.
+    while !gate.is_open() {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
     axum::serve(
         listener,
         gated_router(gate).into_make_service_with_connect_info::<SocketAddr>(),
