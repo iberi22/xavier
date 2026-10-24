@@ -3712,6 +3712,38 @@
       ],
       "notes": "ADR-018 (docs/adr/ADR-018-espacio-architecture.md) and the guide docs/ARCHITECTURE/espacio-guide.md describe the model. The 45 declared tests are the 6 CI suites in .github/workflows/ci.yml (espacio-tests job) plus tests/integration/espacio_lifecycle_test.rs. Their names are the evidence for what is built; they do not show that the pending items exist. Not stable: no full verify-pipeline run has promoted it."
     },
+    "feat-explain-render-route": {
+      "category": "explain",
+      "description": "On-demand code explanations: the assembled evidence becomes an evidence-only, citation-checked prompt for the configured LLM; the answer is rendered as generative UI (OpenUI) with cited and unknown refs, served by POST /v1/explain (router built, mounted after the provider rework).",
+      "id": "feat-explain-render-route",
+      "implemented_in": "src/explain/render.rs, src/server/explain_route.rs, src/explain/mod.rs, src/server/mod.rs",
+      "name": "Explain Render Route",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [],
+      "spec_reference": "https://github.com/iberi22/xavier/issues/3529",
+      "status": "planned",
+      "steps": [
+        "Build an evidence-only prompt per audience with inline [ref] citations",
+        "Split cited refs into known and unknown (hallucination signal)",
+        "Render the answer as OpenUI through UiRenderAgent",
+        "Validate the request (canonical path inside repo, range, budget) and map model errors to 502"
+      ],
+      "tests": [
+        "explain::render::tests::system_prompt_restricts_answers_to_evidence",
+        "explain::render::tests::user_prompt_lists_each_evidence_ref_in_order",
+        "explain::render::tests::hallucinated_citations_are_reported_as_unknown",
+        "explain::render::tests::openui_lang_is_rendered_for_multi_section_answer",
+        "explain::render::tests::skipped_sources_are_carried_through",
+        "explain::render::tests::model_failure_is_returned_as_error",
+        "server::explain_route::tests::explain_endpoint_returns_explanation_json",
+        "server::explain_route::tests::explain_rejects_parent_and_absolute_paths",
+        "server::explain_route::tests::explain_rejects_inverted_and_oversized_ranges",
+        "server::explain_route::tests::explain_rejects_symlink_escaping_the_repo",
+        "server::explain_route::tests::explain_maps_model_failure_to_502"
+      ],
+      "user_stories": []
+    },
     "feat-autonomous-delivery": {
       "id": "feat-autonomous-delivery",
       "name": "Autonomous Delivery Pipeline (verifiable ship/show/ask + DONE)",
