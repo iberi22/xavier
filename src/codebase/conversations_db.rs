@@ -1670,3 +1670,6 @@ mod tests {
         assert_eq!(content, "old two");
     }
 }
+
+#[cfg(test)]
+mod snapshot_tests;

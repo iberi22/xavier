@@ -1465,4 +1465,91 @@ mod tests {
             .change_password("s1", &own, "another password")
             .is_err());
     }
+
+    const SNAPSHOT_CID: &str = "123e4567-e89b-42d3-a456-426614174000";
+
+    #[test]
+    fn snapshot_ad_golden_bytes() {
+        // Node snapshot AD: label, u32 BE version, tier, workspace, project, session, checkpoint id.
+        let node_ad = concat!(
+            "00000014",
+            "7861766965722d636f6e762d736e617073686f74",
+            "00000004",
+            "00000001",
+            "00000004",
+            "6e6f6465",
+            "00000004",
+            "77732d61",
+            "00000004",
+            "77732d61",
+            "00000010",
+            "636c617564652f73657373696f6e2d31",
+            "00000024",
+            "31323365343536372d653839622d343264332d613435362d343236363134313734303030",
+        );
+        let fields = snapshot_node_ad_fields("ws-a", "ws-a", "claude/session-1", SNAPSHOT_CID);
+        assert_eq!(hex_encode(encode_ad(&fields)), node_ad);
+        // Default-space snapshot AD is the existing record AD, unchanged.
+        let dek_ad = concat!(
+            "00000013",
+            "7861766965722d73706163652d7265636f7264",
+            "00000004",
+            "00000001",
+            "00000007",
+            "64656661756c74",
+            "00000010",
+            "636f6e762e736e617073686f742e7631",
+            "00000024",
+            "31323365343536372d653839622d343264332d613435362d343236363134313734303030",
+        );
+        assert_eq!(
+            hex_encode(&record_ad(
+                DEFAULT_SPACE_ID,
+                "conv.snapshot.v1",
+                SNAPSHOT_CID
+            )),
+            dek_ad
+        );
+        // Existing string records still round-trip under the same AD.
+        let tmp = tempfile::tempdir().unwrap();
+        let r = ring(tmp.path());
+        let (h, _) = r.create_keys("s1", UnlockMode::NodeUnlock, None).unwrap();
+        let sealed = h.seal_record("s1", "message", "7", "hello").unwrap();
+        assert_eq!(
+            h.open_record("s1", "message", "7", &sealed).unwrap(),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn record_bytes_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = ring(tmp.path());
+        let (h, _) = r.create_keys("s1", UnlockMode::NodeUnlock, None).unwrap();
+        let all_bytes: Vec<u8> = (0..=255u8).collect();
+        for plain in [&[0x80u8, 0xC8, 0xFF][..], &[][..], all_bytes.as_slice()] {
+            let stored = h
+                .seal_record_bytes("s1", "conv.snapshot.v1", "rec-1", plain)
+                .unwrap();
+            assert!(stored.starts_with(RECORD_PREFIX));
+            let opened = h
+                .open_record_bytes("s1", "conv.snapshot.v1", "rec-1", &stored)
+                .unwrap();
+            assert_eq!(opened.as_slice(), plain);
+            // Wrong kind, record id, or space: authentication fails.
+            assert!(h
+                .open_record_bytes("s1", "other.kind", "rec-1", &stored)
+                .is_err());
+            assert!(h
+                .open_record_bytes("s1", "conv.snapshot.v1", "rec-2", &stored)
+                .is_err());
+            assert!(h
+                .open_record_bytes("s2", "conv.snapshot.v1", "rec-1", &stored)
+                .is_err());
+            // Not an `xr1:` record: refused, never returned as plaintext.
+            assert!(h
+                .open_record_bytes("s1", "conv.snapshot.v1", "rec-1", "plain")
+                .is_err());
+        }
+    }
 }
