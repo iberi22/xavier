@@ -79,22 +79,26 @@ if (-not $WiXFound -and -not $InnoFound) {
 }
 
 # Build WiX MSI if candle.exe is available
+$WixFailed = $false
 if ($WiXFound) {
     Write-Host "Building WiX Installer (MSI)..." -ForegroundColor Green
     try {
-        if ($HeatFound) {
-            Write-Host "Harvesting Panel UI files with heat.exe..." -ForegroundColor Gray
-            & heat.exe dir "..\panel-ui\build" -dr PANELUIFOLDER -cg PanelUIComponents -gg -sreg -sfrag -srd -out panel-ui-files.wxs
-            & candle.exe "-dProductVersion=$Version" xavier.wxs panel-ui-files.wxs
-            & light.exe xavier.wixobj panel-ui-files.wixobj -o "$DistDir\XavierInstaller.msi"
-        } else {
-            Write-Warning "heat.exe not found. Building MSI without harvested panel-ui files..."
-            & candle.exe "-dProductVersion=$Version" xavier.wxs
-            & light.exe xavier.wixobj -o "$DistDir\XavierInstaller.msi"
-        }
+        # xavier.wxs references PanelUIComponents, which only heat.exe defines.
+        if (-not $HeatFound) { throw "heat.exe not found; cannot build the MSI without the Panel UI component group" }
+        Write-Host "Harvesting Panel UI files with heat.exe..." -ForegroundColor Gray
+        # -var makes heat emit $(var.PanelUISrc) paths; candle binds them to the source dir below.
+        & heat.exe dir "..\panel-ui\build" -dr PANELUIFOLDER -cg PanelUIComponents -gg -sreg -sfrag -srd -var var.PanelUISrc -out panel-ui-files.wxs
+        if ($LASTEXITCODE -ne 0) { throw "heat.exe failed with exit code $LASTEXITCODE" }
+        # -arch x64: components default to 32-bit otherwise, and ICE80 rejects them in the 64-bit ProgramFiles dir.
+        & candle.exe -arch x64 "-dProductVersion=$Version" "-dPanelUISrc=..\panel-ui\build" xavier.wxs panel-ui-files.wxs
+        if ($LASTEXITCODE -ne 0) { throw "candle.exe failed with exit code $LASTEXITCODE" }
+        & light.exe xavier.wixobj panel-ui-files.wixobj -o "$DistDir\XavierInstaller.msi"
+        if ($LASTEXITCODE -ne 0) { throw "light.exe failed with exit code $LASTEXITCODE" }
         Write-Host "Done! Created $DistDir\XavierInstaller.msi" -ForegroundColor Cyan
     } catch {
-        Write-Error "Failed to build WiX MSI installer: $_"
+        # Logged, not thrown: a terminating error here would also skip the Inno Setup build.
+        Write-Host "Failed to build WiX MSI installer: $_" -ForegroundColor Red
+        $WixFailed = $true
     }
 }
 
@@ -114,3 +118,6 @@ if ($InnoFound) {
         Write-Error "Failed to build Inno Setup installer: $_"
     }
 }
+
+# Surface a failed MSI build as a non-zero exit after the EXE had its chance to build.
+if ($WixFailed) { Write-Host "MSI was not produced (see above)." -ForegroundColor Red; exit 1 }

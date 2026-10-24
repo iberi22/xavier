@@ -664,10 +664,8 @@ pub fn spawn_shutdown_flush(store: Arc<dyn MemoryStore>) {
             }
             #[cfg(not(unix))]
             {
-                if let Ok(mut rx) = tokio::signal::ctrl_c().await {
-                    if rx.recv().await.is_some() {
-                        drain_for_shutdown(&store, "Ctrl+C").await;
-                    }
+                if tokio::signal::ctrl_c().await.is_ok() {
+                    drain_for_shutdown(&store, "Ctrl+C").await;
                 }
             }
         });

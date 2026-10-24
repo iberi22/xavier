@@ -50,14 +50,8 @@
             </Component>
         </ComponentGroup>
 
-        <!-- Note: Panel UI files would typically be harvested using heat.exe -->
-        <!-- For this template, we'll assume a simplified structure or manual entry if few files -->
-        <ComponentGroup Id="PanelUIComponents" Directory="PANELUIFOLDER">
-            <!-- Heat.exe output should be integrated here during build -->
-            <Component Id="PanelPlaceholder" Guid="6b4d3f3f-3f3f-4f3f-8f3f-3f3f3f3f3f3f">
-                <CreateFolder />
-            </Component>
-        </ComponentGroup>
+        <!-- PanelUIComponents is defined by heat.exe (panel-ui-files.wxs) at build time. -->
+        <!-- Do not declare it here too: a second definition fails the link (LGHT0091). -->
 
         <DirectoryRef Id="ApplicationProgramsFolder">
             <Component Id="ApplicationShortcut" Guid="*">
