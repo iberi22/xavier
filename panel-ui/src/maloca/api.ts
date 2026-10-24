@@ -308,6 +308,56 @@ export interface IntrospectionSessionResponse {
   session: IntrospectionSession;
 }
 
+// --- Roadmap (GET /v1/maloca/roadmap, src/server/maloca/roadmap_route.rs) ---
+
+export interface RoadmapFeature {
+  id: string;
+  name: string;
+  app_id: string;
+  status: string;
+  progress_pct: number;
+}
+
+export interface RoadmapSummary {
+  total: number;
+  stable: number;
+  in_progress: number;
+  planned: number;
+  progress_pct: number;
+  features: RoadmapFeature[];
+}
+
+export interface RoadmapWave extends RoadmapSummary {
+  wave: number;
+}
+
+export interface RoadmapResponse {
+  waves: RoadmapWave[];
+  unscheduled: RoadmapSummary;
+}
+
+// --- Explain (POST /v1/explain, src/server/explain_route.rs) ---
+
+export type ExplainAudience = "newcomer" | "maintainer";
+
+export interface ExplainRequest {
+  file: string;
+  start_line: number;
+  end_line: number;
+  symbol?: string;
+  audience?: ExplainAudience;
+  budget_chars?: number;
+}
+
+export interface ExplainResponse {
+  plain_text: string;
+  openui_lang: string;
+  cited_refs: string[];
+  unknown_refs: string[];
+  /** `[source name, reason]` pairs, serialized as tuples by the server. */
+  skipped_sources: [string, string][];
+}
+
 // --- API Client Fetch Helpers ---
 
 // The server mounts the legacy ops tree at `/maloca/*` and the v1 tree
@@ -315,6 +365,8 @@ export interface IntrospectionSessionResponse {
 // Nothing is served under `/api/v1/maloca` (src/cli/server.rs, src/maloca/mod.rs).
 export const MALOCA_OPS_PREFIX = "/maloca";
 export const MALOCA_V1_PREFIX = "/v1/maloca";
+// The explain route is mounted at `/v1/explain`, outside the maloca tree.
+export const API_V1_PREFIX = "/v1";
 
 async function fetchMalocaOnce(url: string, options?: RequestInit): Promise<Response> {
   const activeWorkspace = typeof localStorage !== "undefined"
@@ -339,6 +391,17 @@ async function fetchMalocaOnce(url: string, options?: RequestInit): Promise<Resp
       ...(options?.headers || {})
     }
   });
+}
+
+/** Error from a Maloca call. Keeps the HTTP status so callers can map 400/404/502. */
+export class MalocaHttpError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "MalocaHttpError";
+    this.status = status;
+  }
 }
 
 async function fetchMaloca<T>(
@@ -369,7 +432,7 @@ async function fetchMaloca<T>(
         errorMsg = errorText;
       }
     }
-    throw new Error(errorMsg);
+    throw new MalocaHttpError(errorMsg, response.status);
   }
 
   return response.json() as Promise<T>;
@@ -420,6 +483,14 @@ export const malocaApi = {
     method: "POST",
     body: JSON.stringify(body)
   }),
+
+  getRoadmap: () => fetchMaloca<RoadmapResponse>("/roadmap", undefined, MALOCA_V1_PREFIX),
+  explain: (body: ExplainRequest) =>
+    fetchMaloca<ExplainResponse>(
+      "/explain",
+      { method: "POST", body: JSON.stringify(body) },
+      API_V1_PREFIX,
+    ),
 
   getMesh: () => fetchMaloca<MeshSnapshot>("/mesh"),
   getNodes: () => fetchMaloca<NodeRecord[]>("/nodes"),
