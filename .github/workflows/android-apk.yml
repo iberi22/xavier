@@ -100,13 +100,19 @@ jobs:
         working-directory: panel-ui/src-tauri/gen/android
         run: |
           set -euo pipefail
+          # The runner exports ANDROID_HOME/ANDROID_SDK_ROOT itself; `sdkmanager`
+          # is not on PATH, so call it from cmdline-tools explicitly.
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          export ANDROID_HOME="$SDK" ANDROID_SDK_ROOT="$SDK"
+          SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$SDK/cmdline-tools" -name sdkmanager -type f | head -n1)
+          fi
+          echo "Using Android SDK: $SDK ($SDKMANAGER)"
           chmod +x gradlew
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
           ./gradlew assembleDebug --no-daemon
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
 
       - name: Locate the APK and report its size
         run: |
