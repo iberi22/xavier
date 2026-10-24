@@ -3680,6 +3680,30 @@
         "packaging_contract::installer_user_mode_installs_binary_and_private_token"
       ],
       "user_stories": []
+    },
+    "feat-maloca-store-atomic-persist": {
+      "category": "maloca",
+      "description": "MalocaStore persists store.json atomically (temp file + fsync + rename + dir fsync) and surfaces write errors instead of panicking.",
+      "id": "feat-maloca-store-atomic-persist",
+      "implemented_in": "src/maloca/store.rs",
+      "name": "Maloca Store Atomic Persist",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [],
+      "spec_reference": "https://github.com/iberi22/xavier/issues/3512",
+      "status": "planned",
+      "steps": [
+        "Write a sibling temp file, fsync it and rename it over store.json",
+        "Fsync the parent directory and remove the temp file on error",
+        "Return Result from persist and log failures without dropping in-memory state"
+      ],
+      "tests": [
+        "maloca::store::tests::persisted_store_json_is_valid_json_after_write",
+        "maloca::store::tests::persist_leaves_no_tmp_files_after_success",
+        "maloca::store::tests::persist_replaces_store_file_by_rename_not_in_place",
+        "maloca::store::tests::persist_into_read_only_directory_returns_error_without_panicking"
+      ],
+      "user_stories": []
     }
   },
   "verification_commands": {
