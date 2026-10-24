@@ -531,7 +531,7 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
     let local_llm_chosen = provider_is_local && !local_cfg.model.trim().is_empty();
 
     // 1. Ollama Reachability (required only by a chosen local LLM or local embeddings)
-    let ollama_required = local_llm_chosen || embeddings_are_local;
+    let ollama_required = ollama_required(local_llm_chosen, embeddings_are_local);
     let ollama_reachable = scan.ollama.running;
     checks.push(DoctorCheck {
         name: "Ollama Reachability".to_string(),
@@ -544,14 +544,16 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
             format!("Ollama not required (LLM provider='{provider}', no local LLM model; embeddings via cloud/BYO)")
         } else if ollama_reachable {
             format!(
-                "Ollama is running at {} (version: {})",
+                "Ollama is running at {} (version: {}; needed for {})",
                 scan.ollama.url,
-                scan.ollama.version.as_deref().unwrap_or("unknown")
+                scan.ollama.version.as_deref().unwrap_or("unknown"),
+                ollama_needed_for(local_llm_chosen, embeddings_are_local)
             )
         } else {
             format!(
-                "Ollama is not running or not reachable at {}",
-                scan.ollama.url
+                "Ollama is not running or not reachable at {} (needed for {})",
+                scan.ollama.url,
+                ollama_needed_for(local_llm_chosen, embeddings_are_local)
             )
         },
         hint: if ollama_reachable || !ollama_required {
@@ -625,12 +627,15 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
     }
 
     // 3. Local LLM Configuration
-    let local_llm_url = std::env::var("XAVIER_LOCAL_LLM_URL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| settings.models.local_llm_url.clone());
+    // Same resolution the provider itself uses (env, then config, then its
+    // built-in local URL), so the checks agree with what would really run.
+    let local_llm_url = local_cfg.base_url.clone().unwrap_or_else(|| {
+        std::env::var("XAVIER_LOCAL_LLM_URL")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| settings.models.local_llm_url.clone())
+    });
 
-    // Same resolution the provider itself uses (env, then config), so the checks agree.
     let local_llm_model = local_cfg.model.clone();
 
     let url_is_valid = is_http_url(&local_llm_url);
@@ -732,6 +737,19 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
     }
 
     checks
+}
+
+/// Ollama is needed only by a chosen local LLM model or by local embeddings.
+fn ollama_required(local_llm_chosen: bool, embeddings_are_local: bool) -> bool {
+    local_llm_chosen || embeddings_are_local
+}
+
+fn ollama_needed_for(local_llm_chosen: bool, embeddings_are_local: bool) -> &'static str {
+    match (local_llm_chosen, embeddings_are_local) {
+        (true, true) => "the local LLM and local embeddings",
+        (true, false) => "the local LLM",
+        _ => "local embeddings",
+    }
 }
 
 /// True for a non-empty `http://` or `https://` URL.
@@ -1420,6 +1438,16 @@ mod tests {
         assert!(matches!(bad.status, CheckStatus::Fail));
         let nothing = local_configuration_check(true, "local", "", "");
         assert!(matches!(nothing.status, CheckStatus::Warn));
+    }
+
+    #[test]
+    fn ollama_is_required_only_by_a_chosen_local_llm_or_local_embeddings() {
+        // No LLM model chosen and cloud/BYO embeddings: Ollama is optional.
+        assert!(!ollama_required(false, false));
+        assert!(ollama_required(true, false));
+        assert!(ollama_required(false, true));
+        assert_eq!(ollama_needed_for(false, true), "local embeddings");
+        assert_eq!(ollama_needed_for(true, false), "the local LLM");
         let hosted = local_configuration_check(false, "openrouter", "", "");
         assert!(matches!(hosted.status, CheckStatus::Ok));
     }
