@@ -86,11 +86,12 @@ if ($WiXFound) {
             Write-Host "Harvesting Panel UI files with heat.exe..." -ForegroundColor Gray
             & heat.exe dir "..\panel-ui\build" -dr PANELUIFOLDER -cg PanelUIComponents -gg -sreg -sfrag -srd -out panel-ui-files.wxs
             & candle.exe "-dProductVersion=$Version" xavier.wxs panel-ui-files.wxs
+            if ($LASTEXITCODE -ne 0) { throw "candle.exe failed with exit code $LASTEXITCODE" }
             & light.exe xavier.wixobj panel-ui-files.wixobj -o "$DistDir\XavierInstaller.msi"
+            if ($LASTEXITCODE -ne 0) { throw "light.exe failed with exit code $LASTEXITCODE" }
         } else {
-            Write-Warning "heat.exe not found. Building MSI without harvested panel-ui files..."
-            & candle.exe "-dProductVersion=$Version" xavier.wxs
-            & light.exe xavier.wixobj -o "$DistDir\XavierInstaller.msi"
+            # xavier.wxs references PanelUIComponents, which only heat.exe defines.
+            throw "heat.exe not found; cannot build the MSI without the Panel UI component group"
         }
         Write-Host "Done! Created $DistDir\XavierInstaller.msi" -ForegroundColor Cyan
     } catch {
