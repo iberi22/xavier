@@ -3119,18 +3119,9 @@ mod tests {
             .record_deduction("secret deduction", 0.5, None, None)
             .await
             .unwrap();
+        // Subject only: the other belief columns would fail for a row-id reason and hide the kind check.
         let belief = db
-            .upsert_belief(
-                "subject",
-                Some("rel"),
-                Some("obj"),
-                None,
-                0.5,
-                1.0,
-                None,
-                None,
-                None,
-            )
+            .upsert_belief("subject", None, None, None, 0.5, 1.0, None, None, None)
             .await
             .unwrap();
 
