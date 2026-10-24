@@ -242,6 +242,47 @@ impl KeyHandle {
     }
 }
 
+impl KeyHandle {
+    /// Seal raw `plain` bytes as an `xr1:` record under this key. Same AD and
+    /// framing as [`KeyHandle::seal_record`]; the bytes need no UTF-8.
+    pub(crate) fn seal_record_bytes(
+        &self,
+        space_id: &str,
+        kind: &str,
+        record_id: &str,
+        plain: &[u8],
+    ) -> Result<String> {
+        let ad = record_ad(space_id, kind, record_id);
+        let (nonce, ct) = aead_seal(self.bytes(), plain, &ad)?;
+        let mut raw = nonce.to_vec();
+        raw.extend_from_slice(&ct);
+        Ok(format!("{RECORD_PREFIX}{}", hex_encode(&raw)))
+    }
+
+    /// Inverse of [`KeyHandle::seal_record_bytes`]. Anything that is not an
+    /// `xr1:` record for this exact (space, kind, record id) is an error.
+    pub(crate) fn open_record_bytes(
+        &self,
+        space_id: &str,
+        kind: &str,
+        record_id: &str,
+        stored: &str,
+    ) -> Result<Zeroizing<Vec<u8>>> {
+        let body = stored
+            .strip_prefix(RECORD_PREFIX)
+            .ok_or_else(|| anyhow!("record is not encrypted (refusing plaintext)"))?;
+        let raw = hex_decode(body).ok_or_else(|| anyhow!("record is corrupt"))?;
+        if raw.len() < NONCE_LEN {
+            return Err(anyhow!("record is corrupt"));
+        }
+        let (nonce, ct) = raw.split_at(NONCE_LEN);
+        let ad = record_ad(space_id, kind, record_id);
+        let pt = aead_open(self.bytes(), nonce, ct, &ad)
+            .map_err(|_| anyhow!("record failed authentication"))?;
+        Ok(Zeroizing::new(pt.as_bytes().to_vec()))
+    }
+}
+
 impl fmt::Debug for KeyHandle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("KeyHandle(<redacted>)")
@@ -503,6 +544,67 @@ fn aead_open(key: &[u8], nonce: &[u8], ct: &[u8], ad: &[u8]) -> Result<Secret> {
         .decrypt(Nonce::from_slice(nonce), Payload { msg: ct, aad: ad })
         .map_err(|_| KeysError::AuthFailed)?;
     Ok(Secret::new(pt))
+}
+
+/// Label of the node-keyed snapshot AD.
+pub(crate) const SNAPSHOT_AD_LABEL: &[u8] = b"xavier-conv-snapshot";
+/// Version of the snapshot AD, written as u32 big-endian.
+pub(crate) const SNAPSHOT_AD_VERSION: u32 = 1;
+const SNAPSHOT_AD_VERSION_BE: [u8; 4] = SNAPSHOT_AD_VERSION.to_be_bytes();
+
+/// Length-prefixed AD over `fields`, with the same framing as the keystore and
+/// record AD.
+fn encode_ad(fields: &[&[u8]]) -> Vec<u8> {
+    let mut ad = Vec::new();
+    fields.iter().for_each(|f| push_field(&mut ad, f));
+    ad
+}
+
+/// AD fields of a node-keyed snapshot: label, version, tier, workspace,
+/// project, session and checkpoint id.
+pub(crate) fn snapshot_node_ad_fields<'a>(
+    ws: &'a str,
+    project: &'a str,
+    session: &'a str,
+    cid: &'a str,
+) -> [&'a [u8]; 7] {
+    [
+        SNAPSHOT_AD_LABEL,
+        &SNAPSHOT_AD_VERSION_BE,
+        b"node",
+        ws.as_bytes(),
+        project.as_bytes(),
+        session.as_bytes(),
+        cid.as_bytes(),
+    ]
+}
+
+/// Seal `plain` under `key` with the AD built from `ad_fields`. Returns
+/// nonce(12) ‖ ciphertext ‖ tag(16).
+pub(crate) fn seal_with_ad(
+    key: &[u8; KEY_LEN],
+    ad_fields: &[&[u8]],
+    plain: &[u8],
+) -> Result<Vec<u8>> {
+    let (nonce, ct) = aead_seal(key, plain, &encode_ad(ad_fields))?;
+    let mut raw = nonce.to_vec();
+    raw.extend_from_slice(&ct);
+    Ok(raw)
+}
+
+/// Open a `seal_with_ad` output. Anything shorter than nonce + tag is refused
+/// before any decryption is attempted.
+pub(crate) fn open_with_ad(
+    key: &[u8; KEY_LEN],
+    ad_fields: &[&[u8]],
+    raw: &[u8],
+) -> Result<Zeroizing<Vec<u8>>> {
+    if raw.len() < NONCE_LEN + 16 {
+        return Err(KeysError::AuthFailed.into());
+    }
+    let (nonce, ct) = raw.split_at(NONCE_LEN);
+    let pt = aead_open(key, nonce, ct, &encode_ad(ad_fields))?;
+    Ok(Zeroizing::new(pt.as_bytes().to_vec()))
 }
 
 fn password_kek(password: &str, salt: &[u8]) -> Result<Secret> {
@@ -1464,5 +1566,92 @@ mod tests {
         assert!(cold
             .change_password("s1", &own, "another password")
             .is_err());
+    }
+
+    const SNAPSHOT_CID: &str = "123e4567-e89b-42d3-a456-426614174000";
+
+    #[test]
+    fn snapshot_ad_golden_bytes() {
+        // Node snapshot AD: label, u32 BE version, tier, workspace, project, session, checkpoint id.
+        let node_ad = concat!(
+            "00000014",
+            "7861766965722d636f6e762d736e617073686f74",
+            "00000004",
+            "00000001",
+            "00000004",
+            "6e6f6465",
+            "00000004",
+            "77732d61",
+            "00000004",
+            "77732d61",
+            "00000009",
+            "73657373696f6e2d61",
+            "00000024",
+            "31323365343536372d653839622d343264332d613435362d343236363134313734303030",
+        );
+        let fields = snapshot_node_ad_fields("ws-a", "ws-a", "session-a", SNAPSHOT_CID);
+        assert_eq!(hex_encode(&encode_ad(&fields)), node_ad);
+        // Default-space snapshot AD is the existing record AD, unchanged.
+        let dek_ad = concat!(
+            "00000013",
+            "7861766965722d73706163652d7265636f7264",
+            "00000004",
+            "00000001",
+            "00000007",
+            "64656661756c74",
+            "00000010",
+            "636f6e762e736e617073686f742e7631",
+            "00000024",
+            "31323365343536372d653839622d343264332d613435362d343236363134313734303030",
+        );
+        assert_eq!(
+            hex_encode(&record_ad(
+                DEFAULT_SPACE_ID,
+                "conv.snapshot.v1",
+                SNAPSHOT_CID
+            )),
+            dek_ad
+        );
+        // Existing string records still round-trip under the same AD.
+        let tmp = tempfile::tempdir().unwrap();
+        let r = ring(tmp.path());
+        let (h, _) = r.create_keys("s1", UnlockMode::NodeUnlock, None).unwrap();
+        let sealed = h.seal_record("s1", "message", "7", "hello").unwrap();
+        assert_eq!(
+            h.open_record("s1", "message", "7", &sealed).unwrap(),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn record_bytes_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = ring(tmp.path());
+        let (h, _) = r.create_keys("s1", UnlockMode::NodeUnlock, None).unwrap();
+        let all_bytes: Vec<u8> = (0..=255u8).collect();
+        for plain in [&[0x80u8, 0xC8, 0xFF][..], &[][..], all_bytes.as_slice()] {
+            let stored = h
+                .seal_record_bytes("s1", "conv.snapshot.v1", "rec-1", plain)
+                .unwrap();
+            assert!(stored.starts_with(RECORD_PREFIX));
+            let opened = h
+                .open_record_bytes("s1", "conv.snapshot.v1", "rec-1", &stored)
+                .unwrap();
+            assert_eq!(opened.as_slice(), plain);
+            // Wrong kind, record id, or space: authentication fails.
+            assert!(h
+                .open_record_bytes("s1", "other.kind", "rec-1", &stored)
+                .is_err());
+            assert!(h
+                .open_record_bytes("s1", "conv.snapshot.v1", "rec-2", &stored)
+                .is_err());
+            assert!(h
+                .open_record_bytes("s2", "conv.snapshot.v1", "rec-1", &stored)
+                .is_err());
+            // Not an `xr1:` record: refused, never returned as plaintext.
+            assert!(h
+                .open_record_bytes("s1", "conv.snapshot.v1", "rec-1", "plain")
+                .is_err());
+        }
     }
 }
