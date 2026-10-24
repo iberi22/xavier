@@ -153,12 +153,18 @@ pub(crate) async fn generate_anthropic_compatible(
     Ok(LlmResponse { text, quota })
 }
 
-/// Request body for the Messages API. Claude 5 family models reject `temperature`.
+/// Request body for the Messages API. Claude 5 family models reject `temperature` and
+/// think before answering, so they get room for thinking plus the answer.
 fn request_body(model: &str, system: serde_json::Value, user_prompt: &str) -> serde_json::Value {
+    let max_tokens = if accepts_temperature(model) {
+        500
+    } else {
+        4096
+    };
     let mut body = json!({
         "model": model,
         "system": system,
-        "max_tokens": 500,
+        "max_tokens": max_tokens,
         "messages": [
             {"role": "user", "content": user_prompt}
         ]
@@ -204,6 +210,18 @@ mod tests {
                 "{model} must not send temperature"
             );
         }
+    }
+
+    #[test]
+    fn claude_5_family_gets_room_for_thinking_and_answer() {
+        assert_eq!(
+            request_body("claude-haiku-5-5", json!([]), "hi")["max_tokens"],
+            json!(4096)
+        );
+        assert_eq!(
+            request_body("claude-sonnet-4-5", json!([]), "hi")["max_tokens"],
+            json!(500)
+        );
     }
 
     #[test]
