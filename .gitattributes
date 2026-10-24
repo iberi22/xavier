@@ -1,0 +1,3 @@
+# Tauri-generated mobile scaffolding: not project code. Keeps it out of language
+# stats, so CodeQL default setup does not try to build a Java/Kotlin project.
+panel-ui/src-tauri/gen/** linguist-generated=true
