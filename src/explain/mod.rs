@@ -6,9 +6,11 @@
 pub mod context;
 pub mod history;
 pub mod memory;
+pub mod render;
 
 pub use context::{
     assemble, Evidence, EvidenceKind, EvidenceSource, ExplainContext, ExplainTarget,
 };
 pub use history::GitHistorySource;
 pub use memory::{MemoryHit, MemorySearch, MemorySource, QmdMemorySearch};
+pub use render::{build_prompt, explain, Audience, Explanation, ExplanationModel};
