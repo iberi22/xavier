@@ -1,5 +1,7 @@
 //! Auth and wiring tests for `POST /v1/explain` on the production router.
 
+xavier::isolate_test_process!();
+
 mod router_harness;
 
 use std::sync::Arc;
