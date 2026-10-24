@@ -89,7 +89,8 @@ if ($WiXFound) {
         # -var makes heat emit $(var.PanelUISrc) paths; candle binds them to the source dir below.
         & heat.exe dir "..\panel-ui\build" -dr PANELUIFOLDER -cg PanelUIComponents -gg -sreg -sfrag -srd -var var.PanelUISrc -out panel-ui-files.wxs
         if ($LASTEXITCODE -ne 0) { throw "heat.exe failed with exit code $LASTEXITCODE" }
-        & candle.exe "-dProductVersion=$Version" "-dPanelUISrc=..\panel-ui\build" xavier.wxs panel-ui-files.wxs
+        # -arch x64: components default to 32-bit otherwise, and ICE80 rejects them in the 64-bit ProgramFiles dir.
+        & candle.exe -arch x64 "-dProductVersion=$Version" "-dPanelUISrc=..\panel-ui\build" xavier.wxs panel-ui-files.wxs
         if ($LASTEXITCODE -ne 0) { throw "candle.exe failed with exit code $LASTEXITCODE" }
         & light.exe xavier.wixobj panel-ui-files.wixobj -o "$DistDir\XavierInstaller.msi"
         if ($LASTEXITCODE -ne 0) { throw "light.exe failed with exit code $LASTEXITCODE" }
