@@ -2829,6 +2829,31 @@
       ],
       "implemented_in": "src/context/skill_registry.rs, src/api/skills.rs, src/cli/handlers/skills.rs"
     },
+    "feat-ticket-dedup-while-open": {
+      "category": "self-manage",
+      "description": "Self-manage ticket deduplication holds only while the earlier ticket is still open: a closed or resolved Maloca ticket lets a recurring incident open a fresh ticket; unknown status stays deduplicated.",
+      "id": "feat-ticket-dedup-while-open",
+      "implemented_in": "src/self_manage/mod.rs",
+      "name": "Ticket Dedup While Open",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [],
+      "spec_reference": "https://github.com/iberi22/xavier/issues/3531",
+      "status": "planned",
+      "steps": [
+        "Add TicketBackends::is_open with an unknown default",
+        "Look up Maloca ticket status and treat anything but resolved/closed as open",
+        "Re-create and replace the registry entry when the earlier ticket is closed"
+      ],
+      "tests": [
+        "self_manage::ticket_create_tests::ticket_open_fingerprint_dedupes",
+        "self_manage::ticket_create_tests::ticket_closed_fingerprint_creates_new_ticket",
+        "self_manage::ticket_create_tests::ticket_unknown_status_dedupes",
+        "self_manage::ticket_create_tests::ticket_closed_recurrence_still_rate_limited",
+        "self_manage::ticket_create_tests::support_status_open_unless_terminal"
+      ],
+      "user_stories": []
+    },
     "feat-skill-registry-unify": {
       "id": "feat-skill-registry-unify",
       "name": "Single Skill Registry Construction",
