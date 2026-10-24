@@ -6,6 +6,8 @@ import { GovernanceTab } from "./components/GovernanceTab";
 import { SupportTab } from "./components/SupportTab";
 import { BacklogTab } from "./components/BacklogTab";
 import { IntrospectionTab } from "./components/IntrospectionTab";
+import { RoadmapTab } from "./components/RoadmapTab";
+import { ExplainTab } from "./components/ExplainTab";
 import { MarketplaceView } from "./components/MarketplaceView";
 import { MalocaAuthPrompt } from "./components/MalocaAuthPrompt";
 import { TABS, TabConfig } from "./tabs";
@@ -37,6 +39,8 @@ export default function MalocaView({ onClose }: Props) {
       case "support": return <SupportTab />;
       case "backlog": return <BacklogTab />;
       case "introspection": return <IntrospectionTab />;
+      case "roadmap": return <RoadmapTab />;
+      case "explain": return <ExplainTab />;
       default: return (
         <div className="flex items-center justify-center h-48 text-white/40 font-mono text-sm">
           Module '{activeTab}' under construction...

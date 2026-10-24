@@ -1,4 +1,4 @@
-import { LayoutDashboard, Globe, ListTodo, Landmark, MessageSquare, Brain, ShoppingBag } from "lucide-react";
+import { LayoutDashboard, Globe, ListTodo, Landmark, MessageSquare, Brain, ShoppingBag, Map, FileCode } from "lucide-react";
 import React from "react";
 
 export type MalocaTabId =
@@ -10,7 +10,9 @@ export type MalocaTabId =
   | "backlog"
   | "challenges"
   | "models"
-  | "introspection";
+  | "introspection"
+  | "roadmap"
+  | "explain";
 
 export interface TabConfig {
   id: MalocaTabId;
@@ -61,5 +63,17 @@ export const TABS: TabConfig[] = [
     label: "Introspection",
     icon: Brain,
     description: "Guided human reflection sessions on detected challenges.",
+  },
+  {
+    id: "roadmap",
+    label: "Roadmap",
+    icon: Map,
+    description: "Feature progress grouped by wave, with unscheduled work.",
+  },
+  {
+    id: "explain",
+    label: "Explain",
+    icon: FileCode,
+    description: "Explain a code fragment with cited evidence.",
   },
 ];
