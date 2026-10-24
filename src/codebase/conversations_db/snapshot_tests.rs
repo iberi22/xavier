@@ -752,10 +752,13 @@ async fn snapshot_bounds() {
         &cid,
         &format!("xsn1:\u{0}{}", "a".repeat(200 * 1024)),
     );
+    SNAPSHOT_VALUE_FETCHES.store(0, Ordering::SeqCst);
     assert!(matches!(
         load(&db, "fits", &cid).await,
         Err(SnapshotError::Oversized)
     ));
+    // Refused by the SQL bound, so the value never reaches Rust.
+    assert_eq!(SNAPSHOT_VALUE_FETCHES.load(Ordering::SeqCst), 0);
 
     // Uppercase hex of an authentic blob is refused before it is decoded: the
     // bytes would authenticate, so only the case check can refuse it.
