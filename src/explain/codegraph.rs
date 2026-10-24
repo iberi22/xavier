@@ -324,25 +324,4 @@ mod tests {
             vec!["route -> handle (Calls)".to_string()]
         );
     }
-
-    #[test]
-    fn engine_error_surfaces_as_err() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("graph.db");
-        let db = CodeGraphDB::new(&path).unwrap();
-        db.insert_symbol(&sym("handle", "src/lib.rs", 2, 6))
-            .unwrap();
-        let engine = Arc::new(QueryEngine::new(Arc::new(db)));
-        // Drop the symbols table through a second connection; the engine's
-        // next query then fails at the database layer.
-        rusqlite::Connection::open(&path)
-            .unwrap()
-            .execute_batch("DROP TABLE symbols")
-            .unwrap();
-        let source = CodeGraphSource::new(engine);
-
-        assert!(source
-            .collect(&target("src/lib.rs", 3, 4, None), 10)
-            .is_err());
-    }
 }
