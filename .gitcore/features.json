@@ -1955,6 +1955,30 @@
       ],
       "user_stories": []
     },
+    "fix-explain-repo-resolution": {
+      "category": "explain",
+      "description": "Code explanations resolve the git repository that contains the explained file inside a multi-repo workspace: git history runs in that repo with a repo-relative path, code-graph lookups use the repo-relative path, and the response names the repo.",
+      "id": "fix-explain-repo-resolution",
+      "implemented_in": "src/explain/history.rs, src/explain/codegraph.rs, src/explain/render.rs, src/server/explain_route.rs",
+      "name": "Explain Repo Resolution",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [],
+      "spec_reference": "https://github.com/iberi22/xavier/issues/3559",
+      "status": "planned",
+      "steps": [
+        "Locate the innermost git repo from the file's directory with GIT_* cleared",
+        "Run git log -L in that repo with a repo-relative path",
+        "Report the repo in the explain response"
+      ],
+      "tests": [
+        "explain::history::tests::explained_file_uses_commits_of_its_own_repo_only",
+        "explain::history::tests::locate_repo_names_the_innermost_repo",
+        "explain::codegraph::tests::lookup_uses_path_relative_to_the_containing_repo",
+        "server::explain_route::tests::explain_reports_the_repo_that_contains_the_file"
+      ],
+      "user_stories": []
+    },
     "feat-vault-hardening": {
       "id": "feat-vault-hardening",
       "name": "Vault hardening anti-exfil + MCP + lease dashboard",
