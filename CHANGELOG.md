@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.18] — 2026-10-24
+
 ### Added
 - read-only skills inventory script (#2974)
 - **`xavier users` onboarding CLI** (#2541): `create`, `totp-enroll`, `totp-disable`.
