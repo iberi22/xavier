@@ -432,9 +432,7 @@ fn explain_routes(state: &CliState) -> Router {
     router(ExplainDeps {
         repo_root: state.workspace_dir.clone(),
         sources,
-        model: Arc::new(ProviderExplanationModel::new(
-            xavier::agents::provider::client::ModelProviderClient::from_env(),
-        )),
+        model: Arc::new(ProviderExplanationModel::from_explain_env()),
     })
 }
 
