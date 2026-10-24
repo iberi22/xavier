@@ -16,6 +16,10 @@ use crate::mesh::node::{NodeId, NodeIdentity};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 
+/// Workspace that receives synced memories lacking a `workspace_id` in metadata.
+/// Always allowed as a sealed-sync destination.
+pub const MESH_SYNC_DEFAULT_WORKSPACE: &str = "mesh-sync";
+
 /// Represents a node within a private mesh, bound to a specific wallet ID.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WalletNode {

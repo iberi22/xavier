@@ -73,3 +73,8 @@ jobs:
             echo "failed: ${failed[*]}"
             exit 1
           fi
+
+      - name: Run sealed memory sync tests
+        shell: bash
+        run: |
+          cargo test -p xavier --features ci-safe,mesh --lib mesh::iroh_transport::tests::memory_sync -- --test-threads=1

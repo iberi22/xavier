@@ -16,7 +16,7 @@ use axum::{
 };
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 
@@ -28,7 +28,7 @@ use crate::mesh::pairing::verify_join_decision;
 use crate::mesh::pairing_registry::PairingSecretRegistry;
 use crate::mesh::private_mesh::{
     validate_node_public_key, PrivateMemoryDelta, PrivateMeshRegistry, PrivateSyncError,
-    PrivateSyncPayload, WalletNode,
+    PrivateSyncPayload, WalletNode, MESH_SYNC_DEFAULT_WORKSPACE,
 };
 use crate::mesh::public_directory::PublicDirectory;
 use crate::mesh::public_rag::{search_public, PublicRagResult};
@@ -208,6 +208,7 @@ pub struct SameWalletSenderPolicy {
     registry: Arc<Mutex<F12Registries>>,
     data_dir: PathBuf,
     local_node: NodeId,
+    allowed_workspaces: BTreeSet<String>,
 }
 
 impl SameWalletSenderPolicy {
@@ -227,6 +228,11 @@ impl SameWalletSenderPolicy {
             _ => false,
         }
     }
+
+    /// Whether sealed sync may write into `workspace` on this receiver.
+    pub fn allows_workspace_for(&self, workspace: &str) -> bool {
+        self.allowed_workspaces.contains(workspace)
+    }
 }
 
 #[cfg(feature = "mesh")]
@@ -234,6 +240,25 @@ impl crate::mesh::iroh_transport::SenderPolicy for SameWalletSenderPolicy {
     fn allows(&self, node_id: &str) -> bool {
         self.allows_sender(node_id)
     }
+
+    fn allows_workspace(&self, _node_id: &str, workspace: &str) -> bool {
+        self.allows_workspace_for(workspace)
+    }
+}
+
+/// Workspaces sealed sync may write into: the default plus the comma-separated
+/// `XAVIER_MESH_SYNC_WORKSPACES` extras. Blank entries are dropped.
+pub fn parse_mesh_sync_workspaces(raw: Option<&str>) -> BTreeSet<String> {
+    let mut workspaces = BTreeSet::from([MESH_SYNC_DEFAULT_WORKSPACE.to_string()]);
+    if let Some(raw) = raw {
+        workspaces.extend(
+            raw.split(',')
+                .map(str::trim)
+                .filter(|w| !w.is_empty())
+                .map(str::to_string),
+        );
+    }
+    workspaces
 }
 
 /// Whether the mesh endpoint binds to localhost only (no relays or discovery).
@@ -261,6 +286,9 @@ fn start_private_sync(
         registry: state.registry.clone(),
         data_dir: state.data_dir.clone(),
         local_node: local_node.clone(),
+        allowed_workspaces: parse_mesh_sync_workspaces(
+            std::env::var("XAVIER_MESH_SYNC_WORKSPACES").ok().as_deref(),
+        ),
     });
     let mut iroh = IrohTransport::new(identity, store).with_sender_policy(policy);
     if mesh_localhost_only() {
@@ -2565,6 +2593,37 @@ mod tests {
             .unwrap()
             .expect("applied to the store passed to for_server");
         assert_eq!(applied.content, "applied by the production receiver");
+    }
+
+    #[test]
+    fn parse_mesh_sync_workspaces_always_includes_default() {
+        let none = parse_mesh_sync_workspaces(None);
+        assert_eq!(none, BTreeSet::from(["mesh-sync".to_string()]));
+
+        let extras = parse_mesh_sync_workspaces(Some(" notes, ,work "));
+        assert_eq!(
+            extras,
+            BTreeSet::from([
+                "mesh-sync".to_string(),
+                "notes".to_string(),
+                "work".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn same_wallet_policy_allows_only_configured_workspaces() {
+        let state = test_state();
+        let policy = SameWalletSenderPolicy {
+            registry: state.registry.clone(),
+            data_dir: state.data_dir.clone(),
+            local_node: NodeId("local".into()),
+            allowed_workspaces: BTreeSet::from(["mesh-sync".to_string(), "notes".to_string()]),
+        };
+
+        assert!(policy.allows_workspace_for("mesh-sync"));
+        assert!(policy.allows_workspace_for("notes"));
+        assert!(!policy.allows_workspace_for("victim"));
     }
 
     #[tokio::test]

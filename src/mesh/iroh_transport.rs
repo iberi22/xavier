@@ -38,7 +38,7 @@ use crate::mesh::node::NodeIdentity;
 use crate::mesh::peer::PeerInfo;
 use crate::mesh::private_mesh::{
     decrypt_session_payload, encrypt_session_payload, signing_key_to_x25519_secret,
-    EncryptedSessionPayload, PrivateSyncPayload,
+    EncryptedSessionPayload, PrivateSyncPayload, MESH_SYNC_DEFAULT_WORKSPACE,
 };
 use crate::mesh::protocol::{
     ChunkRef, MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSessionShare, MeshSyncRequest,
@@ -108,12 +108,15 @@ pub struct MemorySyncAck {
 
 /// Maximum clock skew tolerated for a signed `MemorySync` request.
 const MEMORY_SYNC_MAX_SKEW_SECS: i64 = 300;
-/// Workspace that receives synced memories lacking a `workspace_id` in metadata.
-const MESH_SYNC_DEFAULT_WORKSPACE: &str = "mesh-sync";
 
-/// Decides which sender node ids the accept loop serves.
+/// Decides which sender node ids the accept loop serves, and which workspaces
+/// a sealed memory sync from them may write into.
 pub trait SenderPolicy: Send + Sync {
     fn allows(&self, node_id: &str) -> bool;
+    /// Receiver-owned destination check; the payload's workspace is only a request.
+    fn allows_workspace(&self, _node_id: &str, workspace: &str) -> bool {
+        workspace == MESH_SYNC_DEFAULT_WORKSPACE
+    }
 }
 
 impl SenderPolicy for HashSet<String> {
@@ -720,10 +723,10 @@ async fn apply_memory_sync(
         return Err("invalid sender signature".into());
     }
     let sender = crate::mesh::node::NodeId::from_public_key_bytes(&pk);
-    match policy {
-        Some(allowed) if allowed.allows(sender.as_str()) => {}
+    let allowed = match policy {
+        Some(allowed) if allowed.allows(sender.as_str()) => allowed,
         _ => return Err("unknown peer".into()),
-    }
+    };
     if (chrono::Utc::now().timestamp() - timestamp).abs() > MEMORY_SYNC_MAX_SKEW_SECS {
         return Err("stale request".into());
     }
@@ -735,6 +738,7 @@ async fn apply_memory_sync(
     let payload = decrypt_session_payload(encrypted, &secret).map_err(|e| e.to_string())?;
 
     let mut diffs = Vec::with_capacity(payload.memories.len());
+    let mut rejected = 0usize;
     for m in &payload.memories {
         let path = m.path.trim();
         if path.is_empty()
@@ -744,12 +748,21 @@ async fn apply_memory_sync(
         {
             return Err(format!("unsafe memory path: {path}"));
         }
-        let workspace = m
-            .metadata
-            .get("workspace_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or(MESH_SYNC_DEFAULT_WORKSPACE)
-            .to_string();
+        // The payload's workspace is only a request: the receiver decides.
+        // Absent or null means the default; any other value must be a
+        // non-empty string the receiver allows, compared exactly.
+        let workspace = match m.metadata.get("workspace_id") {
+            None | Some(serde_json::Value::Null) => MESH_SYNC_DEFAULT_WORKSPACE.to_string(),
+            Some(serde_json::Value::String(ws))
+                if !ws.is_empty() && allowed.allows_workspace(sender.as_str(), ws) =>
+            {
+                ws.clone()
+            }
+            Some(_) => {
+                rejected += 1;
+                continue;
+            }
+        };
         let at = chrono::DateTime::from_timestamp(m.created_at, 0).unwrap_or_else(chrono::Utc::now);
         let record = crate::memory::store::MemoryRecord {
             id: uuid::Uuid::new_v4().to_string(),
@@ -786,6 +799,14 @@ async fn apply_memory_sync(
             timestamp: std::time::SystemTime::now(),
             record_path: Some(record.path.clone()),
         });
+    }
+    // Refuse the whole batch before anything is written. Counts only: the
+    // reason never echoes the requested workspace, path or content.
+    if rejected > 0 {
+        return Err(format!(
+            "workspace not allowed ({rejected} of {} records)",
+            payload.memories.len()
+        ));
     }
     crate::memory::sync::merge::validate_changes_received(
         &diffs,
@@ -1430,5 +1451,236 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(val["chunks"].as_array().unwrap().len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Sealed memory sync: the receiver decides the destination workspace.
+    // -----------------------------------------------------------------------
+
+    use crate::memory::store::InMemoryMemoryStore;
+    use crate::mesh::private_mesh::PrivateMemoryDelta;
+
+    /// Builds a sealed `MemorySync` request the way `send_memory_sync` does.
+    fn signed_memory_sync(
+        sender: &NodeIdentity,
+        receiver: &NodeIdentity,
+        memories: Vec<PrivateMemoryDelta>,
+    ) -> MeshRequest {
+        let payload = PrivateSyncPayload {
+            memories,
+            vectors: Vec::new(),
+            snapshots: Vec::new(),
+        };
+        let recipient: [u8; 32] = receiver.public_key.as_slice().try_into().unwrap();
+        let encrypted = encrypt_session_payload(&payload, &recipient).unwrap();
+        let nonce = uuid::Uuid::new_v4().to_string();
+        let timestamp = chrono::Utc::now().timestamp();
+        let signature = sender.sign(&memory_sync_message(timestamp, &nonce, &encrypted));
+        MeshRequest::MemorySync {
+            sender_public_key_hex: crate::crypto::hex_encode(&sender.public_key),
+            timestamp,
+            nonce,
+            signature_hex: crate::crypto::hex_encode(signature),
+            encrypted,
+        }
+    }
+
+    fn delta(path: &str, content: &str, metadata: serde_json::Value) -> PrivateMemoryDelta {
+        PrivateMemoryDelta {
+            path: path.into(),
+            content: content.into(),
+            metadata,
+            created_at: chrono::Utc::now().timestamp(),
+        }
+    }
+
+    /// Admits `sender` through the default `HashSet` policy.
+    fn sender_policy(sender: &NodeIdentity) -> PeerPolicy {
+        let node_id = crate::mesh::node::NodeId::from_public_key_bytes(&sender.public_key);
+        Some(Arc::new(HashSet::from([node_id.as_str().to_string()])))
+    }
+
+    async fn memory_sync_ack(
+        receiver: &NodeIdentity,
+        store: &dyn MemoryStore,
+        req: &MeshRequest,
+        policy: &PeerPolicy,
+    ) -> MemorySyncAck {
+        let val = handle_request_with_policy(receiver, store, req, policy)
+            .await
+            .unwrap();
+        serde_json::from_value(val).unwrap()
+    }
+
+    #[tokio::test]
+    async fn memory_sync_rejects_sender_chosen_foreign_workspace() {
+        let receiver = test_identity();
+        let sender = test_identity();
+        let store = InMemoryMemoryStore::default();
+        let mut victim = make_test_record("victim-id", "victim", "original", 1);
+        victim.path = "notes/a".into();
+        victim.updated_at = chrono::DateTime::from_timestamp(1_577_836_800, 0).unwrap();
+        store.put(victim.clone()).await.unwrap();
+
+        let req = signed_memory_sync(
+            &sender,
+            &receiver,
+            vec![delta(
+                "notes/a",
+                "incoming content",
+                serde_json::json!({"workspace_id": "victim"}),
+            )],
+        );
+        let ack = memory_sync_ack(&receiver, &store, &req, &sender_policy(&sender)).await;
+
+        assert!(!ack.accepted);
+        assert_eq!(ack.applied, 0);
+        let reason = ack.reason.expect("rejection carries a reason");
+        assert!(
+            !reason.contains("victim") && !reason.contains("notes/a"),
+            "reason must not echo workspace or path: {reason}"
+        );
+        let kept = store
+            .get("victim", "notes/a")
+            .await
+            .unwrap()
+            .expect("victim record kept");
+        assert_eq!(kept.id, victim.id);
+        assert_eq!(kept.content, "original");
+        assert_eq!(kept.updated_at, victim.updated_at);
+        assert!(store.get("mesh-sync", "notes/a").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn memory_sync_rejects_whole_batch_with_one_foreign_record() {
+        let receiver = test_identity();
+        let sender = test_identity();
+        let store = InMemoryMemoryStore::default();
+        let req = signed_memory_sync(
+            &sender,
+            &receiver,
+            vec![
+                delta("ok/a", "fine", serde_json::json!({})),
+                delta(
+                    "notes/b",
+                    "foreign",
+                    serde_json::json!({"workspace_id": "victim"}),
+                ),
+            ],
+        );
+        let ack = memory_sync_ack(&receiver, &store, &req, &sender_policy(&sender)).await;
+
+        assert!(!ack.accepted);
+        assert_eq!(ack.applied, 0);
+        let reason = ack.reason.expect("rejection carries a reason");
+        assert!(reason.contains("1 of 2"), "reason: {reason}");
+        assert!(store.get("mesh-sync", "ok/a").await.unwrap().is_none());
+        assert!(store.get("victim", "notes/b").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn memory_sync_without_workspace_lands_in_default() {
+        let receiver = test_identity();
+        let sender = test_identity();
+        let store = InMemoryMemoryStore::default();
+        let req = signed_memory_sync(
+            &sender,
+            &receiver,
+            vec![
+                delta("notes/c", "no workspace key", serde_json::json!({})),
+                delta(
+                    "notes/d",
+                    "null workspace",
+                    serde_json::json!({"workspace_id": null}),
+                ),
+            ],
+        );
+        let ack = memory_sync_ack(&receiver, &store, &req, &sender_policy(&sender)).await;
+
+        assert!(ack.accepted, "rejected: {:?}", ack.reason);
+        assert_eq!(ack.applied, 2);
+        let c = store
+            .get("mesh-sync", "notes/c")
+            .await
+            .unwrap()
+            .expect("absent workspace lands in default");
+        assert_eq!(c.content, "no workspace key");
+        let d = store
+            .get("mesh-sync", "notes/d")
+            .await
+            .unwrap()
+            .expect("null workspace lands in default");
+        assert_eq!(d.content, "null workspace");
+    }
+
+    /// Receiver policy that also admits one configured extra workspace.
+    struct NotesPolicy {
+        sender: String,
+    }
+
+    impl SenderPolicy for NotesPolicy {
+        fn allows(&self, node_id: &str) -> bool {
+            node_id == self.sender
+        }
+
+        fn allows_workspace(&self, _node_id: &str, workspace: &str) -> bool {
+            matches!(workspace, "mesh-sync" | "notes")
+        }
+    }
+
+    #[tokio::test]
+    async fn memory_sync_receiver_allowed_workspace_applies() {
+        let receiver = test_identity();
+        let sender = test_identity();
+        let store = InMemoryMemoryStore::default();
+        let policy: PeerPolicy = Some(Arc::new(NotesPolicy {
+            sender: crate::mesh::node::NodeId::from_public_key_bytes(&sender.public_key)
+                .as_str()
+                .to_string(),
+        }));
+        let req = signed_memory_sync(
+            &sender,
+            &receiver,
+            vec![delta(
+                "notes/d",
+                "shared",
+                serde_json::json!({"workspace_id": "notes"}),
+            )],
+        );
+        let ack = memory_sync_ack(&receiver, &store, &req, &policy).await;
+
+        assert!(ack.accepted, "rejected: {:?}", ack.reason);
+        assert_eq!(ack.applied, 1);
+        let applied = store
+            .get("notes", "notes/d")
+            .await
+            .unwrap()
+            .expect("applied to the allowed workspace");
+        assert_eq!(applied.content, "shared");
+    }
+
+    #[tokio::test]
+    async fn memory_sync_rejects_empty_or_non_string_workspace() {
+        let receiver = test_identity();
+        let sender = test_identity();
+        let policy = sender_policy(&sender);
+        for bad in [serde_json::json!(""), serde_json::json!(42)] {
+            let store = InMemoryMemoryStore::default();
+            let req = signed_memory_sync(
+                &sender,
+                &receiver,
+                vec![delta(
+                    "notes/e",
+                    "x",
+                    serde_json::json!({"workspace_id": bad.clone()}),
+                )],
+            );
+            let ack = memory_sync_ack(&receiver, &store, &req, &policy).await;
+
+            assert!(!ack.accepted, "workspace_id {bad} must be rejected");
+            assert_eq!(ack.applied, 0);
+            assert!(store.list("mesh-sync").await.unwrap().is_empty());
+            assert!(store.list("").await.unwrap().is_empty());
+        }
     }
 }
