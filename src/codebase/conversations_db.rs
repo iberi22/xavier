@@ -144,6 +144,8 @@ pub struct ConversationsDb {
     node_key: Option<[u8; 32]>,
     /// Set once the snapshot table exists. Created lazily, only by the snapshot calls.
     snapshot_schema_initialized: OnceCell<()>,
+    /// SHA-256 digests of the node keys whose seal floor this handle has verified.
+    floor_verified: std::sync::Mutex<Vec<[u8; 32]>>,
 }
 
 impl ConversationsDb {
@@ -163,6 +165,7 @@ impl ConversationsDb {
             disabled: false,
             node_key: None,
             snapshot_schema_initialized: OnceCell::new(),
+            floor_verified: std::sync::Mutex::new(Vec::new()),
         })
     }
 
@@ -191,6 +194,7 @@ impl ConversationsDb {
             disabled: false,
             node_key: None,
             snapshot_schema_initialized: OnceCell::new(),
+            floor_verified: std::sync::Mutex::new(Vec::new()),
         })
     }
 
@@ -204,6 +208,7 @@ impl ConversationsDb {
             disabled: true,
             node_key: None,
             snapshot_schema_initialized: OnceCell::new(),
+            floor_verified: std::sync::Mutex::new(Vec::new()),
         })
     }
 
@@ -225,6 +230,7 @@ impl ConversationsDb {
             disabled: false,
             node_key: None,
             snapshot_schema_initialized: OnceCell::new(),
+            floor_verified: std::sync::Mutex::new(Vec::new()),
         })
     }
 
@@ -250,6 +256,33 @@ impl ConversationsDb {
         Ok(at_rest::peek_record_key_with_source()
             .0
             .map_or(Sealer::None, Sealer::Node))
+    }
+
+    /// The sealer for one operation. Node-tier operations verify the seal floor
+    /// first; a handle verifies each node key once.
+    async fn ready_sealer(&self) -> Result<Sealer> {
+        use sha2::{Digest, Sha256};
+        let sealer = self.sealer()?;
+        if let Sealer::Node(key) = &sealer {
+            let fingerprint: [u8; 32] = Sha256::digest(key).into();
+            let verified = self
+                .floor_verified
+                .lock()
+                .is_ok_and(|v| v.contains(&fingerprint));
+            if !verified {
+                let key = *key;
+                let project = self.project_id.clone();
+                ConnectionManager::global()
+                    .with_conn(&self.full_project_id, move |conn| {
+                        ensure_seal_floor(conn, &key, &project)
+                    })
+                    .await?;
+                if let Ok(mut v) = self.floor_verified.lock() {
+                    v.push(fingerprint);
+                }
+            }
+        }
+        Ok(sealer)
     }
 
     fn refuse_if_disabled(&self) -> Result<()> {
@@ -339,6 +372,11 @@ impl ConversationsDb {
                     kind TEXT DEFAULT 'work'
                 );
 
+                CREATE TABLE IF NOT EXISTS conv_seal_state (
+                    k TEXT PRIMARY KEY,
+                    v TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_conversation_messages_thread_created
                     ON conversation_messages (thread_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_checkpoints_project_state_created
@@ -374,8 +412,16 @@ impl ConversationsDb {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         let pid = self.project_id.clone();
-        let sealer = self.sealer()?;
-        let title_c = sealer.seal_opt("conv.thread.title", &id, title)?;
+        let sealer = self.ready_sealer().await?;
+        let title_c = sealer.seal_opt(
+            "conv.thread.title",
+            FieldCtx {
+                project: &self.project_id,
+                parent: "",
+                row: &id,
+            },
+            title,
+        )?;
         let model_c = model.map(|s| s.to_string());
         let source_c = source.map(|s| s.to_string());
 
@@ -409,7 +455,8 @@ impl ConversationsDb {
     /// Get a thread by ID.
     pub async fn get_thread(&self, thread_id: &str) -> Result<Option<Thread>> {
         self.ensure_schema().await?;
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
+        let pid = self.project_id.clone();
         let tid = thread_id.to_string();
         ConnectionManager::global()
             .with_conn(&self.full_project_id, move |conn| {
@@ -424,10 +471,26 @@ impl ConversationsDb {
                     let id: String = row.get(0)?;
                     Ok(Some(Thread {
                         project_id: row.get(1)?,
-                        title: sealer.open_opt("conv.thread.title", &id, row.get(2)?)?,
+                        title: sealer.open_opt(
+                            "conv.thread.title",
+                            FieldCtx {
+                                project: &pid,
+                                parent: "",
+                                row: &id,
+                            },
+                            row.get(2)?,
+                        )?,
                         started_at: parse_datetime(&row.get::<_, String>(3)?),
                         updated_at: parse_datetime(&row.get::<_, String>(4)?),
-                        last_preview: sealer.open_opt("conv.thread.preview", &id, row.get(5)?)?,
+                        last_preview: sealer.open_opt(
+                            "conv.thread.preview",
+                            FieldCtx {
+                                project: &pid,
+                                parent: "",
+                                row: &id,
+                            },
+                            row.get(5)?,
+                        )?,
                         id,
                         model: row.get(6)?,
                         source: row.get(7)?,
@@ -468,7 +531,7 @@ impl ConversationsDb {
     /// List all threads for a project.
     pub async fn list_threads(&self, limit: usize) -> Result<Vec<Thread>> {
         self.ensure_schema().await?;
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
         let pid = self.project_id.clone();
         ConnectionManager::global()
             .with_conn(&self.full_project_id, move |conn| {
@@ -487,10 +550,26 @@ impl ConversationsDb {
                     let id: String = row.get(0)?;
                     results.push(Thread {
                         project_id: row.get(1)?,
-                        title: sealer.open_opt("conv.thread.title", &id, row.get(2)?)?,
+                        title: sealer.open_opt(
+                            "conv.thread.title",
+                            FieldCtx {
+                                project: &pid,
+                                parent: "",
+                                row: &id,
+                            },
+                            row.get(2)?,
+                        )?,
                         started_at: parse_datetime(&row.get::<_, String>(3)?),
                         updated_at: parse_datetime(&row.get::<_, String>(4)?),
-                        last_preview: sealer.open_opt("conv.thread.preview", &id, row.get(5)?)?,
+                        last_preview: sealer.open_opt(
+                            "conv.thread.preview",
+                            FieldCtx {
+                                project: &pid,
+                                parent: "",
+                                row: &id,
+                            },
+                            row.get(5)?,
+                        )?,
                         id,
                         model: row.get(6)?,
                         source: row.get(7)?,
@@ -524,12 +603,17 @@ impl ConversationsDb {
 
         let thread_id_c = thread_id.to_string();
         let role_c = role.to_string();
-        let sealer = self.sealer()?;
-        let content_c = sealer.seal("conv.msg.content", &id, content)?;
-        let tool_calls_c = sealer.seal_opt("conv.msg.tool_calls", &id, tool_calls)?;
-        let openui_lang_c = sealer.seal_opt("conv.msg.openui_lang", &id, openui_lang)?;
-        let xui_json_c = sealer.seal_opt("conv.msg.xui_json", &id, xui_json)?;
-        let metadata_c = sealer.seal_opt("conv.msg.metadata", &id, metadata)?;
+        let sealer = self.ready_sealer().await?;
+        let ctx = FieldCtx {
+            project: &self.project_id,
+            parent: thread_id,
+            row: &id,
+        };
+        let content_c = sealer.seal("conv.msg.content", ctx, content)?;
+        let tool_calls_c = sealer.seal_opt("conv.msg.tool_calls", ctx, tool_calls)?;
+        let openui_lang_c = sealer.seal_opt("conv.msg.openui_lang", ctx, openui_lang)?;
+        let xui_json_c = sealer.seal_opt("conv.msg.xui_json", ctx, xui_json)?;
+        let metadata_c = sealer.seal_opt("conv.msg.metadata", ctx, metadata)?;
 
         let id_for_return = id.clone();
         let now_c = now.clone();
@@ -576,9 +660,16 @@ impl ConversationsDb {
     pub async fn update_last_preview(&self, thread_id: &str, preview: &str) -> Result<()> {
         self.ensure_schema().await?;
         let thread_id_c = thread_id.to_string();
-        let preview_c = self
-            .sealer()?
-            .seal("conv.thread.preview", thread_id, preview)?;
+        let sealer = self.ready_sealer().await?;
+        let preview_c = sealer.seal(
+            "conv.thread.preview",
+            FieldCtx {
+                project: &self.project_id,
+                parent: "",
+                row: thread_id,
+            },
+            preview,
+        )?;
         let now_c = Utc::now().to_rfc3339();
 
         ConnectionManager::global()
@@ -597,7 +688,8 @@ impl ConversationsDb {
     pub async fn get_thread_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
         self.ensure_schema().await?;
         let tid = thread_id.to_string();
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
+        let pid = self.project_id.clone();
         ConnectionManager::global()
             .with_conn(&self.full_project_id, move |conn| {
                 let mut stmt = conn.prepare(SQL_THREAD_MESSAGES)?;
@@ -610,11 +702,51 @@ impl ConversationsDb {
                     results.push(Message {
                         thread_id: row.get(1)?,
                         role: row.get(2)?,
-                        content: sealer.open("conv.msg.content", &id, row.get(3)?)?,
-                        tool_calls: sealer.open_opt("conv.msg.tool_calls", &id, row.get(4)?)?,
-                        openui_lang: sealer.open_opt("conv.msg.openui_lang", &id, row.get(5)?)?,
-                        xui_json: sealer.open_opt("conv.msg.xui_json", &id, row.get(6)?)?,
-                        metadata: sealer.open_opt("conv.msg.metadata", &id, row.get(7)?)?,
+                        content: sealer.open(
+                            "conv.msg.content",
+                            FieldCtx {
+                                project: &pid,
+                                parent: &tid,
+                                row: &id,
+                            },
+                            row.get(3)?,
+                        )?,
+                        tool_calls: sealer.open_opt(
+                            "conv.msg.tool_calls",
+                            FieldCtx {
+                                project: &pid,
+                                parent: &tid,
+                                row: &id,
+                            },
+                            row.get(4)?,
+                        )?,
+                        openui_lang: sealer.open_opt(
+                            "conv.msg.openui_lang",
+                            FieldCtx {
+                                project: &pid,
+                                parent: &tid,
+                                row: &id,
+                            },
+                            row.get(5)?,
+                        )?,
+                        xui_json: sealer.open_opt(
+                            "conv.msg.xui_json",
+                            FieldCtx {
+                                project: &pid,
+                                parent: &tid,
+                                row: &id,
+                            },
+                            row.get(6)?,
+                        )?,
+                        metadata: sealer.open_opt(
+                            "conv.msg.metadata",
+                            FieldCtx {
+                                project: &pid,
+                                parent: &tid,
+                                row: &id,
+                            },
+                            row.get(7)?,
+                        )?,
                         id,
                         created_at: parse_datetime(&row.get::<_, String>(8)?),
                         tokens: row.get(9)?,
@@ -656,9 +788,16 @@ impl ConversationsDb {
         let now = Utc::now().to_rfc3339();
 
         let pid = self.project_id.clone();
-        let deduction_c = self
-            .sealer()?
-            .seal("conv.deduction.text", &id, deduction_text)?;
+        let sealer = self.ready_sealer().await?;
+        let deduction_c = sealer.seal(
+            "conv.deduction.text",
+            FieldCtx {
+                project: &self.project_id,
+                parent: "",
+                row: &id,
+            },
+            deduction_text,
+        )?;
         let category_c = category.map(|s| s.to_string());
         let source_thread_c = source_thread.map(|s| s.to_string());
 
@@ -689,7 +828,7 @@ impl ConversationsDb {
     /// List deductions for this project.
     pub async fn list_deductions(&self, limit: usize) -> Result<Vec<Deduction>> {
         self.ensure_schema().await?;
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
         let pid = self.project_id.clone();
         ConnectionManager::global()
             .with_conn(&self.full_project_id, move |conn| {
@@ -703,7 +842,15 @@ impl ConversationsDb {
                     results.push(Deduction {
                         project_id: row.get(1)?,
                         source_thread: row.get(2)?,
-                        deduction: sealer.open("conv.deduction.text", &id, row.get(3)?)?,
+                        deduction: sealer.open(
+                            "conv.deduction.text",
+                            FieldCtx {
+                                project: &pid,
+                                parent: "",
+                                row: &id,
+                            },
+                            row.get(3)?,
+                        )?,
                         id,
                         confidence: row.get(4)?,
                         created_at: parse_datetime(&row.get::<_, String>(5)?),
@@ -738,7 +885,7 @@ impl ConversationsDb {
         let now = Utc::now().to_rfc3339();
 
         let pid = self.project_id.clone();
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
         let subject_c = subject.to_string();
         let relation_c = relation.map(|s| s.to_string());
         let object_c = object.map(|s| s.to_string());
@@ -758,15 +905,15 @@ impl ConversationsDb {
                 let mut rows = stmt.query(params![pid.clone()])?;
                 while let Some(row) = rows.next()? {
                     let rid: String = row.get(0)?;
-                    let subj = sealer.open("conv.belief.subject", &rid, row.get(1)?)?;
+                    let subj = sealer.open("conv.belief.subject", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(1)?)?;
                     if subj != subject_c {
                         continue;
                     }
                     let matched = if let (Some(rel), Some(obj)) = (&relation_c, &object_c) {
-                        sealer.open_opt("conv.belief.relation", &rid, row.get(2)?)?.as_deref() == Some(rel.as_str())
-                            && sealer.open_opt("conv.belief.object", &rid, row.get(3)?)?.as_deref() == Some(obj.as_str())
+                        sealer.open_opt("conv.belief.relation", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(2)?)?.as_deref() == Some(rel.as_str())
+                            && sealer.open_opt("conv.belief.object", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(3)?)?.as_deref() == Some(obj.as_str())
                     } else if let Some(prop) = &proposition_c {
-                        sealer.open_opt("conv.belief.proposition", &rid, row.get(4)?)?.as_deref() == Some(prop.as_str())
+                        sealer.open_opt("conv.belief.proposition", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(4)?)?.as_deref() == Some(prop.as_str())
                     } else {
                         true
                     };
@@ -779,10 +926,10 @@ impl ConversationsDb {
 
             match existing_id {
                 Some(id) => {
-                    let subject_sealed = sealer.seal("conv.belief.subject", &id, &subject_c)?;
-                    let relation_c = sealer.seal_opt("conv.belief.relation", &id, relation_c.as_deref())?;
-                    let object_c = sealer.seal_opt("conv.belief.object", &id, object_c.as_deref())?;
-                    let proposition_c = sealer.seal_opt("conv.belief.proposition", &id, proposition_c.as_deref())?;
+                    let subject_sealed = sealer.seal("conv.belief.subject", FieldCtx { project: &pid, parent: "", row: &id }, &subject_c)?;
+                    let relation_c = sealer.seal_opt("conv.belief.relation", FieldCtx { project: &pid, parent: "", row: &id }, relation_c.as_deref())?;
+                    let object_c = sealer.seal_opt("conv.belief.object", FieldCtx { project: &pid, parent: "", row: &id }, object_c.as_deref())?;
+                    let proposition_c = sealer.seal_opt("conv.belief.proposition", FieldCtx { project: &pid, parent: "", row: &id }, proposition_c.as_deref())?;
                     conn.execute(
                         "UPDATE beliefs SET relation = ?1, object = ?2, proposition = ?3, confidence = ?4, \
                          weight = ?5, source = ?6, provenance_id = ?7, contradicts_id = ?8, updated_at = ?9, subject = ?11 WHERE id = ?10",
@@ -796,10 +943,10 @@ impl ConversationsDb {
                 }
                 None => {
                     let new_id = Uuid::new_v4().to_string();
-                    let subject_c = sealer.seal("conv.belief.subject", &new_id, &subject_c)?;
-                    let relation_c = sealer.seal_opt("conv.belief.relation", &new_id, relation_c.as_deref())?;
-                    let object_c = sealer.seal_opt("conv.belief.object", &new_id, object_c.as_deref())?;
-                    let proposition_c = sealer.seal_opt("conv.belief.proposition", &new_id, proposition_c.as_deref())?;
+                    let subject_c = sealer.seal("conv.belief.subject", FieldCtx { project: &pid, parent: "", row: &new_id }, &subject_c)?;
+                    let relation_c = sealer.seal_opt("conv.belief.relation", FieldCtx { project: &pid, parent: "", row: &new_id }, relation_c.as_deref())?;
+                    let object_c = sealer.seal_opt("conv.belief.object", FieldCtx { project: &pid, parent: "", row: &new_id }, object_c.as_deref())?;
+                    let proposition_c = sealer.seal_opt("conv.belief.proposition", FieldCtx { project: &pid, parent: "", row: &new_id }, proposition_c.as_deref())?;
                     conn.execute(
                         "INSERT INTO beliefs (id, project_id, subject, relation, object, proposition, \
                          confidence, weight, source, provenance_id, contradicts_id, created_at, updated_at)
@@ -823,7 +970,8 @@ impl ConversationsDb {
     pub async fn get_belief(&self, id: &str) -> Result<Option<Belief>> {
         self.ensure_schema().await?;
         let bid = id.to_string();
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
+        let pid = self.project_id.clone();
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, project_id, subject, relation, object, proposition, confidence, weight, source, provenance_id, contradicts_id, created_at, updated_at
@@ -836,10 +984,10 @@ impl ConversationsDb {
                 let rid: String = row.get(0)?;
                 Ok(Some(Belief {
                     project_id: row.get(1)?,
-                    subject: sealer.open("conv.belief.subject", &rid, row.get(2)?)?,
-                    relation: sealer.open_opt("conv.belief.relation", &rid, row.get(3)?)?,
-                    object: sealer.open_opt("conv.belief.object", &rid, row.get(4)?)?,
-                    proposition: sealer.open_opt("conv.belief.proposition", &rid, row.get(5)?)?,
+                    subject: sealer.open("conv.belief.subject", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(2)?)?,
+                    relation: sealer.open_opt("conv.belief.relation", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(3)?)?,
+                    object: sealer.open_opt("conv.belief.object", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(4)?)?,
+                    proposition: sealer.open_opt("conv.belief.proposition", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(5)?)?,
                     id: rid,
                     confidence: row.get(6)?,
                     weight: row.get(7)?,
@@ -858,7 +1006,7 @@ impl ConversationsDb {
     /// List all beliefs for this project.
     pub async fn list_beliefs(&self, limit: usize) -> Result<Vec<Belief>> {
         self.ensure_schema().await?;
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
         let pid = self.project_id.clone();
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             let mut stmt = conn.prepare(
@@ -873,10 +1021,10 @@ impl ConversationsDb {
                 let rid: String = row.get(0)?;
                 results.push(Belief {
                     project_id: row.get(1)?,
-                    subject: sealer.open("conv.belief.subject", &rid, row.get(2)?)?,
-                    relation: sealer.open_opt("conv.belief.relation", &rid, row.get(3)?)?,
-                    object: sealer.open_opt("conv.belief.object", &rid, row.get(4)?)?,
-                    proposition: sealer.open_opt("conv.belief.proposition", &rid, row.get(5)?)?,
+                    subject: sealer.open("conv.belief.subject", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(2)?)?,
+                    relation: sealer.open_opt("conv.belief.relation", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(3)?)?,
+                    object: sealer.open_opt("conv.belief.object", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(4)?)?,
+                    proposition: sealer.open_opt("conv.belief.proposition", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(5)?)?,
                     id: rid,
                     confidence: row.get(6)?, weight: row.get(7)?,
                     source: row.get(8)?, provenance_id: row.get(9)?,
@@ -1039,12 +1187,28 @@ impl ConversationsDb {
 
             let id_c = id.clone();
             let pid = self.project_id.clone();
-            let sealer = self.sealer()?;
-            let title_c = sealer.seal_opt("conv.thread.title", &id, title.as_deref())?;
+            let sealer = self.ready_sealer().await?;
+            let title_c = sealer.seal_opt(
+                "conv.thread.title",
+                FieldCtx {
+                    project: &pid,
+                    parent: "",
+                    row: &id,
+                },
+                title.as_deref(),
+            )?;
+            let msg_project = pid.clone();
             let started_at_c = started_at.clone();
             let updated_at_c = updated_at.clone();
-            let last_preview_c =
-                sealer.seal_opt("conv.thread.preview", &id, last_preview.as_deref())?;
+            let last_preview_c = sealer.seal_opt(
+                "conv.thread.preview",
+                FieldCtx {
+                    project: &pid,
+                    parent: "",
+                    row: &id,
+                },
+                last_preview.as_deref(),
+            )?;
             let thread_data_clone = thread_data.clone();
 
             ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
@@ -1063,10 +1227,15 @@ impl ConversationsDb {
                         let xui_json = msg["xui_json"].as_str();
                         let openui_lang = msg["openui_lang"].as_str();
                         let metadata = msg["metadata"].to_string();
-                        let mcontent = sealer.seal("conv.msg.content", &msg_id, mcontent)?;
-                        let xui_json = sealer.seal_opt("conv.msg.xui_json", &msg_id, xui_json)?;
-                        let openui_lang = sealer.seal_opt("conv.msg.openui_lang", &msg_id, openui_lang)?;
-                        let metadata = sealer.seal("conv.msg.metadata", &msg_id, &metadata)?;
+                        let ctx = FieldCtx {
+                            project: &msg_project,
+                            parent: &id_c,
+                            row: &msg_id,
+                        };
+                        let mcontent = sealer.seal("conv.msg.content", ctx, mcontent)?;
+                        let xui_json = sealer.seal_opt("conv.msg.xui_json", ctx, xui_json)?;
+                        let openui_lang = sealer.seal_opt("conv.msg.openui_lang", ctx, openui_lang)?;
+                        let metadata = sealer.seal("conv.msg.metadata", ctx, &metadata)?;
 
                         conn.execute(
                             "INSERT INTO conversation_messages (id, thread_id, role, content, xui_json, openui_lang, metadata, created_at)
@@ -1094,84 +1263,198 @@ impl ConversationsDb {
             disabled: false,
             node_key: None,
             snapshot_schema_initialized: OnceCell::new(),
+            floor_verified: std::sync::Mutex::new(Vec::new()),
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Encryption at rest (legacy clear rows stay readable)
+// Encryption at rest
 // ---------------------------------------------------------------------------
 
-const NODE_SEAL_PREFIX: &str = "xcn1:";
+/// Node-tier envelope: `xcn2:` + hex(nonce ‖ ct ‖ tag). The AD binds the row context.
+const NODE_SEAL_PREFIX: &str = "xcn2:";
+/// Node-tier envelope from before row binding (no AD). Read only by the seal floor.
+const LEGACY_NODE_SEAL_PREFIX: &str = "xcn1:";
+const FIELD_AD_LABEL: &str = "xavier-conv-field";
+const FIELD_AD_VERSION: &str = "2";
+/// Kind and value of the seal floor marker (`conv_seal_state`, key `floor`).
+const FLOOR_KIND: &str = "conv.meta.floor";
+const FLOOR_VALUE: &str = "2";
+/// True when any sealed column of any table already holds an `xcn2:` value.
+const SQL_ANY_NODE_SEALED: &str = "SELECT
+    EXISTS(SELECT 1 FROM conversation_threads WHERE title GLOB 'xcn2:*' OR last_preview GLOB 'xcn2:*')
+    OR EXISTS(SELECT 1 FROM conversation_messages WHERE content GLOB 'xcn2:*' OR tool_calls GLOB 'xcn2:*'
+        OR openui_lang GLOB 'xcn2:*' OR xui_json GLOB 'xcn2:*' OR metadata GLOB 'xcn2:*')
+    OR EXISTS(SELECT 1 FROM deductions WHERE deduction GLOB 'xcn2:*')
+    OR EXISTS(SELECT 1 FROM beliefs WHERE subject GLOB 'xcn2:*' OR relation GLOB 'xcn2:*'
+        OR object GLOB 'xcn2:*' OR proposition GLOB 'xcn2:*')";
+
+/// Row context bound into every node-tier seal. Fixed for the life of a row:
+/// the handle's trusted project, the parent row (the thread for messages, empty
+/// for top-level rows) and the row id.
+#[derive(Clone, Copy)]
+struct FieldCtx<'a> {
+    project: &'a str,
+    parent: &'a str,
+    row: &'a str,
+}
 
 /// Key material used to seal text columns.
 #[derive(Clone)]
 enum Sealer {
     /// Default-space data key (`xr1:` envelope, AD binds column kind + row id).
     Dek(crate::espacio::keys::KeyHandle),
-    /// Node record key (`xcn1:` envelope), used before a keystore exists.
+    /// Node record key (`xcn2:` envelope), used before a keystore exists.
     Node([u8; 32]),
     /// No key available: rows are written as before (clear).
     None,
 }
 
-fn is_node_sealed(v: &str) -> bool {
-    v.strip_prefix(NODE_SEAL_PREFIX).is_some_and(|b| {
+fn is_legacy_node_sealed(v: &str) -> bool {
+    v.strip_prefix(LEGACY_NODE_SEAL_PREFIX).is_some_and(|b| {
         b.len() >= 56 && b.len() % 2 == 0 && b.bytes().all(|c| c.is_ascii_hexdigit())
     })
 }
 
+/// Associated data fields of a node-tier field: label, version, tier, project,
+/// column kind, parent and row id. Framed by `keys::seal_with_ad`.
+fn field_ad_fields<'a>(kind: &'a str, ctx: FieldCtx<'a>) -> [&'a [u8]; 7] {
+    [
+        FIELD_AD_LABEL.as_bytes(),
+        FIELD_AD_VERSION.as_bytes(),
+        b"node",
+        ctx.project.as_bytes(),
+        kind.as_bytes(),
+        ctx.parent.as_bytes(),
+        ctx.row.as_bytes(),
+    ]
+}
+
+fn seal_node(key: &[u8; 32], kind: &str, ctx: FieldCtx<'_>, plain: &str) -> Result<String> {
+    let raw =
+        crate::espacio::keys::seal_with_ad(key, &field_ad_fields(kind, ctx), plain.as_bytes())?;
+    Ok(format!(
+        "{NODE_SEAL_PREFIX}{}",
+        crate::crypto::hex_encode(raw)
+    ))
+}
+
+/// Open an `xcn2:` value. A malformed envelope, or one that does not authenticate
+/// for this kind and row context, is an error. It is never returned as clear text.
+fn open_node(key: &[u8; 32], kind: &str, ctx: FieldCtx<'_>, stored: &str) -> Result<String> {
+    let body = stored
+        .strip_prefix(NODE_SEAL_PREFIX)
+        .ok_or_else(|| anyhow::anyhow!("conversation row is corrupt"))?;
+    let well_formed = body.len() >= 56
+        && body.len() % 2 == 0
+        && body.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'));
+    anyhow::ensure!(well_formed, "conversation row is corrupt");
+    let raw = crate::crypto::hex_decode(body)
+        .map_err(|e| anyhow::anyhow!("conversation row is corrupt: {e}"))?;
+    let pt = crate::espacio::keys::open_with_ad(key, &field_ad_fields(kind, ctx), &raw)
+        .map_err(|_| anyhow::anyhow!("conversation row failed authentication"))?;
+    String::from_utf8(pt.to_vec()).map_err(|_| anyhow::anyhow!("row is not valid UTF-8"))
+}
+
+/// Open an `xcn1:` value (no AD). Only the seal floor migration reads these.
+fn open_legacy_node(key: &[u8; 32], stored: &str) -> Result<String> {
+    let raw = crate::crypto::hex_decode(&stored[LEGACY_NODE_SEAL_PREFIX.len()..])
+        .map_err(|e| anyhow::anyhow!("conversation row is corrupt: {e}"))?;
+    let pt = crate::crypto::encryption::aes_decrypt(&raw, key)
+        .map_err(|e| anyhow::anyhow!("conversation row failed authentication: {e}"))?;
+    String::from_utf8(pt).map_err(|_| anyhow::anyhow!("row is not valid UTF-8"))
+}
+
+/// Seal a legacy or clear value for the floor migration. `xr1:` and `xcn2:` values
+/// are already valid and return `None`.
+fn reseal_legacy(
+    key: &[u8; 32],
+    kind: &str,
+    ctx: FieldCtx<'_>,
+    stored: Option<&str>,
+) -> Result<Option<String>> {
+    let Some(stored) = stored else {
+        return Ok(None);
+    };
+    if crate::espacio::keys::looks_encrypted(stored) || stored.starts_with(NODE_SEAL_PREFIX) {
+        return Ok(None);
+    }
+    let plain = if is_legacy_node_sealed(stored) {
+        open_legacy_node(key, stored)?
+    } else {
+        stored.to_string()
+    };
+    seal_node(key, kind, ctx, &plain).map(Some)
+}
+
 impl Sealer {
-    fn seal(&self, kind: &str, id: &str, plain: &str) -> Result<String> {
+    fn seal(&self, kind: &str, ctx: FieldCtx<'_>, plain: &str) -> Result<String> {
         match self {
             Sealer::Dek(k) => {
-                k.seal_record(crate::espacio::keys::DEFAULT_SPACE_ID, kind, id, plain)
+                k.seal_record(crate::espacio::keys::DEFAULT_SPACE_ID, kind, ctx.row, plain)
             }
-            Sealer::Node(key) => {
-                let nonce = crate::crypto::encryption::NonceBytes::generate();
-                let ct = crate::crypto::encryption::aes_encrypt(plain.as_bytes(), key, &nonce)
-                    .map_err(|e| anyhow::anyhow!("conversation seal failed: {e}"))?;
-                Ok(format!(
-                    "{NODE_SEAL_PREFIX}{}",
-                    crate::crypto::hex_encode(ct)
-                ))
-            }
+            Sealer::Node(key) => seal_node(key, kind, ctx, plain),
             Sealer::None => Ok(plain.to_string()),
         }
     }
 
-    fn seal_opt(&self, kind: &str, id: &str, plain: Option<&str>) -> Result<Option<String>> {
-        plain.map(|p| self.seal(kind, id, p)).transpose()
+    fn seal_opt(
+        &self,
+        kind: &str,
+        ctx: FieldCtx<'_>,
+        plain: Option<&str>,
+    ) -> Result<Option<String>> {
+        plain.map(|p| self.seal(kind, ctx, p)).transpose()
     }
 
-    /// Open a stored value. Values without a seal envelope are legacy clear rows.
-    fn open(&self, kind: &str, id: &str, stored: String) -> Result<String> {
+    /// Node key for reading `xcn2:` values: this sealer's own, else the node's.
+    fn read_node_key(&self) -> Result<[u8; 32]> {
+        use crate::memory::sqlite_vec_store::at_rest;
+        match self {
+            Sealer::Node(k) => Ok(*k),
+            _ => at_rest::peek_record_key_with_source()
+                .0
+                .ok_or_else(|| anyhow::anyhow!("sealed conversation row but no node key")),
+        }
+    }
+
+    /// Open a stored value. `xr1:` rows open under the default-space key and
+    /// `xcn2:` rows under the node key. Under the node tier, a legacy or clear
+    /// value is an error: the seal floor has already converted them.
+    fn open(&self, kind: &str, ctx: FieldCtx<'_>, stored: String) -> Result<String> {
         use crate::memory::sqlite_vec_store::at_rest;
         if crate::espacio::keys::looks_encrypted(&stored) {
             let dek = match self {
                 Sealer::Dek(k) => k.clone(),
                 _ => at_rest::default_space_key()?,
             };
-            return dek.open_record(crate::espacio::keys::DEFAULT_SPACE_ID, kind, id, &stored);
+            return dek.open_record(
+                crate::espacio::keys::DEFAULT_SPACE_ID,
+                kind,
+                ctx.row,
+                &stored,
+            );
         }
-        if is_node_sealed(&stored) {
-            let key = match self {
-                Sealer::Node(k) => *k,
-                _ => at_rest::peek_record_key_with_source()
-                    .0
-                    .ok_or_else(|| anyhow::anyhow!("sealed conversation row but no node key"))?,
-            };
-            let raw = crate::crypto::hex_decode(&stored[NODE_SEAL_PREFIX.len()..])
-                .map_err(|e| anyhow::anyhow!("conversation row is corrupt: {e}"))?;
-            let pt = crate::crypto::encryption::aes_decrypt(&raw, &key)
-                .map_err(|e| anyhow::anyhow!("conversation row failed authentication: {e}"))?;
-            return String::from_utf8(pt).map_err(|_| anyhow::anyhow!("row is not valid UTF-8"));
+        if stored.starts_with(NODE_SEAL_PREFIX) {
+            return open_node(&self.read_node_key()?, kind, ctx, &stored);
         }
-        Ok(stored)
+        match self {
+            Sealer::Node(_) => anyhow::bail!("legacy conversation value after seal floor"),
+            _ if is_legacy_node_sealed(&stored) => {
+                open_legacy_node(&self.read_node_key()?, &stored)
+            }
+            _ => Ok(stored),
+        }
     }
 
-    fn open_opt(&self, kind: &str, id: &str, stored: Option<String>) -> Result<Option<String>> {
-        stored.map(|s| self.open(kind, id, s)).transpose()
+    fn open_opt(
+        &self,
+        kind: &str,
+        ctx: FieldCtx<'_>,
+        stored: Option<String>,
+    ) -> Result<Option<String>> {
+        stored.map(|s| self.open(kind, ctx, s)).transpose()
     }
 }
 
@@ -1551,6 +1834,26 @@ fn open_snapshot(
     }
 }
 
+/// Seal floor for node-tier data, run once per file and node key. It runs in one
+/// `BEGIN IMMEDIATE` transaction, so a concurrent process sees the marker or
+/// nothing. Any error rolls the whole pass back.
+fn ensure_seal_floor(conn: &Connection, key: &[u8; 32], handle_project: &str) -> Result<()> {
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    match seal_floor_in_tx(conn, key, handle_project) {
+        Ok(()) => {
+            if let Err(e) = conn.execute_batch("COMMIT") {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(e).context("failed to commit seal floor");
+            }
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
+}
+
 /// Snapshot bodies: read the session's messages in order, opened with the
 /// policy's tier. `Err` is a snapshot-level refusal; the outer `Result` is
 /// the database. Early exit once the running total passes the body bound.
@@ -1571,7 +1874,12 @@ fn read_snapshot_messages(
         let id: String = row.get(0)?;
         let role: String = row.get(1)?;
         let stored: String = row.get(2)?;
-        let Ok(content) = sealer.open("conv.msg.content", &id, stored) else {
+        let ctx = FieldCtx {
+            project: &scope.project_id,
+            parent: &scope.session_id,
+            row: &id,
+        };
+        let Ok(content) = sealer.open("conv.msg.content", ctx, stored) else {
             return Ok(Err(SnapshotError::SourceUnreadable));
         };
         total += id.len() + role.len() + content.len();
@@ -1744,6 +2052,8 @@ impl ConversationsDb {
         let cid = Uuid::new_v4().to_string();
         self.ensure_schema().await.map_err(db_err)?;
         self.ensure_snapshot_schema().await?;
+        // The capture opens node-tier messages, so the seal floor must hold first.
+        self.ready_sealer().await.map_err(db_err)?;
 
         let (scope, name) = (scope.clone(), name.map(str::to_string));
         let (pool, cid_c) = (self.full_project_id.clone(), cid.clone());
@@ -1817,6 +2127,202 @@ impl ConversationsDb {
     }
 }
 
+/// A legacy value re-sealed by the floor migration, applied after the scan.
+struct PendingReseal {
+    table: &'static str,
+    column: &'static str,
+    row_id: String,
+    sealed: String,
+}
+
+fn push_reseal(
+    out: &mut Vec<PendingReseal>,
+    table: &'static str,
+    column: &'static str,
+    row_id: &str,
+    sealed: Option<String>,
+) {
+    if let Some(sealed) = sealed {
+        out.push(PendingReseal {
+            table,
+            column,
+            row_id: row_id.to_string(),
+            sealed,
+        });
+    }
+}
+
+fn seal_floor_in_tx(conn: &Connection, key: &[u8; 32], handle_project: &str) -> Result<()> {
+    let floor_ctx = FieldCtx {
+        project: "",
+        parent: "",
+        row: "floor",
+    };
+    let marker: Option<String> = conn
+        .query_row("SELECT v FROM conv_seal_state WHERE k = 'floor'", [], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    if let Some(sealed) = marker {
+        let authentic =
+            open_node(key, FLOOR_KIND, floor_ctx, &sealed).is_ok_and(|v| v == FLOOR_VALUE);
+        anyhow::ensure!(authentic, "seal floor marker failed authentication");
+        return Ok(());
+    }
+    // Without a marker, `xcn2:` values mean the marker was removed. Refuse, so that
+    // legacy values cannot be written back in and laundered as authentic.
+    let node_sealed: bool = conn.query_row(SQL_ANY_NODE_SEALED, [], |r| r.get(0))?;
+    anyhow::ensure!(!node_sealed, "seal floor marker missing");
+
+    let mut pending = Vec::new();
+    queue_legacy_reseals(conn, key, handle_project, &mut pending)?;
+    for p in &pending {
+        conn.execute(
+            &format!("UPDATE {} SET {} = ?1 WHERE id = ?2", p.table, p.column),
+            params![p.sealed, p.row_id],
+        )?;
+    }
+    let marker = seal_node(key, FLOOR_KIND, floor_ctx, FLOOR_VALUE)?;
+    conn.execute(
+        "INSERT INTO conv_seal_state (k, v) VALUES ('floor', ?1)",
+        params![marker],
+    )?;
+    Ok(())
+}
+
+/// Scan every sealed column and queue the legacy values for re-sealing under their
+/// row context. A row's project is its own `project_id`, or the handle's project
+/// when that is NULL. A message's project is its thread's project.
+fn queue_legacy_reseals(
+    conn: &Connection,
+    key: &[u8; 32],
+    handle_project: &str,
+    out: &mut Vec<PendingReseal>,
+) -> Result<()> {
+    {
+        let mut stmt =
+            conn.prepare("SELECT id, project_id, title, last_preview FROM conversation_threads")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, project, title, preview) = row?;
+            let project = project.unwrap_or_else(|| handle_project.to_string());
+            let ctx = FieldCtx {
+                project: &project,
+                parent: "",
+                row: &id,
+            };
+            let title = reseal_legacy(key, "conv.thread.title", ctx, title.as_deref())?;
+            push_reseal(out, "conversation_threads", "title", &id, title);
+            let preview = reseal_legacy(key, "conv.thread.preview", ctx, preview.as_deref())?;
+            push_reseal(out, "conversation_threads", "last_preview", &id, preview);
+        }
+    }
+    {
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.thread_id, t.project_id, m.content, m.tool_calls,
+                    m.openui_lang, m.xui_json, m.metadata
+             FROM conversation_messages m
+             LEFT JOIN conversation_threads t ON t.id = m.thread_id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<String>>(6)?,
+                r.get::<_, Option<String>>(7)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, thread, project, content, tool_calls, openui_lang, xui_json, metadata) = row?;
+            let project = project.unwrap_or_else(|| handle_project.to_string());
+            let ctx = FieldCtx {
+                project: &project,
+                parent: &thread,
+                row: &id,
+            };
+            let table = "conversation_messages";
+            let content = reseal_legacy(key, "conv.msg.content", ctx, Some(&content))?;
+            push_reseal(out, table, "content", &id, content);
+            let tool_calls = reseal_legacy(key, "conv.msg.tool_calls", ctx, tool_calls.as_deref())?;
+            push_reseal(out, table, "tool_calls", &id, tool_calls);
+            let openui_lang =
+                reseal_legacy(key, "conv.msg.openui_lang", ctx, openui_lang.as_deref())?;
+            push_reseal(out, table, "openui_lang", &id, openui_lang);
+            let xui_json = reseal_legacy(key, "conv.msg.xui_json", ctx, xui_json.as_deref())?;
+            push_reseal(out, table, "xui_json", &id, xui_json);
+            let metadata = reseal_legacy(key, "conv.msg.metadata", ctx, metadata.as_deref())?;
+            push_reseal(out, table, "metadata", &id, metadata);
+        }
+    }
+    {
+        let mut stmt = conn.prepare("SELECT id, project_id, deduction FROM deductions")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, project, text) = row?;
+            let project = project.unwrap_or_else(|| handle_project.to_string());
+            let ctx = FieldCtx {
+                project: &project,
+                parent: "",
+                row: &id,
+            };
+            let text = reseal_legacy(key, "conv.deduction.text", ctx, Some(&text))?;
+            push_reseal(out, "deductions", "deduction", &id, text);
+        }
+    }
+    {
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, subject, relation, object, proposition FROM beliefs",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, Option<String>>(5)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, project, subject, relation, object, proposition) = row?;
+            let project = project.unwrap_or_else(|| handle_project.to_string());
+            let ctx = FieldCtx {
+                project: &project,
+                parent: "",
+                row: &id,
+            };
+            let table = "beliefs";
+            let subject = reseal_legacy(key, "conv.belief.subject", ctx, Some(&subject))?;
+            push_reseal(out, table, "subject", &id, subject);
+            let relation = reseal_legacy(key, "conv.belief.relation", ctx, relation.as_deref())?;
+            push_reseal(out, table, "relation", &id, relation);
+            let object = reseal_legacy(key, "conv.belief.object", ctx, object.as_deref())?;
+            push_reseal(out, table, "object", &id, object);
+            let proposition =
+                reseal_legacy(key, "conv.belief.proposition", ctx, proposition.as_deref())?;
+            push_reseal(out, table, "proposition", &id, proposition);
+        }
+    }
+    Ok(())
+}
+
 /// Parse an RFC 3339 datetime string.
 fn parse_datetime(s: &str) -> DateTime<Utc> {
     s.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now())
@@ -1825,6 +2331,8 @@ fn parse_datetime(s: &str) -> DateTime<Utc> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aes_gcm::aead::{Aead, KeyInit, Payload};
+    use aes_gcm::{Aes256Gcm, Nonce};
 
     #[tokio::test]
     async fn test_open_with_malicious_project_id() {
@@ -2156,7 +2664,7 @@ mod tests {
                 r.get(0)
             })
             .unwrap();
-        assert!(stored.starts_with("xcn1:"), "legacy row was not re-sealed");
+        assert!(stored.starts_with("xcn2:"), "legacy row was not re-sealed");
     }
 
     /// `EXPLAIN QUERY PLAN` detail lines for `sql` on the live schema.
@@ -2320,6 +2828,718 @@ mod tests {
             )
             .unwrap();
         assert_eq!(content, "old two");
+    }
+
+    // ------------------------------------------------------------------
+    // Row-bound node seals (xcn2)
+    // ------------------------------------------------------------------
+
+    const NODE_KEY: [u8; 32] = [0x5A; 32];
+
+    /// Field AD for project `p1`, kind `conv.msg.content`, thread `t1`, row `m1`:
+    /// u32 BE length + bytes for "xavier-conv-field", "2", "node", "p1", kind, "t1", "m1".
+    const GOLDEN_FIELD_AD_HEX: &str = concat!(
+        "00000011",
+        "7861766965722d636f6e762d6669656c64",
+        "00000001",
+        "32",
+        "00000004",
+        "6e6f6465",
+        "00000002",
+        "7031",
+        "00000010",
+        "636f6e762e6d73672e636f6e74656e74",
+        "00000002",
+        "7431",
+        "00000002",
+        "6d31",
+    );
+
+    const SEALED_COLUMNS: [(&str, &str); 12] = [
+        ("conversation_threads", "title"),
+        ("conversation_threads", "last_preview"),
+        ("conversation_messages", "content"),
+        ("conversation_messages", "tool_calls"),
+        ("conversation_messages", "openui_lang"),
+        ("conversation_messages", "xui_json"),
+        ("conversation_messages", "metadata"),
+        ("deductions", "deduction"),
+        ("beliefs", "subject"),
+        ("beliefs", "relation"),
+        ("beliefs", "object"),
+        ("beliefs", "proposition"),
+    ];
+
+    fn raw_conn(path: &Path) -> rusqlite::Connection {
+        rusqlite::Connection::open(path).unwrap()
+    }
+
+    /// Values of a single-column query, in result order.
+    fn raw_column(path: &Path, sql: &str) -> Vec<Option<String>> {
+        let conn = raw_conn(path);
+        let mut stmt = conn.prepare(sql).unwrap();
+        let rows = stmt
+            .query_map([], |r| r.get::<_, Option<String>>(0))
+            .unwrap();
+        rows.collect::<rusqlite::Result<Vec<_>>>().unwrap()
+    }
+
+    /// Every sealed column plus the floor marker, in row order.
+    fn sealed_snapshot(path: &Path) -> Vec<Option<String>> {
+        let mut all = Vec::new();
+        for (table, column) in SEALED_COLUMNS {
+            all.extend(raw_column(
+                path,
+                &format!("SELECT {column} FROM {table} ORDER BY rowid"),
+            ));
+        }
+        all.extend(raw_column(path, "SELECT v FROM conv_seal_state ORDER BY k"));
+        all
+    }
+
+    async fn node_db(path: &Path, project: &str) -> ConversationsDb {
+        ConversationsDb::open_at(project, path)
+            .await
+            .unwrap()
+            .with_node_key(NODE_KEY)
+    }
+
+    /// The node-tier envelope as written before the row-bound format (no AD).
+    fn legacy_xcn1(key: &[u8; 32], plain: &str) -> String {
+        use crate::crypto::encryption::{aes_encrypt, NonceBytes};
+        let ct = aes_encrypt(plain.as_bytes(), key, &NonceBytes::generate()).unwrap();
+        format!("xcn1:{}", crate::crypto::hex_encode(ct))
+    }
+
+    /// Flip the hex digit at byte offset `at` (the result is still hex and always differs).
+    fn flip_at(value: &str, at: usize) -> String {
+        let mut bytes = value.as_bytes().to_vec();
+        bytes[at] = if bytes[at] == b'0' { b'1' } else { b'0' };
+        String::from_utf8(bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn xcn2_field_ad_golden_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "p1").await;
+        db.create_schema().await.unwrap();
+        raw_conn(&path)
+            .execute_batch(
+                "INSERT INTO conversation_threads (id, project_id, started_at, updated_at)
+                    VALUES ('t1', 'p1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                 INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+                    VALUES ('m1', 't1', 'user', 'hello golden', '2026-01-01T00:00:00Z');",
+            )
+            .unwrap();
+
+        // The first node-tier operation seals the legacy clear content under its row context.
+        let msgs = db.get_thread_messages("t1").await.unwrap();
+        assert_eq!(msgs[0].content, "hello golden");
+
+        let stored = raw_column(
+            &path,
+            "SELECT content FROM conversation_messages WHERE id = 'm1'",
+        )
+        .remove(0)
+        .unwrap();
+        let body = stored
+            .strip_prefix("xcn2:")
+            .expect("content is sealed as xcn2");
+        let raw = crate::crypto::hex_decode(body).unwrap();
+        let (nonce, ct) = raw.split_at(12);
+        let aad = crate::crypto::hex_decode(GOLDEN_FIELD_AD_HEX).unwrap();
+        let cipher = Aes256Gcm::new_from_slice(&NODE_KEY).unwrap();
+        let pt = cipher
+            .decrypt(Nonce::from_slice(nonce), Payload { msg: ct, aad: &aad })
+            .expect("golden AD authenticates the sealed content");
+        assert_eq!(pt, b"hello golden");
+    }
+
+    #[tokio::test]
+    async fn xcn2_written_for_every_sealed_column() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "seal-cols").await;
+        let thread = db.create_thread(Some("title"), None, None).await.unwrap();
+        db.store_message(
+            &thread.id,
+            "user",
+            "content",
+            Some("tools"),
+            Some("lang"),
+            Some("xui"),
+            Some("meta"),
+            None,
+        )
+        .await
+        .unwrap();
+        db.record_deduction("deduction", 0.5, None, None)
+            .await
+            .unwrap();
+        let belief = db
+            .upsert_belief(
+                "subject",
+                Some("rel"),
+                Some("obj"),
+                Some("prop"),
+                0.9,
+                1.0,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        for (table, column) in SEALED_COLUMNS {
+            let values = raw_column(&path, &format!("SELECT {column} FROM {table}"));
+            let sealed: Vec<&String> = values.iter().flatten().collect();
+            assert!(!sealed.is_empty(), "{table}.{column} has no stored value");
+            for v in sealed {
+                assert!(
+                    v.starts_with("xcn2:"),
+                    "{table}.{column} stored without xcn2 seal: {v}"
+                );
+            }
+        }
+
+        // Reads round-trip.
+        let msgs = db.get_thread_messages(&thread.id).await.unwrap();
+        assert_eq!(msgs[0].content, "content");
+        assert_eq!(msgs[0].tool_calls.as_deref(), Some("tools"));
+        assert_eq!(msgs[0].openui_lang.as_deref(), Some("lang"));
+        assert_eq!(msgs[0].xui_json.as_deref(), Some("xui"));
+        assert_eq!(msgs[0].metadata.as_deref(), Some("meta"));
+        let b = db.get_belief(&belief.id).await.unwrap().unwrap();
+        assert_eq!(b.subject, "subject");
+        assert_eq!(b.relation.as_deref(), Some("rel"));
+        assert_eq!(b.object.as_deref(), Some("obj"));
+        assert_eq!(b.proposition.as_deref(), Some("prop"));
+        assert_eq!(
+            db.list_deductions(5).await.unwrap()[0].deduction,
+            "deduction"
+        );
+        assert_eq!(
+            db.get_thread(&thread.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .title
+                .as_deref(),
+            Some("title")
+        );
+    }
+
+    #[tokio::test]
+    async fn xcn2_splice_across_rows_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "splice-rows").await;
+        let thread = db.create_thread(None, None, None).await.unwrap();
+        let m1 = db
+            .store_message(&thread.id, "user", "first", None, None, None, None, None)
+            .await
+            .unwrap();
+        let m2 = db
+            .store_message(&thread.id, "user", "second", None, None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(db.get_thread_messages(&thread.id).await.unwrap().len(), 2);
+
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_messages SET content =
+                    (SELECT content FROM conversation_messages WHERE id = ?1) WHERE id = ?2",
+                params![m1.id, m2.id],
+            )
+            .unwrap();
+        assert!(db.get_thread_messages(&thread.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn xcn2_splice_across_columns_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "splice-cols").await;
+        let thread = db.create_thread(None, None, None).await.unwrap();
+        let m1 = db
+            .store_message(
+                &thread.id,
+                "user",
+                "body",
+                None,
+                None,
+                None,
+                Some("meta"),
+                None,
+            )
+            .await
+            .unwrap();
+        let belief = db
+            .upsert_belief(
+                "subject",
+                Some("rel"),
+                Some("obj"),
+                None,
+                0.5,
+                1.0,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Message content into the metadata column of the same row.
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_messages SET metadata = content WHERE id = ?1",
+                params![m1.id],
+            )
+            .unwrap();
+        assert!(db.get_thread_messages(&thread.id).await.is_err());
+
+        // Belief subject into the object column of the same row.
+        raw_conn(&path)
+            .execute(
+                "UPDATE beliefs SET object = subject WHERE id = ?1",
+                params![belief.id],
+            )
+            .unwrap();
+        assert!(db.get_belief(&belief.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn xcn2_splice_across_tables_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "splice-tables").await;
+        let deduction = db
+            .record_deduction("secret deduction", 0.5, None, None)
+            .await
+            .unwrap();
+        // Subject only: the other belief columns would fail for a row-id reason and hide the kind check.
+        let belief = db
+            .upsert_belief("subject", None, None, None, 0.5, 1.0, None, None, None)
+            .await
+            .unwrap();
+
+        // The belief takes the deduction's id and the deduction's sealed text as its subject.
+        raw_conn(&path)
+            .execute(
+                "UPDATE beliefs SET id = ?1,
+                    subject = (SELECT deduction FROM deductions WHERE id = ?1)
+                 WHERE id = ?2",
+                params![deduction.id, belief.id],
+            )
+            .unwrap();
+        assert!(db.get_belief(&deduction.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn xcn2_message_moved_to_other_thread_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "moved").await;
+        let t1 = db.create_thread(None, None, None).await.unwrap();
+        let t2 = db.create_thread(None, None, None).await.unwrap();
+        let m1 = db
+            .store_message(&t1.id, "user", "stays put", None, None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(db.get_thread_messages(&t1.id).await.unwrap().len(), 1);
+
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_messages SET thread_id = ?1 WHERE id = ?2",
+                params![t2.id, m1.id],
+            )
+            .unwrap();
+        assert!(db.get_thread_messages(&t2.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn xcn2_row_copied_to_other_project_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let owner = node_db(&path, "proj-a").await;
+        let other = node_db(&path, "proj-b").await;
+        let thread = owner
+            .create_thread(Some("private title"), None, None)
+            .await
+            .unwrap();
+        owner
+            .store_message(
+                &thread.id,
+                "user",
+                "private message",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_threads SET project_id = 'proj-b' WHERE id = ?1",
+                params![thread.id],
+            )
+            .unwrap();
+        assert!(other.list_threads(10).await.is_err());
+        assert!(other.get_thread(&thread.id).await.is_err());
+        assert!(other.get_thread_messages(&thread.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn xcn2_tamper_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "tamper").await;
+        let thread = db.create_thread(None, None, None).await.unwrap();
+        let m1 = db
+            .store_message(
+                &thread.id,
+                "user",
+                "tamper target",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let sql = format!(
+            "SELECT content FROM conversation_messages WHERE id = '{}'",
+            m1.id
+        );
+        let stored = raw_column(&path, &sql).remove(0).unwrap();
+        assert!(stored.starts_with("xcn2:"), "content is not xcn2: {stored}");
+        let set_content = |value: &str| {
+            raw_conn(&path)
+                .execute(
+                    "UPDATE conversation_messages SET content = ?1 WHERE id = ?2",
+                    params![value, m1.id],
+                )
+                .unwrap();
+        };
+
+        // One nibble in the nonce, one in the ciphertext, one in the tag.
+        let prefix = "xcn2:".len();
+        let last = stored.len() - 1;
+        for at in [prefix, prefix + 24, last] {
+            set_content(&flip_at(&stored, at));
+            assert!(
+                db.get_thread_messages(&thread.id).await.is_err(),
+                "tampered byte at {at} was accepted"
+            );
+        }
+
+        set_content(&stored);
+        assert_eq!(
+            db.get_thread_messages(&thread.id).await.unwrap()[0].content,
+            "tamper target"
+        );
+    }
+
+    #[tokio::test]
+    async fn xcn2_malformed_envelope_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "malformed").await;
+        let thread = db.create_thread(Some("title"), None, None).await.unwrap();
+
+        let malformed = [
+            "xcn2:zz".to_string(),
+            "xcn2:abc".to_string(),
+            format!("xcn2:{}", "00".repeat(27)),
+        ];
+        for value in malformed {
+            raw_conn(&path)
+                .execute(
+                    "UPDATE conversation_threads SET title = ?1 WHERE id = ?2",
+                    params![value, thread.id],
+                )
+                .unwrap();
+            assert!(
+                db.get_thread(&thread.id).await.is_err(),
+                "malformed {value} was returned instead of failing"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn xcn1_relabel_to_xcn2_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "relabel").await;
+        let thread = db.create_thread(None, None, None).await.unwrap();
+        let m1 = db
+            .store_message(
+                &thread.id,
+                "user",
+                "relabel target",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let relabeled = legacy_xcn1(&NODE_KEY, "relabel target").replacen("xcn1:", "xcn2:", 1);
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_messages SET content = ?1 WHERE id = ?2",
+                params![relabeled, m1.id],
+            )
+            .unwrap();
+        assert!(db.get_thread_messages(&thread.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn legacy_xcn1_and_clear_rows_migrate_to_xcn2() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "mig").await;
+        db.create_schema().await.unwrap();
+        {
+            let conn = raw_conn(&path);
+            conn.execute(
+                "INSERT INTO conversation_threads (id, project_id, title, last_preview, started_at, updated_at)
+                 VALUES ('t1', 'mig', ?1, 'clear preview', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                params![legacy_xcn1(&NODE_KEY, "legacy title")],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO conversation_messages (id, thread_id, role, content, tool_calls, metadata, created_at)
+                 VALUES ('m1', 't1', 'user', ?1, 'clear tool', ?2, '2026-01-01T00:00:00Z')",
+                params![
+                    legacy_xcn1(&NODE_KEY, "legacy content"),
+                    legacy_xcn1(&NODE_KEY, "legacy meta")
+                ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO deductions (id, project_id, deduction, created_at)
+                 VALUES ('d1', 'mig', ?1, '2026-01-01T00:00:00Z')",
+                params![legacy_xcn1(&NODE_KEY, "legacy deduction")],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO beliefs (id, project_id, subject, object, proposition, created_at, updated_at)
+                 VALUES ('b1', 'mig', 'clear subject', ?1, 'clear prop', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                params![legacy_xcn1(&NODE_KEY, "legacy object")],
+            )
+            .unwrap();
+        }
+
+        // The first operation reads the plaintext and seals every legacy value.
+        let msgs = db.get_thread_messages("t1").await.unwrap();
+        assert_eq!(msgs[0].content, "legacy content");
+        assert_eq!(msgs[0].tool_calls.as_deref(), Some("clear tool"));
+        assert_eq!(msgs[0].metadata.as_deref(), Some("legacy meta"));
+        let thread = db.get_thread("t1").await.unwrap().unwrap();
+        assert_eq!(thread.title.as_deref(), Some("legacy title"));
+        assert_eq!(thread.last_preview.as_deref(), Some("clear preview"));
+        assert_eq!(
+            db.list_deductions(5).await.unwrap()[0].deduction,
+            "legacy deduction"
+        );
+        let b = db.get_belief("b1").await.unwrap().unwrap();
+        assert_eq!(b.subject, "clear subject");
+        assert_eq!(b.object.as_deref(), Some("legacy object"));
+
+        for (table, column) in SEALED_COLUMNS {
+            for v in raw_column(&path, &format!("SELECT {column} FROM {table}"))
+                .into_iter()
+                .flatten()
+            {
+                assert!(
+                    v.starts_with("xcn2:"),
+                    "{table}.{column} left unsealed: {v}"
+                );
+            }
+        }
+        assert_eq!(
+            raw_column(&path, "SELECT k FROM conv_seal_state"),
+            vec![Some("floor".to_string())]
+        );
+
+        // Reopening is a no-op: stored bytes do not change.
+        let before = sealed_snapshot(&path);
+        let reopened = node_db(&path, "mig").await;
+        assert_eq!(
+            reopened.get_thread_messages("t1").await.unwrap()[0].content,
+            "legacy content"
+        );
+        assert_eq!(sealed_snapshot(&path), before);
+    }
+
+    #[tokio::test]
+    async fn downgrade_after_floor_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "downgrade").await;
+        let thread = db.create_thread(Some("title"), None, None).await.unwrap();
+        let m1 = db
+            .store_message(&thread.id, "user", "content", None, None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(db.get_thread_messages(&thread.id).await.unwrap().len(), 1);
+
+        // A genuine legacy value for this key and row, written after the floor.
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_messages SET content = ?1 WHERE id = ?2",
+                params![legacy_xcn1(&NODE_KEY, "old content"), m1.id],
+            )
+            .unwrap();
+        assert!(db.get_thread_messages(&thread.id).await.is_err());
+
+        // Clear text written after the floor.
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_threads SET title = 'clear title' WHERE id = ?1",
+                params![thread.id],
+            )
+            .unwrap();
+        assert!(db.get_thread(&thread.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn floor_marker_deleted_with_xcn2_rows_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "marker-del").await;
+        let thread = db
+            .create_thread(Some("sealed title"), None, None)
+            .await
+            .unwrap();
+        // A second sealed value, untouched by the injection, keeps `xcn2:` rows in the file.
+        db.store_message(
+            &thread.id,
+            "user",
+            "kept sealed",
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        drop(db);
+
+        raw_conn(&path)
+            .execute_batch(&format!(
+                "DELETE FROM conv_seal_state;
+                 UPDATE conversation_threads SET title = 'injected clear' WHERE id = '{}';",
+                thread.id
+            ))
+            .unwrap();
+
+        // A fresh handle runs the floor check again; it must not migrate the injected value.
+        let fresh = node_db(&path, "marker-del").await;
+        assert!(fresh.get_thread(&thread.id).await.is_err());
+        assert_eq!(
+            raw_column(
+                &path,
+                &format!(
+                    "SELECT title FROM conversation_threads WHERE id = '{}'",
+                    thread.id
+                )
+            ),
+            vec![Some("injected clear".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn floor_marker_tampered_or_wrong_key_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "marker-tamper").await;
+        let thread = db
+            .create_thread(Some("sealed title"), None, None)
+            .await
+            .unwrap();
+        drop(db);
+
+        let marker = raw_column(&path, "SELECT v FROM conv_seal_state WHERE k = 'floor'")
+            .remove(0)
+            .unwrap();
+        let set_marker = |value: &str| {
+            raw_conn(&path)
+                .execute(
+                    "UPDATE conv_seal_state SET v = ?1 WHERE k = 'floor'",
+                    params![value],
+                )
+                .unwrap();
+        };
+        set_marker(&flip_at(&marker, 5 + 10));
+        let tampered = node_db(&path, "marker-tamper").await;
+        assert!(tampered.get_thread(&thread.id).await.is_err());
+
+        set_marker(&marker);
+        let restored = node_db(&path, "marker-tamper").await;
+        assert!(restored.get_thread(&thread.id).await.unwrap().is_some());
+
+        // Another key must not migrate or write anything.
+        let before = sealed_snapshot(&path);
+        let wrong = ConversationsDb::open_at("marker-tamper", &path)
+            .await
+            .unwrap()
+            .with_node_key([0x5B; 32]);
+        assert!(wrong.get_thread(&thread.id).await.is_err());
+        assert_eq!(sealed_snapshot(&path), before);
+    }
+
+    #[tokio::test]
+    async fn seal_floor_migration_is_atomic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "atomic").await;
+        db.create_schema().await.unwrap();
+        {
+            let conn = raw_conn(&path);
+            conn.execute_batch(
+                "INSERT INTO conversation_threads (id, project_id, title, started_at, updated_at)
+                    VALUES ('t1', 'atomic', 'clear title', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                 INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+                    VALUES ('m1', 't1', 'user', 'clear message', '2026-01-01T00:00:00Z');
+                 INSERT INTO beliefs (id, project_id, subject, created_at, updated_at)
+                    VALUES ('b1', 'atomic', 'clear subject', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                 CREATE TRIGGER reject_belief_update BEFORE UPDATE ON beliefs
+                    BEGIN SELECT RAISE(ABORT, 'update rejected'); END;",
+            )
+            .unwrap();
+        }
+
+        assert!(db.get_thread_messages("t1").await.is_err());
+        assert_eq!(
+            raw_column(&path, "SELECT title FROM conversation_threads"),
+            vec![Some("clear title".to_string())]
+        );
+        assert_eq!(
+            raw_column(&path, "SELECT content FROM conversation_messages"),
+            vec![Some("clear message".to_string())]
+        );
+        assert_eq!(
+            raw_column(&path, "SELECT subject FROM beliefs"),
+            vec![Some("clear subject".to_string())]
+        );
+        assert_eq!(
+            raw_conn(&path)
+                .query_row("SELECT COUNT(*) FROM conv_seal_state", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
     }
 }
 

@@ -1006,3 +1006,34 @@ async fn snapshot_persists_across_reopen() {
         );
     }
 }
+
+#[tokio::test]
+#[serial_test::serial]
+async fn snapshot_capture_migrates_legacy_rows_first() {
+    let sb = Sandbox::new(Some(node_key_hex()));
+    let path = sb.path().join("conv.db");
+    let db = open_node_db(&path, WS).await;
+    insert_thread(&db, SESSION_A, Some(WS)).await;
+    // A clear row written before the seal floor existed. No other operation runs first.
+    raw(&path)
+        .execute(
+            "INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+             VALUES ('legacy-1', ?1, 'user', 'legacy canary', ?2)",
+            params![SESSION_A, Utc::now().to_rfc3339()],
+        )
+        .unwrap();
+
+    // The capture opens node-tier messages, so it migrates the row before reading it.
+    let saved = save(&db, SESSION_A).await;
+    assert_eq!(saved.tier, SnapshotTier::Node);
+    let loaded = load(&db, SESSION_A, &saved.checkpoint_id).await.unwrap();
+    assert!(loaded.body.contains("legacy canary"));
+    let stored: String = raw(&path)
+        .query_row(
+            "SELECT content FROM conversation_messages WHERE id = 'legacy-1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(stored.starts_with("xcn2:"), "legacy row was not migrated");
+}
