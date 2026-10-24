@@ -857,6 +857,31 @@
         "US-029"
       ]
     },
+    "feat-maloca-roadmap-route": {
+      "category": "maloca",
+      "description": "GET /v1/maloca/roadmap: read-only roadmap of the GitCore ledgers grouped by wave, with stable/in_progress/planned counts and mean progress per wave plus an unscheduled group.",
+      "id": "feat-maloca-roadmap-route",
+      "implemented_in": "src/server/maloca/roadmap_route.rs, src/server/maloca/mod.rs",
+      "name": "Maloca Roadmap Route",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [],
+      "spec_reference": "https://github.com/iberi22/xavier/issues/3514",
+      "status": "planned",
+      "steps": [
+        "Group backlog features by wave ascending, unscheduled apart",
+        "Count stable (stable|completed), planned and in_progress (any other status) per group",
+        "Mount the route on the v1 Maloca router"
+      ],
+      "tests": [
+        "server::maloca::roadmap_route::tests::waves_are_ascending_and_unscheduled_is_separate",
+        "server::maloca::roadmap_route::tests::counts_and_progress_mean_per_group",
+        "server::maloca::roadmap_route::tests::every_status_lands_in_exactly_one_bucket",
+        "server::maloca::roadmap_route::tests::empty_input_yields_empty_roadmap",
+        "server::maloca::roadmap_route::tests::roadmap_endpoint_reads_gitcore_ledgers"
+      ],
+      "user_stories": []
+    },
     "feat-codegraph-maturity-bridge": {
       "id": "feat-codegraph-maturity-bridge",
       "name": "Codegraph → Maturity/Docs Bridge",
