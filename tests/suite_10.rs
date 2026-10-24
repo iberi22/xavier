@@ -8,6 +8,9 @@
 
 xavier::isolate_test_process!();
 
+#[path = "router_explain_auth.rs"]
+mod router_explain_auth;
+
 #[path = "router_security_tokens_auth.rs"]
 mod router_security_tokens_auth;
 

@@ -7,6 +7,7 @@ pub mod codegraph;
 pub mod context;
 pub mod history;
 pub mod memory;
+pub mod model;
 pub mod render;
 
 pub use codegraph::CodeGraphSource;
@@ -15,4 +16,5 @@ pub use context::{
 };
 pub use history::GitHistorySource;
 pub use memory::{MemoryHit, MemorySearch, MemorySource, QmdMemorySearch};
+pub use model::ProviderExplanationModel;
 pub use render::{build_prompt, explain, Audience, Explanation, ExplanationModel};

@@ -406,6 +406,38 @@ pub struct AppDeps {
     pub no_ui: bool,
 }
 
+/// `POST /v1/explain` over the live workspace: git history, code graph, memory and
+/// the configured LLM. Merged into `protected_routes`, so the same auth layer applies.
+fn explain_routes(state: &CliState) -> Router {
+    use tokio::runtime::Handle;
+    use xavier::explain::{
+        CodeGraphSource, EvidenceSource, GitHistorySource, MemorySource, ProviderExplanationModel,
+        QmdMemorySearch,
+    };
+    use xavier::server::explain_route::{router, ExplainDeps};
+
+    let code_graph = Arc::clone(&state.code_graph);
+    let memory = Arc::new(QmdMemorySearch::new(Arc::clone(&state.qmd_memory)));
+    // Runs on a blocking thread per request; the read guard is dropped before any await.
+    let sources: Arc<dyn Fn() -> Vec<Box<dyn EvidenceSource + Send>> + Send + Sync> =
+        Arc::new(move || -> Vec<Box<dyn EvidenceSource + Send>> {
+            let engine = code_graph.blocking_read().query.clone();
+            let list: Vec<Box<dyn EvidenceSource + Send>> = vec![
+                Box::new(GitHistorySource),
+                Box::new(CodeGraphSource::new(engine)),
+                Box::new(MemorySource::new(memory.clone(), Handle::current())),
+            ];
+            list
+        });
+    router(ExplainDeps {
+        repo_root: state.workspace_dir.clone(),
+        sources,
+        model: Arc::new(ProviderExplanationModel::new(
+            xavier::agents::provider::client::ModelProviderClient::from_env(),
+        )),
+    })
+}
+
 /// Assemble the production router (routes and layers only, no boot side effects).
 pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
     use axum::Extension;
@@ -1243,6 +1275,7 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
             "/notifications/subscriptions/{id}",
             axum::routing::delete(crate::cli::handlers::notifications::delete_subscription_handler),
         )
+        .merge(explain_routes(&state).with_state(()))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             state.clone(),
