@@ -2,7 +2,7 @@
 //! fragment covers, read from the code graph Xavier already indexes.
 
 use std::collections::HashMap;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
@@ -10,6 +10,7 @@ use code_graph::query::QueryEngine;
 use code_graph::types::{CodeEdge, EdgeType, Language, Symbol};
 
 use super::context::{Evidence, EvidenceKind, EvidenceSource, ExplainTarget};
+use super::history::locate_repo;
 
 /// Score of a direct caller. Callers rank above callees.
 const CALLER_SCORE: f32 = 0.8;
@@ -34,7 +35,7 @@ impl EvidenceSource for CodeGraphSource {
     }
 
     fn collect(&self, target: &ExplainTarget, limit: usize) -> Result<Vec<Evidence>> {
-        let file = index_path(&target.file)?;
+        let file = index_path(&indexed_file(target))?;
         if limit == 0 {
             return Ok(vec![]);
         }
@@ -134,6 +135,15 @@ fn is_structural(edge_type: &EdgeType) -> bool {
     matches!(edge_type, EdgeType::Contains | EdgeType::Defines)
 }
 
+/// The file relative to the repo that contains it, as the indexer stores it. Outside
+/// any git repo the workspace-relative path is the only form available.
+fn indexed_file(target: &ExplainTarget) -> PathBuf {
+    match locate_repo(&target.repo_root, &target.file) {
+        Ok(repo) => repo.file,
+        Err(_) => target.file.clone(),
+    }
+}
+
 /// The path as the indexer stores it: relative to the repo root, with forward slashes.
 fn index_path(file: &Path) -> Result<String> {
     let mut parts = Vec::new();
@@ -150,10 +160,12 @@ fn index_path(file: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::process::Command;
 
     use code_graph::db::CodeGraphDB;
     use code_graph::types::SymbolKind;
 
+    use super::super::history::clear_git_env;
     use super::*;
 
     /// Index of `src/lib.rs` (and `src/util.rs` for the callee `helper`):
@@ -346,5 +358,37 @@ mod tests {
             .unwrap();
 
         assert!(evidence.is_empty());
+    }
+
+    /// The indexer stores paths relative to the repo that contains the file, so a
+    /// file in a nested repo is looked up as `src/lib.rs`, not `apps/xavier/src/lib.rs`.
+    #[test]
+    fn lookup_uses_path_relative_to_the_containing_repo() {
+        let (_dir, engine) = fixture();
+        let workspace = tempfile::tempdir().unwrap();
+        let repo = workspace.path().join("apps").join("xavier");
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        std::fs::write(repo.join("src/lib.rs"), "fn a() {}\n").unwrap();
+        let mut cmd = Command::new("git");
+        clear_git_env(&mut cmd);
+        let status = cmd
+            .current_dir(&repo)
+            .args(["init", "-q"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let source = CodeGraphSource::new(engine);
+        let mut nested = target("apps/xavier/src/lib.rs", 3, 4, None);
+        nested.repo_root = workspace.path().to_path_buf();
+
+        let evidence = source.collect(&nested, 10).unwrap();
+
+        assert_eq!(
+            texts(&evidence),
+            vec![
+                "route -> handle (Calls)".to_string(),
+                "handle -> helper (Calls)".to_string()
+            ]
+        );
     }
 }
