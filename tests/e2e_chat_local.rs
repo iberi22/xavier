@@ -29,7 +29,7 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
         .env("XAVIER_HEADLESS", "true")
         .env("XAVIER_MODEL_PROVIDER", "local")
         .env("XAVIER_LOCAL_LLM_URL", "http://127.0.0.1:1/v1") // puerto cerrado = fallo
-        .env("XAVIER_LOCAL_LLM_MODEL", "qwen3-coder")
+        .env("XAVIER_LOCAL_LLM_MODEL", "test-model")
         .env("XAVIER_EMBEDDING_MODEL", "embeddinggemma")
         .env(
             "XAVIER_CODE_GRAPH_DB_PATH",

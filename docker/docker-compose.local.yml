@@ -35,7 +35,7 @@ services:
         condition: service_healthy
     environment:
       - OLLAMA_HOST=ollama:11434
-    entrypoint: ["/bin/sh", "-c", "ollama pull qwen3-coder && ollama pull embeddinggemma"]
+    entrypoint: ["/bin/sh", "-c", "ollama pull ${XAVIER_LOCAL_LLM_MODEL:?set XAVIER_LOCAL_LLM_MODEL} && ollama pull embeddinggemma"]
 
   xavier:
     build:
@@ -54,7 +54,7 @@ services:
       - RUST_LOG=${XAVIER_LOG_LEVEL:-info}
       - XAVIER_MODEL_PROVIDER=local
       - XAVIER_LOCAL_LLM_URL=http://ollama:11434/v1
-      - XAVIER_LOCAL_LLM_MODEL=qwen3-coder
+      - XAVIER_LOCAL_LLM_MODEL=${XAVIER_LOCAL_LLM_MODEL:?set XAVIER_LOCAL_LLM_MODEL}
       - XAVIER_EMBEDDING_PROVIDER_MODE=local
       - XAVIER_EMBEDDING_URL=http://ollama:11434/api/embeddings
       - XAVIER_EMBEDDING_MODEL=embeddinggemma

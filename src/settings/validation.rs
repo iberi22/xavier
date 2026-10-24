@@ -38,12 +38,9 @@ pub fn validate_local_config(settings: &XavierSettings) -> Result<(), Vec<String
             ));
         }
 
-        if settings.models.local_llm_model.trim().is_empty() {
-            errors.push(
-                "local_llm_model is empty (set it to qwen3-coder or another Ollama model)"
-                    .to_string(),
-            );
-        }
+        // An empty `local_llm_model` is NOT a startup error: Xavier ships no
+        // default model, so a fresh install boots in degraded mode and the
+        // LLM-backed tools report a clear "no model configured" error instead.
 
         if settings.models.embedding_url.trim().is_empty() {
             errors.push(
@@ -81,7 +78,7 @@ mod tests {
         let mut settings = XavierSettings::default();
         settings.models.provider = "local".to_string();
         settings.models.local_llm_url = "http://localhost:11434/v1".to_string();
-        settings.models.local_llm_model = "qwen3-coder".to_string();
+        settings.models.local_llm_model = "test-model".to_string();
         settings.models.embedding_url = "http://localhost:11434/api/embeddings".to_string();
         settings.models.embedding_model = "embeddinggemma".to_string();
 
@@ -93,7 +90,7 @@ mod tests {
         let mut settings = XavierSettings::default();
         settings.models.provider = "local".to_string();
         settings.models.local_llm_url = "".to_string();
-        settings.models.local_llm_model = "qwen3-coder".to_string();
+        settings.models.local_llm_model = "test-model".to_string();
         settings.models.embedding_url = "http://localhost:11434/api/embeddings".to_string();
         settings.models.embedding_model = "embeddinggemma".to_string();
 
@@ -108,7 +105,7 @@ mod tests {
         let mut settings = XavierSettings::default();
         settings.models.provider = "local".to_string();
         settings.models.local_llm_url = "ftp://localhost:11434/v1".to_string();
-        settings.models.local_llm_model = "qwen3-coder".to_string();
+        settings.models.local_llm_model = "test-model".to_string();
         settings.models.embedding_url = "http://localhost:11434/api/embeddings".to_string();
         settings.models.embedding_model = "embeddinggemma".to_string();
 
@@ -118,6 +115,15 @@ mod tests {
         assert!(errs
             .iter()
             .any(|e| e.contains("not a valid http/https URL")));
+    }
+
+    #[test]
+    fn test_local_empty_model_is_not_a_startup_error() {
+        let mut settings = XavierSettings::default();
+        settings.models.provider = "local".to_string();
+        settings.models.local_llm_model = "".to_string();
+
+        assert!(validate_local_config(&settings).is_ok());
     }
 
     #[test]

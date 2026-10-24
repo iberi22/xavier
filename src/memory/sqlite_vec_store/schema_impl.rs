@@ -625,7 +625,7 @@ mod tests {
         // Since it's the first time, no 'active' key exists in embedding_model_meta
         let action = VecSqliteMemoryStore::check_and_handle_embedding_model_change(
             &conn,
-            "qwen3-coder",
+            "test-model",
             true,
         )
         .await
@@ -657,7 +657,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(saved_model, "qwen3-coder");
+        assert_eq!(saved_model, "test-model");
     }
 
     #[tokio::test]
@@ -666,7 +666,7 @@ mod tests {
 
         // Pre-save the model
         conn.execute(
-            "INSERT INTO embedding_model_meta (key, value) VALUES ('active', 'qwen3-coder')",
+            "INSERT INTO embedding_model_meta (key, value) VALUES ('active', 'test-model')",
             [],
         )
         .unwrap();
@@ -685,7 +685,7 @@ mod tests {
         // Same model, should return ReindexAction::None
         let action = VecSqliteMemoryStore::check_and_handle_embedding_model_change(
             &conn,
-            "qwen3-coder",
+            "test-model",
             true,
         )
         .await
@@ -735,7 +735,7 @@ mod tests {
         // Different model, should invalidate and return Invalidated(1)
         let action = VecSqliteMemoryStore::check_and_handle_embedding_model_change(
             &conn,
-            "qwen3-coder",
+            "test-model",
             true,
         )
         .await
@@ -767,7 +767,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(saved_model, "qwen3-coder");
+        assert_eq!(saved_model, "test-model");
     }
 
     #[tokio::test]

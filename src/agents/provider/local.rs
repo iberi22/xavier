@@ -8,13 +8,10 @@
 //! - **Auth Headers**: By default, no `Authorization` header is sent since Ollama does not require authentication.
 //!   However, if `OLLAMA_API_KEY` or `XAVIER_LOCAL_LLM_API_KEY` is set in the environment,
 //!   that key will be included in a `Bearer` token header.
-//! - **Default Model**: Defaults to `qwen2.5-coder:7b` (`DEFAULT_LOCAL_MODEL`).
+//! - **Model**: No default; set `XAVIER_LOCAL_LLM_MODEL`.
 
 /// The default local base URL for Ollama's OpenAI-compatible endpoint.
 pub const DEFAULT_LOCAL_BASE_URL: &str = "http://127.0.0.1:11435/v1";
-
-/// The default local model name for code and general assistance.
-pub const DEFAULT_LOCAL_MODEL: &str = "qwen2.5-coder:7b";
 
 #[cfg(test)]
 mod tests {
@@ -43,7 +40,7 @@ mod tests {
             provider_mode: ProviderMode::Local,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "local".to_string(),
-            model: "qwen3-coder".to_string(),
+            model: "test-model".to_string(),
             api_key: Some("ollama".to_string()), // default key, should be filtered out
             base_url: Some(mock_url),
             target: ProviderTarget::GenericOpenAICompatible,
@@ -59,7 +56,7 @@ mod tests {
             "id": "chatcmpl-123",
             "object": "chat.completion",
             "created": 1677652288,
-            "model": "qwen3-coder",
+            "model": "test-model",
             "choices": [{
                 "index": 0,
                 "message": {
@@ -81,7 +78,7 @@ mod tests {
             // Verify there is NO Authorization header
             .match_header("Authorization", mockito::Matcher::Missing)
             .match_body(mockito::Matcher::PartialJson(json!({
-                "model": "qwen3-coder",
+                "model": "test-model",
                 "messages": [
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": "Hello"}
@@ -118,7 +115,7 @@ mod tests {
             provider_mode: ProviderMode::Local,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "local".to_string(),
-            model: "qwen3-coder".to_string(),
+            model: "test-model".to_string(),
             api_key: None,
             base_url: Some(mock_url),
             target: ProviderTarget::GenericOpenAICompatible,
@@ -144,7 +141,7 @@ mod tests {
             // Verify the Authorization header contains Bearer ollama-secret-token
             .match_header("Authorization", "Bearer ollama-secret-token")
             .match_body(mockito::Matcher::PartialJson(json!({
-                "model": "qwen3-coder"
+                "model": "test-model"
             })))
             .with_status(200)
             .with_header("content-type", "application/json")

@@ -8,9 +8,9 @@ use std::process::{Command, Stdio};
 use uuid::Uuid;
 
 /// Handle setup.
-pub async fn handle_setup(local: bool) -> Result<()> {
+pub async fn handle_setup(local: bool, model: Option<String>) -> Result<()> {
     if local {
-        return handle_local_setup().await;
+        return handle_local_setup(model).await;
     }
 
     println!("\n━━━━ System Scan ━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -122,7 +122,7 @@ pub async fn handle_setup(local: bool) -> Result<()> {
     Ok(())
 }
 
-async fn handle_local_setup() -> Result<()> {
+async fn handle_local_setup(model: Option<String>) -> Result<()> {
     println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("🦙 Xavier 100% Local Setup Wizard");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
@@ -138,25 +138,44 @@ async fn handle_local_setup() -> Result<()> {
     }
     println!("✅ Ollama is running.");
 
-    // 2. Check for models
-    let target_llm = "qwen3-coder";
-    let target_embed = "embeddinggemma";
-
-    let has_llm = scan.ollama.models.iter().any(|m| m.contains(target_llm));
-    let has_embed = scan.ollama.models.iter().any(|m| m.contains(target_embed));
-
-    if !has_llm {
-        if Confirm::new()
-            .with_prompt(format!("Model {} not found. Pull it now?", target_llm))
-            .default(true)
-            .interact()?
-        {
-            pull_model(target_llm)?;
+    // 2. Determine LLM model
+    let chosen_llm = if let Some(m) = model.filter(|s| !s.trim().is_empty()) {
+        Some(m.trim().to_string())
+    } else if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        let input: String = Input::new()
+            .with_prompt("Local LLM model to use (any model your Ollama serves)")
+            .allow_empty(true)
+            .interact_text()?;
+        let trimmed = input.trim().to_string();
+        if trimmed.is_empty() {
+            None
         } else {
-            println!("⚠️ Skipping model pull. Xavier might not work correctly.");
+            Some(trimmed)
         }
     } else {
-        println!("✅ Model {} found.", target_llm);
+        None
+    };
+
+    let target_embed = "embeddinggemma";
+    let has_embed = scan.ollama.models.iter().any(|m| m.contains(target_embed));
+
+    if let Some(ref target_llm) = chosen_llm {
+        let has_llm = scan.ollama.models.iter().any(|m| m.contains(target_llm));
+        if !has_llm {
+            if Confirm::new()
+                .with_prompt(format!("Model {} not found. Pull it now?", target_llm))
+                .default(true)
+                .interact()?
+            {
+                pull_model(target_llm)?;
+            } else {
+                println!("⚠️ Skipping model pull. Xavier might not work correctly.");
+            }
+        } else {
+            println!("✅ Model {} found.", target_llm);
+        }
+    } else {
+        println!("No LLM model selected; skipping LLM pull. Set XAVIER_LOCAL_LLM_MODEL later.");
     }
 
     if !has_embed {
@@ -175,7 +194,7 @@ async fn handle_local_setup() -> Result<()> {
 
     // 3. Reachability test
     println!("\n🧪 Testing reachability...");
-    match test_ollama_reachability(target_llm, target_embed).await {
+    match test_ollama_reachability(chosen_llm.as_deref(), target_embed).await {
         Ok(_) => println!("✅ Reachability test passed."),
         Err(e) => {
             println!("❌ Reachability test failed: {}", e);
@@ -195,7 +214,9 @@ async fn handle_local_setup() -> Result<()> {
     // Update xavier.config.json
     let mut settings = XavierSettings::load()?.unwrap_or_default();
     settings.models.provider = "local".to_string();
-    settings.models.local_llm_model = target_llm.to_string();
+    if let Some(ref target_llm) = chosen_llm {
+        settings.models.local_llm_model = target_llm.to_string();
+    }
     settings.models.local_llm_url = "http://localhost:11434/v1".to_string();
     settings.models.embedding_model = target_embed.to_string();
     settings.models.embedding_url = "http://localhost:11434/api/embeddings".to_string();
@@ -205,12 +226,16 @@ async fn handle_local_setup() -> Result<()> {
     println!("✅ config/xavier.config.json updated.");
 
     // Update .env
-    write_env_local()?;
+    write_env_local(chosen_llm.as_deref())?;
     println!("✅ .env updated with local-first section.");
 
     println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("✅ Xavier 100% local ready.");
-    println!("LLM: {} | Embeddings: {}", target_llm, target_embed);
+    println!(
+        "LLM: {} | Embeddings: {}",
+        chosen_llm.as_deref().unwrap_or("none"),
+        target_embed
+    );
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
     Ok(())
@@ -233,22 +258,24 @@ fn pull_model(model: &str) -> Result<()> {
     Ok(())
 }
 
-async fn test_ollama_reachability(model: &str, embed: &str) -> Result<()> {
+async fn test_ollama_reachability(model: Option<&str>, embed: &str) -> Result<()> {
     let client = reqwest::Client::new();
 
-    // Test Chat
-    let chat_resp = client
-        .post("http://localhost:11434/api/chat")
-        .json(&serde_json::json!({
-            "model": model,
-            "messages": [{"role": "user", "content": "hi"}],
-            "stream": false
-        }))
-        .send()
-        .await?;
+    // Test Chat if model configured
+    if let Some(target_llm) = model {
+        let chat_resp = client
+            .post("http://localhost:11434/api/chat")
+            .json(&serde_json::json!({
+                "model": target_llm,
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": false
+            }))
+            .send()
+            .await?;
 
-    if !chat_resp.status().is_success() {
-        anyhow::bail!("Chat API returned {}", chat_resp.status());
+        if !chat_resp.status().is_success() {
+            anyhow::bail!("Chat API returned {}", chat_resp.status());
+        }
     }
 
     // Test Embeddings
@@ -268,7 +295,7 @@ async fn test_ollama_reachability(model: &str, embed: &str) -> Result<()> {
     Ok(())
 }
 
-fn write_env_local() -> Result<()> {
+fn write_env_local(llm_model: Option<&str>) -> Result<()> {
     let env_path = std::env::current_dir()?.join(".env");
     let mut content = if env_path.exists() {
         fs::read_to_string(&env_path)?
@@ -276,17 +303,25 @@ fn write_env_local() -> Result<()> {
         String::new()
     };
 
-    let local_section = "\n# --- LOCAL-FIRST SETUP ---
+    let mut local_section = "\n# --- LOCAL-FIRST SETUP ---
 XAVIER_MODEL_PROVIDER=local
 XAVIER_LOCAL_LLM_URL=http://localhost:11434/v1
-XAVIER_LOCAL_LLM_MODEL=qwen3-coder
-XAVIER_EMBEDDING_URL=http://localhost:11434/api/embeddings
+"
+    .to_string();
+
+    if let Some(m) = llm_model {
+        local_section.push_str(&format!("XAVIER_LOCAL_LLM_MODEL={m}\n"));
+    }
+
+    local_section.push_str(
+        "XAVIER_EMBEDDING_URL=http://localhost:11434/api/embeddings
 XAVIER_EMBEDDING_MODEL=embeddinggemma
 XAVIER_EMBEDDING_PROVIDER_MODE=local
-";
+",
+    );
 
     if !content.contains("LOCAL-FIRST SETUP") {
-        content.push_str(local_section);
+        content.push_str(&local_section);
         fs::write(env_path, content)?;
     }
 
@@ -317,12 +352,12 @@ mod tests {
         let original_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(dir.path()).unwrap();
 
-        write_env_local().unwrap();
+        write_env_local(Some("test-model")).unwrap();
 
         let content = fs::read_to_string(dir.path().join(".env")).unwrap();
         assert!(content.contains("LOCAL-FIRST SETUP"));
         assert!(content.contains("XAVIER_MODEL_PROVIDER=local"));
-        assert!(content.contains("XAVIER_LOCAL_LLM_MODEL=qwen3-coder"));
+        assert!(content.contains("XAVIER_LOCAL_LLM_MODEL=test-model"));
         assert!(content.contains("XAVIER_EMBEDDING_MODEL=embeddinggemma"));
 
         std::env::set_current_dir(original_dir).unwrap();
@@ -338,14 +373,14 @@ mod tests {
 
         let mut settings = XavierSettings::default();
         settings.models.provider = "local".to_string();
-        settings.models.local_llm_model = "qwen3-coder".to_string();
+        settings.models.local_llm_model = "test-model".to_string();
         settings.save().await.unwrap();
 
         // #2801: the write lands in the runtime state file; the config file
         // (read-only defaults) is never created or rewritten.
         let saved_content = fs::read_to_string(&state_path).unwrap();
         assert!(saved_content.contains("\"provider\": \"local\""));
-        assert!(saved_content.contains("\"local_llm_model\": \"qwen3-coder\""));
+        assert!(saved_content.contains("\"local_llm_model\": \"test-model\""));
         assert!(
             !config_path.exists(),
             "save() must not create the versioned config file"

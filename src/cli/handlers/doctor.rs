@@ -562,53 +562,55 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
     });
 
     // 2. LLM Model Installed (local provider only)
-    let expected_llm = std::env::var("XAVIER_LOCAL_LLM_MODEL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| {
-            if !settings.models.local_llm_model.trim().is_empty() {
-                settings.models.local_llm_model.clone()
-            } else {
-                "qwen3-coder".to_string()
-            }
-        });
-
-    // OJO: el proveedor local puede vivir en otro host/puerto (p.ej. un segundo Ollama con sus
-    // propios modelos). Se comprueba contra ESA URL, no contra el Ollama por defecto.
-    let llm_url = std::env::var("XAVIER_LOCAL_LLM_URL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| settings.models.local_llm_url.clone());
-    let llm_models = effective_ollama_models(&llm_url, &scan.ollama.models).await;
-
-    let llm_installed = llm_models.iter().any(|m| {
-        m.to_lowercase().contains(&expected_llm.to_lowercase())
-            || expected_llm.to_lowercase().contains(&m.to_lowercase())
-    });
+    let local_cfg = xavier::agents::provider::ModelProviderConfig::for_provider("local");
+    let expected_llm = &local_cfg.model;
 
     if provider_is_local {
-        checks.push(DoctorCheck {
-            name: "LLM Model Installed".to_string(),
-            status: if llm_installed {
-                CheckStatus::Ok
-            } else {
-                CheckStatus::Fail
-            },
-            detail: if llm_installed {
-                format!("Model '{}' is installed in Ollama", expected_llm)
-            } else {
-                format!("Model '{}' is not installed in Ollama", expected_llm)
-            },
-            hint: if llm_installed {
-                None
-            } else {
-                Some(format!(
-                    "Run 'ollama pull {}' to install the model",
-                    expected_llm
-                ))
-            },
-            timed_out: false,
-        });
+        if expected_llm.trim().is_empty() {
+            checks.push(DoctorCheck {
+                name: "LLM Model Installed".to_string(),
+                status: CheckStatus::Warn,
+                detail: "No local LLM model configured".to_string(),
+                hint: local_cfg.unconfigured_reason(),
+                timed_out: false,
+            });
+        } else {
+            // OJO: el proveedor local puede vivir en otro host/puerto (p.ej. un segundo Ollama con sus
+            // propios modelos). Se comprueba contra ESA URL, no contra el Ollama por defecto.
+            let llm_url = std::env::var("XAVIER_LOCAL_LLM_URL")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| settings.models.local_llm_url.clone());
+            let llm_models = effective_ollama_models(&llm_url, &scan.ollama.models).await;
+
+            let llm_installed = llm_models.iter().any(|m| {
+                m.to_lowercase().contains(&expected_llm.to_lowercase())
+                    || expected_llm.to_lowercase().contains(&m.to_lowercase())
+            });
+
+            checks.push(DoctorCheck {
+                name: "LLM Model Installed".to_string(),
+                status: if llm_installed {
+                    CheckStatus::Ok
+                } else {
+                    CheckStatus::Fail
+                },
+                detail: if llm_installed {
+                    format!("Model '{}' is installed in Ollama", expected_llm)
+                } else {
+                    format!("Model '{}' is not installed in Ollama", expected_llm)
+                },
+                hint: if llm_installed {
+                    None
+                } else {
+                    Some(format!(
+                        "Run 'ollama pull {}' to install the model",
+                        expected_llm
+                    ))
+                },
+                timed_out: false,
+            });
+        }
     } else {
         checks.push(DoctorCheck {
             name: "LLM Model Installed".to_string(),

@@ -125,33 +125,39 @@
 
 ## 5. LLM Provider
 
+> **Note on models:** Xavier does **not** ship with built-in default models for local or hosted providers (OpenRouter, Groq, Anthropic, OpenAI). A model must be explicitly configured via environment variable, config file, or per-call MCP argument; otherwise, the general fallback returns an explicit unconfigured error message and health reports `configured: false`.
+
 | Variable | Type | Config JSON | Default | Required | Description |
 |----------|------|-------------|---------|----------|-------------|
-| `XAVIER_MODEL_PROVIDER` | `string` | `models.provider` | `"local"` | ❌ | LLM provider: `local`, `cloud`, `disabled`, `openai`, `anthropic`, `deepseek`, `minimax`, `gemini` |
+| `XAVIER_MODEL_PROVIDER` | `string` | `models.provider` | `"local"` | ❌ | LLM provider: `local`, `cloud`, `disabled`, `openrouter`, `groq`, `anthropic`, `openai`, `deepseek`, `minimax`, `gemini` |
 | `XAVIER_API_FLAVOR` | `string` | `models.api_flavor` | `"openai-compatible"` | ❌ | API protocol: `openai-compatible`, `anthropic-compatible` |
-| `XAVIER_LOCAL_LLM_URL` | `string` | `models.local_llm_url` | `"http://localhost:11434/v1"` | ❌ | Local LLM endpoint (Ollama, etc.) |
-| `XAVIER_LOCAL_LLM_MODEL` | `string` | `models.local_llm_model` | `"qwen3-coder"` | ❌ | Local LLM model name |
+| `XAVIER_LOCAL_LLM_URL` | `string` | `models.local_llm_url` | `"http://localhost:11434/v1"` | ❌ | Local LLM endpoint (Ollama, vLLM, llama.cpp, etc.) |
+| `XAVIER_LOCAL_LLM_MODEL` | `string` | `models.local_llm_model` | _none (required)_ | ❌ | Local LLM model name (example only: `<any model your server lists at /v1/models>`) |
 | `XAVIER_LOCAL_LLM_API_KEY` | `string` | — | `"ollama"` | ❌ | Local LLM API key (defaults to "ollama") |
 | `XAVIER_LOCAL_ANTHROPIC_URL` | `string` | — | `"http://localhost:11434"` | ❌ | Local Anthropic-compatible endpoint |
-| `XAVIER_CLOUD_LLM_MODEL` | `string` | — | `"gpt-4o-mini"` | ❌ | Cloud LLM model (generic mode) |
+| `XAVIER_CLOUD_LLM_MODEL` | `string` | — | _none (required)_ | ❌ | Cloud LLM model (generic mode) |
 | `XAVIER_CLOUD_LLM_URL` | `string` | — | `"https://api.openai.com/v1"` | ❌ | Cloud LLM URL (generic mode) |
-| `XAVIER_LLM_MODEL` | `string` | — | (provider-dependent) | ❌ | Fallback model name for all providers |
+| `XAVIER_LLM_MODEL` | `string` | `models.llm_model` | _none (required)_ | ❌ | Fallback model name for all providers |
 | `XAVIER_LLM_API_KEY` | `string` | — | (none) | ❌ | Generic LLM API key (fallback for all providers) |
 
-**Source**: `src/agents/provider.rs`, `src/settings.rs`
+**Source**: `src/agents/provider/config.rs`, `src/settings.rs`
 
 ---
 
 ## 6. Provider-Specific Credentials
 
-These are used when `XAVIER_MODEL_PROVIDER` is set to a specific cloud provider.
+These are used when `XAVIER_MODEL_PROVIDER` is set to a specific cloud or hosted provider.
 
 | Variable | Provider | Default Model | Default Base URL | Required |
 |----------|----------|---------------|-----------------|----------|
-| `OPENAI_API_KEY` | OpenAI | `gpt-4o-mini` | `https://api.openai.com/v1` | ✅ |
+| `OPENROUTER_API_KEY` | OpenRouter | _none (required)_ (example only: `anthropic/claude-sonnet-5.5`) | `https://openrouter.ai/api/v1` | ✅ |
+| `OPENROUTER_MODEL` | OpenRouter | — | — | ❌ |
+| `GROQ_API_KEY` | Groq | _none (required)_ (example only: `<a model id listed by GET https://api.groq.com/openai/v1/models>`) | `https://api.groq.com/openai/v1` | ✅ |
+| `GROQ_MODEL` | Groq | — | — | ❌ |
+| `OPENAI_API_KEY` | OpenAI | _none (required)_ | `https://api.openai.com/v1` | ✅ |
 | `OPENAI_MODEL` | OpenAI | — | — | ❌ |
 | `OPENAI_BASE_URL` | OpenAI | `https://api.openai.com/v1` | — | ❌ |
-| `ANTHROPIC_API_KEY` | Anthropic | `claude-3-5-sonnet-latest` | `https://api.anthropic.com/v1` | ✅ |
+| `ANTHROPIC_API_KEY` | Anthropic | _none (required)_ (example only: `claude-sonnet-5-5`) | `https://api.anthropic.com/v1` | ✅ |
 | `ANTHROPIC_MODEL` | Anthropic | — | — | ❌ |
 | `ANTHROPIC_BASE_URL` | Anthropic | `https://api.anthropic.com/v1` | — | ❌ |
 | `DEEPSEEK_API_KEY` | DeepSeek | `deepseek-chat` | `https://api.deepseek.com` | ✅ |
@@ -163,9 +169,14 @@ These are used when `XAVIER_MODEL_PROVIDER` is set to a specific cloud provider.
 | `GEMINI_API_KEY` | Gemini | `gemini-2.0-flash` | (no base URL override) | ✅ |
 | `GEMINI_MODEL` | Gemini | — | — | ❌ |
 
-**Fallback chain**: Provider-specific model → `XAVIER_LLM_MODEL` → hardcoded default
+**Precedence**: MCP per-call arg > env > config file > nothing (no compiled default).
 **API key fallback**: `ANTHROPIC_API_KEY` → `XAVIER_LLM_API_KEY` (Anthropic only)
 **URL fallback**: `ANTHROPIC_BASE_URL` → `XAVIER_CLOUD_LLM_URL` → default (Anthropic only)
+
+**Unconfigured Error Message**:
+```
+no LLM model configured for provider 'local'. Set XAVIER_LOCAL_LLM_MODEL (and XAVIER_LOCAL_LLM_URL for any OpenAI-compatible server), or pick a hosted provider: XAVIER_MODEL_PROVIDER=openrouter|groq|anthropic|openai with XAVIER_LLM_MODEL and its API key env var. Config keys: models.provider, models.local_llm_model / models.llm_model. See docs/reference/ENV_VARS.md.
+```
 
 **Source**: `src/agents/provider.rs`
 

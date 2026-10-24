@@ -84,7 +84,10 @@ impl ModelProviderClient {
         use_cache: bool,
     ) -> Result<LlmResponse> {
         if !self.config.is_configured() || self.config.provider_mode == ProviderMode::Disabled {
-            return Err(anyhow!("no LLM provider configured"));
+            return Err(anyhow!(self
+                .config
+                .unconfigured_reason()
+                .unwrap_or_else(|| "no LLM provider configured".into())));
         }
 
         let future = async {

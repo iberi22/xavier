@@ -365,13 +365,16 @@ pub mod tests {
         // Assertions for provider=local and local_llm_* fields.
         // The exact model name / URL are operator-pinned workspace values
         // (they evolve with merged PRs), so assert the contractual shape —
-        // local provider, non-empty model, valid http(s) URL — instead of
+        // local provider, blank model, valid http(s) URL — instead of
         // exact strings. Pinning exact values here made the suite fail on
         // every model bump (CI Parallel Rust Tests).
         assert_eq!(s.models.provider, "local");
+        // Xavier ships no default LLM model: the template leaves it blank
+        // and each user configures their own.
         assert!(
-            !s.models.local_llm_model.trim().is_empty(),
-            "local_llm_model must be non-empty"
+            s.models.local_llm_model.trim().is_empty(),
+            "the example config must not pin a default local_llm_model, got '{}'",
+            s.models.local_llm_model
         );
         assert!(
             s.models.local_llm_url.starts_with("http://")

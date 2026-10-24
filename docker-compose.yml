@@ -28,7 +28,7 @@ services:
       - XAVIER_EMBEDDING_MODEL=${XAVIER_EMBEDDING_MODEL:-nomic-embed-text}
       # LLM: Use local Ollama fallback
       - XAVIER_LOCAL_LLM_URL=${XAVIER_LOCAL_LLM_URL:-http://host.docker.internal:11434/v1}
-      - XAVIER_LOCAL_LLM_MODEL=${XAVIER_LOCAL_LLM_MODEL:-qwen:0.5b}
+      - XAVIER_LOCAL_LLM_MODEL=${XAVIER_LOCAL_LLM_MODEL:-}
       # Model Provider (local, gemini, openai, minimax, anthropic)
       - XAVIER_MODEL_PROVIDER=${XAVIER_MODEL_PROVIDER:-local}
       # GLLM (Local Embeddings) support

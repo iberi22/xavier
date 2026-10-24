@@ -396,9 +396,14 @@ impl ProxyUseCase {
                             || provider == "ollama"
                             || provider == "managed-local"
                         {
-                            let reachability = ModelProviderConfig::for_provider(provider)
-                                .is_reachable()
-                                .await;
+                            // Probe with the model the caller asked for, so an
+                            // explicit request works even without a server-side
+                            // default model ("auto" defers to the configured one).
+                            let mut probe_cfg = ModelProviderConfig::for_provider(provider);
+                            if cmd.model.trim() != "auto" {
+                                probe_cfg = probe_cfg.with_model_override(Some(cmd.model.clone()));
+                            }
+                            let reachability = probe_cfg.is_reachable().await;
                             if reachability != ProviderReachability::ConfiguredAndReachable {
                                 continue;
                             }
@@ -888,7 +893,7 @@ mod tests {
         let event_bus = crate::coordination::events::XavierEventBus::new(10);
 
         let cmd = ProxyChatCommand {
-            model: "qwen3-coder".to_string(),
+            model: "test-model".to_string(),
             messages: vec![serde_json::json!({"role": "user", "content": "hello"})],
             temperature: None,
             max_tokens: None,
@@ -912,7 +917,7 @@ mod tests {
             result
         );
         let completion = result.unwrap();
-        assert_eq!(completion.model, "qwen3-coder");
+        assert_eq!(completion.model, "test-model");
         assert_eq!(
             completion.choices[0].message.content,
             "mocked local response"
@@ -987,7 +992,7 @@ mod tests {
         let event_bus = crate::coordination::events::XavierEventBus::new(10);
 
         let cmd = ProxyChatCommand {
-            model: "qwen3-coder".to_string(),
+            model: "test-model".to_string(),
             messages: vec![serde_json::json!({"role": "user", "content": "hello"})],
             temperature: None,
             max_tokens: None,

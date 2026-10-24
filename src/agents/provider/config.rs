@@ -14,12 +14,14 @@ use crate::agents::provider::types::{
 use crate::domain::proxy::SecretInjectionStrategy;
 use crate::secrets::vault::HardwareVault;
 
-static REACHABILITY_CACHE: LazyLock<Mutex<HashMap<String, (bool, Instant)>>> =
+/// Cached probe result: (reachable, model_listed, probed_at).
+type ReachabilityEntry = (bool, Option<bool>, Instant);
+
+static REACHABILITY_CACHE: LazyLock<Mutex<HashMap<String, ReachabilityEntry>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub(crate) const DEFAULT_LOCAL_BASE_URL: &str = "http://127.0.0.1:11435/v1";
 pub(crate) const DEFAULT_LOCAL_ANTHROPIC_BASE_URL: &str = "http://localhost:11434";
-pub(crate) const DEFAULT_LOCAL_MODEL: &str = "qwen2.5-coder:7b";
 pub(crate) const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub(crate) const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
 pub(crate) const DEFAULT_DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com/v1";
@@ -47,7 +49,7 @@ fn nonempty_str(value: &str) -> Option<String> {
 }
 
 /// Configuration for model provider key leasing.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct KeyLeaseConfig {
     /// The name of the secret in the vault.
     pub secret_name: String,
@@ -57,8 +59,18 @@ pub struct KeyLeaseConfig {
     pub ttl_secs: u64,
 }
 
+impl std::fmt::Debug for KeyLeaseConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeyLeaseConfig")
+            .field("secret_name", &self.secret_name)
+            .field("agent_id", &self.agent_id)
+            .field("ttl_secs", &self.ttl_secs)
+            .finish()
+    }
+}
+
 /// Configuration for a model provider.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ModelProviderConfig {
     /// Operational mode (Local, Cloud, Disabled).
     pub provider_mode: ProviderMode,
@@ -81,6 +93,32 @@ pub struct ModelProviderConfig {
     pub lease_token: Option<String>,
 }
 
+impl std::fmt::Debug for ModelProviderConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let redacted_key = self.api_key.as_ref().map(|_| "<redacted>");
+        let redacted_token = self.lease_token.as_ref().map(|_| "<redacted>");
+        f.debug_struct("ModelProviderConfig")
+            .field("provider_mode", &self.provider_mode)
+            .field("api_flavor", &self.api_flavor)
+            .field("provider_label", &self.provider_label)
+            .field("model", &self.model)
+            .field("api_key", &redacted_key)
+            .field("base_url", &self.base_url)
+            .field("target", &self.target)
+            .field("lease_config", &self.lease_config)
+            .field("secret_injection_strategy", &self.secret_injection_strategy)
+            .field("lease_token", &redacted_token)
+            .finish()
+    }
+}
+
+/// Result of probing an LLM provider endpoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LlmProbe {
+    pub reachability: ProviderReachability,
+    pub model_listed: Option<bool>,
+}
+
 impl ModelProviderConfig {
     /// Loads the configuration from environment variables.
     pub fn from_env() -> Self {
@@ -99,6 +137,29 @@ impl ModelProviderConfig {
             .map(|value| value.trim().to_ascii_lowercase());
 
         Self::from_label(provider.as_deref().unwrap_or("local"))
+    }
+
+    /// Checks if a provider label is recognized.
+    pub fn is_known_label(label: &str) -> bool {
+        matches!(
+            label.trim().to_ascii_lowercase().as_str(),
+            "local"
+                | "managedlocal"
+                | "managed-local"
+                | "managed_local"
+                | "cloud"
+                | "disabled"
+                | "anthropic"
+                | "openai"
+                | "deepseek"
+                | "minimax"
+                | "gemini"
+                | "groq"
+                | "z.ai"
+                | "zai"
+                | "opencode"
+                | "openrouter"
+        )
     }
 
     /// Creates a configuration from a provider label.
@@ -165,7 +226,7 @@ impl ModelProviderConfig {
                             .clone()
                             .filter(|s| !s.trim().is_empty())
                     })
-                    .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string()),
+                    .unwrap_or_default(),
                 api_key: nonempty_env("XAVIER_LOCAL_LLM_API_KEY")
                     .or_else(|| {
                         settings
@@ -199,7 +260,7 @@ impl ModelProviderConfig {
                             .clone()
                             .filter(|s| !s.trim().is_empty())
                     })
-                    .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string()),
+                    .unwrap_or_default(),
                 api_key: nonempty_env("XAVIER_LOCAL_LLM_API_KEY")
                     .or_else(|| {
                         settings
@@ -255,7 +316,7 @@ impl ModelProviderConfig {
                         .clone()
                         .filter(|s| !s.trim().is_empty())
                 })
-                .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string()),
+                .unwrap_or_default(),
             api_key: nonempty_env("XAVIER_LOCAL_LLM_API_KEY")
                 .or_else(|| {
                     settings
@@ -293,21 +354,42 @@ impl ModelProviderConfig {
                 provider_mode: ProviderMode::Cloud,
                 api_flavor,
                 provider_label: "cloud".to_string(),
-                model: std::env::var("XAVIER_CLOUD_LLM_MODEL")
-                    .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
-                    .ok()
-                    .or_else(|| settings.models.cloud_llm_model.clone())
-                    .or_else(|| settings.models.llm_model.clone())
-                    .unwrap_or_else(|| "gpt-4o-mini".to_string()),
-                api_key: std::env::var("XAVIER_LLM_API_KEY")
-                    .ok()
-                    .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-                    .or_else(|| settings.models.llm_api_key.clone()),
+                model: nonempty_env("XAVIER_CLOUD_LLM_MODEL")
+                    .or_else(|| nonempty_env("XAVIER_LLM_MODEL"))
+                    .or_else(|| {
+                        settings
+                            .models
+                            .cloud_llm_model
+                            .clone()
+                            .filter(|s| !s.trim().is_empty())
+                    })
+                    .or_else(|| {
+                        settings
+                            .models
+                            .llm_model
+                            .clone()
+                            .filter(|s| !s.trim().is_empty())
+                    })
+                    .unwrap_or_default(),
+                api_key: nonempty_env("XAVIER_LLM_API_KEY")
+                    .or_else(|| nonempty_env("OPENAI_API_KEY"))
+                    .or_else(|| {
+                        settings
+                            .models
+                            .llm_api_key
+                            .clone()
+                            .filter(|s| !s.trim().is_empty())
+                    }),
                 base_url: Some(
-                    std::env::var("XAVIER_CLOUD_LLM_URL")
-                        .or_else(|_| std::env::var("OPENAI_BASE_URL"))
-                        .ok()
-                        .or_else(|| settings.models.cloud_llm_url.clone())
+                    nonempty_env("XAVIER_CLOUD_LLM_URL")
+                        .or_else(|| nonempty_env("OPENAI_BASE_URL"))
+                        .or_else(|| {
+                            settings
+                                .models
+                                .cloud_llm_url
+                                .clone()
+                                .filter(|s| !s.trim().is_empty())
+                        })
                         .unwrap_or_else(|| DEFAULT_OPENAI_BASE_URL.to_string()),
                 ),
                 target: ProviderTarget::GenericOpenAICompatible,
@@ -326,23 +408,39 @@ impl ModelProviderConfig {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "openai".to_string(),
-            model: std::env::var("XAVIER_LLM_MODEL")
-                .or_else(|_| std::env::var("OPENAI_MODEL"))
-                .ok()
-                .or_else(|| settings.models.llm_model.clone())
-                .unwrap_or_else(|| "gpt-4o-mini".to_string()),
-            api_key: std::env::var("OPENAI_API_KEY")
-                .ok()
+            model: nonempty_env("XAVIER_LLM_MODEL")
+                .or_else(|| nonempty_env("OPENAI_MODEL"))
+                .or_else(|| {
+                    settings
+                        .models
+                        .llm_model
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                })
+                .unwrap_or_default(),
+            api_key: nonempty_env("OPENAI_API_KEY")
                 .or_else(|| {
                     HardwareVault::new("xavier")
                         .get_secret("OPENAI_API_KEY")
                         .ok()
+                        .filter(|s| !s.trim().is_empty())
                 })
-                .or_else(|| settings.models.llm_api_key.clone()),
+                .or_else(|| {
+                    settings
+                        .models
+                        .llm_api_key
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                }),
             base_url: Some(
-                std::env::var("OPENAI_BASE_URL")
-                    .ok()
-                    .or_else(|| settings.models.cloud_llm_url.clone())
+                nonempty_env("OPENAI_BASE_URL")
+                    .or_else(|| {
+                        settings
+                            .models
+                            .cloud_llm_url
+                            .clone()
+                            .filter(|s| !s.trim().is_empty())
+                    })
                     .unwrap_or_else(|| DEFAULT_OPENAI_BASE_URL.to_string()),
             ),
             target: ProviderTarget::GenericOpenAICompatible,
@@ -359,27 +457,49 @@ impl ModelProviderConfig {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "openrouter".to_string(),
-            model: std::env::var("XAVIER_OPENROUTER_MODEL")
-                .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
-                .or_else(|_| std::env::var("OPENROUTER_MODEL"))
-                .ok()
-                .or_else(|| settings.models.cloud_llm_model.clone())
-                .or_else(|| settings.models.llm_model.clone())
-                .unwrap_or_else(|| "openai/gpt-4o-mini".to_string()),
-            api_key: std::env::var("XAVIER_OPENROUTER_API_KEY")
-                .or_else(|_| std::env::var("OPENROUTER_API_KEY"))
-                .ok()
+            model: nonempty_env("XAVIER_OPENROUTER_MODEL")
+                .or_else(|| nonempty_env("XAVIER_LLM_MODEL"))
+                .or_else(|| nonempty_env("OPENROUTER_MODEL"))
+                .or_else(|| {
+                    settings
+                        .models
+                        .cloud_llm_model
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                })
+                .or_else(|| {
+                    settings
+                        .models
+                        .llm_model
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                })
+                .unwrap_or_default(),
+            api_key: nonempty_env("XAVIER_OPENROUTER_API_KEY")
+                .or_else(|| nonempty_env("OPENROUTER_API_KEY"))
                 .or_else(|| {
                     HardwareVault::new("xavier")
                         .get_secret("OPENROUTER_API_KEY")
                         .ok()
+                        .filter(|s| !s.trim().is_empty())
                 })
-                .or_else(|| settings.models.llm_api_key.clone()),
+                .or_else(|| {
+                    settings
+                        .models
+                        .llm_api_key
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                }),
             base_url: Some(
-                std::env::var("XAVIER_OPENROUTER_URL")
-                    .or_else(|_| std::env::var("OPENROUTER_BASE_URL"))
-                    .ok()
-                    .or_else(|| settings.models.cloud_llm_url.clone())
+                nonempty_env("XAVIER_OPENROUTER_URL")
+                    .or_else(|| nonempty_env("OPENROUTER_BASE_URL"))
+                    .or_else(|| {
+                        settings
+                            .models
+                            .cloud_llm_url
+                            .clone()
+                            .filter(|s| !s.trim().is_empty())
+                    })
                     .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string()),
             ),
             target: ProviderTarget::GenericOpenAICompatible,
@@ -396,19 +516,32 @@ impl ModelProviderConfig {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "groq".to_string(),
-            model: std::env::var("XAVIER_LLM_MODEL")
-                .or_else(|_| std::env::var("GROQ_MODEL"))
-                .ok()
-                .or_else(|| settings.models.llm_model.clone())
-                .unwrap_or_else(|| "llama-3.3-70b-versatile".to_string()),
-            api_key: std::env::var("GROQ_API_KEY")
-                .ok()
-                .or_else(|| HardwareVault::new("xavier").get_secret("GROQ_API_KEY").ok())
-                .or_else(|| settings.models.llm_api_key.clone()),
+            model: nonempty_env("XAVIER_LLM_MODEL")
+                .or_else(|| nonempty_env("GROQ_MODEL"))
+                .or_else(|| {
+                    settings
+                        .models
+                        .llm_model
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                })
+                .unwrap_or_default(),
+            api_key: nonempty_env("GROQ_API_KEY")
+                .or_else(|| {
+                    HardwareVault::new("xavier")
+                        .get_secret("GROQ_API_KEY")
+                        .ok()
+                        .filter(|s| !s.trim().is_empty())
+                })
+                .or_else(|| {
+                    settings
+                        .models
+                        .llm_api_key
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                }),
             base_url: Some(
-                std::env::var("GROQ_BASE_URL")
-                    .ok()
-                    .unwrap_or_else(|| DEFAULT_GROQ_BASE_URL.to_string()),
+                nonempty_env("GROQ_BASE_URL").unwrap_or_else(|| DEFAULT_GROQ_BASE_URL.to_string()),
             ),
             target: ProviderTarget::GenericOpenAICompatible,
             lease_config: None,
@@ -458,25 +591,41 @@ impl ModelProviderConfig {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::AnthropicCompatible,
             provider_label: "anthropic".to_string(),
-            model: std::env::var("XAVIER_LLM_MODEL")
-                .or_else(|_| std::env::var("ANTHROPIC_MODEL"))
-                .ok()
-                .or_else(|| settings.models.llm_model.clone())
-                .unwrap_or_else(|| "claude-3-5-sonnet-latest".to_string()),
-            api_key: std::env::var("ANTHROPIC_API_KEY")
-                .ok()
+            model: nonempty_env("XAVIER_LLM_MODEL")
+                .or_else(|| nonempty_env("ANTHROPIC_MODEL"))
+                .or_else(|| {
+                    settings
+                        .models
+                        .llm_model
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                })
+                .unwrap_or_default(),
+            api_key: nonempty_env("ANTHROPIC_API_KEY")
                 .or_else(|| {
                     HardwareVault::new("xavier")
                         .get_secret("ANTHROPIC_API_KEY")
                         .ok()
+                        .filter(|s| !s.trim().is_empty())
                 })
-                .or_else(|| std::env::var("XAVIER_LLM_API_KEY").ok())
-                .or_else(|| settings.models.llm_api_key.clone()),
+                .or_else(|| nonempty_env("XAVIER_LLM_API_KEY"))
+                .or_else(|| {
+                    settings
+                        .models
+                        .llm_api_key
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                }),
             base_url: Some(
-                std::env::var("ANTHROPIC_BASE_URL")
-                    .or_else(|_| std::env::var("XAVIER_CLOUD_LLM_URL"))
-                    .ok()
-                    .or_else(|| settings.models.cloud_llm_url.clone())
+                nonempty_env("ANTHROPIC_BASE_URL")
+                    .or_else(|| nonempty_env("XAVIER_CLOUD_LLM_URL"))
+                    .or_else(|| {
+                        settings
+                            .models
+                            .cloud_llm_url
+                            .clone()
+                            .filter(|s| !s.trim().is_empty())
+                    })
                     .unwrap_or_else(|| DEFAULT_ANTHROPIC_BASE_URL.to_string()),
             ),
             target: ProviderTarget::AnthropicMessages,
@@ -627,70 +776,6 @@ impl ModelProviderConfig {
         self.base_url.clone()
     }
 
-    /// Checks the reachability of the provider.
-    pub async fn is_reachable(&self) -> ProviderReachability {
-        if !self.is_configured() {
-            return ProviderReachability::NotConfigured;
-        }
-
-        let base_url = match self.get_resolved_base_url() {
-            Some(url) => url,
-            None => {
-                // If there's no base_url but it's configured, it's likely OpenCodeCLI
-                // where we just shell out locally. Thus, it's reachable.
-                return ProviderReachability::ConfiguredAndReachable;
-            }
-        };
-
-        let now = Instant::now();
-        let ttl = Duration::from_secs(15);
-
-        // Check cache first
-        {
-            if let Ok(cache) = REACHABILITY_CACHE.lock() {
-                if let Some((reachable, timestamp)) = cache.get(&base_url) {
-                    if now.duration_since(*timestamp) < ttl {
-                        return if *reachable {
-                            ProviderReachability::ConfiguredAndReachable
-                        } else {
-                            ProviderReachability::ConfiguredAndUnreachable
-                        };
-                    }
-                }
-            }
-        }
-
-        // It is not cached or cache is expired. We'll do a GET to {base_url}/models
-        // Note: some providers might not implement `/models` on their base_url.
-        // We trim trailing slashes.
-        let url = format!("{}/models", base_url.trim_end_matches('/'));
-
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(2))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
-
-        let mut req = client.get(&url);
-        if let Some(key) = &self.api_key {
-            req = req.bearer_auth(key);
-        }
-
-        let reachable = match req.send().await {
-            Ok(resp) => resp.status().is_success(),
-            Err(_) => false,
-        };
-
-        if let Ok(mut cache) = REACHABILITY_CACHE.lock() {
-            cache.insert(base_url, (reachable, now));
-        }
-
-        if reachable {
-            ProviderReachability::ConfiguredAndReachable
-        } else {
-            ProviderReachability::ConfiguredAndUnreachable
-        }
-    }
-
     /// Checks if the provider is correctly configured.
     pub fn is_configured(&self) -> bool {
         match self.provider_mode {
@@ -699,11 +784,15 @@ impl ModelProviderConfig {
                 if self.target == ProviderTarget::OpenCodeCLI {
                     return true;
                 }
-                self.get_resolved_base_url()
+                let has_model = !self.model.trim().is_empty();
+                let has_url = self
+                    .get_resolved_base_url()
                     .as_ref()
-                    .is_some_and(|value| !value.trim().is_empty())
+                    .is_some_and(|value| !value.trim().is_empty());
+                has_model && has_url
             }
             ProviderMode::Cloud => {
+                let has_model = !self.model.trim().is_empty();
                 let has_url = self
                     .get_resolved_base_url()
                     .as_ref()
@@ -714,9 +803,208 @@ impl ModelProviderConfig {
                     .is_some_and(|value| !value.trim().is_empty());
                 let has_lease = self.lease_config.is_some();
 
-                has_url && (has_key || has_lease)
+                has_model && has_url && (has_key || has_lease)
             }
         }
+    }
+
+    /// Returns "set" or "unset" for the API key state.
+    pub fn api_key_state(&self) -> &'static str {
+        match &self.api_key {
+            Some(k) if !k.trim().is_empty() && k.trim() != "ollama" => "set",
+            _ => "unset",
+        }
+    }
+
+    /// Returns the reason why this configuration is not considered configured.
+    pub fn unconfigured_reason(&self) -> Option<String> {
+        if self.is_configured() {
+            return None;
+        }
+
+        if self.provider_mode == ProviderMode::Disabled {
+            return Some("LLM provider is disabled (XAVIER_MODEL_PROVIDER=disabled).".to_string());
+        }
+
+        let label = &self.provider_label;
+        if label == "local" || label == "managed-local" {
+            if self.model.trim().is_empty() {
+                return Some("no LLM model configured for provider 'local'. Set XAVIER_LOCAL_LLM_MODEL (and XAVIER_LOCAL_LLM_URL for any OpenAI-compatible server), or pick a hosted provider: XAVIER_MODEL_PROVIDER=openrouter|groq|anthropic|openai with XAVIER_LLM_MODEL and its API key env var. Config keys: models.provider, models.local_llm_model / models.llm_model. See docs/reference/ENV_VARS.md.".to_string());
+            }
+            return Some("no LLM provider configured".to_string());
+        }
+
+        let (model_vars, key_vars) = Self::hint_vars(label);
+        if self.model.trim().is_empty() {
+            let joined = model_vars.join(" or ");
+            return Some(format!(
+                "no LLM model configured for provider '{label}'. Set {joined}. See docs/reference/ENV_VARS.md."
+            ));
+        }
+
+        let has_key = self
+            .api_key
+            .as_ref()
+            .is_some_and(|value| !value.trim().is_empty());
+        let has_lease = self.lease_config.is_some();
+        if !has_key && !has_lease {
+            let joined = key_vars.join(" or ");
+            return Some(format!(
+                "provider '{label}' has no API key. Set {joined} in the environment."
+            ));
+        }
+
+        Some("no LLM provider configured".to_string())
+    }
+
+    fn hint_vars(label: &str) -> (&'static [&'static str], &'static [&'static str]) {
+        match label.trim().to_ascii_lowercase().as_str() {
+            "openrouter" => (
+                &[
+                    "XAVIER_OPENROUTER_MODEL",
+                    "XAVIER_LLM_MODEL",
+                    "OPENROUTER_MODEL",
+                ],
+                &["XAVIER_OPENROUTER_API_KEY", "OPENROUTER_API_KEY"],
+            ),
+            "groq" => (&["XAVIER_LLM_MODEL", "GROQ_MODEL"], &["GROQ_API_KEY"]),
+            "anthropic" => (
+                &["XAVIER_LLM_MODEL", "ANTHROPIC_MODEL"],
+                &["ANTHROPIC_API_KEY"],
+            ),
+            "openai" => (&["XAVIER_LLM_MODEL", "OPENAI_MODEL"], &["OPENAI_API_KEY"]),
+            "deepseek" => (
+                &["XAVIER_LLM_MODEL", "DEEPSEEK_MODEL"],
+                &["DEEPSEEK_API_KEY"],
+            ),
+            "minimax" => (&["XAVIER_LLM_MODEL", "MINIMAX_MODEL"], &["MINIMAX_API_KEY"]),
+            "gemini" => (&["XAVIER_LLM_MODEL", "GEMINI_MODEL"], &["GEMINI_API_KEY"]),
+            "z.ai" | "zai" => (&["XAVIER_ZAI_MODEL", "ZAI_MODEL"], &["ZAI_API_KEY"]),
+            _ => (
+                &["XAVIER_LOCAL_LLM_MODEL", "XAVIER_LLM_MODEL"],
+                &["XAVIER_LOCAL_LLM_API_KEY"],
+            ),
+        }
+    }
+
+    /// Probes the provider endpoint for reachability and whether the configured model is listed.
+    pub async fn probe(&self) -> LlmProbe {
+        if !self.is_configured() {
+            return LlmProbe {
+                reachability: ProviderReachability::NotConfigured,
+                model_listed: None,
+            };
+        }
+
+        let base_url = match self.get_resolved_base_url() {
+            Some(url) => url,
+            None => {
+                // If there's no base_url but it's configured (e.g. OpenCodeCLI),
+                // it shells out locally.
+                return LlmProbe {
+                    reachability: ProviderReachability::ConfiguredAndReachable,
+                    model_listed: None,
+                };
+            }
+        };
+
+        let now = Instant::now();
+        let ttl = Duration::from_secs(15);
+        let cache_key = format!("{}|{}", base_url, self.model);
+
+        // Check cache first
+        {
+            if let Ok(cache) = REACHABILITY_CACHE.lock() {
+                if let Some((reachable, model_listed, timestamp)) = cache.get(&cache_key) {
+                    if now.duration_since(*timestamp) < ttl {
+                        let reachability = if *reachable {
+                            ProviderReachability::ConfiguredAndReachable
+                        } else {
+                            ProviderReachability::ConfiguredAndUnreachable
+                        };
+                        return LlmProbe {
+                            reachability,
+                            model_listed: *model_listed,
+                        };
+                    }
+                }
+            }
+        }
+
+        let url = format!("{}/models", base_url.trim_end_matches('/'));
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        let mut req = client.get(&url);
+        if let Some(key) = &self.api_key {
+            let key_trimmed = key.trim();
+            if !key_trimmed.is_empty() && key_trimmed != "ollama" {
+                if self.target == ProviderTarget::AnthropicMessages {
+                    req = req
+                        .header("x-api-key", key_trimmed)
+                        .header("anthropic-version", "2023-06-01");
+                } else {
+                    req = req.bearer_auth(key_trimmed);
+                }
+            }
+        }
+
+        let resp_res = req.send().await;
+        let (reachable, model_listed) = match resp_res {
+            Ok(resp) if resp.status().is_success() => {
+                let body_res = resp.json::<serde_json::Value>().await;
+                let listed = match body_res {
+                    Ok(val) => {
+                        if let Some(arr) = val.get("data").and_then(|d| d.as_array()) {
+                            let want = self.model.trim();
+                            let found = arr.iter().any(|item| {
+                                item.get("id").and_then(|id| id.as_str()).is_some_and(|id| {
+                                    id == want || id.strip_suffix(":latest") == Some(want)
+                                })
+                            });
+                            // Paginated listings (e.g. Anthropic `has_more`) can't prove absence.
+                            let more = val
+                                .get("has_more")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            if found {
+                                Some(true)
+                            } else if more {
+                                None
+                            } else {
+                                Some(false)
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                    Err(_) => None,
+                };
+                (true, listed)
+            }
+            _ => (false, None),
+        };
+
+        if let Ok(mut cache) = REACHABILITY_CACHE.lock() {
+            cache.insert(cache_key, (reachable, model_listed, now));
+        }
+
+        LlmProbe {
+            reachability: if reachable {
+                ProviderReachability::ConfiguredAndReachable
+            } else {
+                ProviderReachability::ConfiguredAndUnreachable
+            },
+            model_listed,
+        }
+    }
+
+    /// Checks the reachability of the provider.
+    pub async fn is_reachable(&self) -> ProviderReachability {
+        self.probe().await.reachability
     }
 
     /// Returns a list of all configured providers.
@@ -866,8 +1154,8 @@ mod tests {
             None => std::env::remove_var("XAVIER_LOCAL_ANTHROPIC_URL"),
         }
 
+        assert!(config.model.is_empty());
         let expected = crate::settings::XavierSettings::default();
-        assert_eq!(config.model, expected.models.local_llm_model);
         assert_eq!(config.base_url, Some(expected.models.local_llm_url.clone()));
         let expected_key = expected
             .models
@@ -875,6 +1163,158 @@ mod tests {
             .clone()
             .unwrap_or_else(|| "ollama".to_string());
         assert_eq!(config.api_key, Some(expected_key));
+    }
+
+    #[test]
+    fn test_local_unconfigured_without_model() {
+        let _guard = env_lock().lock().expect("test assertion");
+        let prev_config_path = std::env::var("XAVIER_CONFIG_PATH").ok();
+        std::env::set_var(
+            "XAVIER_CONFIG_PATH",
+            "/tmp/nonexistent-xavier-ci-defaults.json",
+        );
+        std::env::remove_var("XAVIER_LOCAL_LLM_MODEL");
+        std::env::remove_var("XAVIER_LLM_MODEL");
+        std::env::remove_var("XAVIER_LOCAL_LLM_URL");
+        std::env::remove_var("XAVIER_LOCAL_LLM_API_KEY");
+        std::env::remove_var("XAVIER_LOCAL_ANTHROPIC_URL");
+        std::env::remove_var("XAVIER_API_FLAVOR");
+
+        let config = ModelProviderConfig::local_from_env();
+
+        match prev_config_path {
+            Some(v) => std::env::set_var("XAVIER_CONFIG_PATH", v),
+            None => std::env::remove_var("XAVIER_CONFIG_PATH"),
+        }
+
+        assert_eq!(config.model, "");
+        assert!(!config.is_configured());
+        let reason = config.unconfigured_reason().unwrap_or_default();
+        assert!(
+            reason.contains("XAVIER_LOCAL_LLM_MODEL"),
+            "reason should contain XAVIER_LOCAL_LLM_MODEL, got: {reason}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_local_unconfigured_is_reachable_returns_not_configured() {
+        let config = {
+            let _guard = env_lock().lock().expect("test assertion");
+            let prev_config_path = std::env::var("XAVIER_CONFIG_PATH").ok();
+            std::env::set_var(
+                "XAVIER_CONFIG_PATH",
+                "/tmp/nonexistent-xavier-ci-defaults.json",
+            );
+            std::env::remove_var("XAVIER_LOCAL_LLM_MODEL");
+            std::env::remove_var("XAVIER_LLM_MODEL");
+
+            let config = ModelProviderConfig::local_from_env();
+
+            match prev_config_path {
+                Some(v) => std::env::set_var("XAVIER_CONFIG_PATH", v),
+                None => std::env::remove_var("XAVIER_CONFIG_PATH"),
+            }
+            config
+        };
+
+        assert_eq!(
+            config.is_reachable().await,
+            ProviderReachability::NotConfigured
+        );
+    }
+
+    #[test]
+    fn test_hosted_provider_missing_key_reason() {
+        let _guard = env_lock().lock().expect("test assertion");
+        std::env::remove_var("GROQ_API_KEY");
+        let mut config = ModelProviderConfig::groq_cloud_from_env();
+        config.model = "test-model".to_string();
+        config.api_key = None;
+
+        let reason = config.unconfigured_reason().unwrap_or_default();
+        assert!(
+            reason.contains("GROQ_API_KEY"),
+            "reason should mention GROQ_API_KEY: {reason}"
+        );
+    }
+
+    #[test]
+    fn test_debug_redacts_api_key() {
+        let mut config = ModelProviderConfig::for_provider("openai");
+        config.api_key = Some("sk-secret-key-123".to_string());
+        config.lease_token = Some("sk-secret-lease-456".to_string());
+        let debug_str = format!("{config:?}");
+        assert!(!debug_str.contains("sk-secret-key-123"));
+        assert!(!debug_str.contains("sk-secret-lease-456"));
+        assert!(debug_str.contains("<redacted>"));
+    }
+
+    #[tokio::test]
+    async fn test_probe_anthropic_uses_x_api_key() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/models")
+            .match_header("x-api-key", "test-anthropic-key")
+            .match_header("anthropic-version", "2023-06-01")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"data":[{"id":"test-model"}]}"#)
+            .create_async()
+            .await;
+
+        let config = ModelProviderConfig {
+            provider_mode: ProviderMode::Cloud,
+            api_flavor: ApiFlavor::AnthropicCompatible,
+            provider_label: "anthropic".to_string(),
+            model: "test-model".to_string(),
+            api_key: Some("test-anthropic-key".to_string()),
+            base_url: Some(server.url()),
+            target: ProviderTarget::AnthropicMessages,
+            lease_config: None,
+            lease_token: None,
+            secret_injection_strategy: None,
+        };
+
+        let probe = config.probe().await;
+        mock.assert_async().await;
+        assert_eq!(
+            probe.reachability,
+            ProviderReachability::ConfiguredAndReachable
+        );
+        assert_eq!(probe.model_listed, Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_probe_model_not_listed() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/not-listed/models")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"data":[{"id":"other-model"}]}"#)
+            .create_async()
+            .await;
+
+        let config = ModelProviderConfig {
+            provider_mode: ProviderMode::Cloud,
+            api_flavor: ApiFlavor::OpenAICompatible,
+            provider_label: "openai".to_string(),
+            model: "test-model".to_string(),
+            api_key: Some("test-key".to_string()),
+            base_url: Some(format!("{}/not-listed", server.url())),
+            target: ProviderTarget::GenericOpenAICompatible,
+            lease_config: None,
+            lease_token: None,
+            secret_injection_strategy: None,
+        };
+
+        let probe = config.probe().await;
+        mock.assert_async().await;
+        assert_eq!(
+            probe.reachability,
+            ProviderReachability::ConfiguredAndReachable
+        );
+        assert_eq!(probe.model_listed, Some(false));
     }
 
     #[test]
@@ -922,6 +1362,7 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
 
         let mut config = ModelProviderConfig::local_from_env();
+        config.model = "test-model".to_string();
         config.base_url = Some(server.url());
         // force unique url so cache doesn't hit
         config.base_url = Some(format!("{}/success", server.url()));
@@ -942,6 +1383,7 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
 
         let mut config = ModelProviderConfig::local_from_env();
+        config.model = "test-model".to_string();
         config.base_url = Some(server.url());
         // force unique url so cache doesn't hit
         config.base_url = Some(format!("{}/failure", server.url()));

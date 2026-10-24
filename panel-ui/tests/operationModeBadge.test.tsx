@@ -45,7 +45,7 @@ describe("OperationModeBadge", () => {
               mode: "local-healthy",
               llm: {
                 provider: "ollama",
-                model: "qwen3-coder",
+                model: "test-model",
                 reachable: true,
               },
             }),
@@ -59,7 +59,7 @@ describe("OperationModeBadge", () => {
     await waitFor(() => {
       expect(screen.getAllByText(/Local/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/Ollama/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/\(qwen3-coder\)/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/\(test-model\)/i).length).toBeGreaterThan(0);
     });
   });
 
@@ -102,7 +102,7 @@ describe("OperationModeBadge", () => {
               mode: "local-degraded",
               llm: {
                 provider: "ollama",
-                model: "qwen3-coder",
+                model: "test-model",
                 reachable: false,
               },
             }),

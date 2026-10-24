@@ -11,12 +11,15 @@ use anyhow::Result;
 use serde::Serialize;
 
 use crate::agents::mini_experts::{ExpertRecord, ExpertStore};
+use crate::agents::provider::client::ModelProviderClient;
+use crate::agents::provider::config::ModelProviderConfig;
 use crate::agents::provider_router::ProviderRouter;
 use crate::embedding::Embedder;
 
 pub const DEFAULT_THRESHOLD: f32 = 0.6;
 pub const DEFAULT_KEEP_ALIVE: &str = "5m";
 pub const DEFAULT_FALLBACK_TIMEOUT_SECS: u64 = 60;
+pub const GENERAL_SYSTEM_PROMPT: &str = "You are a helpful assistant. Answer concisely.";
 
 /// Ollama base URL (no `/v1` suffix) from `XAVIER_LOCAL_LLM_URL`.
 pub fn ollama_base_url_from_env() -> String {
@@ -41,8 +44,8 @@ pub struct ExpertRouterConfig {
     pub ollama_base_url: String,
     /// Identifier of the embedding model; part of the centroid cache key.
     pub embedding_model: String,
-    /// General local model used when no expert is chosen.
-    pub general_model: String,
+    /// General provider configuration used when no expert is chosen.
+    pub general: ModelProviderConfig,
     /// Upper bound for the general-model fallback call, in seconds.
     pub fallback_timeout_secs: u64,
 }
@@ -54,7 +57,7 @@ impl Default for ExpertRouterConfig {
             keep_alive: DEFAULT_KEEP_ALIVE.to_string(),
             ollama_base_url: "http://localhost:11434".to_string(),
             embedding_model: String::new(),
-            general_model: crate::agents::provider::local::DEFAULT_LOCAL_MODEL.to_string(),
+            general: ModelProviderConfig::disabled(),
             fallback_timeout_secs: DEFAULT_FALLBACK_TIMEOUT_SECS,
         }
     }
@@ -65,21 +68,6 @@ pub fn parse_fallback_timeout(raw: Option<&str>) -> u64 {
     raw.and_then(|v| v.trim().parse::<u64>().ok())
         .filter(|v| *v > 0)
         .unwrap_or(DEFAULT_FALLBACK_TIMEOUT_SECS)
-}
-
-/// General local model: `XAVIER_LOCAL_LLM_MODEL`, then settings, then the crate default.
-fn general_model_from_env() -> String {
-    std::env::var("XAVIER_LOCAL_LLM_MODEL")
-        .ok()
-        .filter(|m| !m.trim().is_empty())
-        .unwrap_or_else(|| {
-            let settings = crate::settings::XavierSettings::current();
-            if settings.models.local_llm_model.trim().is_empty() {
-                crate::agents::provider::local::DEFAULT_LOCAL_MODEL.to_string()
-            } else {
-                settings.models.local_llm_model.clone()
-            }
-        })
 }
 
 /// Parses a threshold: finite values are clamped to [-1, 1] (cosine range); NaN,
@@ -108,7 +96,7 @@ fn embedding_model_from_env() -> String {
 
 impl ExpertRouterConfig {
     /// `XAVIER_EXPERT_THRESHOLD`, `XAVIER_EXPERT_KEEP_ALIVE`, `XAVIER_LOCAL_LLM_URL`,
-    /// `XAVIER_LOCAL_LLM_MODEL`, `XAVIER_EXPERT_FALLBACK_TIMEOUT_SECS`.
+    /// `XAVIER_EXPERT_FALLBACK_TIMEOUT_SECS`, general model provider config.
     pub fn from_env() -> Self {
         let threshold = parse_threshold(std::env::var("XAVIER_EXPERT_THRESHOLD").ok().as_deref());
         let keep_alive = std::env::var("XAVIER_EXPERT_KEEP_ALIVE")
@@ -120,7 +108,7 @@ impl ExpertRouterConfig {
             keep_alive,
             ollama_base_url: ollama_base_url_from_env(),
             embedding_model: embedding_model_from_env(),
-            general_model: general_model_from_env(),
+            general: ModelProviderConfig::from_env(),
             fallback_timeout_secs: parse_fallback_timeout(
                 std::env::var("XAVIER_EXPERT_FALLBACK_TIMEOUT_SECS")
                     .ok()
@@ -333,21 +321,39 @@ impl ExpertRouter {
         Ok(result?)
     }
 
-    /// Answers with the general local model (same Ollama client as experts, bounded by
-    /// `fallback_timeout_secs`). Not logged: the invocation log is keyed by expert.
-    pub async fn ask_general(&self, prompt: &str) -> Result<String> {
+    /// Answers with the general model fallback, bounded by `fallback_timeout_secs`
+    /// (the underlying client has an inner 30 s timeout, so timeouts >30 s effectively cap at 30 s).
+    /// Not logged: the invocation log is keyed by expert.
+    pub async fn ask_general(
+        &self,
+        prompt: &str,
+        provider: Option<&str>,
+        model: Option<&str>,
+    ) -> Result<(String, String, String)> {
+        let cfg = provider
+            .map(ModelProviderConfig::for_provider)
+            .unwrap_or_else(|| self.config.general.clone())
+            .with_model_override(model.map(str::to_string));
+
+        if let Some(r) = cfg.unconfigured_reason() {
+            anyhow::bail!("{r}");
+        }
+
+        let label = cfg.provider_label.clone();
+        let model_id = cfg.model.clone();
+        let client = ModelProviderClient::new(cfg);
         let timeout = std::time::Duration::from_secs(self.config.fallback_timeout_secs);
-        let call = self.provider.invoke_ollama_chat(
-            &self.config.ollama_base_url,
-            &self.config.general_model,
-            prompt,
-            &self.config.keep_alive,
-        );
+        let call = client.generate_text(GENERAL_SYSTEM_PROMPT, prompt);
+
         match tokio::time::timeout(timeout, call).await {
-            Ok(answer) => Ok(answer?),
+            Ok(resp) => {
+                let answer = resp
+                    .map_err(|e| anyhow::anyhow!("{}", describe_provider_error(&e)))?
+                    .text;
+                Ok((answer, label, model_id))
+            }
             Err(_) => anyhow::bail!(
-                "general model '{}' timed out after {}s",
-                self.config.general_model,
+                "general model '{model_id}' ({label}) timed out after {}s",
                 self.config.fallback_timeout_secs
             ),
         }
@@ -367,6 +373,32 @@ impl ExpertRouter {
             matched_by: Some(m.matched_by.to_string()),
         })
     }
+}
+
+/// Flattens a provider error chain into one caller-facing message.
+///
+/// The outermost context alone ("OpenAI-compatible API returned an error") hides
+/// the HTTP status, so the chain is kept. `reqwest` errors are reduced to their
+/// status / kind because their `Display` embeds the request URL, and some
+/// providers carry the API key in the query string.
+pub(crate) fn describe_provider_error(err: &anyhow::Error) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for cause in err.chain() {
+        let part = match cause.downcast_ref::<reqwest::Error>() {
+            Some(re) => match re.status() {
+                Some(status) => format!("HTTP {status}"),
+                None if re.is_timeout() => "request timed out".to_string(),
+                None if re.is_connect() => "connection failed".to_string(),
+                None if re.is_decode() => "invalid response body".to_string(),
+                None => "request failed".to_string(),
+            },
+            None => cause.to_string(),
+        };
+        if !parts.contains(&part) {
+            parts.push(part);
+        }
+    }
+    parts.join(": ")
 }
 
 #[cfg(test)]
@@ -676,5 +708,108 @@ mod tests {
         let log = router.store().invocations(10).unwrap();
         assert_eq!(log.len(), 1);
         assert!(!log[0].ok);
+    }
+
+    #[tokio::test]
+    async fn test_ask_general_openai_compatible() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/v1/chat/completions")
+            .match_body(mockito::Matcher::PartialJson(serde_json::json!({
+                "model": "test-model"
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "openai answer"
+                        }
+                    }]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = ExpertStore::open(dir.path().join(ExpertStore::DB_FILE)).unwrap();
+        let mut general = ModelProviderConfig::local_from_env();
+        general.base_url = Some(format!("{}/v1", server.url()));
+        general.model = "test-model".to_string();
+
+        let cfg = ExpertRouterConfig {
+            general,
+            ..Default::default()
+        };
+        let router = ExpertRouter::new(store, None, cfg);
+
+        let (answer, provider_label, model) =
+            router.ask_general("test prompt", None, None).await.unwrap();
+        mock.assert_async().await;
+        assert_eq!(answer, "openai answer");
+        assert_eq!(provider_label, "local");
+        assert_eq!(model, "test-model");
+    }
+
+    #[tokio::test]
+    async fn test_ask_general_anthropic() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/v1/messages")
+            .match_header("x-api-key", "test-anthropic-key")
+            .match_header("anthropic-version", "2023-06-01")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "hi"
+                    }]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = ExpertStore::open(dir.path().join(ExpertStore::DB_FILE)).unwrap();
+        let general = ModelProviderConfig::anthropic_cloud_from_env()
+            .with_base_url(Some(server.url()))
+            .with_api_key(Some("test-anthropic-key".to_string()))
+            .with_model_override(Some("test-model".to_string()));
+
+        let cfg = ExpertRouterConfig {
+            general,
+            ..Default::default()
+        };
+        let router = ExpertRouter::new(store, None, cfg);
+
+        let (answer, provider_label, model) =
+            router.ask_general("test prompt", None, None).await.unwrap();
+        mock.assert_async().await;
+        assert_eq!(answer, "hi");
+        assert_eq!(provider_label, "anthropic");
+        assert_eq!(model, "test-model");
+    }
+
+    #[tokio::test]
+    async fn test_ask_general_unconfigured_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ExpertStore::open(dir.path().join(ExpertStore::DB_FILE)).unwrap();
+        let cfg = ExpertRouterConfig::default();
+        let router = ExpertRouter::new(store, None, cfg);
+
+        let err = router
+            .ask_general("test prompt", None, None)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("XAVIER_MODEL_PROVIDER"),
+            "Error should mention XAVIER_MODEL_PROVIDER, got: {err}"
+        );
     }
 }

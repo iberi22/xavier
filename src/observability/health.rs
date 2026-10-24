@@ -33,6 +33,14 @@ pub struct LlmHealth {
     pub endpoint: String,
     pub reachable: bool,
     pub status: HealthLevel,
+    #[serde(default)]
+    pub configured: bool,
+    #[serde(default)]
+    pub api_key: String, // "set" | "unset"
+    #[serde(default)]
+    pub model_available: Option<bool>,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -279,6 +287,10 @@ impl Default for HealthStatus {
                 endpoint: "unknown".into(),
                 reachable: false,
                 status: HealthLevel::Healthy,
+                configured: false,
+                api_key: "unset".into(),
+                model_available: None,
+                error: None,
             },
             vector_db: VectorDbHealth {
                 backend: "unknown".into(),
@@ -781,64 +793,62 @@ impl HealthMonitor {
 
     async fn check_llm(&self) -> LlmHealth {
         let config = crate::agents::provider::ModelProviderConfig::from_env();
+        if let Some(h) = llm_health_unconfigured(&config) {
+            return h;
+        }
         let provider = config.provider_label.clone();
-        let model = config.model.clone();
-        let endpoint = config
-            .base_url
-            .clone()
-            .unwrap_or_else(|| "none".to_string());
-        let mut reachable = false;
-        let mut status = HealthLevel::Healthy;
+        let api_key = config.api_key_state().to_string();
+        let endpoint = redacted_llm_endpoint(&config);
 
-        if config.provider_mode == crate::agents::provider::types::ProviderMode::Local
-            || config.provider_mode == crate::agents::provider::types::ProviderMode::ManagedLocal
+        let model = config.model.clone();
+        let mut p = config.probe().await;
+
+        if (config.provider_mode == crate::agents::provider::types::ProviderMode::Local
+            || config.provider_mode == crate::agents::provider::types::ProviderMode::ManagedLocal)
+            && p.reachability
+                != crate::agents::provider::types::ProviderReachability::ConfiguredAndReachable
         {
             if let Some(url) = &config.get_resolved_base_url() {
-                // No adivinar por el puerto: un Ollama puede vivir en cualquier host:puerto (p.ej.
-                // un segundo servidor con sus propios modelos). Antes solo se probaba
-                // `/api/version` si la URL contenia "11434"; para cualquier otro puerto se hacia
-                // GET a `/v1`, que devuelve 404, y el proveedor local se marcaba como NO
-                // alcanzable aunque estuviera perfectamente vivo (el nodo entero pasaba a
-                // "unhealthy"). Se prueban los endpoints habituales y basta con que uno responda.
                 let trimmed = url.trim_end_matches('/');
                 let base = trimmed.trim_end_matches("/v1");
-                let candidates = [
-                    format!("{}/api/version", base), // Ollama nativo
-                    format!("{}/models", trimmed),   // OpenAI-compatible
-                ];
-
-                let mut probe_ok = false;
-                for check_url in &candidates {
-                    if let Ok(resp) = self.http_client.get(check_url).send().await {
-                        if resp.status().is_success() {
-                            probe_ok = true;
-                            break;
-                        }
-                    }
-                }
-
-                if probe_ok {
-                    reachable = true;
-                    let mut fail_count = self.llm_failure_count.write().await;
-                    *fail_count = 0;
-                } else {
-                    reachable = false;
-                    let mut fail_count = self.llm_failure_count.write().await;
-                    *fail_count += 1;
-                    if *fail_count >= 3 {
-                        SYSTEM_ALERTS.push_alert(
-                            "ERROR",
-                            "Ollama local no responde — modo degradado",
-                            "llm",
-                        );
-                        status = HealthLevel::Unhealthy;
-                    } else {
-                        status = HealthLevel::Degraded;
+                let legacy_url = format!("{}/api/version", base);
+                if let Ok(resp) = self.http_client.get(&legacy_url).send().await {
+                    if resp.status().is_success() {
+                        p.reachability = crate::agents::provider::types::ProviderReachability::ConfiguredAndReachable;
                     }
                 }
             }
-        } else if config.provider_mode == crate::agents::provider::types::ProviderMode::Cloud {
-            reachable = true; // Assume cloud is reachable if configured for now
+        }
+
+        let reachable = p.reachability
+            == crate::agents::provider::types::ProviderReachability::ConfiguredAndReachable;
+        let mut status = HealthLevel::Healthy;
+
+        if reachable {
+            let mut fail_count = self.llm_failure_count.write().await;
+            *fail_count = 0;
+        } else {
+            let mut fail_count = self.llm_failure_count.write().await;
+            *fail_count += 1;
+            if *fail_count >= 3 {
+                SYSTEM_ALERTS.push_alert(
+                    "ERROR",
+                    &format!("LLM provider '{provider}' is not responding; degraded mode"),
+                    "llm",
+                );
+                status = HealthLevel::Unhealthy;
+            } else {
+                status = HealthLevel::Degraded;
+            }
+        }
+
+        let mut error = (!reachable)
+            .then(|| format!("LLM provider '{provider}' is not reachable at {endpoint}"));
+        if p.model_listed == Some(false) {
+            status = HealthLevel::Degraded;
+            error = Some(format!(
+                "model '{model}' is not listed by {provider} at {endpoint}"
+            ));
         }
 
         LlmHealth {
@@ -847,6 +857,10 @@ impl HealthMonitor {
             endpoint,
             reachable,
             status,
+            configured: true,
+            api_key,
+            model_available: p.model_listed,
+            error,
         }
     }
 
@@ -946,6 +960,40 @@ fn peer_lag_secs(peer: &PeerInfo, now: i64) -> u64 {
     } else {
         0
     }
+}
+
+/// Endpoint of the configured LLM provider with any URL credentials removed.
+fn redacted_llm_endpoint(config: &crate::agents::provider::ModelProviderConfig) -> String {
+    let raw_endpoint = config
+        .base_url
+        .clone()
+        .unwrap_or_else(|| "none".to_string());
+    if let Ok(mut u) = url::Url::parse(&raw_endpoint) {
+        let _ = u.set_username("");
+        let _ = u.set_password(None);
+        u.to_string()
+    } else {
+        raw_endpoint
+    }
+}
+
+/// Health for a provider that has no usable model/key, or `None` when the
+/// provider is configured and must be probed. Pure: reads no env.
+fn llm_health_unconfigured(
+    config: &crate::agents::provider::ModelProviderConfig,
+) -> Option<LlmHealth> {
+    let reason = config.unconfigured_reason()?;
+    Some(LlmHealth {
+        provider: config.provider_label.clone(),
+        model: String::new(),
+        endpoint: redacted_llm_endpoint(config),
+        reachable: false,
+        status: HealthLevel::Degraded,
+        configured: false,
+        api_key: config.api_key_state().to_string(),
+        model_available: None,
+        error: Some(reason),
+    })
 }
 
 #[cfg(test)]
@@ -1192,5 +1240,33 @@ mod tests {
         status.status = tgd_consolidation_level(status.tgd_consolidation.as_ref());
         assert_eq!(status.status, HealthLevel::Healthy);
         assert!(status.compute_degraded_reasons().is_empty());
+    }
+
+    #[test]
+    fn check_llm_unconfigured_is_degraded() {
+        // Hand-built config: no env mutation, so this cannot race other tests.
+        let mut config = crate::agents::provider::ModelProviderConfig::local_from_env();
+        config.model = String::new();
+        config.api_key = None;
+        config.base_url = Some("http://user:secret@127.0.0.1:9/v1".to_string());
+
+        let llm_health = llm_health_unconfigured(&config).expect("unconfigured");
+
+        assert!(!llm_health.configured);
+        assert_eq!(llm_health.status, HealthLevel::Degraded);
+        assert!(llm_health
+            .error
+            .as_deref()
+            .is_some_and(|e| e.contains("XAVIER_LOCAL_LLM_MODEL")));
+        assert_eq!(llm_health.api_key, "unset");
+        assert!(!llm_health.endpoint.contains("secret"));
+    }
+
+    #[test]
+    fn check_llm_configured_is_probed() {
+        let mut config = crate::agents::provider::ModelProviderConfig::local_from_env();
+        config.model = "test-model".to_string();
+        config.base_url = Some("http://127.0.0.1:9/v1".to_string());
+        assert!(llm_health_unconfigured(&config).is_none());
     }
 }

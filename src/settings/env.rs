@@ -145,7 +145,10 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
 
     set_if_absent("XAVIER_MODEL_PROVIDER", &settings.models.provider);
     set_if_absent("XAVIER_API_FLAVOR", &settings.models.api_flavor);
-    set_if_absent("XAVIER_LOCAL_LLM_MODEL", &settings.models.local_llm_model);
+    set_optional_if_absent(
+        "XAVIER_LOCAL_LLM_MODEL",
+        non_empty(&settings.models.local_llm_model),
+    );
     set_if_absent("XAVIER_EMBEDDING_URL", &settings.models.embedding_url);
     set_if_absent("XAVIER_EMBEDDING_MODEL", &settings.models.embedding_model);
     set_optional_if_absent(

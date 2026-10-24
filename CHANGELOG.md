@@ -9,6 +9,7 @@
 - **`/health` reports `version` and `degraded_reasons`** (#2568, #2574): one `host:<cpu|memory|disk>` or `subsystem:<database|embedding|llm|vector_db|mesh>` entry per non-healthy component, empty iff `healthy`.
 - **`xavier improve` deadlines** (#2579): `XAVIER_IMPROVE_STAGE_TIMEOUT_SECS` (default 120) and `XAVIER_IMPROVE_TOTAL_TIMEOUT_SECS` (default 300), capped at 24h; overruns end the cycle as `truncated` with partial progress persisted. Exit codes: `0` completed, `124` truncated, `1` failed.
 ### Changed
+- Configurable general LLM provider and model; removed built-in default model (`qwen3-coder` / `DEFAULT_LOCAL_MODEL`) in favor of explicit configuration with clear unconfigured errors and real availability reporting in health.
 - scheduled TGD consolidation is opt-in (`XAVIER_TGD_SCHEDULER`) (#2994)
 - exact migration paths, stricter usage telemetry (#2992)
 - **`xavier health` exits non-zero when the node is `unhealthy`** and prints the server version and degraded reasons (#2574); `xavier stats` reads every counter from the same workspace as MCP `xavier_stats`, unmeasured counters are `unknown`.
