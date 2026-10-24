@@ -197,6 +197,12 @@ fn signal_group(pgid: u32, sig: i32) {
 #[cfg(not(unix))]
 fn signal_group(_pgid: u32, _sig: i32) {}
 
+/// `libc::SIGKILL` only exists on unix; `signal_group` is a no-op elsewhere.
+#[cfg(unix)]
+const SIG_KILL: i32 = libc::SIGKILL;
+#[cfg(not(unix))]
+const SIG_KILL: i32 = 9;
+
 /// SIGTERM the group now; SIGKILL it after `grace` (reaping the leader).
 fn kill_group_escalating(mut child: Child, grace: Duration) {
     let Some(pgid) = child.id() else { return };
@@ -204,7 +210,7 @@ fn kill_group_escalating(mut child: Child, grace: Duration) {
     tokio::spawn(async move {
         let _ = tokio::time::timeout(grace, child.wait()).await;
         // Also reaches members that ignored SIGTERM or outlived the leader.
-        signal_group(pgid, libc::SIGKILL);
+        signal_group(pgid, SIG_KILL);
         let _ = child.wait().await;
     });
 }
@@ -321,7 +327,7 @@ impl ComputeBackend for LocalBackend {
                 Some((st, pid)) => {
                     // Leader exited: sweep any stragglers left in its group.
                     if let Some(pid) = pid {
-                        signal_group(pid, libc::SIGKILL);
+                        signal_group(pid, SIG_KILL);
                     }
                     map_exit(st.code())
                 }
@@ -419,7 +425,7 @@ impl ComputeBackend for ManualNotebookBackend {
             Ok(r) => r?,
             Err(_) => {
                 if let Some(p) = pgid {
-                    signal_group(p, libc::SIGKILL);
+                    signal_group(p, SIG_KILL);
                 }
                 let _ = child.wait().await;
                 bail!("notebook generation timed out (XAVIER_TRAIN_TIMEOUT)");
