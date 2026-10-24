@@ -2022,4 +2022,652 @@ mod tests {
         .expect("usage is a tool result");
         assert_eq!(mcp_payload(&usage)["skills"], json!([]), "{usage}");
     }
+
+    // ---- Context snapshots (XAVIER_CONTEXT_SNAPSHOTS) ---------------------
+
+    const GATE_ENV: &str = "XAVIER_CONTEXT_SNAPSHOTS";
+    const SESSION: &str = "claude-session-1";
+    const SESSION_B: &str = "claude-session-2";
+    const SNAPSHOT_WS: &str = "ws-snapshots";
+    const SNAPSHOT_DB: &str = "conversations.db";
+
+    /// Pins the snapshot gate, the data dir and the node record key for one
+    /// test, and restores the previous values on drop. Tests using it are serial.
+    struct SnapshotEnv {
+        dir: tempfile::TempDir,
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl SnapshotEnv {
+        fn new(gate: bool, record_key: Option<String>) -> Self {
+            use crate::memory::sqlite_vec_store::at_rest;
+            let saved = [GATE_ENV, at_rest::DATA_DIR_ENV, at_rest::RECORD_KEY_ENV]
+                .into_iter()
+                .map(|key| (key, std::env::var_os(key)))
+                .collect();
+            let dir = tempfile::tempdir().unwrap();
+            std::env::set_var(at_rest::DATA_DIR_ENV, dir.path());
+            match record_key {
+                Some(hex) => std::env::set_var(at_rest::RECORD_KEY_ENV, hex),
+                None => std::env::remove_var(at_rest::RECORD_KEY_ENV),
+            }
+            let env = Self { dir, saved };
+            env.set_gate(gate);
+            env
+        }
+
+        fn path(&self) -> &Path {
+            self.dir.path()
+        }
+
+        fn db_path(&self) -> std::path::PathBuf {
+            self.dir.path().join(SNAPSHOT_DB)
+        }
+
+        fn set_gate(&self, on: bool) {
+            if on {
+                std::env::set_var(GATE_ENV, "1");
+            } else {
+                std::env::remove_var(GATE_ENV);
+            }
+        }
+    }
+
+    impl Drop for SnapshotEnv {
+        fn drop(&mut self) {
+            crate::memory::sqlite_vec_store::at_rest::lock_default_space();
+            for (key, value) in self.saved.drain(..) {
+                match value {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
+    fn record_key_hex() -> String {
+        "5a".repeat(32)
+    }
+
+    /// Workspace `SNAPSHOT_WS` whose conversations live in a file-backed
+    /// database inside `env`.
+    async fn snapshot_workspace(
+        env: &SnapshotEnv,
+    ) -> (crate::AppState, WorkspaceContext, tempfile::TempDir) {
+        let (state, mut workspace, work) = workspace_with_documents(Vec::new()).await;
+        let mut inner = crate::workspace::WorkspaceState::new_minimal(
+            SNAPSHOT_WS.to_string(),
+            work.path().to_path_buf(),
+            std::sync::Arc::clone(&workspace.workspace.memory),
+            std::sync::Arc::new(crate::memory::store::InMemoryMemoryStore::default()),
+        )
+        .await;
+        inner.conversations_db = std::sync::Arc::new(
+            crate::codebase::conversations_db::ConversationsDb::open_at(
+                SNAPSHOT_WS,
+                &env.db_path(),
+            )
+            .await
+            .expect("file-backed conversations db"),
+        );
+        workspace.workspace = std::sync::Arc::new(inner);
+        workspace.workspace_id = SNAPSHOT_WS.to_string();
+        (state, workspace, work)
+    }
+
+    /// Thread `session` in the snapshot workspace, with one user message per text.
+    async fn seed_thread(
+        workspace: &WorkspaceContext,
+        env: &SnapshotEnv,
+        session: &str,
+        texts: &[&str],
+    ) {
+        let db = &workspace.workspace.conversations_db;
+        db.create_schema().await.unwrap();
+        rusqlite::Connection::open(env.db_path())
+            .unwrap()
+            .execute(
+                "INSERT INTO conversation_threads (id, project_id, started_at, updated_at)
+                 VALUES (?1, ?2, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                rusqlite::params![session, SNAPSHOT_WS],
+            )
+            .unwrap();
+        for text in texts {
+            db.store_message(session, "user", text, None, None, None, None, None)
+                .await
+                .unwrap();
+        }
+    }
+
+    async fn append_message(workspace: &WorkspaceContext, session: &str, text: &str) {
+        workspace
+            .workspace
+            .conversations_db
+            .store_message(session, "user", text, None, None, None, None, None)
+            .await
+            .unwrap();
+    }
+
+    async fn call(
+        state: &crate::AppState,
+        workspace: &WorkspaceContext,
+        name: &str,
+        args: Value,
+    ) -> Value {
+        handle_context_tool(state.clone(), workspace.clone(), name, args)
+            .await
+            .expect("tool result")
+    }
+
+    /// The checkpoint id in a save reply (`... Checkpoint ID: {cid}\n...`).
+    fn checkpoint_id_of(saved: &Value) -> String {
+        tool_text(saved)
+            .rsplit("Checkpoint ID: ")
+            .next()
+            .and_then(|rest| rest.lines().next())
+            .expect("checkpoint id in save reply")
+            .to_string()
+    }
+
+    fn table_exists(db: &Path, table: &str) -> bool {
+        rusqlite::Connection::open(db)
+            .unwrap()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+                rusqlite::params![table],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    fn restore_has_checkpoint_id() -> bool {
+        super::get_xavier_context_tools()
+            .into_iter()
+            .find(|tool| tool.name == "xavier_context_restore")
+            .expect("restore tool")
+            .input_schema["properties"]
+            .get("checkpoint_id")
+            .is_some()
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn gate_off_byte_identical() {
+        crate::isolate_test_process!();
+        let env = SnapshotEnv::new(false, None);
+        let (state, workspace, _work) = snapshot_workspace(&env).await;
+        seed_thread(&workspace, &env, "gate-off", &["alpha"]).await;
+
+        let saved = call(
+            &state,
+            &workspace,
+            "xavier_context_save",
+            json!({"session_id": "gate-off"}),
+        )
+        .await;
+        assert_eq!(saved["isError"], false, "{saved}");
+        let cid = checkpoint_id_of(&saved);
+        assert_eq!(
+            tool_text(&saved),
+            format!("Context saved for session gate-off. Checkpoint ID: {cid}")
+        );
+
+        let restored = call(
+            &state,
+            &workspace,
+            "xavier_context_restore",
+            json!({"session_id": "gate-off"}),
+        )
+        .await;
+        assert_eq!(restored["isError"], false, "{restored}");
+        let payload: Value = serde_json::from_str(tool_text(&restored)).unwrap();
+        let mut keys: Vec<&str> = payload
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "checkpoints",
+                "context",
+                "depth",
+                "session_id",
+                "status",
+                "token_usage"
+            ]
+        );
+
+        // Gate off: no checkpoint_id in the schema, and no snapshot table.
+        assert!(!restore_has_checkpoint_id());
+        assert!(!table_exists(&env.db_path(), "checkpoint_snapshots"));
+
+        // Gate on: the same schema advertises checkpoint_id.
+        env.set_gate(true);
+        assert!(restore_has_checkpoint_id());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn gate_off_checkpoint_id_is_disabled_error() {
+        crate::isolate_test_process!();
+        let env = SnapshotEnv::new(false, None);
+        let (state, workspace, _work) = snapshot_workspace(&env).await;
+        seed_thread(&workspace, &env, "off-session", &["canary-live alpha"]).await;
+
+        let out = call(
+            &state,
+            &workspace,
+            "xavier_context_restore",
+            json!({
+                "session_id": "off-session",
+                "checkpoint_id": uuid::Uuid::new_v4().to_string()
+            }),
+        )
+        .await;
+        assert_tool_error(&out, "Error: context snapshots are disabled");
+        assert!(!tool_text(&out).contains("canary-live"), "{out}");
+
+        // A null checkpoint_id counts as absent: the live restore runs.
+        let live = call(
+            &state,
+            &workspace,
+            "xavier_context_restore",
+            json!({"session_id": "off-session", "checkpoint_id": null}),
+        )
+        .await;
+        assert_eq!(live["isError"], false, "{live}");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn restore_snapshot_is_point_in_time() {
+        crate::isolate_test_process!();
+        let env = SnapshotEnv::new(true, Some(record_key_hex()));
+        let (state, workspace, _work) = snapshot_workspace(&env).await;
+        seed_thread(&workspace, &env, SESSION, &["canary-one alpha"]).await;
+
+        let saved = call(
+            &state,
+            &workspace,
+            "xavier_context_save",
+            json!({"session_id": SESSION}),
+        )
+        .await;
+        assert_eq!(saved["isError"], false, "{saved}");
+        assert!(
+            tool_text(&saved).ends_with("\nSnapshot tier: node"),
+            "{saved}"
+        );
+        let cid = checkpoint_id_of(&saved);
+
+        // The live transcript moves on after the save.
+        append_message(&workspace, SESSION, "canary-two beta").await;
+        let restored = call(
+            &state,
+            &workspace,
+            "xavier_context_restore",
+            json!({"session_id": SESSION, "checkpoint_id": cid}),
+        )
+        .await;
+        assert_eq!(restored["isError"], false, "{restored}");
+        let payload: Value = serde_json::from_str(tool_text(&restored)).unwrap();
+        assert_eq!(payload["source"], "snapshot", "{payload}");
+        assert_eq!(payload["checkpoint_id"], cid.as_str());
+        assert_eq!(payload["snapshot_tier"], "node");
+        assert_eq!(payload["truncated"], false);
+        let context = payload["context"].as_str().unwrap();
+        assert!(context.contains("canary-one alpha"), "{context}");
+        assert!(!context.contains("canary-two"), "{context}");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn restore_tampered_no_live_fallback() {
+        crate::isolate_test_process!();
+        let env = SnapshotEnv::new(true, Some(record_key_hex()));
+        let (state, workspace, _work) = snapshot_workspace(&env).await;
+        seed_thread(&workspace, &env, SESSION, &["canary-one alpha"]).await;
+        let saved = call(
+            &state,
+            &workspace,
+            "xavier_context_save",
+            json!({"session_id": SESSION}),
+        )
+        .await;
+        let cid = checkpoint_id_of(&saved);
+
+        // Replace the sealed blob with one that fails authentication.
+        rusqlite::Connection::open(env.db_path())
+            .unwrap()
+            .execute(
+                "UPDATE checkpoint_snapshots SET context_sealed = ?2 WHERE checkpoint_id = ?1",
+                rusqlite::params![cid, format!("xsn1:{}", "0".repeat(200))],
+            )
+            .unwrap();
+        append_message(&workspace, SESSION, "canary-two beta").await;
+
+        let out = call(
+            &state,
+            &workspace,
+            "xavier_context_restore",
+            json!({"session_id": SESSION, "checkpoint_id": cid}),
+        )
+        .await;
+        assert_tool_error(
+            &out,
+            &format!("Error: snapshot {cid} failed verification; nothing restored"),
+        );
+        assert!(!tool_text(&out).contains("canary-"), "{out}");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn restore_error_mapping_table() {
+        crate::isolate_test_process!();
+
+        // A malformed checkpoint id is an argument error.
+        {
+            let env = SnapshotEnv::new(true, Some(record_key_hex()));
+            let (state, workspace, _work) = snapshot_workspace(&env).await;
+            for bad in ["not-a-uuid", "123E4567-E89B-42D3-A456-426614174000"] {
+                let out = call(
+                    &state,
+                    &workspace,
+                    "xavier_context_restore",
+                    json!({"session_id": SESSION, "checkpoint_id": bad}),
+                )
+                .await;
+                assert_tool_error(&out, "checkpoint_id must be a canonical lowercase UUID");
+            }
+        }
+
+        // Unknown id and another session's id produce the same reply shape.
+        {
+            let env = SnapshotEnv::new(true, Some(record_key_hex()));
+            let (state, workspace, _work) = snapshot_workspace(&env).await;
+            seed_thread(&workspace, &env, SESSION, &["alpha"]).await;
+            seed_thread(&workspace, &env, SESSION_B, &["beta"]).await;
+            let saved = call(
+                &state,
+                &workspace,
+                "xavier_context_save",
+                json!({"session_id": SESSION}),
+            )
+            .await;
+            let cid = checkpoint_id_of(&saved);
+            let unknown = uuid::Uuid::new_v4().to_string();
+            let out = call(
+                &state,
+                &workspace,
+                "xavier_context_restore",
+                json!({"session_id": SESSION, "checkpoint_id": unknown}),
+            )
+            .await;
+            assert_eq!(
+                tool_text(&out),
+                format!("Error: no snapshot {unknown} for session {SESSION}")
+            );
+            let out = call(
+                &state,
+                &workspace,
+                "xavier_context_restore",
+                json!({"session_id": SESSION_B, "checkpoint_id": cid}),
+            )
+            .await;
+            assert_eq!(
+                tool_text(&out),
+                format!("Error: no snapshot {cid} for session {SESSION_B}")
+            );
+        }
+
+        // A checkpoint saved before the feature has no snapshot row.
+        {
+            let env = SnapshotEnv::new(true, Some(record_key_hex()));
+            let (state, workspace, _work) = snapshot_workspace(&env).await;
+            let legacy = workspace
+                .workspace
+                .conversations_db
+                .create_checkpoint(
+                    Some(SNAPSHOT_WS),
+                    Some("legacy-session"),
+                    None,
+                    None,
+                    Some("context_save"),
+                )
+                .await
+                .unwrap();
+            let out = call(
+                &state,
+                &workspace,
+                "xavier_context_restore",
+                json!({"session_id": "legacy-session", "checkpoint_id": legacy.id}),
+            )
+            .await;
+            assert_eq!(
+                tool_text(&out),
+                format!(
+                    "Error: no snapshot {} for session legacy-session",
+                    legacy.id
+                )
+            );
+        }
+
+        // No key anywhere: the restore refuses before reading.
+        {
+            let env = SnapshotEnv::new(true, None);
+            let (state, workspace, _work) = snapshot_workspace(&env).await;
+            let out = call(
+                &state,
+                &workspace,
+                "xavier_context_restore",
+                json!({"session_id": SESSION, "checkpoint_id": uuid::Uuid::new_v4().to_string()}),
+            )
+            .await;
+            assert_tool_error(
+                &out,
+                "Error: no sealing key is configured; context snapshots require one",
+            );
+        }
+
+        // A key path that cannot be read.
+        {
+            let env = SnapshotEnv::new(true, None);
+            let (state, workspace, _work) = snapshot_workspace(&env).await;
+            let key_path = crate::memory::sqlite_vec_store::at_rest::record_key_path();
+            std::fs::create_dir_all(key_path.parent().unwrap()).unwrap();
+            std::fs::create_dir(&key_path).unwrap();
+            let out = call(
+                &state,
+                &workspace,
+                "xavier_context_restore",
+                json!({"session_id": SESSION, "checkpoint_id": uuid::Uuid::new_v4().to_string()}),
+            )
+            .await;
+            assert_tool_error(
+                &out,
+                "Error: sealing key unavailable; nothing was read or stored",
+            );
+        }
+
+        // Node-sealed snapshot after a keystore appears: a weaker tier than the policy.
+        {
+            let env = SnapshotEnv::new(true, Some(record_key_hex()));
+            let (state, workspace, _work) = snapshot_workspace(&env).await;
+            seed_thread(&workspace, &env, SESSION, &["alpha"]).await;
+            let saved = call(
+                &state,
+                &workspace,
+                "xavier_context_save",
+                json!({"session_id": SESSION}),
+            )
+            .await;
+            let cid = checkpoint_id_of(&saved);
+            crate::memory::sqlite_vec_store::at_rest::create_default_keystore().unwrap();
+            let out = call(
+                &state,
+                &workspace,
+                "xavier_context_restore",
+                json!({"session_id": SESSION, "checkpoint_id": cid}),
+            )
+            .await;
+            assert_tool_error(
+                &out,
+                &format!("Error: snapshot {cid} was sealed under a different key tier; re-save it"),
+            );
+        }
+
+        // Default-space snapshot after the keystore is gone: a different tier.
+        {
+            let env = SnapshotEnv::new(true, Some(record_key_hex()));
+            let (state, workspace, _work) = snapshot_workspace(&env).await;
+            seed_thread(&workspace, &env, SESSION, &["alpha"]).await;
+            crate::memory::sqlite_vec_store::at_rest::create_default_keystore().unwrap();
+            let saved = call(
+                &state,
+                &workspace,
+                "xavier_context_save",
+                json!({"session_id": SESSION}),
+            )
+            .await;
+            assert_eq!(saved["isError"], false, "{saved}");
+            let cid = checkpoint_id_of(&saved);
+            std::fs::remove_file(crate::memory::sqlite_vec_store::at_rest::default_keystore_path())
+                .unwrap();
+            let out = call(
+                &state,
+                &workspace,
+                "xavier_context_restore",
+                json!({"session_id": SESSION, "checkpoint_id": cid}),
+            )
+            .await;
+            assert_tool_error(
+                &out,
+                &format!("Error: snapshot {cid} was sealed under a different key tier; re-save it"),
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn save_gate_on_errors_are_iserror() {
+        crate::isolate_test_process!();
+        let env = SnapshotEnv::new(true, Some(record_key_hex()));
+        let (state, workspace, _work) = snapshot_workspace(&env).await;
+
+        // No conversation thread for the session.
+        let out = call(
+            &state,
+            &workspace,
+            "xavier_context_save",
+            json!({"session_id": "no-thread-session"}),
+        )
+        .await;
+        assert_tool_error(
+            &out,
+            "Error: session no-thread-session has no conversation thread in this workspace; nothing saved",
+        );
+
+        // A thread with no messages.
+        seed_thread(&workspace, &env, "empty-session", &[]).await;
+        let out = call(
+            &state,
+            &workspace,
+            "xavier_context_save",
+            json!({"session_id": "empty-session"}),
+        )
+        .await;
+        assert_tool_error(
+            &out,
+            "Error: session empty-session has no messages; nothing saved",
+        );
+
+        // One message whose serialized body is 65537 bytes: 74 bytes of envelope
+        // around a 36-byte id, plus the content.
+        let oversized = "a".repeat(65_463);
+        seed_thread(&workspace, &env, "big-session", &[oversized.as_str()]).await;
+        let out = call(
+            &state,
+            &workspace,
+            "xavier_context_save",
+            json!({"session_id": "big-session"}),
+        )
+        .await;
+        assert_tool_error(
+            &out,
+            "Error: session big-session transcript exceeds 65536 bytes; nothing saved",
+        );
+
+        // A workspace id that differs from the config id.
+        let mut other = workspace.clone();
+        other.workspace_id = "other-ws".to_string();
+        let out = call(
+            &state,
+            &other,
+            "xavier_context_save",
+            json!({"session_id": SESSION}),
+        )
+        .await;
+        assert_tool_error(
+            &out,
+            "Error: context snapshots are unavailable for this workspace",
+        );
+
+        // No key configured.
+        let keyless = SnapshotEnv::new(true, None);
+        let (state, workspace, _keyless_work) = snapshot_workspace(&keyless).await;
+        seed_thread(&workspace, &keyless, SESSION, &["alpha"]).await;
+        let out = call(
+            &state,
+            &workspace,
+            "xavier_context_save",
+            json!({"session_id": SESSION}),
+        )
+        .await;
+        assert_tool_error(
+            &out,
+            "Error: no sealing key is configured; context snapshots require one",
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn restore_budget_clip() {
+        crate::isolate_test_process!();
+        let env = SnapshotEnv::new(true, Some(record_key_hex()));
+        let (state, workspace, _work) = snapshot_workspace(&env).await;
+        // Multibyte text: a byte-based clip would split characters.
+        let long = format!("{} end", "é".repeat(3_000));
+        seed_thread(&workspace, &env, SESSION, &[long.as_str()]).await;
+        let saved = call(
+            &state,
+            &workspace,
+            "xavier_context_save",
+            json!({"session_id": SESSION}),
+        )
+        .await;
+        let cid = checkpoint_id_of(&saved);
+
+        let out = call(
+            &state,
+            &workspace,
+            "xavier_context_restore",
+            json!({"session_id": SESSION, "depth": "shallow", "checkpoint_id": cid}),
+        )
+        .await;
+        assert_eq!(out["isError"], false, "{out}");
+        let payload: Value = serde_json::from_str(tool_text(&out)).unwrap();
+        assert_eq!(payload["source"], "snapshot");
+        assert_eq!(payload["truncated"], true);
+        let context = payload["context"].as_str().unwrap();
+        // Shallow budget: 150 tokens, at 4 chars per token.
+        assert!(
+            context.chars().count() <= 600,
+            "{}",
+            context.chars().count()
+        );
+        assert!(crate::context::estimate_tokens(context) <= 150);
+    }
 }
