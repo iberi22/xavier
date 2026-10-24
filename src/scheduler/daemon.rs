@@ -287,31 +287,7 @@ fn run_self_manage_checks_blocking() -> anyhow::Result<()> {
 
     for alert in alerts {
         if alert.severity == "critical" || alert.severity == "warn" {
-            let title = format!(
-                "[Incident] {} alert on host: {}",
-                alert.severity.to_uppercase(),
-                alert.metric
-            );
-            let body = format!(
-                "### Self-Management Guardian Alert\n\n\
-                **Metric:** {}\n\
-                **Value:** {}\n\
-                **Threshold:** {}\n\
-                **Severity:** {}\n\n\
-                Please review and execute the appropriate runbook actions.",
-                alert.metric, alert.value, alert.threshold, alert.severity
-            );
-
-            let ticket_args = crate::self_manage::TicketCreateArgs {
-                title,
-                body,
-                labels: Some(vec!["runtime".to_string(), "incident".to_string()]),
-                severity: alert.severity,
-                fingerprint: None,
-                backend: Some("maloca".to_string()), // default to Maloca backlog
-            };
-
-            match crate::self_manage::ticket_create(ticket_args) {
+            match crate::self_manage::ticket_create(alert_ticket_args(alert)) {
                 Ok(res) => {
                     if res.deduplicated {
                         tracing::info!(
@@ -333,6 +309,36 @@ fn run_self_manage_checks_blocking() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Builds the incident ticket for an alert. The fingerprint names the metric and
+/// severity only, never the sampled value, so repeated samples of one incident
+/// deduplicate to a single ticket.
+fn alert_ticket_args(alert: crate::self_manage::Alert) -> crate::self_manage::TicketCreateArgs {
+    let title = format!(
+        "[Incident] {} alert on host: {}",
+        alert.severity.to_uppercase(),
+        alert.metric
+    );
+    let body = format!(
+        "### Self-Management Guardian Alert\n\n\
+        **Metric:** {}\n\
+        **Value:** {}\n\
+        **Threshold:** {}\n\
+        **Severity:** {}\n\n\
+        Please review and execute the appropriate runbook actions.",
+        alert.metric, alert.value, alert.threshold, alert.severity
+    );
+    let fingerprint = format!("alert:{}:{}", alert.metric, alert.severity);
+
+    crate::self_manage::TicketCreateArgs {
+        title,
+        body,
+        labels: Some(vec!["runtime".to_string(), "incident".to_string()]),
+        severity: alert.severity,
+        fingerprint: Some(fingerprint),
+        backend: Some("maloca".to_string()), // default to Maloca backlog
+    }
 }
 
 /// One scheduled auto-tune pass: measure current recall, compare it against the
@@ -552,5 +558,66 @@ mod cron_interval_tests {
         assert_eq!(cron_interval(None), Duration::from_secs(300));
         // A huge value must not overflow the seconds multiplication.
         assert!(cron_interval(Some("18446744073709551615")) >= Duration::from_secs(60));
+    }
+}
+
+#[cfg(test)]
+mod alert_ticket_tests {
+    use super::*;
+    use crate::self_manage::{ticket_create_with, Alert, TicketBackends, TicketCreateArgs};
+
+    /// Counts Maloca writes; never opens a store.
+    #[derive(Default)]
+    struct CountingBackends {
+        maloca_calls: std::cell::Cell<usize>,
+    }
+
+    impl TicketBackends for CountingBackends {
+        fn github(&self, _args: &TicketCreateArgs) -> anyhow::Result<String> {
+            anyhow::bail!("github is not used by alert tickets")
+        }
+
+        fn maloca(&self, _args: &TicketCreateArgs) -> String {
+            self.maloca_calls.set(self.maloca_calls.get() + 1);
+            "sup-alert".to_string()
+        }
+    }
+
+    fn alert(severity: &str, metric: &str, value: &str) -> Alert {
+        Alert {
+            severity: severity.into(),
+            metric: metric.into(),
+            value: value.into(),
+            threshold: ">50% critical".into(),
+        }
+    }
+
+    #[test]
+    fn repeated_alert_samples_deduplicate_to_one_ticket() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = dir.path().join("tickets.json");
+        let backends = CountingBackends::default();
+
+        let first = alert_ticket_args(alert("critical", "psi.io.full.avg10", "62.0%"));
+        let second = alert_ticket_args(alert("critical", "psi.io.full.avg10", "71.5%"));
+        assert_eq!(
+            first.fingerprint.as_deref(),
+            Some("alert:psi.io.full.avg10:critical")
+        );
+        assert_eq!(first.fingerprint, second.fingerprint);
+
+        let created = ticket_create_with(first, Some(&reg), &backends).unwrap();
+        assert!(!created.deduplicated);
+
+        let again = ticket_create_with(second, Some(&reg), &backends).unwrap();
+        assert!(again.deduplicated);
+        assert_eq!(again.id, created.id);
+        assert_eq!(backends.maloca_calls.get(), 1);
+
+        // A different metric is a different incident and gets its own ticket.
+        let other = alert_ticket_args(alert("critical", "swap.used_percent", "91.0%"));
+        let other = ticket_create_with(other, Some(&reg), &backends).unwrap();
+        assert!(!other.deduplicated);
+        assert_eq!(backends.maloca_calls.get(), 2);
     }
 }

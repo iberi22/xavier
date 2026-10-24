@@ -3147,6 +3147,27 @@
       ],
       "user_stories": []
     },
+    "feat-incident-ticket-dedup": {
+      "category": "self-manage",
+      "description": "Alert tickets carry a value-free fingerprint (alert:metric:severity) so repeated samples dedupe to one ticket, and ticket tests use a fake backend and a tempdir registry instead of the real Maloca store.",
+      "id": "feat-incident-ticket-dedup",
+      "implemented_in": "src/scheduler/daemon.rs, src/self_manage/mod.rs",
+      "name": "Incident Ticket Dedup",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [],
+      "spec_reference": "https://github.com/iberi22/xavier/issues/3516",
+      "status": "planned",
+      "steps": [
+        "Build alert tickets with a metric+severity fingerprint",
+        "Route ticket tests through ticket_create_with with fake backends and a tempdir registry"
+      ],
+      "tests": [
+        "scheduler::daemon::alert_ticket_tests::repeated_alert_samples_deduplicate_to_one_ticket",
+        "self_manage::ticket_create_tests::test_ticket_deduplication_and_rate_limiting"
+      ],
+      "user_stories": []
+    },
     "feat-guardian-truth": {
       "id": "feat-guardian-truth",
       "name": "Guardian env_status/log_scan report the real state",
