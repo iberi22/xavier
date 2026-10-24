@@ -1821,6 +1821,35 @@
         "src/search/rerank.rs"
       ]
     },
+    "feat-code-explain-context": {
+      "category": "explain",
+      "description": "Context assembler for on-demand code explanations: gathers evidence about a code fragment from Xavier's own sources (fragment, git history; call graph and memory in later sources), deduplicated, ordered by relevance and cut to a character budget. Explanations are regenerated on demand, never written to docs.",
+      "id": "feat-code-explain-context",
+      "implemented_in": "src/explain/context.rs, src/explain/history.rs, src/explain/mod.rs",
+      "name": "Code Explain Context",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [],
+      "spec_reference": "https://github.com/iberi22/xavier/issues/3517",
+      "status": "planned",
+      "steps": [
+        "Read the target fragment with repo-relative path and line-range validation",
+        "Collect evidence from pluggable sources and record failing sources",
+        "Deduplicate by (kind, source_ref), order by score and cut to the budget",
+        "List commits touching the range via git log -L with hook GIT_* variables cleared"
+      ],
+      "tests": [
+        "explain::context::tests::code_fragment_is_first_and_sources_ordered_by_score",
+        "explain::context::tests::duplicates_keep_highest_score",
+        "explain::context::tests::budget_truncates_total_text",
+        "explain::context::tests::failing_source_is_recorded_and_others_still_used",
+        "explain::context::tests::unreadable_fragment_is_recorded_not_fatal",
+        "explain::context::tests::rejects_paths_escaping_the_repo",
+        "explain::history::tests::lists_commits_touching_the_range_newest_first",
+        "explain::history::tests::non_repo_directory_is_an_error"
+      ],
+      "user_stories": []
+    },
     "feat-vault-hardening": {
       "id": "feat-vault-hardening",
       "name": "Vault hardening anti-exfil + MCP + lease dashboard",
