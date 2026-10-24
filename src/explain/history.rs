@@ -1,5 +1,6 @@
 //! Commit history of a line range, taken from `git log -L`.
 
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
@@ -19,16 +20,18 @@ impl EvidenceSource for GitHistorySource {
     }
 
     fn collect(&self, target: &ExplainTarget, limit: usize) -> Result<Vec<Evidence>> {
+        // The workspace may hold several repos; git must run in the one that owns the file.
+        let repo = locate_repo(&target.repo_root, &target.file)?;
         let mut cmd = Command::new("git");
         clear_git_env(&mut cmd);
         let output = cmd
-            .current_dir(&target.repo_root)
+            .current_dir(&repo.toplevel)
             .arg("log")
             .arg(format!(
                 "-L{},{}:{}",
                 target.start_line,
                 target.end_line,
-                target.file.display()
+                repo.file.display()
             ))
             .arg("--format=%H%x1f%ad%x1f%s")
             .arg("--date=short")
@@ -50,9 +53,67 @@ impl EvidenceSource for GitHistorySource {
     }
 }
 
+/// The git repository that contains a file of the workspace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RepoLocation {
+    /// Absolute path of the repo's top-level directory.
+    pub toplevel: PathBuf,
+    /// The file relative to `toplevel`, in the form git and the code graph use.
+    pub file: PathBuf,
+    /// The top-level relative to the workspace root, e.g. `apps/xavier`; `.` for the workspace itself.
+    /// Outside the workspace it is the absolute top-level path.
+    pub name: String,
+}
+
+/// Finds the innermost git repo containing `workspace/file`, searching from the file's directory.
+pub(crate) fn locate_repo(workspace: &Path, file: &Path) -> Result<RepoLocation> {
+    let absolute = workspace
+        .join(file)
+        .canonicalize()
+        .with_context(|| format!("resolving {}", file.display()))?;
+    let dir = absolute
+        .parent()
+        .with_context(|| format!("{} has no parent directory", file.display()))?;
+
+    let mut cmd = Command::new("git");
+    clear_git_env(&mut cmd);
+    let output = cmd
+        .current_dir(dir)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .context("running git rev-parse")?;
+    if !output.status.success() {
+        bail!("{} is not inside a git repository", file.display());
+    }
+
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let toplevel = PathBuf::from(raw.trim_end_matches(['\r', '\n']))
+        .canonicalize()
+        .context("resolving the repo top-level")?;
+    let relative = absolute
+        .strip_prefix(&toplevel)
+        .with_context(|| format!("{} is outside its repo", file.display()))?
+        .to_path_buf();
+
+    let root = workspace
+        .canonicalize()
+        .context("resolving the workspace root")?;
+    let name = match toplevel.strip_prefix(&root) {
+        Ok(inside) if inside.as_os_str().is_empty() => ".".to_string(),
+        Ok(inside) => inside.display().to_string(),
+        Err(_) => toplevel.display().to_string(),
+    };
+
+    Ok(RepoLocation {
+        toplevel,
+        file: relative,
+        name,
+    })
+}
+
 /// Removes every `GIT_*` variable. Git hooks export repo overrides (GIT_DIR,
 /// GIT_COMMON_DIR, GIT_CONFIG*, ...) that would otherwise redirect our git calls.
-fn clear_git_env(cmd: &mut Command) {
+pub(crate) fn clear_git_env(cmd: &mut Command) {
     for (key, _) in std::env::vars_os() {
         if key.to_string_lossy().starts_with("GIT_") {
             cmd.env_remove(key);
@@ -145,5 +206,63 @@ mod tests {
         };
 
         assert!(GitHistorySource.collect(&target, 5).is_err());
+    }
+
+    /// Writes `lib.rs` in `repo` and commits it, initialising the repo on first use.
+    fn commit_lib(repo: &Path, content: &str, message: &str) {
+        std::fs::create_dir_all(repo).unwrap();
+        if !repo.join(".git").exists() {
+            git(repo, &["init", "-q"]);
+            git(repo, &["config", "user.name", "Test Author"]);
+            git(repo, &["config", "user.email", "test@example.invalid"]);
+            git(repo, &["config", "commit.gpgsign", "false"]);
+        }
+        std::fs::write(repo.join("lib.rs"), content).unwrap();
+        git(repo, &["add", "lib.rs"]);
+        git(repo, &["commit", "-q", "-m", message]);
+    }
+
+    #[test]
+    fn explained_file_uses_commits_of_its_own_repo_only() {
+        let workspace = tempfile::tempdir().unwrap();
+        let repo_a = workspace.path().join("a");
+        let repo_b = workspace.path().join("b");
+        commit_lib(&repo_a, "fn a() {}\n", "repo a first");
+        commit_lib(&repo_a, "fn a() { 1 }\n", "repo a tweak");
+        commit_lib(&repo_b, "fn b() {}\n", "repo b first");
+        commit_lib(&repo_b, "fn b() { 2 }\n", "repo b tweak");
+
+        let target = ExplainTarget {
+            repo_root: workspace.path().to_path_buf(),
+            file: PathBuf::from("b/lib.rs"),
+            start_line: 1,
+            end_line: 1,
+            symbol: None,
+        };
+        let evidence = GitHistorySource.collect(&target, 10).unwrap();
+
+        assert_eq!(evidence.len(), 2);
+        assert!(evidence[0].text.ends_with("repo b tweak"));
+        assert!(evidence[1].text.ends_with("repo b first"));
+        assert!(!evidence.iter().any(|e| e.text.contains("repo a")));
+    }
+
+    #[test]
+    fn locate_repo_names_the_innermost_repo() {
+        let workspace = tempfile::tempdir().unwrap();
+        let nested = workspace.path().join("apps").join("xavier");
+        commit_lib(&nested, "fn x() {}\n", "init");
+        std::fs::create_dir_all(nested.join("src")).unwrap();
+        std::fs::write(nested.join("src/lib.rs"), "fn y() {}\n").unwrap();
+
+        let repo = locate_repo(workspace.path(), Path::new("apps/xavier/src/lib.rs")).unwrap();
+
+        assert_eq!(repo.name, "apps/xavier");
+        assert_eq!(repo.file, PathBuf::from("src/lib.rs"));
+        assert_eq!(
+            repo.toplevel,
+            nested.canonicalize().unwrap(),
+            "toplevel must be the nested repo"
+        );
     }
 }

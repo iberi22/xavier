@@ -37,6 +37,9 @@ pub struct Explanation {
     pub unknown_refs: Vec<String>,
     /// `(source name, reason)` for each source that failed while assembling.
     pub skipped_sources: Vec<(String, String)>,
+    /// The git repo that contains the explained file, relative to the workspace (e.g. `apps/xavier`).
+    /// Set by the route, which knows the workspace; `None` when the file is in no repo.
+    pub repo: Option<String>,
 }
 
 const SYSTEM_RULES: &str = "You explain a code fragment from the Xavier repository. \
@@ -113,6 +116,7 @@ pub async fn explain(
         cited_refs,
         unknown_refs,
         skipped_sources: ctx.skipped_sources.clone(),
+        repo: None,
     })
 }
 

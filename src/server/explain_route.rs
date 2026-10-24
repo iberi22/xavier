@@ -17,6 +17,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::explain::history::locate_repo;
 use crate::explain::{
     assemble, explain, Audience, EvidenceSource, ExplainTarget, Explanation, ExplanationModel,
 };
@@ -138,11 +139,15 @@ async fn explain_handler(
     };
 
     let sources = Arc::clone(&deps.sources);
-    let context = tokio::task::spawn_blocking(move || {
+    let (context, repo) = tokio::task::spawn_blocking(move || {
         let boxed = sources();
         let refs: Vec<&dyn EvidenceSource> =
             boxed.iter().map(|s| &**s as &dyn EvidenceSource).collect();
-        assemble(&target, &refs, budget)
+        let context = assemble(&target, &refs, budget);
+        let repo = locate_repo(&target.repo_root, &target.file)
+            .ok()
+            .map(|location| location.name);
+        (context, repo)
     })
     .await
     .map_err(|err| {
@@ -152,9 +157,10 @@ async fn explain_handler(
         )
     })?;
 
-    let explanation = explain(&context, deps.model.as_ref(), audience)
+    let mut explanation = explain(&context, deps.model.as_ref(), audience)
         .await
         .map_err(|err| ApiError(StatusCode::BAD_GATEWAY, format!("{err:#}")))?;
+    explanation.repo = repo;
     Ok(Json(explanation))
 }
 
@@ -261,6 +267,32 @@ mod tests {
         assert!(json["openui_lang"].as_str().is_some_and(|s| !s.is_empty()));
         assert_eq!(json["plain_text"], json!(answer));
         assert!(json["skipped_sources"].is_array());
+    }
+
+    #[tokio::test]
+    async fn explain_reports_the_repo_that_contains_the_file() {
+        let dir = repo();
+        let nested = dir.path().join("apps").join("xavier");
+        std::fs::create_dir_all(nested.join("src")).unwrap();
+        std::fs::write(nested.join("src/lib.rs"), "fn one() {}\nfn two() {}\n").unwrap();
+        let mut cmd = std::process::Command::new("git");
+        crate::explain::history::clear_git_env(&mut cmd);
+        let status = cmd
+            .current_dir(&nested)
+            .args(["init", "-q"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let app = router(deps(dir.path(), Some("ok")));
+        let (status, json) = post_explain(
+            app,
+            json!({"file": "apps/xavier/src/lib.rs", "start_line": 1, "end_line": 2}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["repo"], json!("apps/xavier"));
     }
 
     #[tokio::test]
