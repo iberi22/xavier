@@ -806,7 +806,9 @@ async fn snapshot_bounds_dek() {
         load(&db, SESSION_A, &saved.checkpoint_id).await,
         Err(SnapshotError::Oversized)
     ));
-    assert_eq!(SNAPSHOT_VALUE_FETCHES.load(Ordering::SeqCst), 0);
+    // 132023 bytes is inside the shared SQL bound, so the value is fetched once
+    // and refused by length before any decode or decrypt.
+    assert_eq!(SNAPSHOT_VALUE_FETCHES.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

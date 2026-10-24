@@ -8,12 +8,14 @@ use std::path::{Path, PathBuf};
 
 use crate::codebase::connection_manager::ConnectionManager;
 use crate::codebase::validate_project_id;
+use crate::espacio::keys::{self, KeyHandle, DEFAULT_SPACE_ID, RECORD_PREFIX};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use rusqlite::params;
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 const CONVERSATIONS_DIR: &str = "conversations";
 
@@ -140,6 +142,8 @@ pub struct ConversationsDb {
     disabled: bool,
     /// Explicit node key (tests / injected roots); `None` resolves the node's key.
     node_key: Option<[u8; 32]>,
+    /// Set once the snapshot table exists. Created lazily, only by the snapshot calls.
+    snapshot_schema_initialized: OnceCell<()>,
 }
 
 impl ConversationsDb {
@@ -158,6 +162,7 @@ impl ConversationsDb {
             schema_initialized: OnceCell::new(),
             disabled: false,
             node_key: None,
+            snapshot_schema_initialized: OnceCell::new(),
         })
     }
 
@@ -185,6 +190,7 @@ impl ConversationsDb {
             schema_initialized: OnceCell::new(),
             disabled: false,
             node_key: None,
+            snapshot_schema_initialized: OnceCell::new(),
         })
     }
 
@@ -197,6 +203,7 @@ impl ConversationsDb {
             schema_initialized: OnceCell::new(),
             disabled: true,
             node_key: None,
+            snapshot_schema_initialized: OnceCell::new(),
         })
     }
 
@@ -217,10 +224,12 @@ impl ConversationsDb {
             schema_initialized: OnceCell::new(),
             disabled: false,
             node_key: None,
+            snapshot_schema_initialized: OnceCell::new(),
         })
     }
 
     /// Use an explicit node key instead of resolving the node's key.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn with_node_key(mut self, key: [u8; 32]) -> Self {
         self.node_key = Some(key);
         self
@@ -1084,6 +1093,7 @@ impl ConversationsDb {
             schema_initialized: OnceCell::new(),
             disabled: false,
             node_key: None,
+            snapshot_schema_initialized: OnceCell::new(),
         }
     }
 }
@@ -1162,6 +1172,648 @@ impl Sealer {
 
     fn open_opt(&self, kind: &str, id: &str, stored: Option<String>) -> Result<Option<String>> {
         stored.map(|s| self.open(kind, id, s)).transpose()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sealed context snapshots
+// ---------------------------------------------------------------------------
+
+/// Session ids: 1-128 chars of ASCII alnum . _ - : / with no `..`.
+pub(crate) fn validate_session_id(session_id: &str) -> Result<(), String> {
+    let ok = !session_id.is_empty()
+        && session_id.len() <= 128
+        && !session_id.contains("..")
+        && session_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':' | '/'));
+    if ok {
+        Ok(())
+    } else {
+        Err("session_id must be 1-128 chars of ASCII alphanumerics or . _ - : / and not contain '..'"
+            .to_string())
+    }
+}
+
+/// Largest transcript body a snapshot stores. Larger transcripts are refused, never truncated.
+const MAX_BODY: usize = 65_536;
+/// Longest workspace, project and session id a snapshot accepts.
+const MAX_ID: usize = 128;
+/// Length of a canonical checkpoint id (hyphenated lowercase UUID).
+const CID_LEN: usize = 36;
+/// Frame header: magic, version, three ids, checkpoint id, body length.
+const MAX_HEADER: usize = 4 + 1 + 3 * (4 + MAX_ID) + (4 + CID_LEN) + 4;
+const MAX_INNER: usize = MAX_HEADER + MAX_BODY;
+/// AEAD overhead: 12-byte nonce plus 16-byte tag.
+const AEAD_OVERHEAD: usize = 12 + 16;
+const MAX_RAW: usize = AEAD_OVERHEAD + MAX_INNER;
+/// Longest stored value per tier, prefix included.
+const MAX_STORED_NODE: usize = "xsn1:".len() + 2 * MAX_RAW;
+const MAX_STORED_DEK: usize = RECORD_PREFIX.len() + 2 * MAX_RAW;
+/// Shortest raw blob that can authenticate.
+const MIN_RAW: usize = AEAD_OVERHEAD;
+const _: () = assert!(MAX_STORED_NODE == 132_023 && MAX_STORED_DEK == 132_022);
+
+const SNAPSHOT_MAGIC: &[u8; 4] = b"XSNP";
+const SNAPSHOT_FRAME_VERSION: u8 = 1;
+/// Stored prefix of a node-keyed snapshot.
+const NODE_SNAPSHOT_PREFIX: &str = "xsn1:";
+/// Record kind of a default-space snapshot (its AD kind).
+const SNAPSHOT_DEK_KIND: &str = "conv.snapshot.v1";
+
+const SQL_SNAPSHOT_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS checkpoint_snapshots (
+    checkpoint_id TEXT PRIMARY KEY NOT NULL,
+    context_sealed TEXT NOT NULL CHECK(typeof(context_sealed) = 'text')
+);";
+const SQL_SNAPSHOT_MEMBER: &str =
+    "SELECT 1 FROM conversation_threads WHERE id = ?1 AND project_id = ?2";
+const SQL_SNAPSHOT_MESSAGES: &str = "SELECT id, role, content FROM conversation_messages
+    WHERE thread_id = ?1 ORDER BY created_at ASC, id ASC";
+/// The value column is NULL when it is not text or exceeds the bound (?5, in
+/// bytes), so an oversized value is never fetched.
+const SQL_SNAPSHOT_LOAD: &str = "SELECT typeof(s.context_sealed),
+       CASE WHEN typeof(s.context_sealed) = 'text'
+             AND length(CAST(s.context_sealed AS BLOB)) <= ?5 THEN s.context_sealed END
+FROM checkpoints c JOIN checkpoint_snapshots s ON s.checkpoint_id = c.id
+WHERE c.id = ?1 AND c.project_id = ?2 AND c.workspace_id = ?3 AND c.session_id = ?4
+  AND c.state = 'active'";
+
+/// Key tier a snapshot is sealed under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapshotTier {
+    Node,
+    Dek,
+}
+
+impl SnapshotTier {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Node => "node",
+            Self::Dek => "dek",
+        }
+    }
+}
+
+/// Sealing policy, resolved once per operation. There is no unsealed arm.
+enum SnapshotPolicy {
+    Node([u8; 32]),
+    Dek(KeyHandle),
+}
+
+impl SnapshotPolicy {
+    fn tier(&self) -> SnapshotTier {
+        match self {
+            Self::Node(_) => SnapshotTier::Node,
+            Self::Dek(_) => SnapshotTier::Dek,
+        }
+    }
+}
+
+/// Ids a snapshot is bound to. Only [`SnapshotScope::new`] builds one, so the
+/// ids are validated and agree with each other.
+#[derive(Debug, Clone)]
+pub struct SnapshotScope {
+    workspace_id: String,
+    project_id: String,
+    session_id: String,
+}
+
+impl SnapshotScope {
+    /// Validate the ids, then require `workspace == config == db project`.
+    pub fn new(
+        workspace_id: &str,
+        config_id: &str,
+        db_project: &str,
+        session_id: &str,
+    ) -> Result<Self, SnapshotError> {
+        if !(is_snapshot_project_id(workspace_id)
+            && is_snapshot_project_id(config_id)
+            && is_snapshot_project_id(db_project)
+            && validate_session_id(session_id).is_ok())
+        {
+            return Err(SnapshotError::InvalidScope);
+        }
+        if workspace_id != config_id || config_id != db_project {
+            return Err(SnapshotError::ScopeMismatch);
+        }
+        Ok(Self {
+            workspace_id: workspace_id.to_string(),
+            project_id: db_project.to_string(),
+            session_id: session_id.to_string(),
+        })
+    }
+}
+
+/// Workspace and project id rule: the project-id charset, at most [`MAX_ID`] bytes.
+fn is_snapshot_project_id(id: &str) -> bool {
+    id.len() <= MAX_ID && validate_project_id(id).is_ok()
+}
+
+/// Canonical checkpoint id: a lowercase hyphenated UUID, byte for byte.
+fn is_canonical_cid(cid: &str) -> bool {
+    Uuid::parse_str(cid).is_ok_and(|u| u.to_string() == cid)
+}
+
+/// Lowercase hex only, even length. `keys` accepts uppercase, so snapshots check first.
+fn is_lower_hex(s: &str) -> bool {
+    s.len().is_multiple_of(2) && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SnapshotError {
+    #[error("snapshot scope is invalid")]
+    InvalidScope,
+    #[error("snapshot scope does not match the database")]
+    ScopeMismatch,
+    #[error("context snapshots are disabled")]
+    Disabled,
+    #[error("session has no conversation thread in this workspace")]
+    NotMember,
+    #[error("session has no messages")]
+    Empty,
+    #[error("transcript exceeds the snapshot size limit")]
+    TooLarge,
+    #[error("a stored message could not be read")]
+    SourceUnreadable,
+    #[error("no sealing key is configured")]
+    NoSealKey,
+    #[error("sealing key unavailable")]
+    KeyUnavailable,
+    #[error("no such snapshot")]
+    Missing,
+    #[error("stored snapshot exceeds the size limit")]
+    Oversized,
+    #[error("snapshot failed verification")]
+    Tampered,
+    #[error("snapshot is sealed under a weaker tier than the policy")]
+    WeakerThanPolicy,
+    #[error("snapshot is stored in clear under a sealing policy")]
+    ClearUnderSealPolicy,
+    #[error("snapshot is sealed under a different key tier")]
+    TierMismatch,
+    #[error("context store error: {0}")]
+    Db(String),
+}
+
+/// Result of a successful capture.
+#[derive(Debug, Clone)]
+pub struct SavedSnapshot {
+    pub checkpoint_id: String,
+    pub tier: SnapshotTier,
+}
+
+/// A restored transcript body (canonical JSON of the messages).
+#[derive(Debug, Clone)]
+pub struct LoadedSnapshot {
+    pub body: String,
+    pub tier: SnapshotTier,
+}
+
+/// One message as it is stored in a snapshot body. Field order is the wire order.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SnapshotMessage {
+    id: String,
+    role: String,
+    content: String,
+}
+
+fn db_err(e: anyhow::Error) -> SnapshotError {
+    SnapshotError::Db(format!("{e:#}"))
+}
+
+/// Frame: `"XSNP" ‖ version ‖ (u32 len ‖ id) x4 ‖ u32 body len ‖ body`.
+fn encode_frame(
+    ws: &str,
+    project: &str,
+    session: &str,
+    cid: &str,
+    body: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, SnapshotError> {
+    if body.len() > MAX_BODY {
+        return Err(SnapshotError::TooLarge);
+    }
+    let mut frame = Vec::with_capacity(MAX_INNER);
+    frame.extend_from_slice(SNAPSHOT_MAGIC);
+    frame.push(SNAPSHOT_FRAME_VERSION);
+    for id in [ws, project, session, cid] {
+        frame.extend_from_slice(&(id.len() as u32).to_be_bytes());
+        frame.extend_from_slice(id.as_bytes());
+    }
+    frame.extend_from_slice(&(body.len() as u32).to_be_bytes());
+    frame.extend_from_slice(body);
+    Ok(Zeroizing::new(frame))
+}
+
+/// Take `n` bytes from the front of `rest`, or refuse if fewer remain.
+fn take_bytes<'a>(rest: &mut &'a [u8], n: usize) -> Result<&'a [u8], SnapshotError> {
+    if n > rest.len() {
+        return Err(SnapshotError::Tampered);
+    }
+    let (head, tail) = rest.split_at(n);
+    *rest = tail;
+    Ok(head)
+}
+
+fn take_u32(rest: &mut &[u8]) -> Result<usize, SnapshotError> {
+    let b = take_bytes(rest, 4)?;
+    Ok(u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize)
+}
+
+/// Read one header id: it must pass its rule and equal the expected id byte for byte.
+fn read_header_id(
+    rest: &mut &[u8],
+    expected: &str,
+    valid: fn(&str) -> bool,
+) -> Result<(), SnapshotError> {
+    let len = take_u32(rest)?;
+    let text = std::str::from_utf8(take_bytes(rest, len)?).map_err(|_| SnapshotError::Tampered)?;
+    if valid(text) && text == expected {
+        Ok(())
+    } else {
+        Err(SnapshotError::Tampered)
+    }
+}
+
+/// Strict parser for [`encode_frame`]. Returns the body as text. Anything else
+/// is `Tampered`: a bad header, an id that is not the expected one, lengths
+/// past the end, trailing bytes, a body that is not UTF-8 or not a message array.
+fn parse_frame(
+    frame: &[u8],
+    ws: &str,
+    project: &str,
+    session: &str,
+    cid: &str,
+) -> Result<String, SnapshotError> {
+    let mut rest = frame;
+    if take_bytes(&mut rest, 4)? != SNAPSHOT_MAGIC.as_slice() {
+        return Err(SnapshotError::Tampered);
+    }
+    if take_bytes(&mut rest, 1)?[0] != SNAPSHOT_FRAME_VERSION {
+        return Err(SnapshotError::Tampered);
+    }
+    read_header_id(&mut rest, ws, is_snapshot_project_id)?;
+    read_header_id(&mut rest, project, is_snapshot_project_id)?;
+    read_header_id(&mut rest, session, |s| validate_session_id(s).is_ok())?;
+    read_header_id(&mut rest, cid, is_canonical_cid)?;
+    let body_len = take_u32(&mut rest)?;
+    if body_len > MAX_BODY {
+        return Err(SnapshotError::Tampered);
+    }
+    let body = take_bytes(&mut rest, body_len)?;
+    if !rest.is_empty() {
+        return Err(SnapshotError::Tampered);
+    }
+    let text = std::str::from_utf8(body).map_err(|_| SnapshotError::Tampered)?;
+    serde_json::from_str::<Vec<SnapshotMessage>>(text).map_err(|_| SnapshotError::Tampered)?;
+    Ok(text.to_string())
+}
+
+/// Seal a frame under the policy's tier. Node: `xsn1:` over the node AD.
+/// Default space: `xr1:` over the record AD, bound to the checkpoint id.
+fn seal_snapshot(
+    policy: &SnapshotPolicy,
+    scope: &SnapshotScope,
+    cid: &str,
+    frame: &[u8],
+) -> Result<String, SnapshotError> {
+    match policy {
+        SnapshotPolicy::Node(key) => {
+            let fields = keys::snapshot_node_ad_fields(
+                &scope.workspace_id,
+                &scope.project_id,
+                &scope.session_id,
+                cid,
+            );
+            let raw = keys::seal_with_ad(key, &fields, frame).map_err(db_err)?;
+            Ok(format!(
+                "{NODE_SNAPSHOT_PREFIX}{}",
+                crate::crypto::hex_encode(raw)
+            ))
+        }
+        SnapshotPolicy::Dek(handle) => handle
+            .seal_record_bytes(DEFAULT_SPACE_ID, SNAPSHOT_DEK_KIND, cid, frame)
+            .map_err(db_err),
+    }
+}
+
+/// Open and verify a stored snapshot under the policy's tier only. Never
+/// falls back to the other tier, and never uses `Sealer::open`.
+fn open_snapshot(
+    policy: &SnapshotPolicy,
+    scope: &SnapshotScope,
+    cid: &str,
+    stored: &str,
+) -> Result<String, SnapshotError> {
+    let (ws, pj, sid) = (
+        scope.workspace_id.as_str(),
+        scope.project_id.as_str(),
+        scope.session_id.as_str(),
+    );
+    match policy {
+        SnapshotPolicy::Dek(handle) => {
+            if stored.starts_with(NODE_SNAPSHOT_PREFIX) {
+                return Err(SnapshotError::WeakerThanPolicy);
+            }
+            let Some(hex) = stored.strip_prefix(RECORD_PREFIX) else {
+                return Err(SnapshotError::ClearUnderSealPolicy);
+            };
+            if stored.len() > MAX_STORED_DEK {
+                return Err(SnapshotError::Oversized);
+            }
+            if !is_lower_hex(hex) || hex.len() / 2 < MIN_RAW {
+                return Err(SnapshotError::Tampered);
+            }
+            let frame = handle
+                .open_record_bytes(DEFAULT_SPACE_ID, SNAPSHOT_DEK_KIND, cid, stored)
+                .map_err(|_| SnapshotError::Tampered)?;
+            parse_frame(&frame, ws, pj, sid, cid)
+        }
+        SnapshotPolicy::Node(key) => {
+            if stored.starts_with(RECORD_PREFIX) {
+                return Err(SnapshotError::TierMismatch);
+            }
+            let Some(hex) = stored.strip_prefix(NODE_SNAPSHOT_PREFIX) else {
+                return Err(SnapshotError::ClearUnderSealPolicy);
+            };
+            if stored.len() > MAX_STORED_NODE {
+                return Err(SnapshotError::Oversized);
+            }
+            if !is_lower_hex(hex) || hex.len() / 2 < MIN_RAW {
+                return Err(SnapshotError::Tampered);
+            }
+            let raw = crate::crypto::hex_decode(hex).map_err(|_| SnapshotError::Tampered)?;
+            let fields = keys::snapshot_node_ad_fields(ws, pj, sid, cid);
+            let frame =
+                keys::open_with_ad(key, &fields, &raw).map_err(|_| SnapshotError::Tampered)?;
+            parse_frame(&frame, ws, pj, sid, cid)
+        }
+    }
+}
+
+/// Snapshot bodies: read the session's messages in order, opened with the
+/// policy's tier. `Err` is a snapshot-level refusal; the outer `Result` is
+/// the database. Early exit once the running total passes the body bound.
+fn read_snapshot_messages(
+    tx: &rusqlite::Transaction<'_>,
+    policy: &SnapshotPolicy,
+    scope: &SnapshotScope,
+) -> Result<Result<Vec<SnapshotMessage>, SnapshotError>> {
+    let sealer = match policy {
+        SnapshotPolicy::Node(key) => Sealer::Node(*key),
+        SnapshotPolicy::Dek(handle) => Sealer::Dek(handle.clone()),
+    };
+    let mut stmt = tx.prepare(SQL_SNAPSHOT_MESSAGES)?;
+    let mut rows = stmt.query(params![scope.session_id])?;
+    let mut messages = Vec::new();
+    let mut total = 0usize;
+    while let Some(row) = rows.next()? {
+        let id: String = row.get(0)?;
+        let role: String = row.get(1)?;
+        let stored: String = row.get(2)?;
+        let Ok(content) = sealer.open("conv.msg.content", &id, stored) else {
+            return Ok(Err(SnapshotError::SourceUnreadable));
+        };
+        total += id.len() + role.len() + content.len();
+        if total > MAX_BODY {
+            return Ok(Err(SnapshotError::TooLarge));
+        }
+        messages.push(SnapshotMessage { id, role, content });
+    }
+    Ok(Ok(messages))
+}
+
+/// The capture transaction. Nothing is written unless every step passes.
+/// Runs inside `with_conn`; the outer `Result` is the database.
+fn capture_snapshot_in_tx(
+    conn: &Connection,
+    pool: &str,
+    policy: &SnapshotPolicy,
+    scope: &SnapshotScope,
+    cid: &str,
+    name: Option<&str>,
+) -> Result<Result<(), SnapshotError>> {
+    // Immediate: the write lock is taken here, so a concurrent writer waits.
+    let tx = rusqlite::Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    let member: Option<i64> = tx
+        .query_row(
+            SQL_SNAPSHOT_MEMBER,
+            params![scope.session_id, scope.project_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if member.is_none() {
+        return Ok(Err(SnapshotError::NotMember));
+    }
+    let messages = match read_snapshot_messages(&tx, policy, scope)? {
+        Ok(messages) => messages,
+        Err(e) => return Ok(Err(e)),
+    };
+    if messages.is_empty() {
+        return Ok(Err(SnapshotError::Empty));
+    }
+    let body = serde_json::to_vec(&messages)?;
+    let frame = match encode_frame(
+        &scope.workspace_id,
+        &scope.project_id,
+        &scope.session_id,
+        cid,
+        &body,
+    ) {
+        Ok(frame) => frame,
+        Err(e) => return Ok(Err(e)),
+    };
+    let sealed = match seal_snapshot(policy, scope, cid, &frame) {
+        Ok(sealed) => sealed,
+        Err(e) => return Ok(Err(e)),
+    };
+    run_capture_hook(pool);
+    tx.execute(
+        "INSERT INTO checkpoints (id, project_id, workspace_id, session_id, task_id, name, state, created_at, kind)
+         VALUES (?1, ?2, ?3, ?4, NULL, ?5, 'active', ?6, 'context_save')",
+        params![
+            cid,
+            scope.project_id,
+            scope.workspace_id,
+            scope.session_id,
+            name,
+            Utc::now().to_rfc3339()
+        ],
+    )?;
+    // Plain INSERT: a duplicate id fails and rolls back, never overwrites.
+    tx.execute(
+        "INSERT INTO checkpoint_snapshots (checkpoint_id, context_sealed) VALUES (?1, ?2)",
+        params![cid, sealed],
+    )?;
+    tx.commit()?;
+    Ok(Ok(()))
+}
+
+#[cfg(test)]
+type CaptureHook = Box<dyn FnOnce() + Send>;
+
+/// Test hooks run inside the capture transaction, keyed by pool id.
+#[cfg(test)]
+static CAPTURE_HOOKS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, CaptureHook>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// Count of stored snapshot values fetched into Rust (tests check that
+/// oversized values are never fetched).
+#[cfg(test)]
+static SNAPSHOT_VALUE_FETCHES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// Runs (and removes) the hook for `pool_id`. The map lock is released before
+/// the hook runs, so a panicking hook cannot poison it.
+#[cfg(test)]
+fn run_capture_hook(pool_id: &str) {
+    let hook = CAPTURE_HOOKS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .remove(pool_id);
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+#[cfg(not(test))]
+fn run_capture_hook(_pool_id: &str) {}
+
+#[cfg(test)]
+fn note_value_fetch() {
+    SNAPSHOT_VALUE_FETCHES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[cfg(not(test))]
+fn note_value_fetch() {}
+
+impl ConversationsDb {
+    /// Resolve the sealing policy. Never goes through `sealer()`, which maps a
+    /// missing key to clear writes. Order: explicit key, then the default-space
+    /// keystore (when one exists), then the node record key.
+    fn snapshot_policy(&self) -> Result<SnapshotPolicy, SnapshotError> {
+        use crate::memory::sqlite_vec_store::at_rest;
+        if let Some(key) = self.node_key {
+            return Ok(SnapshotPolicy::Node(key));
+        }
+        if at_rest::default_keystore_exists() {
+            return at_rest::default_space_key()
+                .map(SnapshotPolicy::Dek)
+                .map_err(|_| SnapshotError::KeyUnavailable);
+        }
+        match at_rest::peek_record_key_with_source() {
+            (Some(key), _) => Ok(SnapshotPolicy::Node(key)),
+            (None, at_rest::KeySource::Unavailable(_)) => Err(SnapshotError::KeyUnavailable),
+            (None, _) => Err(SnapshotError::NoSealKey),
+        }
+    }
+
+    /// Create the snapshot table on first use. Never part of `create_schema`,
+    /// so a database that never takes a snapshot gets no new table.
+    async fn ensure_snapshot_schema(&self) -> Result<(), SnapshotError> {
+        self.snapshot_schema_initialized
+            .get_or_try_init(|| async {
+                ConnectionManager::global()
+                    .with_conn(&self.full_project_id, |conn| {
+                        conn.execute_batch(SQL_SNAPSHOT_SCHEMA)
+                            .context("failed to create snapshot schema")?;
+                        Ok(())
+                    })
+                    .await
+            })
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Checkpoint `scope`'s session with a sealed transcript snapshot. All or nothing.
+    pub async fn create_checkpoint_with_snapshot(
+        &self,
+        scope: &SnapshotScope,
+        name: Option<&str>,
+    ) -> Result<SavedSnapshot, SnapshotError> {
+        if self.disabled {
+            return Err(SnapshotError::Disabled);
+        }
+        if scope.project_id != self.project_id {
+            return Err(SnapshotError::ScopeMismatch);
+        }
+        let policy = self.snapshot_policy()?;
+        let tier = policy.tier();
+        let cid = Uuid::new_v4().to_string();
+        self.ensure_schema().await.map_err(db_err)?;
+        self.ensure_snapshot_schema().await?;
+
+        let (scope, name) = (scope.clone(), name.map(str::to_string));
+        let (pool, cid_c) = (self.full_project_id.clone(), cid.clone());
+        ConnectionManager::global()
+            .with_conn(&self.full_project_id, move |conn| {
+                capture_snapshot_in_tx(conn, &pool, &policy, &scope, &cid_c, name.as_deref())
+            })
+            .await
+            .map_err(db_err)??;
+        Ok(SavedSnapshot {
+            checkpoint_id: cid,
+            tier,
+        })
+    }
+
+    /// Restore a checkpoint's sealed transcript. The row only selects the
+    /// candidate; authority comes from the scope and the AD. No live thread is needed.
+    pub async fn load_checkpoint_snapshot(
+        &self,
+        scope: &SnapshotScope,
+        checkpoint_id: &str,
+    ) -> Result<LoadedSnapshot, SnapshotError> {
+        if self.disabled {
+            return Err(SnapshotError::Disabled);
+        }
+        if scope.project_id != self.project_id {
+            return Err(SnapshotError::ScopeMismatch);
+        }
+        if !is_canonical_cid(checkpoint_id) {
+            return Err(SnapshotError::InvalidScope);
+        }
+        let policy = self.snapshot_policy()?;
+        self.ensure_schema().await.map_err(db_err)?;
+        self.ensure_snapshot_schema().await?;
+
+        let (ws, pj, sid) = (
+            scope.workspace_id.clone(),
+            scope.project_id.clone(),
+            scope.session_id.clone(),
+        );
+        let cid = checkpoint_id.to_string();
+        let row = ConnectionManager::global()
+            .with_conn(&self.full_project_id, move |conn| {
+                let row = conn
+                    .query_row(
+                        SQL_SNAPSHOT_LOAD,
+                        params![cid, pj, ws, sid, MAX_STORED_NODE as i64],
+                        |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)),
+                    )
+                    .optional()?;
+                if matches!(row, Some((_, Some(_)))) {
+                    note_value_fetch();
+                }
+                Ok(row)
+            })
+            .await
+            .map_err(db_err)?;
+
+        let Some((type_name, value)) = row else {
+            return Err(SnapshotError::Missing);
+        };
+        if type_name != "text" {
+            return Err(SnapshotError::Tampered);
+        }
+        let stored = value.ok_or(SnapshotError::Oversized)?;
+        let body = open_snapshot(&policy, scope, checkpoint_id, &stored)?;
+        Ok(LoadedSnapshot {
+            body,
+            tier: policy.tier(),
+        })
     }
 }
 

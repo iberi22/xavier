@@ -4,6 +4,7 @@
 //! as well as reporting token savings and packaging GitHub issues into PreciseChange context packages.
 
 use super::types::*;
+use crate::codebase::conversations_db::validate_session_id;
 use crate::codebase::issue_context::assemble_package;
 use crate::codebase::snapshot::SnapshotManager;
 use crate::context::skill_controller::telemetry::{SkillStage, UsageEvent};
@@ -155,22 +156,6 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
             }),
         },
     ]
-}
-
-/// Session ids: 1-128 chars of ASCII alnum . _ - : / with no `..`.
-fn validate_session_id(session_id: &str) -> Result<(), String> {
-    let ok = !session_id.is_empty()
-        && session_id.len() <= 128
-        && !session_id.contains("..")
-        && session_id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':' | '/'));
-    if ok {
-        Ok(())
-    } else {
-        Err("session_id must be 1-128 chars of ASCII alphanumerics or . _ - : / and not contain '..'"
-            .to_string())
-    }
 }
 
 /// Checkpoints of one session, newest first.
