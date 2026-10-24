@@ -86,7 +86,10 @@ async fn dump_uses_explicit_path_then_cli_cwd_then_daemon_default() {
             daemon.0.try_wait().unwrap().is_none(),
             "daemon exited during boot"
         );
-        if let Ok(response) = client.get(format!("{url}/health")).send().await {
+        // `/health` answers 200 while the daemon is still starting (#3549) and
+        // every other route returns 503 until the ready gate opens, so wait on
+        // `/ready`, which only turns 200 once the application router serves.
+        if let Ok(response) = client.get(format!("{url}/ready")).send().await {
             if response.status().is_success() {
                 break;
             }
