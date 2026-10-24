@@ -525,32 +525,38 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
     let embeddings_are_local =
         embeddings_use_local_ollama(&embedding_mode, &embedding_url, &expected_embed);
 
-    // 1. Ollama Reachability
+    // Xavier ships no default LLM model: a local provider with no model means
+    // "no LLM chosen", which needs neither Ollama nor a reachable LLM URL.
+    let local_cfg = xavier::agents::provider::ModelProviderConfig::for_provider("local");
+    let local_llm_chosen = provider_is_local && !local_cfg.model.trim().is_empty();
+
+    // 1. Ollama Reachability (required only by a chosen local LLM or local embeddings)
+    let ollama_required = ollama_required(local_llm_chosen, embeddings_are_local);
     let ollama_reachable = scan.ollama.running;
     checks.push(DoctorCheck {
         name: "Ollama Reachability".to_string(),
-        status: if (!provider_is_local && !embeddings_are_local) || ollama_reachable {
+        status: if !ollama_required || ollama_reachable {
             CheckStatus::Ok
-        } else if provider_is_local || embeddings_are_local {
-            CheckStatus::Fail
         } else {
-            CheckStatus::Warn
+            CheckStatus::Fail
         },
-        detail: if !provider_is_local && !embeddings_are_local {
-            format!("Ollama not required (LLM provider='{provider}', embeddings via cloud/BYO)")
+        detail: if !ollama_required {
+            format!("Ollama not required (LLM provider='{provider}', no local LLM model; embeddings via cloud/BYO)")
         } else if ollama_reachable {
             format!(
-                "Ollama is running at {} (version: {})",
+                "Ollama is running at {} (version: {}; needed for {})",
                 scan.ollama.url,
-                scan.ollama.version.as_deref().unwrap_or("unknown")
+                scan.ollama.version.as_deref().unwrap_or("unknown"),
+                ollama_needed_for(local_llm_chosen, embeddings_are_local)
             )
         } else {
             format!(
-                "Ollama is not running or not reachable at {}",
-                scan.ollama.url
+                "Ollama is not running or not reachable at {} (needed for {})",
+                scan.ollama.url,
+                ollama_needed_for(local_llm_chosen, embeddings_are_local)
             )
         },
-        hint: if ollama_reachable || (!provider_is_local && !embeddings_are_local) {
+        hint: if ollama_reachable || !ollama_required {
             None
         } else {
             Some(
@@ -562,7 +568,6 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
     });
 
     // 2. LLM Model Installed (local provider only)
-    let local_cfg = xavier::agents::provider::ModelProviderConfig::for_provider("local");
     let expected_llm = &local_cfg.model;
 
     if provider_is_local {
@@ -622,62 +627,40 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
     }
 
     // 3. Local LLM Configuration
-    let local_llm_url = std::env::var("XAVIER_LOCAL_LLM_URL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| settings.models.local_llm_url.clone());
-
-    let local_llm_model = std::env::var("XAVIER_LOCAL_LLM_MODEL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| settings.models.local_llm_model.clone());
-
-    let url_is_valid = !local_llm_url.trim().is_empty()
-        && (local_llm_url.starts_with("http://") || local_llm_url.starts_with("https://"));
-    let model_is_valid = !local_llm_model.trim().is_empty();
-    let config_valid = if provider_is_local {
-        url_is_valid && model_is_valid
-    } else {
-        true
-    };
-
-    checks.push(DoctorCheck {
-        name: "Local Configuration".to_string(),
-        status: if config_valid {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Fail
-        },
-        detail: if !provider_is_local {
-            format!("LLM provider='{provider}' (non-local); local Ollama config not required")
-        } else if config_valid {
-            format!(
-                "Local provider is configured with model '{}' at '{}'",
-                local_llm_model, local_llm_url
-            )
-        } else {
-            format!(
-                "Local configuration is invalid: provider='{}' (expected 'local'), url='{}', model='{}'",
-                provider, local_llm_url, local_llm_model
-            )
-        },
-        hint: if config_valid {
-            None
-        } else {
-            Some(
-                "Run 'xavier setup --local' to configure local-first settings automatically"
-                    .to_string(),
-            )
-        },
-        timed_out: false,
+    // Same resolution the provider itself uses (env, then config, then its
+    // built-in local URL), so the checks agree with what would really run.
+    let local_llm_url = local_cfg.base_url.clone().unwrap_or_else(|| {
+        std::env::var("XAVIER_LOCAL_LLM_URL")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| settings.models.local_llm_url.clone())
     });
+
+    let local_llm_model = local_cfg.model.clone();
+
+    let url_is_valid = is_http_url(&local_llm_url);
+
+    checks.push(local_configuration_check(
+        provider_is_local,
+        &provider,
+        &local_llm_url,
+        &local_llm_model,
+    ));
 
     // 4. Local LLM Probe Reachability
     let client = reqwest::Client::new();
     let mut url_reachable = false;
     let mut url_error = String::new();
 
-    if provider_is_local {
+    if provider_is_local && !local_llm_chosen {
+        checks.push(DoctorCheck {
+            name: "Local LLM URL Reachability".to_string(),
+            status: CheckStatus::Ok,
+            detail: "Skipped local LLM URL probe (no LLM model configured)".to_string(),
+            hint: None,
+            timed_out: false,
+        });
+    } else if provider_is_local {
         if url_is_valid {
             let url1 = if local_llm_url.ends_with("/v1") {
                 format!("{}/api/version", &local_llm_url[..local_llm_url.len() - 3])
@@ -754,6 +737,92 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
     }
 
     checks
+}
+
+/// Ollama is needed only by a chosen local LLM model or by local embeddings.
+fn ollama_required(local_llm_chosen: bool, embeddings_are_local: bool) -> bool {
+    local_llm_chosen || embeddings_are_local
+}
+
+fn ollama_needed_for(local_llm_chosen: bool, embeddings_are_local: bool) -> &'static str {
+    match (local_llm_chosen, embeddings_are_local) {
+        (true, true) => "the local LLM and local embeddings",
+        (true, false) => "the local LLM",
+        _ => "local embeddings",
+    }
+}
+
+/// True for a non-empty `http://` or `https://` URL.
+fn is_http_url(url: &str) -> bool {
+    !url.trim().is_empty() && (url.starts_with("http://") || url.starts_with("https://"))
+}
+
+/// "Local Configuration" doctor check. Pure: reads no env.
+///
+/// Xavier ships no default LLM model, so a local provider with a valid URL and
+/// no model is a valid (LLM-less) setup: it is a `Warn` with a setup hint, not a
+/// `Fail`. Only a chosen model with a missing/invalid URL fails the check.
+fn local_configuration_check(
+    provider_is_local: bool,
+    provider: &str,
+    local_llm_url: &str,
+    local_llm_model: &str,
+) -> DoctorCheck {
+    let name = "Local Configuration".to_string();
+    if !provider_is_local {
+        return DoctorCheck {
+            name,
+            status: CheckStatus::Ok,
+            detail: format!(
+                "LLM provider='{provider}' (non-local); local Ollama config not required"
+            ),
+            hint: None,
+            timed_out: false,
+        };
+    }
+    let url_is_valid = is_http_url(local_llm_url);
+    let model = local_llm_model.trim();
+    if url_is_valid && !model.is_empty() {
+        return DoctorCheck {
+            name,
+            status: CheckStatus::Ok,
+            detail: format!(
+                "Local provider is configured with model '{}' at '{}'",
+                model, local_llm_url
+            ),
+            hint: None,
+            timed_out: false,
+        };
+    }
+    if model.is_empty() {
+        // Nothing chosen: information, whatever the (unused) URL says.
+        return DoctorCheck {
+            name,
+            status: CheckStatus::Warn,
+            detail: format!(
+                "No LLM model configured (Xavier ships no default model); local URL is '{}'",
+                local_llm_url
+            ),
+            hint: Some(
+                "Set XAVIER_LOCAL_LLM_MODEL to any model your local server serves, or pick a hosted provider with XAVIER_MODEL_PROVIDER and XAVIER_LLM_MODEL"
+                    .to_string(),
+            ),
+            timed_out: false,
+        };
+    }
+    DoctorCheck {
+        name,
+        status: CheckStatus::Fail,
+        detail: format!(
+            "Local configuration is invalid: provider='{}', url='{}', model='{}'",
+            provider, local_llm_url, local_llm_model
+        ),
+        hint: Some(
+            "Set XAVIER_LOCAL_LLM_URL to an http(s) URL of an OpenAI-compatible server, or run 'xavier setup --local'"
+                .to_string(),
+        ),
+        timed_out: false,
+    }
 }
 
 /// Check auth, encryption status, and secret key posture.
@@ -1348,6 +1417,39 @@ mod tests {
         assert!(!table_output.is_empty());
         assert!(table_output.contains("Hanging Network Probe"));
         assert!(table_output.contains("timed out"));
+    }
+
+    #[test]
+    fn local_configuration_without_model_is_a_warning_not_a_failure() {
+        let check = local_configuration_check(true, "local", "http://localhost:11434/v1", "");
+        assert!(matches!(check.status, CheckStatus::Warn));
+        assert!(check.detail.contains("No LLM model configured"));
+        assert!(check
+            .hint
+            .as_deref()
+            .is_some_and(|h| h.contains("XAVIER_LOCAL_LLM_MODEL")));
+    }
+
+    #[test]
+    fn local_configuration_with_model_is_ok_and_bad_url_fails() {
+        let ok = local_configuration_check(true, "local", "http://localhost:11434/v1", "my-model");
+        assert!(matches!(ok.status, CheckStatus::Ok));
+        let bad = local_configuration_check(true, "local", "", "my-model");
+        assert!(matches!(bad.status, CheckStatus::Fail));
+        let nothing = local_configuration_check(true, "local", "", "");
+        assert!(matches!(nothing.status, CheckStatus::Warn));
+    }
+
+    #[test]
+    fn ollama_is_required_only_by_a_chosen_local_llm_or_local_embeddings() {
+        // No LLM model chosen and cloud/BYO embeddings: Ollama is optional.
+        assert!(!ollama_required(false, false));
+        assert!(ollama_required(true, false));
+        assert!(ollama_required(false, true));
+        assert_eq!(ollama_needed_for(false, true), "local embeddings");
+        assert_eq!(ollama_needed_for(true, false), "the local LLM");
+        let hosted = local_configuration_check(false, "openrouter", "", "");
+        assert!(matches!(hosted.status, CheckStatus::Ok));
     }
 
     #[test]

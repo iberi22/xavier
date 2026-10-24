@@ -2508,31 +2508,40 @@ async fn start_http_server_inner(
     let is_local_reachable = local_config.is_reachable().await
         == xavier::agents::provider::types::ProviderReachability::ConfiguredAndReachable;
 
-    // Check discrepancy
-    if is_ollama_reachable || is_local_reachable {
-        if !final_status.llm.reachable {
-            tracing::warn!("Discrepancy detected: final_status says LLM is unreachable, but direct reachability checks are successful.");
-            xavier::server::alerts::SYSTEM_ALERTS.push_alert(
-                "WARN",
-                "Ollama is reachable despite health check report",
-                "llm",
-            );
-            // Sync final_status with the actual reality for printing
-            final_status.llm.reachable = true;
+    // Check discrepancy. With no LLM configured there is nothing to reconcile:
+    // an Ollama that happens to be up (e.g. for embeddings) is not "the LLM",
+    // and a missing LLM is information, not an "unreachable" error.
+    match llm_reconcile_step(
+        final_status.llm.configured,
+        is_ollama_reachable || is_local_reachable,
+    ) {
+        LlmReconcileStep::Nothing => {}
+        LlmReconcileStep::CheckDiscrepancy => {
+            if !final_status.llm.reachable {
+                tracing::warn!("Discrepancy detected: final_status says LLM is unreachable, but direct reachability checks are successful.");
+                xavier::server::alerts::SYSTEM_ALERTS.push_alert(
+                    "WARN",
+                    "Ollama is reachable despite health check report",
+                    "llm",
+                );
+                // Sync final_status with the actual reality for printing
+                final_status.llm.reachable = true;
+            }
         }
-    } else {
-        // If Ollama/local provider should be up but doesn't respond
-        let provider_setting =
-            std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
-        if (provider_setting == "local" || provider_setting == "ollama")
-            && local_config.is_configured()
-        {
-            xavier::server::alerts::SYSTEM_ALERTS.push_alert(
-                "ERROR",
-                "Local provider (Ollama) is configured but unreachable",
-                "llm",
-            );
-            final_status.llm.reachable = false;
+        LlmReconcileStep::CheckUnreachable => {
+            // If Ollama/local provider should be up but doesn't respond
+            let provider_setting =
+                std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
+            if (provider_setting == "local" || provider_setting == "ollama")
+                && local_config.is_configured()
+            {
+                xavier::server::alerts::SYSTEM_ALERTS.push_alert(
+                    "ERROR",
+                    "Local provider (Ollama) is configured but unreachable",
+                    "llm",
+                );
+                final_status.llm.reachable = false;
+            }
         }
     }
 
@@ -2557,7 +2566,9 @@ async fn start_http_server_inner(
         final_status.llm.provider,
         final_status.llm.model,
         final_status.llm.endpoint,
-        if final_status.llm.reachable {
+        if !final_status.llm.configured {
+            "not configured"
+        } else if final_status.llm.reachable {
             "reachable"
         } else {
             "unreachable"
@@ -2584,7 +2595,9 @@ async fn start_http_server_inner(
     );
 
     // Compact single-line summary log for terminal outputs:
-    let llm_reach_str = if final_status.llm.reachable {
+    let llm_reach_str = if !final_status.llm.configured {
+        "not configured"
+    } else if final_status.llm.reachable {
         "reachable"
     } else {
         "unreachable"
@@ -3822,6 +3835,50 @@ mod feature_route_parity_tests {
         );
         // This CLI-state handler is not part of the library create_router().
         assert!(live.contains(".route(\"/code/situ\",post(code_situ_handler))"));
+    }
+}
+
+/// What the startup banner should reconcile about the LLM.
+#[derive(Debug, PartialEq, Eq)]
+enum LlmReconcileStep {
+    /// No LLM configured: nothing to reconcile, raise no alert.
+    Nothing,
+    /// Configured and something answered: check for a stale "unreachable".
+    CheckDiscrepancy,
+    /// Configured and nothing answered: may raise "configured but unreachable".
+    CheckUnreachable,
+}
+
+fn llm_reconcile_step(llm_configured: bool, any_local_reachable: bool) -> LlmReconcileStep {
+    if !llm_configured {
+        LlmReconcileStep::Nothing
+    } else if any_local_reachable {
+        LlmReconcileStep::CheckDiscrepancy
+    } else {
+        LlmReconcileStep::CheckUnreachable
+    }
+}
+
+#[cfg(test)]
+mod llm_reconcile_tests {
+    use super::*;
+
+    #[test]
+    fn unconfigured_llm_never_reconciles_even_with_ollama_up() {
+        assert_eq!(llm_reconcile_step(false, true), LlmReconcileStep::Nothing);
+        assert_eq!(llm_reconcile_step(false, false), LlmReconcileStep::Nothing);
+    }
+
+    #[test]
+    fn configured_llm_still_reconciles() {
+        assert_eq!(
+            llm_reconcile_step(true, true),
+            LlmReconcileStep::CheckDiscrepancy
+        );
+        assert_eq!(
+            llm_reconcile_step(true, false),
+            LlmReconcileStep::CheckUnreachable
+        );
     }
 }
 

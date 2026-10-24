@@ -133,6 +133,23 @@ pub fn render_health_report(data: &serde_json::Value) -> (String, bool) {
     }
     out.push('\n');
 
+    // Xavier ships no default LLM; say so plainly instead of leaving it implicit.
+    if let Some(llm) = data.get("llm") {
+        if llm.get("configured").and_then(|v| v.as_bool()) == Some(false) {
+            let llm_status = llm.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            if llm_status == "healthy" {
+                out.push_str("  LLM:         not configured (optional; set XAVIER_LOCAL_LLM_MODEL or a hosted provider)\n");
+            } else {
+                // A provider was chosen but is incomplete (e.g. missing API key).
+                let why = llm
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("chosen provider is incomplete");
+                out.push_str(&format!("  LLM:         not configured ({why})\n"));
+            }
+        }
+    }
+
     if status_str != "healthy" {
         let reasons: Vec<&str> = data
             .get("degraded_reasons")
@@ -458,6 +475,34 @@ mod tests {
             "report must name the host resource, got:\n{report}"
         );
         assert!(!report.contains("unknown"), "got:\n{report}");
+    }
+
+    #[test]
+    fn health_report_says_when_no_llm_is_configured() {
+        let mut node = HealthStatus::default();
+        node.llm.configured = false;
+        node.llm.status = HealthLevel::Healthy;
+        let (report, is_unhealthy) = render_health_report(&serialized(node.clone()));
+        assert!(!is_unhealthy);
+        assert!(
+            report.contains("LLM:         not configured (optional"),
+            "got:\n{report}"
+        );
+
+        // A chosen hosted provider missing its key is not "optional".
+        let mut broken = node.clone();
+        broken.llm.status = HealthLevel::Degraded;
+        broken.llm.error = Some("OPENROUTER_API_KEY is not set".to_string());
+        let (report, _) = render_health_report(&serialized(broken));
+        assert!(
+            report.contains("not configured (OPENROUTER_API_KEY is not set)"),
+            "got:\n{report}"
+        );
+        assert!(!report.contains("optional"), "got:\n{report}");
+
+        node.llm.configured = true;
+        let (report, _) = render_health_report(&serialized(node));
+        assert!(!report.contains("not configured"), "got:\n{report}");
     }
 
     #[test]

@@ -353,7 +353,7 @@ Continuous context regeneration driving recall@k toward 100%; HORMER hierarchica
 - [x] Local embedding via gllm / Ollama auto-detection
 - [x] Fallback chain (local → cloud → memory-only)
 - [x] Verified 2026-08-04 `/health`: embedding provider=local status=healthy
-- [x] Ollama LLM `qwen3-coder` reachable at `:11434`
+- [x] The user-configured LLM (if any) is reachable; no default model is shipped
 
 ---
 

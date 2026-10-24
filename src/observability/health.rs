@@ -977,18 +977,44 @@ fn redacted_llm_endpoint(config: &crate::agents::provider::ModelProviderConfig) 
     }
 }
 
+/// True when no LLM was chosen at all: the provider is disabled, or it is the
+/// local/managed-local provider with no model set. Pure: reads no env.
+fn llm_left_unset_by_choice(config: &crate::agents::provider::ModelProviderConfig) -> bool {
+    use crate::agents::provider::types::ProviderMode;
+    match config.provider_mode {
+        ProviderMode::Disabled => true,
+        ProviderMode::Local | ProviderMode::ManagedLocal => config.model.trim().is_empty(),
+        ProviderMode::Cloud => false,
+    }
+}
+
 /// Health for a provider that has no usable model/key, or `None` when the
 /// provider is configured and must be probed. Pure: reads no env.
+///
+/// Xavier ships no default LLM: each user picks their own model and provider.
+/// "No LLM chosen" (provider disabled, or the default local provider with no
+/// model) is therefore a valid setup, not a failure: it is reported as
+/// information (`configured: false` plus the setup hint in `error`) and does
+/// NOT degrade the node or appear in `degraded_reasons`.
+///
+/// A provider the user DID pick but left incomplete (e.g. a hosted provider
+/// whose API key never reached the process) is a real failure: every call
+/// would fail, so it stays `Degraded`.
 fn llm_health_unconfigured(
     config: &crate::agents::provider::ModelProviderConfig,
 ) -> Option<LlmHealth> {
     let reason = config.unconfigured_reason()?;
+    let status = if llm_left_unset_by_choice(config) {
+        HealthLevel::Healthy
+    } else {
+        HealthLevel::Degraded
+    };
     Some(LlmHealth {
         provider: config.provider_label.clone(),
         model: String::new(),
         endpoint: redacted_llm_endpoint(config),
         reachable: false,
-        status: HealthLevel::Degraded,
+        status,
         configured: false,
         api_key: config.api_key_state().to_string(),
         model_available: None,
@@ -1243,7 +1269,7 @@ mod tests {
     }
 
     #[test]
-    fn check_llm_unconfigured_is_degraded() {
+    fn check_llm_unconfigured_is_informational() {
         // Hand-built config: no env mutation, so this cannot race other tests.
         let mut config = crate::agents::provider::ModelProviderConfig::local_from_env();
         config.model = String::new();
@@ -1253,7 +1279,8 @@ mod tests {
         let llm_health = llm_health_unconfigured(&config).expect("unconfigured");
 
         assert!(!llm_health.configured);
-        assert_eq!(llm_health.status, HealthLevel::Degraded);
+        // No default model is shipped, so "not configured" must not degrade the node.
+        assert_eq!(llm_health.status, HealthLevel::Healthy);
         assert!(llm_health
             .error
             .as_deref()
@@ -1268,5 +1295,64 @@ mod tests {
         config.model = "test-model".to_string();
         config.base_url = Some("http://127.0.0.1:9/v1".to_string());
         assert!(llm_health_unconfigured(&config).is_none());
+    }
+
+    #[test]
+    fn unconfigured_llm_does_not_add_degraded_reason() {
+        let mut config = crate::agents::provider::ModelProviderConfig::local_from_env();
+        config.model = String::new();
+        config.base_url = Some("http://127.0.0.1:9/v1".to_string());
+
+        // Overall status must be non-healthy, otherwise compute_degraded_reasons
+        // returns early and this test could not fail.
+        let status = HealthStatus {
+            status: HealthLevel::Degraded,
+            llm: llm_health_unconfigured(&config).expect("unconfigured"),
+            ..Default::default()
+        };
+
+        assert!(!status.llm.configured);
+        assert!(
+            !status
+                .compute_degraded_reasons()
+                .iter()
+                .any(|r| r == "subsystem:llm"),
+            "an unconfigured LLM is information, not a degraded subsystem"
+        );
+    }
+
+    #[test]
+    fn chosen_hosted_provider_without_api_key_stays_degraded() {
+        use crate::agents::provider::types::ProviderMode;
+        let mut config = crate::agents::provider::ModelProviderConfig::local_from_env();
+        config.provider_mode = ProviderMode::Cloud;
+        config.provider_label = "openrouter".to_string();
+        config.model = "some/model".to_string();
+        config.api_key = None;
+        config.lease_config = None;
+
+        let llm = llm_health_unconfigured(&config).expect("missing key is unconfigured");
+        assert!(!llm.configured);
+        assert_eq!(llm.status, HealthLevel::Degraded);
+
+        let status = HealthStatus {
+            status: HealthLevel::Degraded,
+            llm,
+            ..Default::default()
+        };
+        assert!(status
+            .compute_degraded_reasons()
+            .iter()
+            .any(|r| r == "subsystem:llm"));
+    }
+
+    #[test]
+    fn disabled_provider_is_informational() {
+        use crate::agents::provider::types::ProviderMode;
+        let mut config = crate::agents::provider::ModelProviderConfig::local_from_env();
+        config.provider_mode = ProviderMode::Disabled;
+        config.model = String::new();
+        let llm = llm_health_unconfigured(&config).expect("disabled is unconfigured");
+        assert_eq!(llm.status, HealthLevel::Healthy);
     }
 }
