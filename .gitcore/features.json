@@ -1798,6 +1798,31 @@
       ],
       "implemented_in": "crates/xavier-market/src/ivn.rs, src/market_v2/ivn.rs"
     },
+    "feat-explain-isolated-llm": {
+      "category": "explain",
+      "description": "POST /v1/explain reads its own LLM settings (XAVIER_EXPLAIN_PROVIDER/MODEL and an owner-only key file) so a hosted model serves explanations without joining the daemon's global provider fallback chain.",
+      "id": "feat-explain-isolated-llm",
+      "implemented_in": "src/explain/model.rs, src/cli/server.rs",
+      "name": "Explain Isolated LLM",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [],
+      "spec_reference": "https://github.com/iberi22/xavier/issues/3560",
+      "status": "planned",
+      "steps": [
+        "Build an explain-only Anthropic config from XAVIER_EXPLAIN_* variables",
+        "Read the key from a 0600 file checked on the open handle, never from process env",
+        "Fall back to the global client only when no explain provider is set"
+      ],
+      "tests": [
+        "explain::model::tests::explain_provider_builds_anthropic_config_from_0600_key_file",
+        "explain::model::tests::explain_key_file_readable_by_others_is_not_configured",
+        "explain::model::tests::explain_without_provider_uses_global_config",
+        "explain::model::tests::explain_unsupported_provider_is_not_configured",
+        "explain::model::tests::explain_anthropic_without_model_is_not_configured"
+      ],
+      "user_stories": []
+    },
     "feat-data-node-consent": {
       "id": "feat-data-node-consent",
       "name": "Data Node Opt-In Consent API",
