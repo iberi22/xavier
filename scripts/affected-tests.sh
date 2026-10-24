@@ -215,7 +215,10 @@ run_test_unlocked() {
         printf 'DRY: env TMPDIR=/tmp'; printf ' %s' "$@"; printf '\n'
         return 0
     fi
-    env TMPDIR=/tmp "$@"
+    # Test binaries run git in tempdirs too; the hook's GIT_DIR would point that git at
+    # this repository (a `git init` there flips core.bare in the shared config).
+    env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR \
+        -u GIT_OBJECT_DIRECTORY -u GIT_PREFIX TMPDIR=/tmp "$@"
 }
 
 DEFER_MARK="${SWAL_DEFER_MARK:-/tmp/game-paused.since}"
