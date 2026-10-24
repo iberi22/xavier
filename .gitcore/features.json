@@ -54,6 +54,32 @@
         "US-002"
       ]
     },
+    "feat-explain-codegraph-source": {
+      "category": "explain",
+      "description": "Evidence source for code explanations that lists direct callers and callees of the code-graph symbols overlapping the target line range (structural Contains/Defines edges skipped), scored below the code fragment.",
+      "id": "feat-explain-codegraph-source",
+      "implemented_in": "src/explain/codegraph.rs, src/explain/mod.rs",
+      "name": "Explain Codegraph Source",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [],
+      "spec_reference": "https://github.com/iberi22/xavier/issues/3527",
+      "status": "planned",
+      "steps": [
+        "Pick the file's symbols overlapping the range, preferring target.symbol",
+        "Collect callers (reverse_dependencies) and callees (dependencies) up to the limit",
+        "Emit CallGraph evidence with caller/callee source refs"
+      ],
+      "tests": [
+        "explain::codegraph::tests::callers_and_callees_of_symbol_in_range_get_source_refs",
+        "explain::codegraph::tests::symbols_outside_line_range_are_ignored",
+        "explain::codegraph::tests::empty_file_or_range_returns_ok_empty",
+        "explain::codegraph::tests::symbol_name_narrows_the_choice",
+        "explain::codegraph::tests::limit_caps_total_edges_callers_first",
+        "explain::codegraph::tests::broken_graph_yields_no_evidence"
+      ],
+      "user_stories": []
+    },
     "feat-hybrid-search": {
       "id": "feat-hybrid-search",
       "name": "BM25 + Vector Hybrid Search",
