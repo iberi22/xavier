@@ -2457,6 +2457,44 @@
         "US-104"
       ]
     },
+    "feat-maloca-governance-wiring": {
+      "category": "maloca",
+      "description": "MalocaStore closes expired proposals lazily with a real tally (quorum over eligible weight, approval over yes+no, ties rejected), records the outcome and one Closed decision, and moves support tickets through the support state machine via PATCH /maloca/support/{id}.",
+      "id": "feat-maloca-governance-wiring",
+      "implemented_in": "src/maloca/store.rs, src/maloca/types.rs, src/maloca/handlers.rs, src/maloca/mod.rs, src/maloca/governance.rs",
+      "name": "Maloca Governance Wiring",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [],
+      "spec_reference": "https://github.com/iberi22/xavier/issues/3530",
+      "status": "planned",
+      "steps": [
+        "Give proposals expires_at and outcome with serde defaults",
+        "Close due proposals lazily in list_proposals and cast_vote",
+        "Reject ties in governance::outcome",
+        "Add update_support_status and PATCH /maloca/support/{id}"
+      ],
+      "tests": [
+        "maloca::store::tests::new_proposal_gets_expiry_from_duration_param",
+        "maloca::store::tests::expired_proposal_with_quorum_closes_as_approved",
+        "maloca::store::tests::expired_proposal_with_quorum_and_majority_no_closes_as_rejected",
+        "maloca::store::tests::expired_proposal_without_quorum_closes_as_no_quorum",
+        "maloca::store::tests::tie_is_rejected_at_store_level",
+        "maloca::store::tests::not_yet_expired_proposal_stays_open",
+        "maloca::store::tests::closing_appends_one_decision_and_is_idempotent",
+        "maloca::store::tests::legacy_proposal_without_expires_at_closes_by_created_plus_duration",
+        "maloca::store::tests::vote_after_expiry_is_rejected",
+        "maloca::store::tests::support_status_moves_forward_and_persists",
+        "maloca::store::tests::support_invalid_transition_is_reported_and_leaves_status",
+        "maloca::store::tests::support_unknown_id_is_not_an_invalid_transition",
+        "maloca::store::tests::support_unknown_stored_status_is_treated_as_open",
+        "maloca::store::tests::support_status_names_round_trip",
+        "maloca::governance::tests::tie_at_exact_threshold_is_rejected",
+        "maloca::governance::tests::majority_at_exact_threshold_passes",
+        "maloca::tests::support_patch_maps_moves_to_200_409_and_404"
+      ],
+      "user_stories": []
+    },
     "feat-cg-blast-testgate": {
       "id": "feat-cg-blast-testgate",
       "name": "Code-Graph Blast Radius + Test Gate (O3)",

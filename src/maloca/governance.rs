@@ -74,7 +74,8 @@ pub fn outcome(tally: &Tally, quorum_pct: f64, approval_threshold: f64) -> Outco
     if decisive <= 0.0 {
         return Outcome::Rejected;
     }
-    if tally.yes + EPS >= approval_threshold * decisive {
+    // A tie is never an approval, even when the threshold is exactly 0.5.
+    if tally.yes > tally.no && tally.yes + EPS >= approval_threshold * decisive {
         Outcome::Approved
     } else {
         Outcome::Rejected
@@ -169,11 +170,19 @@ mod tests {
     }
 
     #[test]
-    fn approval_at_exact_threshold_passes() {
+    fn tie_at_exact_threshold_is_rejected() {
         let mut votes = vec![vote(VoteChoice::Yes, 1.0); 5];
         votes.extend(vec![vote(VoteChoice::No, 1.0); 5]);
         let t = tally(&votes, 10.0);
-        assert_eq!(outcome(&t, 30.0, 0.5), Outcome::Approved);
+        assert_eq!(outcome(&t, 30.0, 0.5), Outcome::Rejected);
+    }
+
+    #[test]
+    fn majority_at_exact_threshold_passes() {
+        let mut votes = vec![vote(VoteChoice::Yes, 1.0); 6];
+        votes.extend(vec![vote(VoteChoice::No, 1.0); 4]);
+        let t = tally(&votes, 10.0);
+        assert_eq!(outcome(&t, 30.0, 0.6), Outcome::Approved);
     }
 
     #[test]

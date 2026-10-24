@@ -1,6 +1,7 @@
 //! HTTP handlers for `/maloca/*`.
 
-use super::store::MalocaStore;
+use super::store::{parse_support_status, MalocaStore};
+use super::support_flow::InvalidTransition;
 use super::types::*;
 use axum::extract::{Path, Query};
 use axum::http::StatusCode;
@@ -94,6 +95,27 @@ pub async fn create_support(
         return Err(StatusCode::BAD_REQUEST);
     }
     Ok(Json(store.create_support(body)))
+}
+
+pub async fn update_support_status(
+    Extension(store): Extension<Arc<MalocaStore>>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateSupportStatusBody>,
+) -> Result<Json<SupportTicket>, (StatusCode, String)> {
+    let Some(to) = parse_support_status(&body.status) else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("unknown support status: {}", body.status),
+        ));
+    };
+    store.update_support_status(&id, to).map(Json).map_err(|e| {
+        let status = if e.downcast_ref::<InvalidTransition>().is_some() {
+            StatusCode::CONFLICT
+        } else {
+            StatusCode::NOT_FOUND
+        };
+        (status, e.to_string())
+    })
 }
 
 pub async fn list_reviews(
