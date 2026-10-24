@@ -1,6 +1,8 @@
 //! The listener serves while init is still running: /health and 503s answer at once,
 //! and the application router takes over when the gate opens. Real TCP, no config or data.
 
+xavier::isolate_test_process!();
+
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
