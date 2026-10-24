@@ -979,6 +979,11 @@ fn redacted_llm_endpoint(config: &crate::agents::provider::ModelProviderConfig) 
 
 /// Health for a provider that has no usable model/key, or `None` when the
 /// provider is configured and must be probed. Pure: reads no env.
+///
+/// Xavier ships no default LLM: each user picks their own model and provider.
+/// "No LLM configured" is therefore a valid setup, not a failure. It is
+/// reported as information (`configured: false` plus the setup hint in
+/// `error`) and does NOT degrade the node or appear in `degraded_reasons`.
 fn llm_health_unconfigured(
     config: &crate::agents::provider::ModelProviderConfig,
 ) -> Option<LlmHealth> {
@@ -988,7 +993,7 @@ fn llm_health_unconfigured(
         model: String::new(),
         endpoint: redacted_llm_endpoint(config),
         reachable: false,
-        status: HealthLevel::Degraded,
+        status: HealthLevel::Healthy,
         configured: false,
         api_key: config.api_key_state().to_string(),
         model_available: None,
@@ -1243,7 +1248,7 @@ mod tests {
     }
 
     #[test]
-    fn check_llm_unconfigured_is_degraded() {
+    fn check_llm_unconfigured_is_informational() {
         // Hand-built config: no env mutation, so this cannot race other tests.
         let mut config = crate::agents::provider::ModelProviderConfig::local_from_env();
         config.model = String::new();
@@ -1253,7 +1258,8 @@ mod tests {
         let llm_health = llm_health_unconfigured(&config).expect("unconfigured");
 
         assert!(!llm_health.configured);
-        assert_eq!(llm_health.status, HealthLevel::Degraded);
+        // No default model is shipped, so "not configured" must not degrade the node.
+        assert_eq!(llm_health.status, HealthLevel::Healthy);
         assert!(llm_health
             .error
             .as_deref()
@@ -1268,5 +1274,26 @@ mod tests {
         config.model = "test-model".to_string();
         config.base_url = Some("http://127.0.0.1:9/v1".to_string());
         assert!(llm_health_unconfigured(&config).is_none());
+    }
+
+    #[test]
+    fn unconfigured_llm_does_not_add_degraded_reason() {
+        let mut config = crate::agents::provider::ModelProviderConfig::local_from_env();
+        config.model = String::new();
+        config.base_url = Some("http://127.0.0.1:9/v1".to_string());
+
+        let status = HealthStatus {
+            llm: llm_health_unconfigured(&config).expect("unconfigured"),
+            ..Default::default()
+        };
+
+        assert!(!status.llm.configured);
+        assert!(
+            !status
+                .compute_degraded_reasons()
+                .iter()
+                .any(|r| r == "subsystem:llm"),
+            "an unconfigured LLM is information, not a degraded subsystem"
+        );
     }
 }

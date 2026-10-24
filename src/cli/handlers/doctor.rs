@@ -634,43 +634,13 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
 
     let url_is_valid = !local_llm_url.trim().is_empty()
         && (local_llm_url.starts_with("http://") || local_llm_url.starts_with("https://"));
-    let model_is_valid = !local_llm_model.trim().is_empty();
-    let config_valid = if provider_is_local {
-        url_is_valid && model_is_valid
-    } else {
-        true
-    };
 
-    checks.push(DoctorCheck {
-        name: "Local Configuration".to_string(),
-        status: if config_valid {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Fail
-        },
-        detail: if !provider_is_local {
-            format!("LLM provider='{provider}' (non-local); local Ollama config not required")
-        } else if config_valid {
-            format!(
-                "Local provider is configured with model '{}' at '{}'",
-                local_llm_model, local_llm_url
-            )
-        } else {
-            format!(
-                "Local configuration is invalid: provider='{}' (expected 'local'), url='{}', model='{}'",
-                provider, local_llm_url, local_llm_model
-            )
-        },
-        hint: if config_valid {
-            None
-        } else {
-            Some(
-                "Run 'xavier setup --local' to configure local-first settings automatically"
-                    .to_string(),
-            )
-        },
-        timed_out: false,
-    });
+    checks.push(local_configuration_check(
+        provider_is_local,
+        &provider,
+        &local_llm_url,
+        &local_llm_model,
+    ));
 
     // 4. Local LLM Probe Reachability
     let client = reqwest::Client::new();
@@ -754,6 +724,74 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
     }
 
     checks
+}
+
+/// "Local Configuration" doctor check. Pure: reads no env.
+///
+/// Xavier ships no default LLM model, so a local provider with a valid URL and
+/// no model is a valid (LLM-less) setup: it is a `Warn` with a setup hint, not a
+/// `Fail`. Only a missing/invalid URL fails the check.
+fn local_configuration_check(
+    provider_is_local: bool,
+    provider: &str,
+    local_llm_url: &str,
+    local_llm_model: &str,
+) -> DoctorCheck {
+    let name = "Local Configuration".to_string();
+    if !provider_is_local {
+        return DoctorCheck {
+            name,
+            status: CheckStatus::Ok,
+            detail: format!(
+                "LLM provider='{provider}' (non-local); local Ollama config not required"
+            ),
+            hint: None,
+            timed_out: false,
+        };
+    }
+    let url_is_valid = !local_llm_url.trim().is_empty()
+        && (local_llm_url.starts_with("http://") || local_llm_url.starts_with("https://"));
+    let model = local_llm_model.trim();
+    if url_is_valid && !model.is_empty() {
+        return DoctorCheck {
+            name,
+            status: CheckStatus::Ok,
+            detail: format!(
+                "Local provider is configured with model '{}' at '{}'",
+                model, local_llm_url
+            ),
+            hint: None,
+            timed_out: false,
+        };
+    }
+    if url_is_valid {
+        return DoctorCheck {
+            name,
+            status: CheckStatus::Warn,
+            detail: format!(
+                "No LLM model configured (Xavier ships no default model); local URL is '{}'",
+                local_llm_url
+            ),
+            hint: Some(
+                "Set XAVIER_LOCAL_LLM_MODEL to any model your local server serves, or pick a hosted provider with XAVIER_MODEL_PROVIDER and XAVIER_LLM_MODEL"
+                    .to_string(),
+            ),
+            timed_out: false,
+        };
+    }
+    DoctorCheck {
+        name,
+        status: CheckStatus::Fail,
+        detail: format!(
+            "Local configuration is invalid: provider='{}', url='{}', model='{}'",
+            provider, local_llm_url, local_llm_model
+        ),
+        hint: Some(
+            "Set XAVIER_LOCAL_LLM_URL to an http(s) URL of an OpenAI-compatible server, or run 'xavier setup --local'"
+                .to_string(),
+        ),
+        timed_out: false,
+    }
 }
 
 /// Check auth, encryption status, and secret key posture.
@@ -1348,6 +1386,27 @@ mod tests {
         assert!(!table_output.is_empty());
         assert!(table_output.contains("Hanging Network Probe"));
         assert!(table_output.contains("timed out"));
+    }
+
+    #[test]
+    fn local_configuration_without_model_is_a_warning_not_a_failure() {
+        let check = local_configuration_check(true, "local", "http://localhost:11434/v1", "");
+        assert!(matches!(check.status, CheckStatus::Warn));
+        assert!(check.detail.contains("No LLM model configured"));
+        assert!(check
+            .hint
+            .as_deref()
+            .is_some_and(|h| h.contains("XAVIER_LOCAL_LLM_MODEL")));
+    }
+
+    #[test]
+    fn local_configuration_with_model_is_ok_and_bad_url_fails() {
+        let ok = local_configuration_check(true, "local", "http://localhost:11434/v1", "my-model");
+        assert!(matches!(ok.status, CheckStatus::Ok));
+        let bad = local_configuration_check(true, "local", "", "my-model");
+        assert!(matches!(bad.status, CheckStatus::Fail));
+        let hosted = local_configuration_check(false, "openrouter", "", "");
+        assert!(matches!(hosted.status, CheckStatus::Ok));
     }
 
     #[test]
