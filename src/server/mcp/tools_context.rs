@@ -4,7 +4,7 @@
 //! as well as reporting token savings and packaging GitHub issues into PreciseChange context packages.
 
 use super::types::*;
-use crate::codebase::conversations_db::validate_session_id;
+use crate::codebase::conversations_db::{validate_session_id, SnapshotError, SnapshotScope};
 use crate::codebase::issue_context::assemble_package;
 use crate::codebase::snapshot::SnapshotManager;
 use crate::context::skill_controller::telemetry::{SkillStage, UsageEvent};
@@ -28,6 +28,31 @@ const SESSION_LOOKUP_TIMEOUT: Duration = Duration::from_secs(5);
 const CONTEXT_SEARCH_DEFAULT_LIMIT: u64 = 10;
 const CONTEXT_SEARCH_MAX_LIMIT: u64 = 50;
 
+/// Sealed context snapshots are opt-in: `XAVIER_CONTEXT_SNAPSHOTS=1`. Read on every call.
+fn context_snapshots_enabled() -> bool {
+    std::env::var("XAVIER_CONTEXT_SNAPSHOTS").is_ok_and(|v| v.trim() == "1")
+}
+
+/// Input schema of `xavier_context_restore`. `checkpoint_id` is advertised only
+/// while snapshots are enabled.
+fn restore_input_schema() -> Value {
+    let mut properties = json!({
+        "session_id": { "type": "string", "description": "Session identifier" },
+        "depth": { "type": "string", "enum": ["shallow", "medium", "deep"], "default": "medium" }
+    });
+    if context_snapshots_enabled() {
+        properties["checkpoint_id"] = json!({
+            "type": "string",
+            "description": "Checkpoint id from xavier_context_save; restores its sealed transcript"
+        });
+    }
+    json!({
+        "type": "object",
+        "properties": properties,
+        "required": ["session_id"]
+    })
+}
+
 /// Get xavier context tools.
 pub fn get_xavier_context_tools() -> Vec<MCPTool> {
     vec![
@@ -47,14 +72,7 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
             name: "xavier_context_restore".to_string(),
             description: "Retrieve an optimized context block for a session (wraps regenerate)"
                 .to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "session_id": { "type": "string", "description": "Session identifier" },
-                    "depth": { "type": "string", "enum": ["shallow", "medium", "deep"], "default": "medium" }
-                },
-                "required": ["session_id"]
-            }),
+            input_schema: restore_input_schema(),
         },
         MCPTool {
             name: "xavier_context_search".to_string(),
@@ -172,6 +190,174 @@ async fn session_checkpoints(
         .into_iter()
         .filter(|c| c.session_id.as_deref() == Some(session_id))
         .collect())
+}
+
+/// A checkpoint id is a canonical lowercase hyphenated UUID, the form the server mints.
+fn is_canonical_checkpoint_id(id: &str) -> bool {
+    uuid::Uuid::parse_str(id).is_ok_and(|uuid| uuid.to_string() == id)
+}
+
+/// Scope of a snapshot call: the server-fixed workspace, its config id and the
+/// database project. Caller arguments never choose these.
+fn snapshot_scope(
+    workspace: &WorkspaceContext,
+    session_id: &str,
+) -> Result<SnapshotScope, SnapshotError> {
+    SnapshotScope::new(
+        &workspace.workspace_id,
+        &workspace.workspace.config().id,
+        workspace.workspace.conversations_db.project_id(),
+        session_id,
+    )
+}
+
+/// The tool reply for a failed snapshot call. Every failure is a tool error, and
+/// no inner text (in particular the store's) reaches the caller.
+fn snapshot_error_reply(
+    error: SnapshotError,
+    session_id: &str,
+    checkpoint_id: &str,
+) -> anyhow::Result<Value> {
+    let text = match error {
+        SnapshotError::InvalidScope | SnapshotError::ScopeMismatch => {
+            "Error: context snapshots are unavailable for this workspace".to_string()
+        }
+        SnapshotError::Disabled => "Error: context snapshots are disabled".to_string(),
+        SnapshotError::NotMember => format!(
+            "Error: session {session_id} has no conversation thread in this workspace; nothing saved"
+        ),
+        SnapshotError::Empty => {
+            format!("Error: session {session_id} has no messages; nothing saved")
+        }
+        SnapshotError::TooLarge => format!(
+            "Error: session {session_id} transcript exceeds 65536 bytes; nothing saved"
+        ),
+        SnapshotError::SourceUnreadable => format!(
+            "Error: session {session_id} messages could not be read; nothing saved"
+        ),
+        SnapshotError::NoSealKey => {
+            "Error: no sealing key is configured; context snapshots require one".to_string()
+        }
+        SnapshotError::KeyUnavailable => {
+            "Error: sealing key unavailable; nothing was read or stored".to_string()
+        }
+        SnapshotError::Missing => {
+            format!("Error: no snapshot {checkpoint_id} for session {session_id}")
+        }
+        SnapshotError::Oversized
+        | SnapshotError::Tampered
+        | SnapshotError::ClearUnderSealPolicy => {
+            format!("Error: snapshot {checkpoint_id} failed verification; nothing restored")
+        }
+        SnapshotError::WeakerThanPolicy | SnapshotError::TierMismatch => format!(
+            "Error: snapshot {checkpoint_id} was sealed under a different key tier; re-save it"
+        ),
+        SnapshotError::Db(_) => {
+            tracing::warn!("context snapshot store failed");
+            format!("Error: context store unavailable for session {session_id}")
+        }
+    };
+    super::server::mcp_text_result(text, true)
+}
+
+/// Save with snapshots enabled: a sealed transcript captured atomically with
+/// its checkpoint row.
+async fn save_snapshot(
+    workspace: &WorkspaceContext,
+    session_id: &str,
+    name: Option<&str>,
+) -> anyhow::Result<Value> {
+    let scope = match snapshot_scope(workspace, session_id) {
+        Ok(scope) => scope,
+        Err(error) => return snapshot_error_reply(error, session_id, ""),
+    };
+    match workspace
+        .workspace
+        .conversations_db
+        .create_checkpoint_with_snapshot(&scope, name)
+        .await
+    {
+        Ok(saved) => super::server::mcp_text_result(
+            format!(
+                "Context saved for session {session_id}. Checkpoint ID: {}\nSnapshot tier: {}",
+                saved.checkpoint_id,
+                saved.tier.as_str()
+            ),
+            false,
+        ),
+        Err(error) => snapshot_error_reply(error, session_id, ""),
+    }
+}
+
+/// Restore by checkpoint id: the transcript as it was saved, clipped to the
+/// depth budget. Never reads the live thread, memory or orchestrator.
+async fn restore_snapshot(
+    workspace: &WorkspaceContext,
+    session_id: &str,
+    depth: &str,
+    token_budget: usize,
+    checkpoint_id: &str,
+) -> anyhow::Result<Value> {
+    let scope = match snapshot_scope(workspace, session_id) {
+        Ok(scope) => scope,
+        Err(error) => return snapshot_error_reply(error, session_id, checkpoint_id),
+    };
+    let loaded = match workspace
+        .workspace
+        .conversations_db
+        .load_checkpoint_snapshot(&scope, checkpoint_id)
+        .await
+    {
+        Ok(loaded) => loaded,
+        Err(error) => return snapshot_error_reply(error, session_id, checkpoint_id),
+    };
+    let checkpoints = match session_checkpoints(workspace, session_id).await {
+        Ok(checkpoints) => checkpoints,
+        Err(_) => {
+            return super::server::mcp_text_result(
+                format!("Error: context store unavailable for session {session_id}"),
+                true,
+            )
+        }
+    };
+
+    // Budget: 4 characters per token, the estimator's own ratio.
+    let max_chars = token_budget * 4;
+    let original_tokens = crate::context::estimate_tokens(&loaded.body);
+    let context: String = loaded.body.chars().take(max_chars).collect();
+    let truncated = loaded.body.chars().count() > max_chars;
+    let optimized_tokens = crate::context::estimate_tokens(&context);
+    let savings_percentage = if original_tokens > 0 {
+        (original_tokens as f32 - optimized_tokens as f32) / original_tokens as f32 * 100.0
+    } else {
+        0.0
+    };
+
+    let result = json!({
+        "status": "ok",
+        "session_id": session_id,
+        "depth": depth,
+        "context": context,
+        "checkpoints": checkpoints
+            .iter()
+            .take(20)
+            .map(|c| json!({
+                "id": c.id,
+                "name": c.name,
+                "created_at": c.created_at.to_rfc3339(),
+            }))
+            .collect::<Vec<_>>(),
+        "token_usage": {
+            "original": original_tokens,
+            "optimized": optimized_tokens,
+            "savings_percentage": format!("{:.1}%", savings_percentage)
+        },
+        "source": "snapshot",
+        "checkpoint_id": checkpoint_id,
+        "snapshot_tier": loaded.tier.as_str(),
+        "truncated": truncated,
+    });
+    super::server::mcp_text_result(serde_json::to_string_pretty(&result)?, false)
 }
 
 /// Tool error for a rejected argument.
@@ -350,6 +536,9 @@ pub async fn handle_context_tool(
             if name.is_some_and(|n| n.chars().count() > 200) {
                 return invalid_argument("name must be at most 200 chars");
             }
+            if context_snapshots_enabled() {
+                return save_snapshot(&workspace, session_id, name).await;
+            }
 
             let checkpoint = workspace
                 .workspace
@@ -392,6 +581,32 @@ pub async fn handle_context_tool(
                 "deep" => (ContextLevel::Maximum, 2400),
                 _ => (ContextLevel::Medium, 800),
             };
+
+            // checkpoint_id: null counts as absent. A present id is served from
+            // the sealed snapshot only, and is refused while snapshots are off.
+            let checkpoint_id = match arguments.get("checkpoint_id") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(id)) if is_canonical_checkpoint_id(id) => Some(id.as_str()),
+                Some(_) => {
+                    return invalid_argument("checkpoint_id must be a canonical lowercase UUID")
+                }
+            };
+            if let Some(checkpoint_id) = checkpoint_id {
+                if !context_snapshots_enabled() {
+                    return super::server::mcp_text_result(
+                        "Error: context snapshots are disabled".to_string(),
+                        true,
+                    );
+                }
+                return restore_snapshot(
+                    &workspace,
+                    session_id,
+                    depth,
+                    token_budget,
+                    checkpoint_id,
+                )
+                .await;
+            }
 
             // Cheap, bounded existence check first: unknown sessions must not
             // reach the expensive fallback below.
