@@ -1825,6 +1825,8 @@ fn parse_datetime(s: &str) -> DateTime<Utc> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aes_gcm::aead::{Aead, KeyInit, Payload};
+    use aes_gcm::{Aes256Gcm, Nonce};
 
     #[tokio::test]
     async fn test_open_with_malicious_project_id() {
@@ -2156,7 +2158,7 @@ mod tests {
                 r.get(0)
             })
             .unwrap();
-        assert!(stored.starts_with("xcn1:"), "legacy row was not re-sealed");
+        assert!(stored.starts_with("xcn2:"), "legacy row was not re-sealed");
     }
 
     /// `EXPLAIN QUERY PLAN` detail lines for `sql` on the live schema.
@@ -2320,6 +2322,714 @@ mod tests {
             )
             .unwrap();
         assert_eq!(content, "old two");
+    }
+
+    // ------------------------------------------------------------------
+    // Row-bound node seals (xcn2)
+    // ------------------------------------------------------------------
+
+    const NODE_KEY: [u8; 32] = [0x5A; 32];
+
+    /// Field AD for project `p1`, kind `conv.msg.content`, thread `t1`, row `m1`:
+    /// u32 BE length + bytes for "xavier-conv-field", "2", "node", "p1", kind, "t1", "m1".
+    const GOLDEN_FIELD_AD_HEX: &str = concat!(
+        "00000011",
+        "7861766965722d636f6e762d6669656c64",
+        "00000001",
+        "32",
+        "00000004",
+        "6e6f6465",
+        "00000002",
+        "7031",
+        "00000010",
+        "636f6e762e6d73672e636f6e74656e74",
+        "00000002",
+        "7431",
+        "00000002",
+        "6d31",
+    );
+
+    const SEALED_COLUMNS: [(&str, &str); 12] = [
+        ("conversation_threads", "title"),
+        ("conversation_threads", "last_preview"),
+        ("conversation_messages", "content"),
+        ("conversation_messages", "tool_calls"),
+        ("conversation_messages", "openui_lang"),
+        ("conversation_messages", "xui_json"),
+        ("conversation_messages", "metadata"),
+        ("deductions", "deduction"),
+        ("beliefs", "subject"),
+        ("beliefs", "relation"),
+        ("beliefs", "object"),
+        ("beliefs", "proposition"),
+    ];
+
+    fn raw_conn(path: &Path) -> rusqlite::Connection {
+        rusqlite::Connection::open(path).unwrap()
+    }
+
+    /// Values of a single-column query, in result order.
+    fn raw_column(path: &Path, sql: &str) -> Vec<Option<String>> {
+        let conn = raw_conn(path);
+        let mut stmt = conn.prepare(sql).unwrap();
+        let rows = stmt
+            .query_map([], |r| r.get::<_, Option<String>>(0))
+            .unwrap();
+        rows.collect::<rusqlite::Result<Vec<_>>>().unwrap()
+    }
+
+    /// Every sealed column plus the floor marker, in row order.
+    fn sealed_snapshot(path: &Path) -> Vec<Option<String>> {
+        let mut all = Vec::new();
+        for (table, column) in SEALED_COLUMNS {
+            all.extend(raw_column(
+                path,
+                &format!("SELECT {column} FROM {table} ORDER BY rowid"),
+            ));
+        }
+        all.extend(raw_column(path, "SELECT v FROM conv_seal_state ORDER BY k"));
+        all
+    }
+
+    async fn node_db(path: &Path, project: &str) -> ConversationsDb {
+        ConversationsDb::open_at(project, path)
+            .await
+            .unwrap()
+            .with_node_key(NODE_KEY)
+    }
+
+    /// The node-tier envelope as written before the row-bound format (no AD).
+    fn legacy_xcn1(key: &[u8; 32], plain: &str) -> String {
+        use crate::crypto::encryption::{aes_encrypt, NonceBytes};
+        let ct = aes_encrypt(plain.as_bytes(), key, &NonceBytes::generate()).unwrap();
+        format!("xcn1:{}", crate::crypto::hex_encode(ct))
+    }
+
+    /// Flip the hex digit at byte offset `at` (the result is still hex and always differs).
+    fn flip_at(value: &str, at: usize) -> String {
+        let mut bytes = value.as_bytes().to_vec();
+        bytes[at] = if bytes[at] == b'0' { b'1' } else { b'0' };
+        String::from_utf8(bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn xcn2_field_ad_golden_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "p1").await;
+        db.create_schema().await.unwrap();
+        raw_conn(&path)
+            .execute_batch(
+                "INSERT INTO conversation_threads (id, project_id, started_at, updated_at)
+                    VALUES ('t1', 'p1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                 INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+                    VALUES ('m1', 't1', 'user', 'hello golden', '2026-01-01T00:00:00Z');",
+            )
+            .unwrap();
+
+        // The first node-tier operation seals the legacy clear content under its row context.
+        let msgs = db.get_thread_messages("t1").await.unwrap();
+        assert_eq!(msgs[0].content, "hello golden");
+
+        let stored = raw_column(
+            &path,
+            "SELECT content FROM conversation_messages WHERE id = 'm1'",
+        )
+        .remove(0)
+        .unwrap();
+        let body = stored
+            .strip_prefix("xcn2:")
+            .expect("content is sealed as xcn2");
+        let raw = crate::crypto::hex_decode(body).unwrap();
+        let (nonce, ct) = raw.split_at(12);
+        let aad = crate::crypto::hex_decode(GOLDEN_FIELD_AD_HEX).unwrap();
+        let cipher = Aes256Gcm::new_from_slice(&NODE_KEY).unwrap();
+        let pt = cipher
+            .decrypt(Nonce::from_slice(nonce), Payload { msg: ct, aad: &aad })
+            .expect("golden AD authenticates the sealed content");
+        assert_eq!(pt, b"hello golden");
+    }
+
+    #[tokio::test]
+    async fn xcn2_written_for_every_sealed_column() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "seal-cols").await;
+        let thread = db.create_thread(Some("title"), None, None).await.unwrap();
+        db.store_message(
+            &thread.id,
+            "user",
+            "content",
+            Some("tools"),
+            Some("lang"),
+            Some("xui"),
+            Some("meta"),
+            None,
+        )
+        .await
+        .unwrap();
+        db.record_deduction("deduction", 0.5, None, None)
+            .await
+            .unwrap();
+        let belief = db
+            .upsert_belief(
+                "subject",
+                Some("rel"),
+                Some("obj"),
+                Some("prop"),
+                0.9,
+                1.0,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        for (table, column) in SEALED_COLUMNS {
+            let values = raw_column(&path, &format!("SELECT {column} FROM {table}"));
+            let sealed: Vec<&String> = values.iter().flatten().collect();
+            assert!(!sealed.is_empty(), "{table}.{column} has no stored value");
+            for v in sealed {
+                assert!(
+                    v.starts_with("xcn2:"),
+                    "{table}.{column} stored without xcn2 seal: {v}"
+                );
+            }
+        }
+
+        // Reads round-trip.
+        let msgs = db.get_thread_messages(&thread.id).await.unwrap();
+        assert_eq!(msgs[0].content, "content");
+        assert_eq!(msgs[0].tool_calls.as_deref(), Some("tools"));
+        assert_eq!(msgs[0].openui_lang.as_deref(), Some("lang"));
+        assert_eq!(msgs[0].xui_json.as_deref(), Some("xui"));
+        assert_eq!(msgs[0].metadata.as_deref(), Some("meta"));
+        let b = db.get_belief(&belief.id).await.unwrap().unwrap();
+        assert_eq!(b.subject, "subject");
+        assert_eq!(b.relation.as_deref(), Some("rel"));
+        assert_eq!(b.object.as_deref(), Some("obj"));
+        assert_eq!(b.proposition.as_deref(), Some("prop"));
+        assert_eq!(
+            db.list_deductions(5).await.unwrap()[0].deduction,
+            "deduction"
+        );
+        assert_eq!(
+            db.get_thread(&thread.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .title
+                .as_deref(),
+            Some("title")
+        );
+    }
+
+    #[tokio::test]
+    async fn xcn2_splice_across_rows_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "splice-rows").await;
+        let thread = db.create_thread(None, None, None).await.unwrap();
+        let m1 = db
+            .store_message(&thread.id, "user", "first", None, None, None, None, None)
+            .await
+            .unwrap();
+        let m2 = db
+            .store_message(&thread.id, "user", "second", None, None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(db.get_thread_messages(&thread.id).await.unwrap().len(), 2);
+
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_messages SET content =
+                    (SELECT content FROM conversation_messages WHERE id = ?1) WHERE id = ?2",
+                params![m1.id, m2.id],
+            )
+            .unwrap();
+        assert!(db.get_thread_messages(&thread.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn xcn2_splice_across_columns_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "splice-cols").await;
+        let thread = db.create_thread(None, None, None).await.unwrap();
+        let m1 = db
+            .store_message(
+                &thread.id,
+                "user",
+                "body",
+                None,
+                None,
+                None,
+                Some("meta"),
+                None,
+            )
+            .await
+            .unwrap();
+        let belief = db
+            .upsert_belief(
+                "subject",
+                Some("rel"),
+                Some("obj"),
+                None,
+                0.5,
+                1.0,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Message content into the metadata column of the same row.
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_messages SET metadata = content WHERE id = ?1",
+                params![m1.id],
+            )
+            .unwrap();
+        assert!(db.get_thread_messages(&thread.id).await.is_err());
+
+        // Belief subject into the object column of the same row.
+        raw_conn(&path)
+            .execute(
+                "UPDATE beliefs SET object = subject WHERE id = ?1",
+                params![belief.id],
+            )
+            .unwrap();
+        assert!(db.get_belief(&belief.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn xcn2_splice_across_tables_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "splice-tables").await;
+        let deduction = db
+            .record_deduction("secret deduction", 0.5, None, None)
+            .await
+            .unwrap();
+        let belief = db
+            .upsert_belief(
+                "subject",
+                Some("rel"),
+                Some("obj"),
+                None,
+                0.5,
+                1.0,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        // The belief takes the deduction's id and the deduction's sealed text as its subject.
+        raw_conn(&path)
+            .execute(
+                "UPDATE beliefs SET id = ?1,
+                    subject = (SELECT deduction FROM deductions WHERE id = ?1)
+                 WHERE id = ?2",
+                params![deduction.id, belief.id],
+            )
+            .unwrap();
+        assert!(db.get_belief(&deduction.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn xcn2_message_moved_to_other_thread_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "moved").await;
+        let t1 = db.create_thread(None, None, None).await.unwrap();
+        let t2 = db.create_thread(None, None, None).await.unwrap();
+        let m1 = db
+            .store_message(&t1.id, "user", "stays put", None, None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(db.get_thread_messages(&t1.id).await.unwrap().len(), 1);
+
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_messages SET thread_id = ?1 WHERE id = ?2",
+                params![t2.id, m1.id],
+            )
+            .unwrap();
+        assert!(db.get_thread_messages(&t2.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn xcn2_row_copied_to_other_project_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let owner = node_db(&path, "proj-a").await;
+        let other = node_db(&path, "proj-b").await;
+        let thread = owner
+            .create_thread(Some("private title"), None, None)
+            .await
+            .unwrap();
+        owner
+            .store_message(
+                &thread.id,
+                "user",
+                "private message",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_threads SET project_id = 'proj-b' WHERE id = ?1",
+                params![thread.id],
+            )
+            .unwrap();
+        assert!(other.list_threads(10).await.is_err());
+        assert!(other.get_thread(&thread.id).await.is_err());
+        assert!(other.get_thread_messages(&thread.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn xcn2_tamper_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "tamper").await;
+        let thread = db.create_thread(None, None, None).await.unwrap();
+        let m1 = db
+            .store_message(
+                &thread.id,
+                "user",
+                "tamper target",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let sql = format!(
+            "SELECT content FROM conversation_messages WHERE id = '{}'",
+            m1.id
+        );
+        let stored = raw_column(&path, &sql).remove(0).unwrap();
+        assert!(stored.starts_with("xcn2:"), "content is not xcn2: {stored}");
+        let set_content = |value: &str| {
+            raw_conn(&path)
+                .execute(
+                    "UPDATE conversation_messages SET content = ?1 WHERE id = ?2",
+                    params![value, m1.id],
+                )
+                .unwrap();
+        };
+
+        // One nibble in the nonce, one in the ciphertext, one in the tag.
+        let prefix = "xcn2:".len();
+        let last = stored.len() - 1;
+        for at in [prefix, prefix + 24, last] {
+            set_content(&flip_at(&stored, at));
+            assert!(
+                db.get_thread_messages(&thread.id).await.is_err(),
+                "tampered byte at {at} was accepted"
+            );
+        }
+
+        set_content(&stored);
+        assert_eq!(
+            db.get_thread_messages(&thread.id).await.unwrap()[0].content,
+            "tamper target"
+        );
+    }
+
+    #[tokio::test]
+    async fn xcn2_malformed_envelope_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "malformed").await;
+        let thread = db.create_thread(Some("title"), None, None).await.unwrap();
+
+        let malformed = [
+            "xcn2:zz".to_string(),
+            "xcn2:abc".to_string(),
+            format!("xcn2:{}", "00".repeat(27)),
+        ];
+        for value in malformed {
+            raw_conn(&path)
+                .execute(
+                    "UPDATE conversation_threads SET title = ?1 WHERE id = ?2",
+                    params![value, thread.id],
+                )
+                .unwrap();
+            assert!(
+                db.get_thread(&thread.id).await.is_err(),
+                "malformed {value} was returned instead of failing"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn xcn1_relabel_to_xcn2_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "relabel").await;
+        let thread = db.create_thread(None, None, None).await.unwrap();
+        let m1 = db
+            .store_message(
+                &thread.id,
+                "user",
+                "relabel target",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let relabeled = legacy_xcn1(&NODE_KEY, "relabel target").replacen("xcn1:", "xcn2:", 1);
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_messages SET content = ?1 WHERE id = ?2",
+                params![relabeled, m1.id],
+            )
+            .unwrap();
+        assert!(db.get_thread_messages(&thread.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn legacy_xcn1_and_clear_rows_migrate_to_xcn2() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "mig").await;
+        db.create_schema().await.unwrap();
+        {
+            let conn = raw_conn(&path);
+            conn.execute(
+                "INSERT INTO conversation_threads (id, project_id, title, last_preview, started_at, updated_at)
+                 VALUES ('t1', 'mig', ?1, 'clear preview', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                params![legacy_xcn1(&NODE_KEY, "legacy title")],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO conversation_messages (id, thread_id, role, content, tool_calls, metadata, created_at)
+                 VALUES ('m1', 't1', 'user', ?1, 'clear tool', ?2, '2026-01-01T00:00:00Z')",
+                params![
+                    legacy_xcn1(&NODE_KEY, "legacy content"),
+                    legacy_xcn1(&NODE_KEY, "legacy meta")
+                ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO deductions (id, project_id, deduction, created_at)
+                 VALUES ('d1', 'mig', ?1, '2026-01-01T00:00:00Z')",
+                params![legacy_xcn1(&NODE_KEY, "legacy deduction")],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO beliefs (id, project_id, subject, object, proposition, created_at, updated_at)
+                 VALUES ('b1', 'mig', 'clear subject', ?1, 'clear prop', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                params![legacy_xcn1(&NODE_KEY, "legacy object")],
+            )
+            .unwrap();
+        }
+
+        // The first operation reads the plaintext and seals every legacy value.
+        let msgs = db.get_thread_messages("t1").await.unwrap();
+        assert_eq!(msgs[0].content, "legacy content");
+        assert_eq!(msgs[0].tool_calls.as_deref(), Some("clear tool"));
+        assert_eq!(msgs[0].metadata.as_deref(), Some("legacy meta"));
+        let thread = db.get_thread("t1").await.unwrap().unwrap();
+        assert_eq!(thread.title.as_deref(), Some("legacy title"));
+        assert_eq!(thread.last_preview.as_deref(), Some("clear preview"));
+        assert_eq!(
+            db.list_deductions(5).await.unwrap()[0].deduction,
+            "legacy deduction"
+        );
+        let b = db.get_belief("b1").await.unwrap().unwrap();
+        assert_eq!(b.subject, "clear subject");
+        assert_eq!(b.object.as_deref(), Some("legacy object"));
+
+        for (table, column) in SEALED_COLUMNS {
+            for v in raw_column(&path, &format!("SELECT {column} FROM {table}"))
+                .into_iter()
+                .flatten()
+            {
+                assert!(
+                    v.starts_with("xcn2:"),
+                    "{table}.{column} left unsealed: {v}"
+                );
+            }
+        }
+        assert_eq!(
+            raw_column(&path, "SELECT k FROM conv_seal_state"),
+            vec![Some("floor".to_string())]
+        );
+
+        // Reopening is a no-op: stored bytes do not change.
+        let before = sealed_snapshot(&path);
+        let reopened = node_db(&path, "mig").await;
+        assert_eq!(
+            reopened.get_thread_messages("t1").await.unwrap()[0].content,
+            "legacy content"
+        );
+        assert_eq!(sealed_snapshot(&path), before);
+    }
+
+    #[tokio::test]
+    async fn downgrade_after_floor_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "downgrade").await;
+        let thread = db.create_thread(Some("title"), None, None).await.unwrap();
+        let m1 = db
+            .store_message(&thread.id, "user", "content", None, None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(db.get_thread_messages(&thread.id).await.unwrap().len(), 1);
+
+        // A genuine legacy value for this key and row, written after the floor.
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_messages SET content = ?1 WHERE id = ?2",
+                params![legacy_xcn1(&NODE_KEY, "old content"), m1.id],
+            )
+            .unwrap();
+        assert!(db.get_thread_messages(&thread.id).await.is_err());
+
+        // Clear text written after the floor.
+        raw_conn(&path)
+            .execute(
+                "UPDATE conversation_threads SET title = 'clear title' WHERE id = ?1",
+                params![thread.id],
+            )
+            .unwrap();
+        assert!(db.get_thread(&thread.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn floor_marker_deleted_with_xcn2_rows_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "marker-del").await;
+        let thread = db
+            .create_thread(Some("sealed title"), None, None)
+            .await
+            .unwrap();
+        drop(db);
+
+        raw_conn(&path)
+            .execute_batch(&format!(
+                "DELETE FROM conv_seal_state;
+                 UPDATE conversation_threads SET title = 'injected clear' WHERE id = '{}';",
+                thread.id
+            ))
+            .unwrap();
+
+        // A fresh handle runs the floor check again; it must not migrate the injected value.
+        let fresh = node_db(&path, "marker-del").await;
+        assert!(fresh.get_thread(&thread.id).await.is_err());
+        assert_eq!(
+            raw_column(
+                &path,
+                &format!(
+                    "SELECT title FROM conversation_threads WHERE id = '{}'",
+                    thread.id
+                )
+            ),
+            vec![Some("injected clear".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn floor_marker_tampered_or_wrong_key_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "marker-tamper").await;
+        let thread = db
+            .create_thread(Some("sealed title"), None, None)
+            .await
+            .unwrap();
+        drop(db);
+
+        let marker = raw_column(&path, "SELECT v FROM conv_seal_state WHERE k = 'floor'")
+            .remove(0)
+            .unwrap();
+        let set_marker = |value: &str| {
+            raw_conn(&path)
+                .execute(
+                    "UPDATE conv_seal_state SET v = ?1 WHERE k = 'floor'",
+                    params![value],
+                )
+                .unwrap();
+        };
+        set_marker(&flip_at(&marker, 5 + 10));
+        let tampered = node_db(&path, "marker-tamper").await;
+        assert!(tampered.get_thread(&thread.id).await.is_err());
+
+        set_marker(&marker);
+        let restored = node_db(&path, "marker-tamper").await;
+        assert!(restored.get_thread(&thread.id).await.unwrap().is_some());
+
+        // Another key must not migrate or write anything.
+        let before = sealed_snapshot(&path);
+        let wrong = ConversationsDb::open_at("marker-tamper", &path)
+            .await
+            .unwrap()
+            .with_node_key([0x5B; 32]);
+        assert!(wrong.get_thread(&thread.id).await.is_err());
+        assert_eq!(sealed_snapshot(&path), before);
+    }
+
+    #[tokio::test]
+    async fn seal_floor_migration_is_atomic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "atomic").await;
+        db.create_schema().await.unwrap();
+        {
+            let conn = raw_conn(&path);
+            conn.execute_batch(
+                "INSERT INTO conversation_threads (id, project_id, title, started_at, updated_at)
+                    VALUES ('t1', 'atomic', 'clear title', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                 INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+                    VALUES ('m1', 't1', 'user', 'clear message', '2026-01-01T00:00:00Z');
+                 INSERT INTO beliefs (id, project_id, subject, created_at, updated_at)
+                    VALUES ('b1', 'atomic', 'clear subject', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                 CREATE TRIGGER reject_belief_update BEFORE UPDATE ON beliefs
+                    BEGIN SELECT RAISE(ABORT, 'update rejected'); END;",
+            )
+            .unwrap();
+        }
+
+        assert!(db.get_thread_messages("t1").await.is_err());
+        assert_eq!(
+            raw_column(&path, "SELECT title FROM conversation_threads"),
+            vec![Some("clear title".to_string())]
+        );
+        assert_eq!(
+            raw_column(&path, "SELECT content FROM conversation_messages"),
+            vec![Some("clear message".to_string())]
+        );
+        assert_eq!(
+            raw_column(&path, "SELECT subject FROM beliefs"),
+            vec![Some("clear subject".to_string())]
+        );
+        assert_eq!(
+            raw_conn(&path)
+                .query_row("SELECT COUNT(*) FROM conv_seal_state", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
     }
 }
 
