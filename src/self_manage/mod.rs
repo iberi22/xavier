@@ -1572,11 +1572,31 @@ pub trait TicketBackends {
     fn github(&self, args: &TicketCreateArgs) -> anyhow::Result<String>;
     /// Stores a Maloca support ticket and returns its id.
     fn maloca(&self, args: &TicketCreateArgs) -> String;
+    /// Whether a ticket stored by `backend` is still open; `None` when unknown.
+    fn is_open(&self, _backend: &str, _ticket_id: &str) -> Option<bool> {
+        None
+    }
+}
+
+/// A Maloca support ticket is open unless its status is terminal.
+fn support_status_is_open(status: &str) -> bool {
+    !matches!(status, "resolved" | "closed")
 }
 
 struct DefaultTicketBackends;
 
 impl TicketBackends for DefaultTicketBackends {
+    fn is_open(&self, backend: &str, ticket_id: &str) -> Option<bool> {
+        if backend != "maloca" {
+            return None;
+        }
+        crate::maloca::MalocaStore::open_default()
+            .list_support()
+            .iter()
+            .find(|t| t.id == ticket_id)
+            .map(|t| support_status_is_open(&t.status))
+    }
+
     fn github(&self, args: &TicketCreateArgs) -> anyhow::Result<String> {
         use std::process::Command;
         let mut cmd = Command::new("gh");
@@ -1692,7 +1712,7 @@ pub fn ticket_create_with(
     reg.creation_timestamps
         .retain(|&ts| now.saturating_sub(ts) < 3600);
 
-    // 1. Strict Deduplication Check
+    // 1. Deduplication Check: holds only while the earlier ticket is open.
     if let Some(id) = reg.fingerprints.get(&computed_fingerprint).cloned() {
         // Entries recorded before backends were tracked report "unknown".
         let backend = reg
@@ -1700,13 +1720,16 @@ pub fn ticket_create_with(
             .get(&computed_fingerprint)
             .cloned()
             .unwrap_or_else(|| "unknown".to_string());
-        return Ok(TicketCreateResult {
-            id,
-            url: "".into(),
-            deduplicated: true,
-            backend,
-            fallback: false,
-        });
+        // Unknown status counts as open: the conservative choice.
+        if backends.is_open(&backend, &id) != Some(false) {
+            return Ok(TicketCreateResult {
+                id,
+                url: "".into(),
+                deduplicated: true,
+                backend,
+                fallback: false,
+            });
+        }
     }
 
     // 2. Anti-Loop Rate Limit Check (max 3 tickets per hour)
@@ -1835,6 +1858,8 @@ mod ticket_create_tests {
     /// Records calls instead of reaching GitHub or the real Maloca store.
     struct FakeBackends {
         github_ok: bool,
+        /// Status reported by `is_open`; `None` models an unknown status.
+        open: std::cell::Cell<Option<bool>>,
         github_calls: std::cell::Cell<usize>,
         maloca_calls: std::cell::Cell<usize>,
     }
@@ -1843,9 +1868,14 @@ mod ticket_create_tests {
         fn new(github_ok: bool) -> Self {
             Self {
                 github_ok,
+                open: std::cell::Cell::new(None),
                 github_calls: std::cell::Cell::new(0),
                 maloca_calls: std::cell::Cell::new(0),
             }
+        }
+
+        fn set_open(&self, open: Option<bool>) {
+            self.open.set(open);
         }
     }
 
@@ -1861,7 +1891,11 @@ mod ticket_create_tests {
 
         fn maloca(&self, _args: &TicketCreateArgs) -> String {
             self.maloca_calls.set(self.maloca_calls.get() + 1);
-            "sup-fake".to_string()
+            format!("sup-fake-{}", self.maloca_calls.get())
+        }
+
+        fn is_open(&self, _backend: &str, _ticket_id: &str) -> Option<bool> {
+            self.open.get()
         }
     }
 
@@ -1913,12 +1947,96 @@ mod ticket_create_tests {
         assert_eq!(fake.maloca_calls.get(), 1);
         assert_eq!(res.backend, "maloca");
         assert!(res.fallback);
-        assert_eq!(res.id, "sup-fake");
+        assert_eq!(res.id, "sup-fake-1");
         assert!(res.url.is_empty());
 
         let again = ticket_create_with(args("fb", Some("github")), Some(&reg), &fake).unwrap();
         assert!(again.deduplicated);
         assert_eq!(again.backend, "maloca");
+    }
+
+    #[test]
+    fn ticket_open_fingerprint_dedupes() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = dir.path().join("tickets.json");
+        let fake = FakeBackends::new(true);
+        let req = || args("open-incident", Some("maloca"));
+
+        let first = ticket_create_with(req(), Some(&reg), &fake).unwrap();
+        assert!(!first.deduplicated);
+
+        fake.set_open(Some(true));
+        let again = ticket_create_with(req(), Some(&reg), &fake).unwrap();
+        assert!(again.deduplicated);
+        assert_eq!(again.id, first.id);
+        assert_eq!(fake.maloca_calls.get(), 1);
+    }
+
+    #[test]
+    fn ticket_closed_fingerprint_creates_new_ticket() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = dir.path().join("tickets.json");
+        let fake = FakeBackends::new(true);
+        let req = || args("recurring-incident", Some("maloca"));
+
+        let first = ticket_create_with(req(), Some(&reg), &fake).unwrap();
+        assert_eq!(first.id, "sup-fake-1");
+
+        // The earlier ticket is closed: the recurrence gets a fresh ticket.
+        fake.set_open(Some(false));
+        let second = ticket_create_with(req(), Some(&reg), &fake).unwrap();
+        assert!(!second.deduplicated);
+        assert_eq!(second.id, "sup-fake-2");
+        assert_eq!(fake.maloca_calls.get(), 2);
+
+        // The registry now tracks the new ticket, not the closed one.
+        let stored = load_tickets_registry_from(Some(&reg));
+        let ids: Vec<String> = stored.fingerprints.values().cloned().collect();
+        assert_eq!(ids, vec!["sup-fake-2".to_string()]);
+
+        fake.set_open(Some(true));
+        let third = ticket_create_with(req(), Some(&reg), &fake).unwrap();
+        assert!(third.deduplicated);
+        assert_eq!(third.id, "sup-fake-2");
+        assert_eq!(fake.maloca_calls.get(), 2);
+    }
+
+    #[test]
+    fn ticket_unknown_status_dedupes() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = dir.path().join("tickets.json");
+        let fake = FakeBackends::new(true);
+        let req = || args("unknown-status", Some("maloca"));
+
+        ticket_create_with(req(), Some(&reg), &fake).unwrap();
+        // `is_open` returns None (the trait default): the conservative choice dedupes.
+        let again = ticket_create_with(req(), Some(&reg), &fake).unwrap();
+        assert!(again.deduplicated);
+        assert_eq!(fake.maloca_calls.get(), 1);
+    }
+
+    #[test]
+    fn ticket_closed_recurrence_still_rate_limited() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = dir.path().join("tickets.json");
+        let fake = FakeBackends::new(true);
+
+        for title in ["rl-1", "rl-2", "rl-3"] {
+            ticket_create_with(args(title, Some("maloca")), Some(&reg), &fake).unwrap();
+        }
+
+        fake.set_open(Some(false));
+        let err = ticket_create_with(args("rl-1", Some("maloca")), Some(&reg), &fake).unwrap_err();
+        assert!(err.to_string().contains("Rate limit exceeded"));
+        assert_eq!(fake.maloca_calls.get(), 3);
+    }
+
+    #[test]
+    fn support_status_open_unless_terminal() {
+        assert!(support_status_is_open("open"));
+        assert!(support_status_is_open("in_progress"));
+        assert!(!support_status_is_open("resolved"));
+        assert!(!support_status_is_open("closed"));
     }
 
     #[test]
