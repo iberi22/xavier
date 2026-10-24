@@ -7,6 +7,7 @@
 pub mod api;
 pub mod context;
 pub mod health;
+pub mod ready_gate;
 pub mod types;
 pub mod v1;
 pub mod websocket;

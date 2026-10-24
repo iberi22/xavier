@@ -2418,11 +2418,52 @@ async fn start_http_server_inner(
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
 
+    let tls_config = if let (Ok(cert), Ok(key)) = (
+        std::env::var("XAVIER_TLS_CERT"),
+        std::env::var("XAVIER_TLS_KEY"),
+    ) {
+        info!("TLS 1.3 encryption enabled");
+        Some(RustlsConfig::from_pem_file(cert, key).await?)
+    } else {
+        None
+    };
+    let drain = shutdown_grace(std::env::var("XAVIER_SHUTDOWN_GRACE_SECS").ok().as_deref());
+    let tls_handle = tls_config
+        .as_ref()
+        .map(|_| axum_server::Handle::<std::net::SocketAddr>::new());
+    let shutdown_handle = tls_handle.clone();
+    let (stop_server, server_shutdown) = tokio::sync::oneshot::channel();
+    let (server_done, mut server_finished) = tokio::sync::oneshot::channel();
+
     let listener = TcpListener::bind(&bind_addr).await?;
     let bound_addr = listener.local_addr()?;
 
     info!("Xavier HTTP server listening on http://{}", bound_addr);
     println!("Xavier HTTP server listening on http://{}", bound_addr);
+
+    // Serve from the bind onward. Until init completes, the gate answers every request.
+    use std::net::SocketAddr;
+    let gate = xavier::server::http::ready_gate::ReadyGate::new();
+    let serve_gate = gate.clone();
+    let served = if let Some(rustls_config) = tls_config {
+        drop(listener);
+        let handle = tls_handle.expect("TLS shutdown handle");
+        tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+            axum_server::bind_rustls(bound_addr, rustls_config)
+                .handle(handle)
+                .serve(
+                    xavier::server::http::ready_gate::gated_router(serve_gate)
+                        .into_make_service_with_connect_info::<SocketAddr>(),
+                )
+                .await
+        }))
+    } else {
+        tokio_util::task::AbortOnDropHandle::new(tokio::spawn(
+            xavier::server::http::ready_gate::serve_gated(listener, serve_gate, async move {
+                let _ = server_shutdown.await;
+            }),
+        ))
+    };
 
     let general_cfg = xavier::agents::provider::ModelProviderConfig::from_env();
     if let Some(r) = general_cfg.unconfigured_reason() {
@@ -2822,26 +2863,13 @@ async fn start_http_server_inner(
         }
     });
 
-    let tls_config = if let (Ok(cert), Ok(key)) = (
-        std::env::var("XAVIER_TLS_CERT"),
-        std::env::var("XAVIER_TLS_KEY"),
-    ) {
-        info!("TLS 1.3 encryption enabled");
-        Some(RustlsConfig::from_pem_file(cert, key).await?)
-    } else {
-        None
-    };
-    let drain = shutdown_grace(std::env::var("XAVIER_SHUTDOWN_GRACE_SECS").ok().as_deref());
-    let tls_handle = tls_config
-        .as_ref()
-        .map(|_| axum_server::Handle::<std::net::SocketAddr>::new());
-    let shutdown_handle = tls_handle.clone();
-    let (stop_server, server_shutdown) = tokio::sync::oneshot::channel();
-    let (server_done, mut server_finished) = tokio::sync::oneshot::channel();
     if shutdown.is_cancelled() {
         info!("HTTP startup cancelled before serving");
         return Ok(());
     }
+    // Init is complete: from here on the gate forwards requests to the application router.
+    let opened = gate.open(app);
+    debug_assert!(opened, "readiness gate opened twice");
     let _ = serving.send(());
     let shutdown_task = tokio::spawn(async move {
         tokio::select! {
@@ -2869,23 +2897,9 @@ async fn start_http_server_inner(
         let _ = server_finished.await;
     });
 
-    use std::net::SocketAddr;
-    let server_result = if let Some(rustls_config) = tls_config {
-        let addr = listener.local_addr()?;
-        drop(listener);
-        axum_server::bind_rustls(addr, rustls_config)
-            .handle(tls_handle.expect("TLS shutdown handle"))
-            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
-            .await
-    } else {
-        axum::serve(
-            listener,
-            app.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(async move {
-            let _ = server_shutdown.await;
-        })
-        .await
+    let server_result = match served.await {
+        Ok(result) => result,
+        Err(join_error) => Err(std::io::Error::other(join_error)),
     };
     let _ = server_done.send(());
     shutdown_task.await?;

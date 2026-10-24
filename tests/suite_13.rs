@@ -50,3 +50,6 @@ mod xavier_repair_verify_wave20;
 
 #[path = "xtsp/mod.rs"]
 mod xtsp;
+
+#[path = "ready_gate_startup.rs"]
+mod ready_gate_startup;
