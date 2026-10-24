@@ -38,6 +38,8 @@ pub async fn headless_health() -> impl IntoResponse {
             "endpoint": status.llm.endpoint,
             "reachable": status.llm.reachable,
             "status": status.llm.status,
+            "configured": status.llm.configured,
+            "error": status.llm.error,
         },
         "embeddings": {
             "provider": status.embedding.provider,

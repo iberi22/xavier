@@ -2508,8 +2508,9 @@ async fn start_http_server_inner(
     let is_local_reachable = local_config.is_reachable().await
         == xavier::agents::provider::types::ProviderReachability::ConfiguredAndReachable;
 
-    // Check discrepancy
-    if is_ollama_reachable || is_local_reachable {
+    // Check discrepancy. With no LLM configured there is nothing to reconcile:
+    // an Ollama that happens to be up (e.g. for embeddings) is not "the LLM".
+    if final_status.llm.configured && (is_ollama_reachable || is_local_reachable) {
         if !final_status.llm.reachable {
             tracing::warn!("Discrepancy detected: final_status says LLM is unreachable, but direct reachability checks are successful.");
             xavier::server::alerts::SYSTEM_ALERTS.push_alert(
@@ -2557,7 +2558,9 @@ async fn start_http_server_inner(
         final_status.llm.provider,
         final_status.llm.model,
         final_status.llm.endpoint,
-        if final_status.llm.reachable {
+        if !final_status.llm.configured {
+            "not configured"
+        } else if final_status.llm.reachable {
             "reachable"
         } else {
             "unreachable"
