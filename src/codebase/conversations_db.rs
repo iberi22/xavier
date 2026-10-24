@@ -144,6 +144,8 @@ pub struct ConversationsDb {
     node_key: Option<[u8; 32]>,
     /// Set once the snapshot table exists. Created lazily, only by the snapshot calls.
     snapshot_schema_initialized: OnceCell<()>,
+    /// SHA-256 digests of the node keys whose seal floor this handle has verified.
+    floor_verified: std::sync::Mutex<Vec<[u8; 32]>>,
 }
 
 impl ConversationsDb {
@@ -163,6 +165,7 @@ impl ConversationsDb {
             disabled: false,
             node_key: None,
             snapshot_schema_initialized: OnceCell::new(),
+            floor_verified: std::sync::Mutex::new(Vec::new()),
         })
     }
 
@@ -191,6 +194,7 @@ impl ConversationsDb {
             disabled: false,
             node_key: None,
             snapshot_schema_initialized: OnceCell::new(),
+            floor_verified: std::sync::Mutex::new(Vec::new()),
         })
     }
 
@@ -204,6 +208,7 @@ impl ConversationsDb {
             disabled: true,
             node_key: None,
             snapshot_schema_initialized: OnceCell::new(),
+            floor_verified: std::sync::Mutex::new(Vec::new()),
         })
     }
 
@@ -225,6 +230,7 @@ impl ConversationsDb {
             disabled: false,
             node_key: None,
             snapshot_schema_initialized: OnceCell::new(),
+            floor_verified: std::sync::Mutex::new(Vec::new()),
         })
     }
 
@@ -250,6 +256,33 @@ impl ConversationsDb {
         Ok(at_rest::peek_record_key_with_source()
             .0
             .map_or(Sealer::None, Sealer::Node))
+    }
+
+    /// The sealer for one operation. Node-tier operations verify the seal floor
+    /// first; a handle verifies each node key once.
+    async fn ready_sealer(&self) -> Result<Sealer> {
+        use sha2::{Digest, Sha256};
+        let sealer = self.sealer()?;
+        if let Sealer::Node(key) = &sealer {
+            let fingerprint: [u8; 32] = Sha256::digest(key).into();
+            let verified = self
+                .floor_verified
+                .lock()
+                .is_ok_and(|v| v.contains(&fingerprint));
+            if !verified {
+                let key = *key;
+                let project = self.project_id.clone();
+                ConnectionManager::global()
+                    .with_conn(&self.full_project_id, move |conn| {
+                        ensure_seal_floor(conn, &key, &project)
+                    })
+                    .await?;
+                if let Ok(mut v) = self.floor_verified.lock() {
+                    v.push(fingerprint);
+                }
+            }
+        }
+        Ok(sealer)
     }
 
     fn refuse_if_disabled(&self) -> Result<()> {
@@ -339,6 +372,11 @@ impl ConversationsDb {
                     kind TEXT DEFAULT 'work'
                 );
 
+                CREATE TABLE IF NOT EXISTS conv_seal_state (
+                    k TEXT PRIMARY KEY,
+                    v TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_conversation_messages_thread_created
                     ON conversation_messages (thread_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_checkpoints_project_state_created
@@ -374,8 +412,16 @@ impl ConversationsDb {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         let pid = self.project_id.clone();
-        let sealer = self.sealer()?;
-        let title_c = sealer.seal_opt("conv.thread.title", &id, title)?;
+        let sealer = self.ready_sealer().await?;
+        let title_c = sealer.seal_opt(
+            "conv.thread.title",
+            FieldCtx {
+                project: &self.project_id,
+                parent: "",
+                row: &id,
+            },
+            title,
+        )?;
         let model_c = model.map(|s| s.to_string());
         let source_c = source.map(|s| s.to_string());
 
@@ -409,7 +455,8 @@ impl ConversationsDb {
     /// Get a thread by ID.
     pub async fn get_thread(&self, thread_id: &str) -> Result<Option<Thread>> {
         self.ensure_schema().await?;
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
+        let pid = self.project_id.clone();
         let tid = thread_id.to_string();
         ConnectionManager::global()
             .with_conn(&self.full_project_id, move |conn| {
@@ -424,10 +471,26 @@ impl ConversationsDb {
                     let id: String = row.get(0)?;
                     Ok(Some(Thread {
                         project_id: row.get(1)?,
-                        title: sealer.open_opt("conv.thread.title", &id, row.get(2)?)?,
+                        title: sealer.open_opt(
+                            "conv.thread.title",
+                            FieldCtx {
+                                project: &pid,
+                                parent: "",
+                                row: &id,
+                            },
+                            row.get(2)?,
+                        )?,
                         started_at: parse_datetime(&row.get::<_, String>(3)?),
                         updated_at: parse_datetime(&row.get::<_, String>(4)?),
-                        last_preview: sealer.open_opt("conv.thread.preview", &id, row.get(5)?)?,
+                        last_preview: sealer.open_opt(
+                            "conv.thread.preview",
+                            FieldCtx {
+                                project: &pid,
+                                parent: "",
+                                row: &id,
+                            },
+                            row.get(5)?,
+                        )?,
                         id,
                         model: row.get(6)?,
                         source: row.get(7)?,
@@ -468,7 +531,7 @@ impl ConversationsDb {
     /// List all threads for a project.
     pub async fn list_threads(&self, limit: usize) -> Result<Vec<Thread>> {
         self.ensure_schema().await?;
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
         let pid = self.project_id.clone();
         ConnectionManager::global()
             .with_conn(&self.full_project_id, move |conn| {
@@ -487,10 +550,26 @@ impl ConversationsDb {
                     let id: String = row.get(0)?;
                     results.push(Thread {
                         project_id: row.get(1)?,
-                        title: sealer.open_opt("conv.thread.title", &id, row.get(2)?)?,
+                        title: sealer.open_opt(
+                            "conv.thread.title",
+                            FieldCtx {
+                                project: &pid,
+                                parent: "",
+                                row: &id,
+                            },
+                            row.get(2)?,
+                        )?,
                         started_at: parse_datetime(&row.get::<_, String>(3)?),
                         updated_at: parse_datetime(&row.get::<_, String>(4)?),
-                        last_preview: sealer.open_opt("conv.thread.preview", &id, row.get(5)?)?,
+                        last_preview: sealer.open_opt(
+                            "conv.thread.preview",
+                            FieldCtx {
+                                project: &pid,
+                                parent: "",
+                                row: &id,
+                            },
+                            row.get(5)?,
+                        )?,
                         id,
                         model: row.get(6)?,
                         source: row.get(7)?,
@@ -524,12 +603,17 @@ impl ConversationsDb {
 
         let thread_id_c = thread_id.to_string();
         let role_c = role.to_string();
-        let sealer = self.sealer()?;
-        let content_c = sealer.seal("conv.msg.content", &id, content)?;
-        let tool_calls_c = sealer.seal_opt("conv.msg.tool_calls", &id, tool_calls)?;
-        let openui_lang_c = sealer.seal_opt("conv.msg.openui_lang", &id, openui_lang)?;
-        let xui_json_c = sealer.seal_opt("conv.msg.xui_json", &id, xui_json)?;
-        let metadata_c = sealer.seal_opt("conv.msg.metadata", &id, metadata)?;
+        let sealer = self.ready_sealer().await?;
+        let ctx = FieldCtx {
+            project: &self.project_id,
+            parent: thread_id,
+            row: &id,
+        };
+        let content_c = sealer.seal("conv.msg.content", ctx, content)?;
+        let tool_calls_c = sealer.seal_opt("conv.msg.tool_calls", ctx, tool_calls)?;
+        let openui_lang_c = sealer.seal_opt("conv.msg.openui_lang", ctx, openui_lang)?;
+        let xui_json_c = sealer.seal_opt("conv.msg.xui_json", ctx, xui_json)?;
+        let metadata_c = sealer.seal_opt("conv.msg.metadata", ctx, metadata)?;
 
         let id_for_return = id.clone();
         let now_c = now.clone();
@@ -576,9 +660,16 @@ impl ConversationsDb {
     pub async fn update_last_preview(&self, thread_id: &str, preview: &str) -> Result<()> {
         self.ensure_schema().await?;
         let thread_id_c = thread_id.to_string();
-        let preview_c = self
-            .sealer()?
-            .seal("conv.thread.preview", thread_id, preview)?;
+        let sealer = self.ready_sealer().await?;
+        let preview_c = sealer.seal(
+            "conv.thread.preview",
+            FieldCtx {
+                project: &self.project_id,
+                parent: "",
+                row: thread_id,
+            },
+            preview,
+        )?;
         let now_c = Utc::now().to_rfc3339();
 
         ConnectionManager::global()
@@ -597,7 +688,8 @@ impl ConversationsDb {
     pub async fn get_thread_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
         self.ensure_schema().await?;
         let tid = thread_id.to_string();
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
+        let pid = self.project_id.clone();
         ConnectionManager::global()
             .with_conn(&self.full_project_id, move |conn| {
                 let mut stmt = conn.prepare(SQL_THREAD_MESSAGES)?;
@@ -610,11 +702,51 @@ impl ConversationsDb {
                     results.push(Message {
                         thread_id: row.get(1)?,
                         role: row.get(2)?,
-                        content: sealer.open("conv.msg.content", &id, row.get(3)?)?,
-                        tool_calls: sealer.open_opt("conv.msg.tool_calls", &id, row.get(4)?)?,
-                        openui_lang: sealer.open_opt("conv.msg.openui_lang", &id, row.get(5)?)?,
-                        xui_json: sealer.open_opt("conv.msg.xui_json", &id, row.get(6)?)?,
-                        metadata: sealer.open_opt("conv.msg.metadata", &id, row.get(7)?)?,
+                        content: sealer.open(
+                            "conv.msg.content",
+                            FieldCtx {
+                                project: &pid,
+                                parent: &tid,
+                                row: &id,
+                            },
+                            row.get(3)?,
+                        )?,
+                        tool_calls: sealer.open_opt(
+                            "conv.msg.tool_calls",
+                            FieldCtx {
+                                project: &pid,
+                                parent: &tid,
+                                row: &id,
+                            },
+                            row.get(4)?,
+                        )?,
+                        openui_lang: sealer.open_opt(
+                            "conv.msg.openui_lang",
+                            FieldCtx {
+                                project: &pid,
+                                parent: &tid,
+                                row: &id,
+                            },
+                            row.get(5)?,
+                        )?,
+                        xui_json: sealer.open_opt(
+                            "conv.msg.xui_json",
+                            FieldCtx {
+                                project: &pid,
+                                parent: &tid,
+                                row: &id,
+                            },
+                            row.get(6)?,
+                        )?,
+                        metadata: sealer.open_opt(
+                            "conv.msg.metadata",
+                            FieldCtx {
+                                project: &pid,
+                                parent: &tid,
+                                row: &id,
+                            },
+                            row.get(7)?,
+                        )?,
                         id,
                         created_at: parse_datetime(&row.get::<_, String>(8)?),
                         tokens: row.get(9)?,
@@ -656,9 +788,16 @@ impl ConversationsDb {
         let now = Utc::now().to_rfc3339();
 
         let pid = self.project_id.clone();
-        let deduction_c = self
-            .sealer()?
-            .seal("conv.deduction.text", &id, deduction_text)?;
+        let sealer = self.ready_sealer().await?;
+        let deduction_c = sealer.seal(
+            "conv.deduction.text",
+            FieldCtx {
+                project: &self.project_id,
+                parent: "",
+                row: &id,
+            },
+            deduction_text,
+        )?;
         let category_c = category.map(|s| s.to_string());
         let source_thread_c = source_thread.map(|s| s.to_string());
 
@@ -689,7 +828,7 @@ impl ConversationsDb {
     /// List deductions for this project.
     pub async fn list_deductions(&self, limit: usize) -> Result<Vec<Deduction>> {
         self.ensure_schema().await?;
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
         let pid = self.project_id.clone();
         ConnectionManager::global()
             .with_conn(&self.full_project_id, move |conn| {
@@ -703,7 +842,15 @@ impl ConversationsDb {
                     results.push(Deduction {
                         project_id: row.get(1)?,
                         source_thread: row.get(2)?,
-                        deduction: sealer.open("conv.deduction.text", &id, row.get(3)?)?,
+                        deduction: sealer.open(
+                            "conv.deduction.text",
+                            FieldCtx {
+                                project: &pid,
+                                parent: "",
+                                row: &id,
+                            },
+                            row.get(3)?,
+                        )?,
                         id,
                         confidence: row.get(4)?,
                         created_at: parse_datetime(&row.get::<_, String>(5)?),
@@ -738,7 +885,7 @@ impl ConversationsDb {
         let now = Utc::now().to_rfc3339();
 
         let pid = self.project_id.clone();
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
         let subject_c = subject.to_string();
         let relation_c = relation.map(|s| s.to_string());
         let object_c = object.map(|s| s.to_string());
@@ -758,15 +905,15 @@ impl ConversationsDb {
                 let mut rows = stmt.query(params![pid.clone()])?;
                 while let Some(row) = rows.next()? {
                     let rid: String = row.get(0)?;
-                    let subj = sealer.open("conv.belief.subject", &rid, row.get(1)?)?;
+                    let subj = sealer.open("conv.belief.subject", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(1)?)?;
                     if subj != subject_c {
                         continue;
                     }
                     let matched = if let (Some(rel), Some(obj)) = (&relation_c, &object_c) {
-                        sealer.open_opt("conv.belief.relation", &rid, row.get(2)?)?.as_deref() == Some(rel.as_str())
-                            && sealer.open_opt("conv.belief.object", &rid, row.get(3)?)?.as_deref() == Some(obj.as_str())
+                        sealer.open_opt("conv.belief.relation", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(2)?)?.as_deref() == Some(rel.as_str())
+                            && sealer.open_opt("conv.belief.object", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(3)?)?.as_deref() == Some(obj.as_str())
                     } else if let Some(prop) = &proposition_c {
-                        sealer.open_opt("conv.belief.proposition", &rid, row.get(4)?)?.as_deref() == Some(prop.as_str())
+                        sealer.open_opt("conv.belief.proposition", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(4)?)?.as_deref() == Some(prop.as_str())
                     } else {
                         true
                     };
@@ -779,10 +926,10 @@ impl ConversationsDb {
 
             match existing_id {
                 Some(id) => {
-                    let subject_sealed = sealer.seal("conv.belief.subject", &id, &subject_c)?;
-                    let relation_c = sealer.seal_opt("conv.belief.relation", &id, relation_c.as_deref())?;
-                    let object_c = sealer.seal_opt("conv.belief.object", &id, object_c.as_deref())?;
-                    let proposition_c = sealer.seal_opt("conv.belief.proposition", &id, proposition_c.as_deref())?;
+                    let subject_sealed = sealer.seal("conv.belief.subject", FieldCtx { project: &pid, parent: "", row: &id }, &subject_c)?;
+                    let relation_c = sealer.seal_opt("conv.belief.relation", FieldCtx { project: &pid, parent: "", row: &id }, relation_c.as_deref())?;
+                    let object_c = sealer.seal_opt("conv.belief.object", FieldCtx { project: &pid, parent: "", row: &id }, object_c.as_deref())?;
+                    let proposition_c = sealer.seal_opt("conv.belief.proposition", FieldCtx { project: &pid, parent: "", row: &id }, proposition_c.as_deref())?;
                     conn.execute(
                         "UPDATE beliefs SET relation = ?1, object = ?2, proposition = ?3, confidence = ?4, \
                          weight = ?5, source = ?6, provenance_id = ?7, contradicts_id = ?8, updated_at = ?9, subject = ?11 WHERE id = ?10",
@@ -796,10 +943,10 @@ impl ConversationsDb {
                 }
                 None => {
                     let new_id = Uuid::new_v4().to_string();
-                    let subject_c = sealer.seal("conv.belief.subject", &new_id, &subject_c)?;
-                    let relation_c = sealer.seal_opt("conv.belief.relation", &new_id, relation_c.as_deref())?;
-                    let object_c = sealer.seal_opt("conv.belief.object", &new_id, object_c.as_deref())?;
-                    let proposition_c = sealer.seal_opt("conv.belief.proposition", &new_id, proposition_c.as_deref())?;
+                    let subject_c = sealer.seal("conv.belief.subject", FieldCtx { project: &pid, parent: "", row: &new_id }, &subject_c)?;
+                    let relation_c = sealer.seal_opt("conv.belief.relation", FieldCtx { project: &pid, parent: "", row: &new_id }, relation_c.as_deref())?;
+                    let object_c = sealer.seal_opt("conv.belief.object", FieldCtx { project: &pid, parent: "", row: &new_id }, object_c.as_deref())?;
+                    let proposition_c = sealer.seal_opt("conv.belief.proposition", FieldCtx { project: &pid, parent: "", row: &new_id }, proposition_c.as_deref())?;
                     conn.execute(
                         "INSERT INTO beliefs (id, project_id, subject, relation, object, proposition, \
                          confidence, weight, source, provenance_id, contradicts_id, created_at, updated_at)
@@ -823,7 +970,8 @@ impl ConversationsDb {
     pub async fn get_belief(&self, id: &str) -> Result<Option<Belief>> {
         self.ensure_schema().await?;
         let bid = id.to_string();
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
+        let pid = self.project_id.clone();
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, project_id, subject, relation, object, proposition, confidence, weight, source, provenance_id, contradicts_id, created_at, updated_at
@@ -836,10 +984,10 @@ impl ConversationsDb {
                 let rid: String = row.get(0)?;
                 Ok(Some(Belief {
                     project_id: row.get(1)?,
-                    subject: sealer.open("conv.belief.subject", &rid, row.get(2)?)?,
-                    relation: sealer.open_opt("conv.belief.relation", &rid, row.get(3)?)?,
-                    object: sealer.open_opt("conv.belief.object", &rid, row.get(4)?)?,
-                    proposition: sealer.open_opt("conv.belief.proposition", &rid, row.get(5)?)?,
+                    subject: sealer.open("conv.belief.subject", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(2)?)?,
+                    relation: sealer.open_opt("conv.belief.relation", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(3)?)?,
+                    object: sealer.open_opt("conv.belief.object", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(4)?)?,
+                    proposition: sealer.open_opt("conv.belief.proposition", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(5)?)?,
                     id: rid,
                     confidence: row.get(6)?,
                     weight: row.get(7)?,
@@ -858,7 +1006,7 @@ impl ConversationsDb {
     /// List all beliefs for this project.
     pub async fn list_beliefs(&self, limit: usize) -> Result<Vec<Belief>> {
         self.ensure_schema().await?;
-        let sealer = self.sealer()?;
+        let sealer = self.ready_sealer().await?;
         let pid = self.project_id.clone();
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             let mut stmt = conn.prepare(
@@ -873,10 +1021,10 @@ impl ConversationsDb {
                 let rid: String = row.get(0)?;
                 results.push(Belief {
                     project_id: row.get(1)?,
-                    subject: sealer.open("conv.belief.subject", &rid, row.get(2)?)?,
-                    relation: sealer.open_opt("conv.belief.relation", &rid, row.get(3)?)?,
-                    object: sealer.open_opt("conv.belief.object", &rid, row.get(4)?)?,
-                    proposition: sealer.open_opt("conv.belief.proposition", &rid, row.get(5)?)?,
+                    subject: sealer.open("conv.belief.subject", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(2)?)?,
+                    relation: sealer.open_opt("conv.belief.relation", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(3)?)?,
+                    object: sealer.open_opt("conv.belief.object", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(4)?)?,
+                    proposition: sealer.open_opt("conv.belief.proposition", FieldCtx { project: &pid, parent: "", row: &rid }, row.get(5)?)?,
                     id: rid,
                     confidence: row.get(6)?, weight: row.get(7)?,
                     source: row.get(8)?, provenance_id: row.get(9)?,
@@ -1039,12 +1187,28 @@ impl ConversationsDb {
 
             let id_c = id.clone();
             let pid = self.project_id.clone();
-            let sealer = self.sealer()?;
-            let title_c = sealer.seal_opt("conv.thread.title", &id, title.as_deref())?;
+            let sealer = self.ready_sealer().await?;
+            let title_c = sealer.seal_opt(
+                "conv.thread.title",
+                FieldCtx {
+                    project: &pid,
+                    parent: "",
+                    row: &id,
+                },
+                title.as_deref(),
+            )?;
+            let msg_project = pid.clone();
             let started_at_c = started_at.clone();
             let updated_at_c = updated_at.clone();
-            let last_preview_c =
-                sealer.seal_opt("conv.thread.preview", &id, last_preview.as_deref())?;
+            let last_preview_c = sealer.seal_opt(
+                "conv.thread.preview",
+                FieldCtx {
+                    project: &pid,
+                    parent: "",
+                    row: &id,
+                },
+                last_preview.as_deref(),
+            )?;
             let thread_data_clone = thread_data.clone();
 
             ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
@@ -1063,10 +1227,15 @@ impl ConversationsDb {
                         let xui_json = msg["xui_json"].as_str();
                         let openui_lang = msg["openui_lang"].as_str();
                         let metadata = msg["metadata"].to_string();
-                        let mcontent = sealer.seal("conv.msg.content", &msg_id, mcontent)?;
-                        let xui_json = sealer.seal_opt("conv.msg.xui_json", &msg_id, xui_json)?;
-                        let openui_lang = sealer.seal_opt("conv.msg.openui_lang", &msg_id, openui_lang)?;
-                        let metadata = sealer.seal("conv.msg.metadata", &msg_id, &metadata)?;
+                        let ctx = FieldCtx {
+                            project: &msg_project,
+                            parent: &id_c,
+                            row: &msg_id,
+                        };
+                        let mcontent = sealer.seal("conv.msg.content", ctx, mcontent)?;
+                        let xui_json = sealer.seal_opt("conv.msg.xui_json", ctx, xui_json)?;
+                        let openui_lang = sealer.seal_opt("conv.msg.openui_lang", ctx, openui_lang)?;
+                        let metadata = sealer.seal("conv.msg.metadata", ctx, &metadata)?;
 
                         conn.execute(
                             "INSERT INTO conversation_messages (id, thread_id, role, content, xui_json, openui_lang, metadata, created_at)
@@ -1094,84 +1263,198 @@ impl ConversationsDb {
             disabled: false,
             node_key: None,
             snapshot_schema_initialized: OnceCell::new(),
+            floor_verified: std::sync::Mutex::new(Vec::new()),
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Encryption at rest (legacy clear rows stay readable)
+// Encryption at rest
 // ---------------------------------------------------------------------------
 
-const NODE_SEAL_PREFIX: &str = "xcn1:";
+/// Node-tier envelope: `xcn2:` + hex(nonce ‖ ct ‖ tag). The AD binds the row context.
+const NODE_SEAL_PREFIX: &str = "xcn2:";
+/// Node-tier envelope from before row binding (no AD). Read only by the seal floor.
+const LEGACY_NODE_SEAL_PREFIX: &str = "xcn1:";
+const FIELD_AD_LABEL: &str = "xavier-conv-field";
+const FIELD_AD_VERSION: &str = "2";
+/// Kind and value of the seal floor marker (`conv_seal_state`, key `floor`).
+const FLOOR_KIND: &str = "conv.meta.floor";
+const FLOOR_VALUE: &str = "2";
+/// True when any sealed column of any table already holds an `xcn2:` value.
+const SQL_ANY_NODE_SEALED: &str = "SELECT
+    EXISTS(SELECT 1 FROM conversation_threads WHERE title GLOB 'xcn2:*' OR last_preview GLOB 'xcn2:*')
+    OR EXISTS(SELECT 1 FROM conversation_messages WHERE content GLOB 'xcn2:*' OR tool_calls GLOB 'xcn2:*'
+        OR openui_lang GLOB 'xcn2:*' OR xui_json GLOB 'xcn2:*' OR metadata GLOB 'xcn2:*')
+    OR EXISTS(SELECT 1 FROM deductions WHERE deduction GLOB 'xcn2:*')
+    OR EXISTS(SELECT 1 FROM beliefs WHERE subject GLOB 'xcn2:*' OR relation GLOB 'xcn2:*'
+        OR object GLOB 'xcn2:*' OR proposition GLOB 'xcn2:*')";
+
+/// Row context bound into every node-tier seal. Fixed for the life of a row:
+/// the handle's trusted project, the parent row (the thread for messages, empty
+/// for top-level rows) and the row id.
+#[derive(Clone, Copy)]
+struct FieldCtx<'a> {
+    project: &'a str,
+    parent: &'a str,
+    row: &'a str,
+}
 
 /// Key material used to seal text columns.
 #[derive(Clone)]
 enum Sealer {
     /// Default-space data key (`xr1:` envelope, AD binds column kind + row id).
     Dek(crate::espacio::keys::KeyHandle),
-    /// Node record key (`xcn1:` envelope), used before a keystore exists.
+    /// Node record key (`xcn2:` envelope), used before a keystore exists.
     Node([u8; 32]),
     /// No key available: rows are written as before (clear).
     None,
 }
 
-fn is_node_sealed(v: &str) -> bool {
-    v.strip_prefix(NODE_SEAL_PREFIX).is_some_and(|b| {
+fn is_legacy_node_sealed(v: &str) -> bool {
+    v.strip_prefix(LEGACY_NODE_SEAL_PREFIX).is_some_and(|b| {
         b.len() >= 56 && b.len() % 2 == 0 && b.bytes().all(|c| c.is_ascii_hexdigit())
     })
 }
 
+/// Associated data fields of a node-tier field: label, version, tier, project,
+/// column kind, parent and row id. Framed by `keys::seal_with_ad`.
+fn field_ad_fields<'a>(kind: &'a str, ctx: FieldCtx<'a>) -> [&'a [u8]; 7] {
+    [
+        FIELD_AD_LABEL.as_bytes(),
+        FIELD_AD_VERSION.as_bytes(),
+        b"node",
+        ctx.project.as_bytes(),
+        kind.as_bytes(),
+        ctx.parent.as_bytes(),
+        ctx.row.as_bytes(),
+    ]
+}
+
+fn seal_node(key: &[u8; 32], kind: &str, ctx: FieldCtx<'_>, plain: &str) -> Result<String> {
+    let raw =
+        crate::espacio::keys::seal_with_ad(key, &field_ad_fields(kind, ctx), plain.as_bytes())?;
+    Ok(format!(
+        "{NODE_SEAL_PREFIX}{}",
+        crate::crypto::hex_encode(raw)
+    ))
+}
+
+/// Open an `xcn2:` value. A malformed envelope, or one that does not authenticate
+/// for this kind and row context, is an error. It is never returned as clear text.
+fn open_node(key: &[u8; 32], kind: &str, ctx: FieldCtx<'_>, stored: &str) -> Result<String> {
+    let body = stored
+        .strip_prefix(NODE_SEAL_PREFIX)
+        .ok_or_else(|| anyhow::anyhow!("conversation row is corrupt"))?;
+    let well_formed = body.len() >= 56
+        && body.len() % 2 == 0
+        && body.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'));
+    anyhow::ensure!(well_formed, "conversation row is corrupt");
+    let raw = crate::crypto::hex_decode(body)
+        .map_err(|e| anyhow::anyhow!("conversation row is corrupt: {e}"))?;
+    let pt = crate::espacio::keys::open_with_ad(key, &field_ad_fields(kind, ctx), &raw)
+        .map_err(|_| anyhow::anyhow!("conversation row failed authentication"))?;
+    String::from_utf8(pt.to_vec()).map_err(|_| anyhow::anyhow!("row is not valid UTF-8"))
+}
+
+/// Open an `xcn1:` value (no AD). Only the seal floor migration reads these.
+fn open_legacy_node(key: &[u8; 32], stored: &str) -> Result<String> {
+    let raw = crate::crypto::hex_decode(&stored[LEGACY_NODE_SEAL_PREFIX.len()..])
+        .map_err(|e| anyhow::anyhow!("conversation row is corrupt: {e}"))?;
+    let pt = crate::crypto::encryption::aes_decrypt(&raw, key)
+        .map_err(|e| anyhow::anyhow!("conversation row failed authentication: {e}"))?;
+    String::from_utf8(pt).map_err(|_| anyhow::anyhow!("row is not valid UTF-8"))
+}
+
+/// Seal a legacy or clear value for the floor migration. `xr1:` and `xcn2:` values
+/// are already valid and return `None`.
+fn reseal_legacy(
+    key: &[u8; 32],
+    kind: &str,
+    ctx: FieldCtx<'_>,
+    stored: Option<&str>,
+) -> Result<Option<String>> {
+    let Some(stored) = stored else {
+        return Ok(None);
+    };
+    if crate::espacio::keys::looks_encrypted(stored) || stored.starts_with(NODE_SEAL_PREFIX) {
+        return Ok(None);
+    }
+    let plain = if is_legacy_node_sealed(stored) {
+        open_legacy_node(key, stored)?
+    } else {
+        stored.to_string()
+    };
+    seal_node(key, kind, ctx, &plain).map(Some)
+}
+
 impl Sealer {
-    fn seal(&self, kind: &str, id: &str, plain: &str) -> Result<String> {
+    fn seal(&self, kind: &str, ctx: FieldCtx<'_>, plain: &str) -> Result<String> {
         match self {
             Sealer::Dek(k) => {
-                k.seal_record(crate::espacio::keys::DEFAULT_SPACE_ID, kind, id, plain)
+                k.seal_record(crate::espacio::keys::DEFAULT_SPACE_ID, kind, ctx.row, plain)
             }
-            Sealer::Node(key) => {
-                let nonce = crate::crypto::encryption::NonceBytes::generate();
-                let ct = crate::crypto::encryption::aes_encrypt(plain.as_bytes(), key, &nonce)
-                    .map_err(|e| anyhow::anyhow!("conversation seal failed: {e}"))?;
-                Ok(format!(
-                    "{NODE_SEAL_PREFIX}{}",
-                    crate::crypto::hex_encode(ct)
-                ))
-            }
+            Sealer::Node(key) => seal_node(key, kind, ctx, plain),
             Sealer::None => Ok(plain.to_string()),
         }
     }
 
-    fn seal_opt(&self, kind: &str, id: &str, plain: Option<&str>) -> Result<Option<String>> {
-        plain.map(|p| self.seal(kind, id, p)).transpose()
+    fn seal_opt(
+        &self,
+        kind: &str,
+        ctx: FieldCtx<'_>,
+        plain: Option<&str>,
+    ) -> Result<Option<String>> {
+        plain.map(|p| self.seal(kind, ctx, p)).transpose()
     }
 
-    /// Open a stored value. Values without a seal envelope are legacy clear rows.
-    fn open(&self, kind: &str, id: &str, stored: String) -> Result<String> {
+    /// Node key for reading `xcn2:` values: this sealer's own, else the node's.
+    fn read_node_key(&self) -> Result<[u8; 32]> {
+        use crate::memory::sqlite_vec_store::at_rest;
+        match self {
+            Sealer::Node(k) => Ok(*k),
+            _ => at_rest::peek_record_key_with_source()
+                .0
+                .ok_or_else(|| anyhow::anyhow!("sealed conversation row but no node key")),
+        }
+    }
+
+    /// Open a stored value. `xr1:` rows open under the default-space key and
+    /// `xcn2:` rows under the node key. Under the node tier, a legacy or clear
+    /// value is an error: the seal floor has already converted them.
+    fn open(&self, kind: &str, ctx: FieldCtx<'_>, stored: String) -> Result<String> {
         use crate::memory::sqlite_vec_store::at_rest;
         if crate::espacio::keys::looks_encrypted(&stored) {
             let dek = match self {
                 Sealer::Dek(k) => k.clone(),
                 _ => at_rest::default_space_key()?,
             };
-            return dek.open_record(crate::espacio::keys::DEFAULT_SPACE_ID, kind, id, &stored);
+            return dek.open_record(
+                crate::espacio::keys::DEFAULT_SPACE_ID,
+                kind,
+                ctx.row,
+                &stored,
+            );
         }
-        if is_node_sealed(&stored) {
-            let key = match self {
-                Sealer::Node(k) => *k,
-                _ => at_rest::peek_record_key_with_source()
-                    .0
-                    .ok_or_else(|| anyhow::anyhow!("sealed conversation row but no node key"))?,
-            };
-            let raw = crate::crypto::hex_decode(&stored[NODE_SEAL_PREFIX.len()..])
-                .map_err(|e| anyhow::anyhow!("conversation row is corrupt: {e}"))?;
-            let pt = crate::crypto::encryption::aes_decrypt(&raw, &key)
-                .map_err(|e| anyhow::anyhow!("conversation row failed authentication: {e}"))?;
-            return String::from_utf8(pt).map_err(|_| anyhow::anyhow!("row is not valid UTF-8"));
+        if stored.starts_with(NODE_SEAL_PREFIX) {
+            return open_node(&self.read_node_key()?, kind, ctx, &stored);
         }
-        Ok(stored)
+        match self {
+            Sealer::Node(_) => anyhow::bail!("legacy conversation value after seal floor"),
+            _ if is_legacy_node_sealed(&stored) => {
+                open_legacy_node(&self.read_node_key()?, &stored)
+            }
+            _ => Ok(stored),
+        }
     }
 
-    fn open_opt(&self, kind: &str, id: &str, stored: Option<String>) -> Result<Option<String>> {
-        stored.map(|s| self.open(kind, id, s)).transpose()
+    fn open_opt(
+        &self,
+        kind: &str,
+        ctx: FieldCtx<'_>,
+        stored: Option<String>,
+    ) -> Result<Option<String>> {
+        stored.map(|s| self.open(kind, ctx, s)).transpose()
     }
 }
 
@@ -1551,6 +1834,26 @@ fn open_snapshot(
     }
 }
 
+/// Seal floor for node-tier data, run once per file and node key. It runs in one
+/// `BEGIN IMMEDIATE` transaction, so a concurrent process sees the marker or
+/// nothing. Any error rolls the whole pass back.
+fn ensure_seal_floor(conn: &Connection, key: &[u8; 32], handle_project: &str) -> Result<()> {
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    match seal_floor_in_tx(conn, key, handle_project) {
+        Ok(()) => {
+            if let Err(e) = conn.execute_batch("COMMIT") {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(e).context("failed to commit seal floor");
+            }
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
+}
+
 /// Snapshot bodies: read the session's messages in order, opened with the
 /// policy's tier. `Err` is a snapshot-level refusal; the outer `Result` is
 /// the database. Early exit once the running total passes the body bound.
@@ -1571,7 +1874,12 @@ fn read_snapshot_messages(
         let id: String = row.get(0)?;
         let role: String = row.get(1)?;
         let stored: String = row.get(2)?;
-        let Ok(content) = sealer.open("conv.msg.content", &id, stored) else {
+        let ctx = FieldCtx {
+            project: &scope.project_id,
+            parent: &scope.session_id,
+            row: &id,
+        };
+        let Ok(content) = sealer.open("conv.msg.content", ctx, stored) else {
             return Ok(Err(SnapshotError::SourceUnreadable));
         };
         total += id.len() + role.len() + content.len();
@@ -1744,6 +2052,8 @@ impl ConversationsDb {
         let cid = Uuid::new_v4().to_string();
         self.ensure_schema().await.map_err(db_err)?;
         self.ensure_snapshot_schema().await?;
+        // The capture opens node-tier messages, so the seal floor must hold first.
+        self.ready_sealer().await.map_err(db_err)?;
 
         let (scope, name) = (scope.clone(), name.map(str::to_string));
         let (pool, cid_c) = (self.full_project_id.clone(), cid.clone());
@@ -1815,6 +2125,202 @@ impl ConversationsDb {
             tier: policy.tier(),
         })
     }
+}
+
+/// A legacy value re-sealed by the floor migration, applied after the scan.
+struct PendingReseal {
+    table: &'static str,
+    column: &'static str,
+    row_id: String,
+    sealed: String,
+}
+
+fn push_reseal(
+    out: &mut Vec<PendingReseal>,
+    table: &'static str,
+    column: &'static str,
+    row_id: &str,
+    sealed: Option<String>,
+) {
+    if let Some(sealed) = sealed {
+        out.push(PendingReseal {
+            table,
+            column,
+            row_id: row_id.to_string(),
+            sealed,
+        });
+    }
+}
+
+fn seal_floor_in_tx(conn: &Connection, key: &[u8; 32], handle_project: &str) -> Result<()> {
+    let floor_ctx = FieldCtx {
+        project: "",
+        parent: "",
+        row: "floor",
+    };
+    let marker: Option<String> = conn
+        .query_row("SELECT v FROM conv_seal_state WHERE k = 'floor'", [], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    if let Some(sealed) = marker {
+        let authentic =
+            open_node(key, FLOOR_KIND, floor_ctx, &sealed).is_ok_and(|v| v == FLOOR_VALUE);
+        anyhow::ensure!(authentic, "seal floor marker failed authentication");
+        return Ok(());
+    }
+    // Without a marker, `xcn2:` values mean the marker was removed. Refuse, so that
+    // legacy values cannot be written back in and laundered as authentic.
+    let node_sealed: bool = conn.query_row(SQL_ANY_NODE_SEALED, [], |r| r.get(0))?;
+    anyhow::ensure!(!node_sealed, "seal floor marker missing");
+
+    let mut pending = Vec::new();
+    queue_legacy_reseals(conn, key, handle_project, &mut pending)?;
+    for p in &pending {
+        conn.execute(
+            &format!("UPDATE {} SET {} = ?1 WHERE id = ?2", p.table, p.column),
+            params![p.sealed, p.row_id],
+        )?;
+    }
+    let marker = seal_node(key, FLOOR_KIND, floor_ctx, FLOOR_VALUE)?;
+    conn.execute(
+        "INSERT INTO conv_seal_state (k, v) VALUES ('floor', ?1)",
+        params![marker],
+    )?;
+    Ok(())
+}
+
+/// Scan every sealed column and queue the legacy values for re-sealing under their
+/// row context. A row's project is its own `project_id`, or the handle's project
+/// when that is NULL. A message's project is its thread's project.
+fn queue_legacy_reseals(
+    conn: &Connection,
+    key: &[u8; 32],
+    handle_project: &str,
+    out: &mut Vec<PendingReseal>,
+) -> Result<()> {
+    {
+        let mut stmt =
+            conn.prepare("SELECT id, project_id, title, last_preview FROM conversation_threads")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, project, title, preview) = row?;
+            let project = project.unwrap_or_else(|| handle_project.to_string());
+            let ctx = FieldCtx {
+                project: &project,
+                parent: "",
+                row: &id,
+            };
+            let title = reseal_legacy(key, "conv.thread.title", ctx, title.as_deref())?;
+            push_reseal(out, "conversation_threads", "title", &id, title);
+            let preview = reseal_legacy(key, "conv.thread.preview", ctx, preview.as_deref())?;
+            push_reseal(out, "conversation_threads", "last_preview", &id, preview);
+        }
+    }
+    {
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.thread_id, t.project_id, m.content, m.tool_calls,
+                    m.openui_lang, m.xui_json, m.metadata
+             FROM conversation_messages m
+             LEFT JOIN conversation_threads t ON t.id = m.thread_id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<String>>(6)?,
+                r.get::<_, Option<String>>(7)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, thread, project, content, tool_calls, openui_lang, xui_json, metadata) = row?;
+            let project = project.unwrap_or_else(|| handle_project.to_string());
+            let ctx = FieldCtx {
+                project: &project,
+                parent: &thread,
+                row: &id,
+            };
+            let table = "conversation_messages";
+            let content = reseal_legacy(key, "conv.msg.content", ctx, Some(&content))?;
+            push_reseal(out, table, "content", &id, content);
+            let tool_calls = reseal_legacy(key, "conv.msg.tool_calls", ctx, tool_calls.as_deref())?;
+            push_reseal(out, table, "tool_calls", &id, tool_calls);
+            let openui_lang =
+                reseal_legacy(key, "conv.msg.openui_lang", ctx, openui_lang.as_deref())?;
+            push_reseal(out, table, "openui_lang", &id, openui_lang);
+            let xui_json = reseal_legacy(key, "conv.msg.xui_json", ctx, xui_json.as_deref())?;
+            push_reseal(out, table, "xui_json", &id, xui_json);
+            let metadata = reseal_legacy(key, "conv.msg.metadata", ctx, metadata.as_deref())?;
+            push_reseal(out, table, "metadata", &id, metadata);
+        }
+    }
+    {
+        let mut stmt = conn.prepare("SELECT id, project_id, deduction FROM deductions")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, project, text) = row?;
+            let project = project.unwrap_or_else(|| handle_project.to_string());
+            let ctx = FieldCtx {
+                project: &project,
+                parent: "",
+                row: &id,
+            };
+            let text = reseal_legacy(key, "conv.deduction.text", ctx, Some(&text))?;
+            push_reseal(out, "deductions", "deduction", &id, text);
+        }
+    }
+    {
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, subject, relation, object, proposition FROM beliefs",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, Option<String>>(5)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, project, subject, relation, object, proposition) = row?;
+            let project = project.unwrap_or_else(|| handle_project.to_string());
+            let ctx = FieldCtx {
+                project: &project,
+                parent: "",
+                row: &id,
+            };
+            let table = "beliefs";
+            let subject = reseal_legacy(key, "conv.belief.subject", ctx, Some(&subject))?;
+            push_reseal(out, table, "subject", &id, subject);
+            let relation = reseal_legacy(key, "conv.belief.relation", ctx, relation.as_deref())?;
+            push_reseal(out, table, "relation", &id, relation);
+            let object = reseal_legacy(key, "conv.belief.object", ctx, object.as_deref())?;
+            push_reseal(out, table, "object", &id, object);
+            let proposition =
+                reseal_legacy(key, "conv.belief.proposition", ctx, proposition.as_deref())?;
+            push_reseal(out, table, "proposition", &id, proposition);
+        }
+    }
+    Ok(())
 }
 
 /// Parse an RFC 3339 datetime string.
@@ -2924,6 +3430,19 @@ mod tests {
             .create_thread(Some("sealed title"), None, None)
             .await
             .unwrap();
+        // A second sealed value, untouched by the injection, keeps `xcn2:` rows in the file.
+        db.store_message(
+            &thread.id,
+            "user",
+            "kept sealed",
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
         drop(db);
 
         raw_conn(&path)
