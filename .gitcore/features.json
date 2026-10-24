@@ -1317,6 +1317,45 @@
       ],
       "implemented_in": "src/maloca/, src/maloca/data_node.rs, src/self_manage/mod.rs"
     },
+    "feat-maloca-governance-rules": {
+      "category": "maloca",
+      "description": "Pure governance and support rules: weighted vote tally, quorum over eligible weight, approval over yes+no (abstentions count toward quorum only), proposal expiry, and the support ticket state machine.",
+      "id": "feat-maloca-governance-rules",
+      "implemented_in": "src/maloca/governance.rs, src/maloca/support_flow.rs",
+      "name": "Maloca Governance Rules",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [],
+      "spec_reference": "https://github.com/iberi22/xavier/issues/3513",
+      "status": "planned",
+      "steps": [
+        "Tally weighted votes per choice and participation over eligible weight",
+        "Decide NoQuorum/Approved/Rejected with approval over decisive (yes+no) weight",
+        "Expire proposals at created_at + duration_days",
+        "Allow only forward support transitions, reopen from Resolved and close from Resolved"
+      ],
+      "tests": [
+        "maloca::governance::tests::tally_sums_weights_per_choice",
+        "maloca::governance::tests::tally_without_eligible_weight_has_zero_participation",
+        "maloca::governance::tests::one_yes_out_of_ten_eligible_is_no_quorum",
+        "maloca::governance::tests::majority_of_votes_cast_with_quorum_is_approved",
+        "maloca::governance::tests::threshold_is_relative_to_decisive_votes_not_eligible",
+        "maloca::governance::tests::yes_below_threshold_of_votes_cast_is_rejected",
+        "maloca::governance::tests::approval_at_exact_threshold_passes",
+        "maloca::governance::tests::abstentions_do_not_count_toward_approval",
+        "maloca::governance::tests::abstain_only_meets_quorum_but_never_approves",
+        "maloca::governance::tests::no_votes_with_zero_quorum_is_rejected",
+        "maloca::governance::tests::expiry_boundaries",
+        "maloca::governance::tests::expiry_out_of_range_never_expires",
+        "maloca::support_flow::tests::forward_moves_are_allowed",
+        "maloca::support_flow::tests::reopen_from_resolved_is_allowed",
+        "maloca::support_flow::tests::close_only_from_resolved",
+        "maloca::support_flow::tests::backward_and_same_state_moves_are_rejected",
+        "maloca::support_flow::tests::closed_is_terminal",
+        "maloca::support_flow::tests::error_carries_from_and_to"
+      ],
+      "user_stories": []
+    },
     "feat-node-provisioning": {
       "id": "feat-node-provisioning",
       "name": "SWAL Node Provisioning (BaaS tokens + SSH keys)",
