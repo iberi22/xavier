@@ -32,7 +32,8 @@
 #   in a throttled cgroup instead of letting the host freeze them).
 #   While $SWAL_DEFER_MARK exists and is non-empty (default /tmp/game-paused.since, written
 #   by the host's foreground-priority mode), cargo steps are skipped and reported as
-#   deferred to CI, never as passed. SWAL_FORCE_LOCAL=1 runs them anyway.
+#   deferred to CI, never as passed. SWAL_FORCE_LOCAL=1 runs them anyway. A linked
+#   worktree opts in permanently with a non-empty <git-dir>/swal-defer-ci file.
 set -uo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -222,6 +223,9 @@ run_test_unlocked() {
 }
 
 DEFER_MARK="${SWAL_DEFER_MARK:-/tmp/game-paused.since}"
+# A worktree can opt in for good: a non-empty <git-dir>/swal-defer-ci (per linked worktree).
+WT_DEFER="$(git rev-parse --git-dir 2>/dev/null)/swal-defer-ci"
+[ -s "$DEFER_MARK" ] || { [ -s "$WT_DEFER" ] && DEFER_MARK="$WT_DEFER"; }
 if [ "$DRY" -eq 0 ] && [ "${SWAL_FORCE_LOCAL:-0}" != 1 ] && [ -s "$DEFER_MARK" ] \
     && { [ "${#RS_CHANGED[@]}" -gt 0 ] || [ "$CHECK_ONLY" -eq 1 ]; }; then
     echo "⏸  affected-tests: host in foreground-priority mode ($DEFER_MARK); cargo checks NOT run locally, deferred to CI (SWAL_FORCE_LOCAL=1 to run them)"
