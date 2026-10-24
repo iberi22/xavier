@@ -38,7 +38,7 @@ use crate::mesh::node::NodeIdentity;
 use crate::mesh::peer::PeerInfo;
 use crate::mesh::private_mesh::{
     decrypt_session_payload, encrypt_session_payload, signing_key_to_x25519_secret,
-    EncryptedSessionPayload, PrivateSyncPayload,
+    EncryptedSessionPayload, PrivateSyncPayload, MESH_SYNC_DEFAULT_WORKSPACE,
 };
 use crate::mesh::protocol::{
     ChunkRef, MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSessionShare, MeshSyncRequest,
@@ -108,15 +108,14 @@ pub struct MemorySyncAck {
 
 /// Maximum clock skew tolerated for a signed `MemorySync` request.
 const MEMORY_SYNC_MAX_SKEW_SECS: i64 = 300;
-/// Workspace that receives synced memories lacking a `workspace_id` in metadata.
-const MESH_SYNC_DEFAULT_WORKSPACE: &str = "mesh-sync";
 
-/// Decides which sender node ids the accept loop serves.
+/// Decides which sender node ids the accept loop serves, and which workspaces
+/// a sealed memory sync from them may write into.
 pub trait SenderPolicy: Send + Sync {
     fn allows(&self, node_id: &str) -> bool;
     /// Receiver-owned destination check; the payload's workspace is only a request.
-    fn allows_workspace(&self, _node_id: &str, _workspace: &str) -> bool {
-        true
+    fn allows_workspace(&self, _node_id: &str, workspace: &str) -> bool {
+        workspace == MESH_SYNC_DEFAULT_WORKSPACE
     }
 }
 
@@ -724,10 +723,10 @@ async fn apply_memory_sync(
         return Err("invalid sender signature".into());
     }
     let sender = crate::mesh::node::NodeId::from_public_key_bytes(&pk);
-    match policy {
-        Some(allowed) if allowed.allows(sender.as_str()) => {}
+    let allowed = match policy {
+        Some(allowed) if allowed.allows(sender.as_str()) => allowed,
         _ => return Err("unknown peer".into()),
-    }
+    };
     if (chrono::Utc::now().timestamp() - timestamp).abs() > MEMORY_SYNC_MAX_SKEW_SECS {
         return Err("stale request".into());
     }
@@ -739,6 +738,7 @@ async fn apply_memory_sync(
     let payload = decrypt_session_payload(encrypted, &secret).map_err(|e| e.to_string())?;
 
     let mut diffs = Vec::with_capacity(payload.memories.len());
+    let mut rejected = 0usize;
     for m in &payload.memories {
         let path = m.path.trim();
         if path.is_empty()
@@ -748,12 +748,21 @@ async fn apply_memory_sync(
         {
             return Err(format!("unsafe memory path: {path}"));
         }
-        let workspace = m
-            .metadata
-            .get("workspace_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or(MESH_SYNC_DEFAULT_WORKSPACE)
-            .to_string();
+        // The payload's workspace is only a request: the receiver decides.
+        // Absent or null means the default; any other value must be a
+        // non-empty string the receiver allows, compared exactly.
+        let workspace = match m.metadata.get("workspace_id") {
+            None | Some(serde_json::Value::Null) => MESH_SYNC_DEFAULT_WORKSPACE.to_string(),
+            Some(serde_json::Value::String(ws))
+                if !ws.is_empty() && allowed.allows_workspace(sender.as_str(), ws) =>
+            {
+                ws.clone()
+            }
+            Some(_) => {
+                rejected += 1;
+                continue;
+            }
+        };
         let at = chrono::DateTime::from_timestamp(m.created_at, 0).unwrap_or_else(chrono::Utc::now);
         let record = crate::memory::store::MemoryRecord {
             id: uuid::Uuid::new_v4().to_string(),
@@ -790,6 +799,14 @@ async fn apply_memory_sync(
             timestamp: std::time::SystemTime::now(),
             record_path: Some(record.path.clone()),
         });
+    }
+    // Refuse the whole batch before anything is written. Counts only: the
+    // reason never echoes the requested workspace, path or content.
+    if rejected > 0 {
+        return Err(format!(
+            "workspace not allowed ({rejected} of {} records)",
+            payload.memories.len()
+        ));
     }
     crate::memory::sync::merge::validate_changes_received(
         &diffs,

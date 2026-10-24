@@ -28,7 +28,7 @@ use crate::mesh::pairing::verify_join_decision;
 use crate::mesh::pairing_registry::PairingSecretRegistry;
 use crate::mesh::private_mesh::{
     validate_node_public_key, PrivateMemoryDelta, PrivateMeshRegistry, PrivateSyncError,
-    PrivateSyncPayload, WalletNode,
+    PrivateSyncPayload, WalletNode, MESH_SYNC_DEFAULT_WORKSPACE,
 };
 use crate::mesh::public_directory::PublicDirectory;
 use crate::mesh::public_rag::{search_public, PublicRagResult};
@@ -230,8 +230,8 @@ impl SameWalletSenderPolicy {
     }
 
     /// Whether sealed sync may write into `workspace` on this receiver.
-    pub fn allows_workspace_for(&self, _workspace: &str) -> bool {
-        true
+    pub fn allows_workspace_for(&self, workspace: &str) -> bool {
+        self.allowed_workspaces.contains(workspace)
     }
 }
 
@@ -240,12 +240,25 @@ impl crate::mesh::iroh_transport::SenderPolicy for SameWalletSenderPolicy {
     fn allows(&self, node_id: &str) -> bool {
         self.allows_sender(node_id)
     }
+
+    fn allows_workspace(&self, _node_id: &str, workspace: &str) -> bool {
+        self.allows_workspace_for(workspace)
+    }
 }
 
 /// Workspaces sealed sync may write into: the default plus the comma-separated
-/// `XAVIER_MESH_SYNC_WORKSPACES` extras.
-pub fn parse_mesh_sync_workspaces(_raw: Option<&str>) -> BTreeSet<String> {
-    BTreeSet::new()
+/// `XAVIER_MESH_SYNC_WORKSPACES` extras. Blank entries are dropped.
+pub fn parse_mesh_sync_workspaces(raw: Option<&str>) -> BTreeSet<String> {
+    let mut workspaces = BTreeSet::from([MESH_SYNC_DEFAULT_WORKSPACE.to_string()]);
+    if let Some(raw) = raw {
+        workspaces.extend(
+            raw.split(',')
+                .map(str::trim)
+                .filter(|w| !w.is_empty())
+                .map(str::to_string),
+        );
+    }
+    workspaces
 }
 
 /// Whether the mesh endpoint binds to localhost only (no relays or discovery).
