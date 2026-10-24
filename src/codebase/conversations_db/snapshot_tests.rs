@@ -18,7 +18,7 @@ use std::time::Duration;
 use uuid::Uuid;
 
 const WS: &str = "ws-a";
-const SESSION_A: &str = "claude/session-1";
+const SESSION_A: &str = "session-a";
 const SESSION_B: &str = "session-b";
 const NODE_KEY: [u8; 32] = [0x5a; 32];
 const CID: &str = "123e4567-e89b-42d3-a456-426614174000";
@@ -245,7 +245,7 @@ fn snapshot_ad_frame_constants() {
 #[serial_test::serial]
 async fn snapshot_id_rules() {
     // Accepted session ids.
-    for session in ["claude/session-1", "a:b", "a.b", "s"] {
+    for session in ["session/a", "a:b", "a.b", "s"] {
         assert!(SnapshotScope::new(WS, WS, WS, session).is_ok(), "{session}");
     }
     // Refused session ids: empty, traversal, too long, illegal character.
@@ -401,7 +401,7 @@ fn snapshot_frame_parser_corruption() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn node_splice_set() {
+async fn node_relocated_blob_set() {
     let sb = Sandbox::new(Some(node_key_hex()));
     let path = sb.path().join("conv.db");
     let db = open_node_db(&path, WS).await;
@@ -490,7 +490,7 @@ async fn node_splice_set() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn dek_splice_set() {
+async fn dek_relocated_blob_set() {
     let sb = Sandbox::new(Some(node_key_hex()));
     sb.create_keystore();
     let path = sb.path().join("conv.db");
@@ -530,7 +530,7 @@ async fn dek_splice_set() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn raw_sql_clear_downgrade_node() {
+async fn raw_sql_clear_row_node() {
     let sb = Sandbox::new(Some(node_key_hex()));
     let path = sb.path().join("conv.db");
     let db = open_node_db(&path, WS).await;
@@ -553,7 +553,7 @@ async fn raw_sql_clear_downgrade_node() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn raw_sql_clear_downgrade_dek() {
+async fn raw_sql_clear_row_dek() {
     let sb = Sandbox::new(Some(node_key_hex()));
     sb.create_keystore();
     let path = sb.path().join("conv.db");
@@ -576,7 +576,7 @@ async fn raw_sql_clear_downgrade_dek() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn snapshot_aad_binding_forged_header() {
+async fn snapshot_aad_binding_header_mismatch() {
     let sb = Sandbox::new(Some(node_key_hex()));
     sb.create_keystore();
     let path = sb.path().join("conv.db");

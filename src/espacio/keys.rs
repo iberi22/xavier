@@ -1584,12 +1584,12 @@ mod tests {
             "77732d61",
             "00000004",
             "77732d61",
-            "00000010",
-            "636c617564652f73657373696f6e2d31",
+            "00000009",
+            "73657373696f6e2d61",
             "00000024",
             "31323365343536372d653839622d343264332d613435362d343236363134313734303030",
         );
-        let fields = snapshot_node_ad_fields("ws-a", "ws-a", "claude/session-1", SNAPSHOT_CID);
+        let fields = snapshot_node_ad_fields("ws-a", "ws-a", "session-a", SNAPSHOT_CID);
         assert_eq!(hex_encode(&encode_ad(&fields)), node_ad);
         // Default-space snapshot AD is the existing record AD, unchanged.
         let dek_ad = concat!(

@@ -2241,8 +2241,8 @@ mod tests {
     // ---- Context snapshots (XAVIER_CONTEXT_SNAPSHOTS) ---------------------
 
     const GATE_ENV: &str = "XAVIER_CONTEXT_SNAPSHOTS";
-    const SESSION: &str = "claude-session-1";
-    const SESSION_B: &str = "claude-session-2";
+    const SESSION: &str = "session-a";
+    const SESSION_B: &str = "session-b";
     const SNAPSHOT_WS: &str = "ws-snapshots";
     const SNAPSHOT_DB: &str = "conversations.db";
 
@@ -2540,7 +2540,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn restore_tampered_no_live_fallback() {
+    async fn restore_corrupt_no_live_fallback() {
         crate::isolate_test_process!();
         let env = SnapshotEnv::new(true, Some(record_key_hex()));
         let (state, workspace, _work) = snapshot_workspace(&env).await;
