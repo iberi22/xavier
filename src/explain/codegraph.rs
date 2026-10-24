@@ -324,4 +324,27 @@ mod tests {
             vec!["route -> handle (Calls)".to_string()]
         );
     }
+
+    /// The code-graph query methods swallow row and step errors (`filter_map(|r| r.ok())`),
+    /// so a dropped table surfaces as an empty result, not `Err`. This pins that behaviour.
+    #[test]
+    fn broken_graph_yields_no_evidence() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("graph.db");
+        let db = CodeGraphDB::new(&path).unwrap();
+        db.insert_symbol(&sym("handle", "src/lib.rs", 2, 6))
+            .unwrap();
+        let engine = Arc::new(QueryEngine::new(Arc::new(db)));
+        rusqlite::Connection::open(&path)
+            .unwrap()
+            .execute_batch("DROP TABLE symbols")
+            .unwrap();
+        let source = CodeGraphSource::new(engine);
+
+        let evidence = source
+            .collect(&target("src/lib.rs", 3, 4, None), 10)
+            .unwrap();
+
+        assert!(evidence.is_empty());
+    }
 }
