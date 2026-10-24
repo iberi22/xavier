@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
 # deploy-local-xavier.sh — WAVE-20.01: incremental rebuild + backup + install + restart + health gate.
 # Canonical build (AGENTS.md): cargo build --release --features local-gllm
-# Usage: bash scripts/deploy-local-xavier.sh [--skip-build]
+# Usage: [XAVIER_REPO=/path/to/repo] bash scripts/deploy-local-xavier.sh [--skip-build]
+# Defaults REPO to the git checkout this script lives in (override with XAVIER_REPO).
 set -euo pipefail
 
-REPO="${XAVIER_REPO:-$HOME/proyectosSWAL/apps/xavier}"
+SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
+if command -v realpath >/dev/null 2>&1; then
+    SCRIPT_PATH="$(realpath "$SCRIPT_PATH")"
+elif command -v readlink >/dev/null 2>&1; then
+    SCRIPT_PATH="$(readlink -f "$SCRIPT_PATH")"
+fi
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+if ! DEFAULT_REPO="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)" || [ -z "$DEFAULT_REPO" ]; then
+    DEFAULT_REPO="$(dirname "$SCRIPT_DIR")"
+fi
+REPO="${XAVIER_REPO:-$DEFAULT_REPO}"
 # Persistent build cache shared by every checkout/worktree (build-speed Phase 0).
 TARGET_DIR="${XAVIER_TARGET_DIR:-$HOME/.cache/xavier-target}"
 BUILD_DIR="${XAVIER_BUILD_DIR:-$TARGET_DIR/build}"
@@ -32,7 +43,8 @@ fail() { log "FATAL: $*"; exit 1; }
 SKIP_BUILD=0
 [ "${1:-}" = "--skip-build" ] && SKIP_BUILD=1
 
-log "repo=$REPO target_dir=$TARGET_DIR stamp=$STAMP skip_build=$SKIP_BUILD"
+REPO_SHA="$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+log "repo=$REPO head=$REPO_SHA target_dir=$TARGET_DIR stamp=$STAMP skip_build=$SKIP_BUILD"
 
 # 0. Preconditions: the build cache is persistent, so it is created here and never wiped.
 mkdir -p "$TARGET_DIR" "$BUILD_DIR"
