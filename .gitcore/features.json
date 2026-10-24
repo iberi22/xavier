@@ -1044,6 +1044,30 @@
         "US-033"
       ]
     },
+    "feat-explain-route-live": {
+      "category": "explain",
+      "description": "POST /v1/explain is mounted on the daemon behind the same auth as other /v1 routes, assembling git-history, code-graph and memory evidence and asking the configured LLM (provider errors redacted of keys and lease tokens).",
+      "id": "feat-explain-route-live",
+      "implemented_in": "src/explain/model.rs, src/explain/mod.rs, src/cli/server.rs, tests/router_explain_auth.rs",
+      "name": "Explain Route Live",
+      "passes": false,
+      "progress_pct": 0,
+      "req_ids": [],
+      "spec_reference": "https://github.com/iberi22/xavier/issues/3542",
+      "status": "planned",
+      "steps": [
+        "Adapt ModelProviderClient to ExplanationModel with redacted errors",
+        "Build ExplainDeps from CliState (workspace, code graph, QMD memory)",
+        "Mount the explain router inside protected_routes"
+      ],
+      "tests": [
+        "explain::model::tests::unreachable_provider_returns_error_without_secret",
+        "explain::model::tests::redact_removes_api_key_and_lease_token",
+        "router_explain_auth::explain_rejects_missing_or_invalid_token_like_other_v1_routes",
+        "router_explain_auth::explain_with_root_token_reaches_the_model_and_returns_502"
+      ],
+      "user_stories": []
+    },
     "feat-groups-permissions": {
       "id": "feat-groups-permissions",
       "name": "Grupos de información con permisos rigurosos",
