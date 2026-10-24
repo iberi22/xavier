@@ -2,6 +2,7 @@ pub mod alerts;
 pub mod auth_routes;
 pub mod docbot_routes;
 pub mod events;
+pub mod explain_route;
 pub mod f12_routes;
 pub mod gpud_sidecar;
 pub mod headless;
