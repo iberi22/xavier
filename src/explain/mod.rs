@@ -5,8 +5,10 @@
 
 pub mod context;
 pub mod history;
+pub mod memory;
 
 pub use context::{
     assemble, Evidence, EvidenceKind, EvidenceSource, ExplainContext, ExplainTarget,
 };
 pub use history::GitHistorySource;
+pub use memory::{MemoryHit, MemorySearch, MemorySource, QmdMemorySearch};
