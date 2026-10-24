@@ -1527,7 +1527,7 @@ mod tests {
             &receiver,
             vec![delta(
                 "notes/a",
-                "attacker content",
+                "incoming content",
                 serde_json::json!({"workspace_id": "victim"}),
             )],
         );
