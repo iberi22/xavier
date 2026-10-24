@@ -76,15 +76,7 @@ pub(crate) async fn generate_anthropic_compatible(
         builder = builder.header("anthropic-beta", "prompt-caching-2024-07-31");
     }
 
-    let mut body = json!({
-        "model": config.model,
-        "system": system_json,
-        "max_tokens": 500,
-        "temperature": 0.2,
-        "messages": [
-            {"role": "user", "content": user_prompt}
-        ]
-    });
+    let mut body = request_body(&config.model, system_json, user_prompt);
 
     if let Some(token) = &config.lease_token {
         if let Some(obj) = body.as_object_mut() {
@@ -99,9 +91,14 @@ pub(crate) async fn generate_anthropic_compatible(
         .context("failed to call Anthropic-compatible API")?;
 
     let headers = response.headers().clone();
-    let response = response
-        .error_for_status()
-        .context("Anthropic-compatible API returned an error")?;
+    let status = response.status();
+    if !status.is_success() {
+        let detail = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "Anthropic-compatible API returned {status}: {}",
+            api_error_message(&detail)
+        ));
+    }
 
     let payload: serde_json::Value = response
         .json()
@@ -154,4 +151,81 @@ pub(crate) async fn generate_anthropic_compatible(
     }
 
     Ok(LlmResponse { text, quota })
+}
+
+/// Request body for the Messages API. Claude 5 family models reject `temperature`.
+fn request_body(model: &str, system: serde_json::Value, user_prompt: &str) -> serde_json::Value {
+    let mut body = json!({
+        "model": model,
+        "system": system,
+        "max_tokens": 500,
+        "messages": [
+            {"role": "user", "content": user_prompt}
+        ]
+    });
+    if accepts_temperature(model) {
+        body["temperature"] = json!(0.2);
+    }
+    body
+}
+
+/// False for Claude models with major version 5 or later (`claude-haiku-5-5`, `claude-opus-5`).
+fn accepts_temperature(model: &str) -> bool {
+    let Some(rest) = model.strip_prefix("claude-") else {
+        return true;
+    };
+    let major = rest.split('-').find_map(|part| part.parse::<u32>().ok());
+    !matches!(major, Some(major) if major >= 5)
+}
+
+/// The API's `error.message`, or a short excerpt of the raw body.
+fn api_error_message(body: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v["error"]["message"].as_str().map(str::to_string))
+        .unwrap_or_else(|| body.chars().take(300).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn claude_5_family_omits_temperature() {
+        for model in [
+            "claude-haiku-5-5",
+            "claude-sonnet-5-5",
+            "claude-opus-5",
+            "claude-fable-5-1",
+        ] {
+            let body = request_body(model, json!([]), "hi");
+            assert!(
+                body.get("temperature").is_none(),
+                "{model} must not send temperature"
+            );
+        }
+    }
+
+    #[test]
+    fn older_and_compatible_models_keep_temperature() {
+        for model in [
+            "claude-3-5-sonnet-latest",
+            "claude-sonnet-4-5",
+            "glm-4.6",
+            "kimi-k2",
+        ] {
+            let body = request_body(model, json!([]), "hi");
+            assert_eq!(body["temperature"], json!(0.2), "{model} keeps temperature");
+        }
+    }
+
+    #[test]
+    fn api_error_message_prefers_the_error_field() {
+        let body = r#"{"type":"error","error":{"type":"invalid_request_error","message":"`temperature` is deprecated for this model."}}"#;
+        assert_eq!(
+            api_error_message(body),
+            "`temperature` is deprecated for this model."
+        );
+        assert_eq!(api_error_message("plain failure"), "plain failure");
+    }
 }
