@@ -101,6 +101,13 @@ pub struct Proposal {
     pub created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locked_param: Option<bool>,
+    /// Set on create from `proposal_duration_days`. Proposals stored before
+    /// this field existed have `None` and expire at `created_at + duration`.
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    /// Set when the proposal is closed: "approved", "rejected" or "no_quorum".
+    #[serde(default)]
+    pub outcome: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -135,6 +142,11 @@ pub struct CreateSupportBody {
     pub body: String,
     #[serde(default)]
     pub feature_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateSupportStatusBody {
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

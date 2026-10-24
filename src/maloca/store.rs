@@ -4,10 +4,12 @@
 //! and append an audit trail (see NODE_MESH_MANAGER.md).
 //! Votes require karma >= vote_karma_min + active node; history anchors to lab_genesis.
 
+use super::governance;
 use super::params::network_parameters;
+use super::support_flow::{self, SupportStatus};
 use super::types::*;
 use anyhow::{bail, Context, Result};
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -239,6 +241,24 @@ impl MalocaStore {
         ticket
     }
 
+    /// Moves a support ticket through the support state machine. An unknown id
+    /// fails with a plain error; a move the state machine rejects fails with
+    /// `InvalidTransition`. The HTTP layer maps the first to 404, the second to 409.
+    pub fn update_support_status(&self, id: &str, to: SupportStatus) -> Result<SupportTicket> {
+        let mut g = self.inner.write();
+        let ticket = g
+            .support
+            .iter_mut()
+            .find(|t| t.id == id)
+            .ok_or_else(|| anyhow::anyhow!("support ticket not found"))?;
+        let from = parse_support_status(&ticket.status).unwrap_or(SupportStatus::Open);
+        let next = support_flow::transition(from, to)?;
+        ticket.status = support_status_name(next).into();
+        let updated = ticket.clone();
+        self.persist_or_log(&g);
+        Ok(updated)
+    }
+
     pub fn list_reviews(&self) -> Vec<ReviewRequest> {
         self.inner.read().reviews.clone()
     }
@@ -344,6 +364,7 @@ impl MalocaStore {
     }
 
     pub fn list_proposals(&self) -> Vec<Proposal> {
+        self.close_due_proposals(Utc::now());
         self.inner.read().proposals.clone()
     }
 
@@ -355,14 +376,18 @@ impl MalocaStore {
                 None
             }
         });
+        let created_at = Utc::now();
+        let expires_at = expiry_after(created_at, network_param("proposal_duration_days", 7));
         let proposal = Proposal {
             id: format!("p-{}", short_id()),
             proposal_type: body.proposal_type,
             title: body.title,
             body: body.body,
             status: ProposalStatus::Open,
-            created_at: Utc::now().to_rfc3339(),
+            created_at: created_at.to_rfc3339(),
             locked_param: locked,
+            expires_at: expires_at.map(|t| t.to_rfc3339()),
+            outcome: None,
         };
         let mut g = self.inner.write();
         Self::append_decision(
@@ -378,6 +403,71 @@ impl MalocaStore {
         g.proposals.insert(0, proposal.clone());
         self.persist_or_log(&g);
         proposal
+    }
+
+    /// Closes every open proposal that is due at `now`. Each one is tallied over
+    /// its current votes; eligible weight is the number of active nodes with
+    /// karma >= `vote_karma_min` (1.0 each). Closed proposals are skipped, so a
+    /// second call returns nothing. Returns the proposals closed by this call.
+    pub fn close_due_proposals(&self, now: DateTime<Utc>) -> Vec<Proposal> {
+        let mut g = self.inner.write();
+        let duration_days = network_param("proposal_duration_days", 7);
+        let quorum_pct = network_param("quorum_pct_eligible", 30.0);
+        let min_karma = Self::vote_karma_min(&g);
+        let eligible = g
+            .nodes
+            .iter()
+            .filter(|n| n.active && n.karma >= min_karma)
+            .count() as f64;
+
+        let due: Vec<usize> = g
+            .proposals
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| {
+                p.status == ProposalStatus::Open && proposal_is_due(p, duration_days, now)
+            })
+            .map(|(idx, _)| idx)
+            .collect();
+        if due.is_empty() {
+            return Vec::new();
+        }
+
+        let mut closed = Vec::with_capacity(due.len());
+        for idx in due {
+            let proposal_id = g.proposals[idx].id.clone();
+            let votes: Vec<Vote> = g
+                .votes
+                .iter()
+                .filter(|v| v.proposal_id == proposal_id)
+                .cloned()
+                .collect();
+            let tally = governance::tally(&votes, eligible);
+            let label = match governance::outcome(&tally, quorum_pct, 0.5) {
+                governance::Outcome::Approved => "approved",
+                governance::Outcome::Rejected => "rejected",
+                governance::Outcome::NoQuorum => "no_quorum",
+            };
+            g.proposals[idx].status = ProposalStatus::Closed;
+            g.proposals[idx].outcome = Some(label.into());
+            Self::append_decision(
+                &mut g,
+                DecisionKind::Closed,
+                Some(proposal_id),
+                GENESIS_NODE_ID,
+                serde_json::json!({
+                    "outcome": label,
+                    "yes": tally.yes,
+                    "no": tally.no,
+                    "abstain": tally.abstain,
+                    "eligible": tally.eligible,
+                    "participation_pct": tally.participation_pct,
+                }),
+            );
+            closed.push(g.proposals[idx].clone());
+        }
+        self.persist_or_log(&g);
+        closed
     }
 
     pub fn list_votes(&self, proposal_id: Option<&str>) -> Vec<Vote> {
@@ -400,6 +490,7 @@ impl MalocaStore {
     /// Cast a vote. Requires active node with karma >= vote_karma_min.
     /// Manager role never adds extra weight (weight stub = 1.0).
     pub fn cast_vote(&self, proposal_id: &str, body: CastVoteBody) -> Result<Vote> {
+        self.close_due_proposals(Utc::now());
         let mut g = self.inner.write();
         let min_karma = Self::vote_karma_min(&g);
 
@@ -532,6 +623,59 @@ impl MalocaStore {
     }
 }
 
+/// Name stored in `SupportTicket.status` and accepted by `PATCH /maloca/support/{id}`.
+pub fn support_status_name(status: SupportStatus) -> &'static str {
+    match status {
+        SupportStatus::Open => "open",
+        SupportStatus::Triaged => "triaged",
+        SupportStatus::InProgress => "in_progress",
+        SupportStatus::Resolved => "resolved",
+        SupportStatus::Closed => "closed",
+    }
+}
+
+/// Inverse of [`support_status_name`]. Unknown names give `None`.
+pub fn parse_support_status(raw: &str) -> Option<SupportStatus> {
+    match raw {
+        "open" => Some(SupportStatus::Open),
+        "triaged" => Some(SupportStatus::Triaged),
+        "in_progress" => Some(SupportStatus::InProgress),
+        "resolved" => Some(SupportStatus::Resolved),
+        "closed" => Some(SupportStatus::Closed),
+        _ => None,
+    }
+}
+
+/// Reads a network parameter by key, falling back when it is missing or unparsable.
+fn network_param<T: std::str::FromStr>(key: &str, fallback: T) -> T {
+    network_parameters()
+        .into_iter()
+        .find(|p| p.key == key)
+        .and_then(|p| p.default.parse().ok())
+        .unwrap_or(fallback)
+}
+
+/// `created_at + days`, or `None` when the duration is out of range (never expires).
+fn expiry_after(created_at: DateTime<Utc>, days: i64) -> Option<DateTime<Utc>> {
+    Duration::try_days(days).and_then(|d| created_at.checked_add_signed(d))
+}
+
+fn parse_timestamp(raw: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(raw)
+        .ok()
+        .map(|t| t.with_timezone(&Utc))
+}
+
+/// Whether a proposal is due at `now`. A stored `expires_at` wins; proposals
+/// saved before that field existed expire at `created_at + duration_days`.
+fn proposal_is_due(proposal: &Proposal, duration_days: i64, now: DateTime<Utc>) -> bool {
+    if let Some(expires_at) = proposal.expires_at.as_deref().and_then(parse_timestamp) {
+        return now >= expires_at;
+    }
+    parse_timestamp(&proposal.created_at)
+        .is_some_and(|created| governance::is_expired(created, duration_days, now))
+}
+
 fn short_id() -> String {
     Uuid::new_v4().to_string()[..8].to_string()
 }
@@ -617,6 +761,8 @@ fn default_state() -> PersistedState {
         status: ProposalStatus::Open,
         created_at: now.clone(),
         locked_param: Some(true),
+        expires_at: None,
+        outcome: None,
     };
     PersistedState {
         support: vec![],
@@ -1131,5 +1277,297 @@ mod tests {
         // Restore write permission so the tempdir can be cleaned up.
         std::fs::set_permissions(&maloca_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Adds an active peer above `vote_karma_min`, so two nodes are eligible.
+    fn add_eligible_peer(store: &MalocaStore, node_id: &str) {
+        store.inner.write().nodes.push(NodeRecord {
+            node_id: node_id.into(),
+            role: "peer".into(),
+            karma: 600,
+            active: true,
+            note: String::new(),
+        });
+    }
+
+    /// Makes an open proposal due by moving its expiry into the past.
+    fn expire_proposal(store: &MalocaStore, proposal_id: &str) {
+        let mut g = store.inner.write();
+        let proposal = g
+            .proposals
+            .iter_mut()
+            .find(|p| p.id == proposal_id)
+            .unwrap();
+        proposal.expires_at = Some((Utc::now() - Duration::days(1)).to_rfc3339());
+    }
+
+    fn new_proposal(store: &MalocaStore, title: &str) -> Proposal {
+        store.create_proposal(CreateProposalBody {
+            proposal_type: "general".into(),
+            title: title.into(),
+            body: String::new(),
+            locked_param: None,
+        })
+    }
+
+    fn cast(
+        store: &MalocaStore,
+        proposal_id: &str,
+        node_id: &str,
+        choice: VoteChoice,
+    ) -> Result<Vote> {
+        store.cast_vote(
+            proposal_id,
+            CastVoteBody {
+                node_id: node_id.into(),
+                choice,
+            },
+        )
+    }
+
+    fn closed_decisions(store: &MalocaStore, proposal_id: &str) -> Vec<DecisionEvent> {
+        store
+            .list_decisions()
+            .into_iter()
+            .filter(|d| {
+                d.kind == DecisionKind::Closed && d.proposal_id.as_deref() == Some(proposal_id)
+            })
+            .collect()
+    }
+
+    fn find_proposal(store: &MalocaStore, proposal_id: &str) -> Proposal {
+        store
+            .list_proposals()
+            .into_iter()
+            .find(|p| p.id == proposal_id)
+            .expect("proposal present")
+    }
+
+    #[test]
+    fn new_proposal_gets_expiry_from_duration_param() {
+        let (dir, store) = temp_store();
+        let p = new_proposal(&store, "expiry");
+        let created = parse_timestamp(&p.created_at).unwrap();
+        let expires = parse_timestamp(p.expires_at.as_deref().unwrap()).unwrap();
+        assert_eq!(expires - created, Duration::days(7));
+        assert!(p.outcome.is_none());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn expired_proposal_with_quorum_closes_as_approved() {
+        let (dir, store) = temp_store();
+        add_eligible_peer(&store, "peer-a");
+        let p = new_proposal(&store, "approve");
+        // 1 of 2 eligible nodes voted: 50% participation, quorum 30% met.
+        cast(&store, &p.id, GENESIS_NODE_ID, VoteChoice::Yes).unwrap();
+        expire_proposal(&store, &p.id);
+
+        let closed = find_proposal(&store, &p.id);
+        assert_eq!(closed.status, ProposalStatus::Closed);
+        assert_eq!(closed.outcome.as_deref(), Some("approved"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn expired_proposal_with_quorum_and_majority_no_closes_as_rejected() {
+        let (dir, store) = temp_store();
+        add_eligible_peer(&store, "peer-a");
+        let p = new_proposal(&store, "reject");
+        cast(&store, &p.id, GENESIS_NODE_ID, VoteChoice::No).unwrap();
+        expire_proposal(&store, &p.id);
+
+        let closed = find_proposal(&store, &p.id);
+        assert_eq!(closed.status, ProposalStatus::Closed);
+        assert_eq!(closed.outcome.as_deref(), Some("rejected"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn expired_proposal_without_quorum_closes_as_no_quorum() {
+        let (dir, store) = temp_store();
+        let p = new_proposal(&store, "silent");
+        expire_proposal(&store, &p.id);
+
+        let closed = find_proposal(&store, &p.id);
+        assert_eq!(closed.status, ProposalStatus::Closed);
+        assert_eq!(closed.outcome.as_deref(), Some("no_quorum"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn tie_is_rejected_at_store_level() {
+        let (dir, store) = temp_store();
+        add_eligible_peer(&store, "peer-a");
+        let p = new_proposal(&store, "tie");
+        cast(&store, &p.id, GENESIS_NODE_ID, VoteChoice::Yes).unwrap();
+        cast(&store, &p.id, "peer-a", VoteChoice::No).unwrap();
+        expire_proposal(&store, &p.id);
+
+        assert_eq!(
+            find_proposal(&store, &p.id).outcome.as_deref(),
+            Some("rejected")
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn not_yet_expired_proposal_stays_open() {
+        let (dir, store) = temp_store();
+        let p = new_proposal(&store, "still open");
+        cast(&store, &p.id, GENESIS_NODE_ID, VoteChoice::Yes).unwrap();
+
+        let open = find_proposal(&store, &p.id);
+        assert_eq!(open.status, ProposalStatus::Open);
+        assert!(open.outcome.is_none());
+        assert!(store.close_due_proposals(Utc::now()).is_empty());
+        assert!(closed_decisions(&store, &p.id).is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn closing_appends_one_decision_and_is_idempotent() {
+        let (dir, store) = temp_store();
+        let p = new_proposal(&store, "close twice");
+        expire_proposal(&store, &p.id);
+
+        let first = store.close_due_proposals(Utc::now());
+        assert_eq!(first.len(), 1);
+        assert!(store.close_due_proposals(Utc::now()).is_empty());
+        assert_eq!(closed_decisions(&store, &p.id).len(), 1);
+
+        // The close survives a restart.
+        let reopened = MalocaStore::open(&dir);
+        let persisted = find_proposal(&reopened, &p.id);
+        assert_eq!(persisted.status, ProposalStatus::Closed);
+        assert_eq!(persisted.outcome.as_deref(), Some("no_quorum"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn legacy_proposal_without_expires_at_closes_by_created_plus_duration() {
+        let dir = std::env::temp_dir().join(format!("maloca-legacy-expiry-{}", short_id()));
+        let maloca_dir = dir.join("maloca");
+        std::fs::create_dir_all(&maloca_dir).unwrap();
+        let old = (Utc::now() - Duration::days(30)).to_rfc3339();
+        let fresh = Utc::now().to_rfc3339();
+        // No `expires_at` and no `outcome` keys: a store written before this change.
+        let fixture = serde_json::json!({
+            "support": [],
+            "reviews": [],
+            "inbox": [],
+            "rewards": [],
+            "manager_actions": [],
+            "proposals": [
+                { "id": "p-legacy-old", "type": "general", "title": "Old", "body": "",
+                  "status": "open", "created_at": old },
+                { "id": "p-legacy-fresh", "type": "general", "title": "Fresh", "body": "",
+                  "status": "open", "created_at": fresh }
+            ],
+            "backlog": { "source": "fixture", "items": [] }
+        });
+        std::fs::write(maloca_dir.join("store.json"), fixture.to_string()).unwrap();
+
+        let store = MalocaStore::open(&dir);
+        let old_closed = find_proposal(&store, "p-legacy-old");
+        assert_eq!(old_closed.status, ProposalStatus::Closed);
+        assert_eq!(old_closed.outcome.as_deref(), Some("no_quorum"));
+        assert_eq!(
+            find_proposal(&store, "p-legacy-fresh").status,
+            ProposalStatus::Open
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn vote_after_expiry_is_rejected() {
+        let (dir, store) = temp_store();
+        add_eligible_peer(&store, "peer-a");
+        let p = new_proposal(&store, "late vote");
+        expire_proposal(&store, &p.id);
+
+        let err = cast(&store, &p.id, GENESIS_NODE_ID, VoteChoice::Yes).unwrap_err();
+        assert!(err.to_string().contains("closed"), "got: {err}");
+        assert!(store.list_votes(Some(&p.id)).is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn support_ticket(store: &MalocaStore, title: &str) -> SupportTicket {
+        store.create_support(support_body(title))
+    }
+
+    #[test]
+    fn support_status_moves_forward_and_persists() {
+        let (dir, store) = temp_store();
+        let ticket = support_ticket(&store, "moves");
+        for to in [
+            SupportStatus::Triaged,
+            SupportStatus::InProgress,
+            SupportStatus::Resolved,
+            SupportStatus::Closed,
+        ] {
+            let updated = store.update_support_status(&ticket.id, to).unwrap();
+            assert_eq!(updated.status, support_status_name(to));
+        }
+
+        let reopened = MalocaStore::open(&dir);
+        assert_eq!(reopened.list_support()[0].status, "closed");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn support_invalid_transition_is_reported_and_leaves_status() {
+        let (dir, store) = temp_store();
+        let ticket = support_ticket(&store, "invalid");
+        let err = store
+            .update_support_status(&ticket.id, SupportStatus::Closed)
+            .unwrap_err();
+        assert!(err
+            .downcast_ref::<crate::maloca::support_flow::InvalidTransition>()
+            .is_some());
+        assert_eq!(store.list_support()[0].status, "open");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn support_unknown_id_is_not_an_invalid_transition() {
+        let (dir, store) = temp_store();
+        let err = store
+            .update_support_status("s-missing", SupportStatus::Triaged)
+            .unwrap_err();
+        assert!(err
+            .downcast_ref::<crate::maloca::support_flow::InvalidTransition>()
+            .is_none());
+        assert!(err.to_string().contains("not found"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn support_unknown_stored_status_is_treated_as_open() {
+        let (dir, store) = temp_store();
+        let ticket = support_ticket(&store, "legacy");
+        store.inner.write().support[0].status = "something-else".into();
+        let updated = store
+            .update_support_status(&ticket.id, SupportStatus::Triaged)
+            .unwrap();
+        assert_eq!(updated.status, "triaged");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn support_status_names_round_trip() {
+        for status in [
+            SupportStatus::Open,
+            SupportStatus::Triaged,
+            SupportStatus::InProgress,
+            SupportStatus::Resolved,
+            SupportStatus::Closed,
+        ] {
+            assert_eq!(
+                parse_support_status(support_status_name(status)),
+                Some(status)
+            );
+        }
+        assert_eq!(parse_support_status("bogus"), None);
     }
 }

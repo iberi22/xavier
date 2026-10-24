@@ -22,7 +22,7 @@ pub mod ws;
 pub use store::MalocaStore;
 pub use types::*;
 
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::Router;
 use std::sync::Arc;
 
@@ -35,6 +35,7 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
             "/support",
             get(handlers::list_support).post(handlers::create_support),
         )
+        .route("/support/{id}", patch(handlers::update_support_status))
         .route("/reviews", get(handlers::list_reviews))
         .route("/inbox", get(handlers::list_inbox))
         .route("/inbox/{id}/claim", post(handlers::claim))
@@ -96,6 +97,56 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("maloca-mod-test-{}", uuid::Uuid::new_v4()));
         let store = MalocaStore::open(&dir);
         let _r: axum::Router<()> = nested_router(store);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn support_patch_maps_moves_to_200_409_and_404() {
+        use axum::body::Body;
+        use axum::http::{Method, Request, StatusCode};
+        use tower::util::ServiceExt;
+
+        let dir = std::env::temp_dir().join(format!("maloca-patch-test-{}", uuid::Uuid::new_v4()));
+        let store = MalocaStore::open(&dir);
+        let ticket = store.create_support(CreateSupportBody {
+            title: "patch".into(),
+            body: String::new(),
+            feature_id: None,
+        });
+        let consent = data_node::ConsentRegistry::open(&dir);
+        let app: axum::Router<()> = nested_router_with_consent(store.clone(), consent);
+
+        let patch_req = |id: &str, status: &str| {
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/maloca/support/{id}"))
+                .header("content-type", "application/json")
+                .body(Body::from(format!(r#"{{"status":"{status}"}}"#)))
+                .unwrap()
+        };
+
+        let ok = app
+            .clone()
+            .oneshot(patch_req(&ticket.id, "triaged"))
+            .await
+            .unwrap();
+        assert_eq!(ok.status(), StatusCode::OK);
+        let skip = app
+            .clone()
+            .oneshot(patch_req(&ticket.id, "closed"))
+            .await
+            .unwrap();
+        assert_eq!(skip.status(), StatusCode::CONFLICT);
+        let missing = app
+            .clone()
+            .oneshot(patch_req("s-missing", "triaged"))
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+        let unknown = app.oneshot(patch_req(&ticket.id, "bogus")).await.unwrap();
+        assert_eq!(unknown.status(), StatusCode::BAD_REQUEST);
+
+        assert_eq!(store.list_support()[0].status, "triaged");
         let _ = std::fs::remove_dir_all(dir);
     }
 }
