@@ -7,13 +7,17 @@
 ### Added
 - **Explain**: `POST /v1/explain` mounted with real sources and the configured LLM (#3545), LLM explanations rendered as generative UI (#3536), call-graph evidence for code explanations (#3537).
 - **Maloca panel**: Roadmap and Explain tabs (#3544).
+- **Explain** uses its own LLM configuration instead of the global fallback chain (#3562).
 - **MCP context snapshots** for context save/restore, opt-in via `XAVIER_CONTEXT_SNAPSHOTS=1` (off by default) (#3555).
 ### Changed
 - **Mesh sync**: the receiving node decides the destination workspace (#3553).
 - **Health**: an unconfigured LLM is reported as information instead of a degraded subsystem; no default model is assumed (#3558).
+- Tauri-generated mobile scaffolding marked as linguist-generated (#3563).
 - Scripts: a linked worktree can opt in to CI-deferred cargo checks (#3546).
 ### Fixed
 - **Daemon startup**: `/health` and 503 responses are served while starting instead of a long accept hang (#3549).
+- **Explain** resolves the git repository that contains the explained file (#3561).
+- **Claude 5 providers**: temperature omitted for Claude 5 models, Anthropic error messages surfaced, and more room to think before answering (#3565, #3566).
 - **Windows release build**: unix-only signal code gated, WiX MSI build fixed (#3548).
 ### Security
 - Conversation sealed fields are bound to their row context (#3557).
