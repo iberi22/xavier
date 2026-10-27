@@ -253,9 +253,18 @@ impl ConversationsDb {
                 e.context("conversations: default-space key unavailable (nothing was stored)")
             })?));
         }
-        Ok(at_rest::peek_record_key_with_source()
-            .0
-            .map_or(Sealer::None, Sealer::Node))
+        match at_rest::peek_record_key_with_source() {
+            (Some(k), _) => Ok(Sealer::Node(k)),
+            (None, at_rest::KeySource::Unavailable(reason)) => {
+                let key_path = at_rest::record_key_path();
+                let env_var = at_rest::RECORD_KEY_ENV;
+                Ok(Sealer::Unavailable(format!(
+                    "at-rest encryption key is unavailable: {reason}. Key is expected at '{}' or via environment variable '{env_var}'",
+                    key_path.display()
+                )))
+            }
+            (None, _) => Ok(Sealer::None),
+        }
     }
 
     /// The sealer for one operation. Node-tier operations verify the seal floor
@@ -618,8 +627,20 @@ impl ConversationsDb {
         let id_for_return = id.clone();
         let now_c = now.clone();
         let thread_id_for_update = thread_id.to_string();
+        let pid = self.project_id.clone();
 
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
+            let thread_belongs: bool = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM conversation_threads WHERE id = ?1 AND project_id = ?2)",
+                    params![thread_id_c, pid],
+                    |r| r.get(0),
+                )
+                .context("failed to check thread project")?;
+            if !thread_belongs {
+                anyhow::bail!("thread {thread_id_c} does not belong to project {pid}");
+            }
+
             conn.execute(
                 "INSERT INTO conversation_messages (id, thread_id, role, content, tool_calls, openui_lang, xui_json, metadata, created_at, tokens)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -628,8 +649,8 @@ impl ConversationsDb {
 
             // Update thread's updated_at timestamp
             let _ = conn.execute(
-                "UPDATE conversation_threads SET updated_at = ?1 WHERE id = ?2",
-                params![now_c, thread_id_for_update.clone()],
+                "UPDATE conversation_threads SET updated_at = ?1 WHERE id = ?2 AND project_id = ?3",
+                params![now_c, thread_id_for_update, pid],
             );
             Ok(())
         }).await?;
@@ -671,13 +692,17 @@ impl ConversationsDb {
             preview,
         )?;
         let now_c = Utc::now().to_rfc3339();
+        let pid = self.project_id.clone();
 
         ConnectionManager::global()
             .with_conn(&self.full_project_id, move |conn| {
-                let _ = conn.execute(
-                "UPDATE conversation_threads SET updated_at = ?1, last_preview = ?2 WHERE id = ?3",
-                params![now_c, preview_c, thread_id_c],
-            );
+                let updated = conn.execute(
+                    "UPDATE conversation_threads SET updated_at = ?1, last_preview = ?2 WHERE id = ?3 AND project_id = ?4",
+                    params![now_c, preview_c, thread_id_c, pid],
+                ).context("failed to update thread preview")?;
+                if updated == 0 {
+                    anyhow::bail!("thread {thread_id_c} does not belong to project {pid}");
+                }
                 Ok(())
             })
             .await?;
@@ -1307,14 +1332,32 @@ enum Sealer {
     Dek(crate::espacio::keys::KeyHandle),
     /// Node record key (`xcn2:` envelope), used before a keystore exists.
     Node([u8; 32]),
+    /// Key source is unavailable: writes must fail closed, clear legacy reads work.
+    Unavailable(String),
     /// No key available: rows are written as before (clear).
     None,
 }
 
 fn is_legacy_node_sealed(v: &str) -> bool {
-    v.strip_prefix(LEGACY_NODE_SEAL_PREFIX).is_some_and(|b| {
-        b.len() >= 56 && b.len() % 2 == 0 && b.bytes().all(|c| c.is_ascii_hexdigit())
-    })
+    v.starts_with(LEGACY_NODE_SEAL_PREFIX)
+}
+
+fn kind_to_table_column(kind: &str) -> (&'static str, &'static str) {
+    match kind {
+        "conv.thread.title" => ("conversation_threads", "title"),
+        "conv.thread.preview" => ("conversation_threads", "last_preview"),
+        "conv.msg.content" => ("conversation_messages", "content"),
+        "conv.msg.tool_calls" => ("conversation_messages", "tool_calls"),
+        "conv.msg.openui_lang" => ("conversation_messages", "openui_lang"),
+        "conv.msg.xui_json" => ("conversation_messages", "xui_json"),
+        "conv.msg.metadata" => ("conversation_messages", "metadata"),
+        "conv.deduction.text" => ("deductions", "deduction"),
+        "conv.belief.subject" => ("beliefs", "subject"),
+        "conv.belief.relation" => ("beliefs", "relation"),
+        "conv.belief.object" => ("beliefs", "object"),
+        "conv.belief.proposition" => ("beliefs", "proposition"),
+        _ => ("conversations", "field"),
+    }
 }
 
 /// Associated data fields of a node-tier field: label, version, tier, project,
@@ -1359,11 +1402,18 @@ fn open_node(key: &[u8; 32], kind: &str, ctx: FieldCtx<'_>, stored: &str) -> Res
 
 /// Open an `xcn1:` value (no AD). Only the seal floor migration reads these.
 fn open_legacy_node(key: &[u8; 32], stored: &str) -> Result<String> {
-    let raw = crate::crypto::hex_decode(&stored[LEGACY_NODE_SEAL_PREFIX.len()..])
-        .map_err(|e| anyhow::anyhow!("conversation row is corrupt: {e}"))?;
+    let body = stored
+        .strip_prefix(LEGACY_NODE_SEAL_PREFIX)
+        .ok_or_else(|| anyhow::anyhow!("missing legacy prefix"))?;
+    anyhow::ensure!(
+        body.len() >= 56 && body.len() % 2 == 0 && body.bytes().all(|c| c.is_ascii_hexdigit()),
+        "invalid legacy node seal format"
+    );
+    let raw = crate::crypto::hex_decode(body)
+        .map_err(|e| anyhow::anyhow!("legacy hex decode failed: {e}"))?;
     let pt = crate::crypto::encryption::aes_decrypt(&raw, key)
-        .map_err(|e| anyhow::anyhow!("conversation row failed authentication: {e}"))?;
-    String::from_utf8(pt).map_err(|_| anyhow::anyhow!("row is not valid UTF-8"))
+        .map_err(|e| anyhow::anyhow!("legacy decrypt failed: {e}"))?;
+    String::from_utf8(pt).map_err(|e| anyhow::anyhow!("legacy utf-8 failed: {e}"))
 }
 
 /// Seal a legacy or clear value for the floor migration. `xr1:` and `xcn2:` values
@@ -1381,7 +1431,13 @@ fn reseal_legacy(
         return Ok(None);
     }
     let plain = if is_legacy_node_sealed(stored) {
-        open_legacy_node(key, stored)?
+        let (table, column) = kind_to_table_column(kind);
+        open_legacy_node(key, stored).map_err(|_| {
+            anyhow::anyhow!(
+                "corrupt legacy xcn1 row in table '{table}', column '{column}', row id '{}': restore from backup or delete the corrupt row",
+                ctx.row
+            )
+        })?
     } else {
         stored.to_string()
     };
@@ -1395,6 +1451,7 @@ impl Sealer {
                 k.seal_record(crate::espacio::keys::DEFAULT_SPACE_ID, kind, ctx.row, plain)
             }
             Sealer::Node(key) => seal_node(key, kind, ctx, plain),
+            Sealer::Unavailable(msg) => anyhow::bail!("{msg}"),
             Sealer::None => Ok(plain.to_string()),
         }
     }
@@ -1405,6 +1462,9 @@ impl Sealer {
         ctx: FieldCtx<'_>,
         plain: Option<&str>,
     ) -> Result<Option<String>> {
+        if let Sealer::Unavailable(msg) = self {
+            anyhow::bail!("{msg}");
+        }
         plain.map(|p| self.seal(kind, ctx, p)).transpose()
     }
 
@@ -1413,6 +1473,7 @@ impl Sealer {
         use crate::memory::sqlite_vec_store::at_rest;
         match self {
             Sealer::Node(k) => Ok(*k),
+            Sealer::Unavailable(msg) => anyhow::bail!("{msg}"),
             _ => at_rest::peek_record_key_with_source()
                 .0
                 .ok_or_else(|| anyhow::anyhow!("sealed conversation row but no node key")),
@@ -1442,7 +1503,13 @@ impl Sealer {
         match self {
             Sealer::Node(_) => anyhow::bail!("legacy conversation value after seal floor"),
             _ if is_legacy_node_sealed(&stored) => {
-                open_legacy_node(&self.read_node_key()?, &stored)
+                let (table, column) = kind_to_table_column(kind);
+                open_legacy_node(&self.read_node_key()?, &stored).map_err(|_| {
+                    anyhow::anyhow!(
+                        "corrupt legacy xcn1 row in table '{table}', column '{column}', row id '{}': restore from backup or delete the corrupt row",
+                        ctx.row
+                    )
+                })
             }
             _ => Ok(stored),
         }
