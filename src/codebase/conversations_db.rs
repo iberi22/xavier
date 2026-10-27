@@ -3541,6 +3541,290 @@ mod tests {
             0
         );
     }
+
+    struct TestEnvGuard {
+        saved_data_dir: Option<std::ffi::OsString>,
+        saved_record_key: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for TestEnvGuard {
+        fn drop(&mut self) {
+            match &self.saved_data_dir {
+                Some(v) => {
+                    std::env::set_var(crate::memory::sqlite_vec_store::at_rest::DATA_DIR_ENV, v)
+                }
+                None => {
+                    std::env::remove_var(crate::memory::sqlite_vec_store::at_rest::DATA_DIR_ENV)
+                }
+            }
+            match &self.saved_record_key {
+                Some(v) => {
+                    std::env::set_var(crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV, v)
+                }
+                None => {
+                    std::env::remove_var(crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV)
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn write_with_unavailable_key_fails_closed() {
+        let _guard = TestEnvGuard {
+            saved_data_dir: std::env::var_os(
+                crate::memory::sqlite_vec_store::at_rest::DATA_DIR_ENV,
+            ),
+            saved_record_key: std::env::var_os(
+                crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV,
+            ),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var(
+            crate::memory::sqlite_vec_store::at_rest::DATA_DIR_ENV,
+            dir.path(),
+        );
+        std::env::remove_var(crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV);
+
+        // Make the node key file corrupt/invalid hex so KeySource::Unavailable is returned
+        let key_path = crate::memory::sqlite_vec_store::at_rest::record_key_path();
+        std::fs::create_dir_all(key_path.parent().unwrap()).unwrap();
+        std::fs::write(&key_path, "not-valid-hex-content").unwrap();
+
+        let db_path = dir.path().join("conversations.db");
+        let db = ConversationsDb::open_at("unavail-proj", &db_path)
+            .await
+            .unwrap();
+        db.create_schema().await.unwrap();
+
+        // Plant an already-clear legacy thread and message directly in SQLite
+        raw_conn(&db_path)
+            .execute_batch(
+                "INSERT INTO conversation_threads (id, project_id, title, started_at, updated_at)
+                 VALUES ('t-legacy', 'unavail-proj', 'legacy clear title', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                 INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+                 VALUES ('m-legacy', 't-legacy', 'user', 'legacy clear content', '2026-01-01T00:00:00Z');",
+            )
+            .unwrap();
+
+        // Reads of already-clear legacy rows keep working
+        let thread = db
+            .get_thread("t-legacy")
+            .await
+            .unwrap()
+            .expect("thread exists");
+        assert_eq!(thread.title.as_deref(), Some("legacy clear title"));
+        let msgs = db.get_thread_messages("t-legacy").await.unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].content, "legacy clear content");
+
+        // Attempting to write with Unavailable key must fail closed (Err)
+        let store_res = db
+            .store_message(
+                "t-legacy",
+                "user",
+                "secret cleartext message",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+        assert!(
+            store_res.is_err(),
+            "store_message must fail closed when key is unavailable"
+        );
+
+        let preview_res = db.update_last_preview("t-legacy", "secret preview").await;
+        assert!(
+            preview_res.is_err(),
+            "update_last_preview must fail closed when key is unavailable"
+        );
+
+        let create_thread_res = db
+            .create_thread(Some("secret thread title"), None, None)
+            .await;
+        assert!(
+            create_thread_res.is_err(),
+            "create_thread must fail closed when key is unavailable"
+        );
+
+        let deduction_res = db
+            .record_deduction("secret deduction text", 0.8, None, None)
+            .await;
+        assert!(
+            deduction_res.is_err(),
+            "record_deduction must fail closed when key is unavailable"
+        );
+
+        let belief_res = db
+            .upsert_belief(
+                "secret subject",
+                None,
+                None,
+                None,
+                0.5,
+                1.0,
+                None,
+                None,
+                None,
+            )
+            .await;
+        assert!(
+            belief_res.is_err(),
+            "upsert_belief must fail closed when key is unavailable"
+        );
+
+        // Assert message count unchanged (still 1 legacy message)
+        let msg_count: i64 = raw_conn(&db_path)
+            .query_row("SELECT COUNT(*) FROM conversation_messages", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(msg_count, 1);
+
+        // Assert stored value unchanged
+        let contents = raw_column(&db_path, "SELECT content FROM conversation_messages");
+        assert_eq!(contents, vec![Some("legacy clear content".to_string())]);
+
+        // Assert no clear text in the db file
+        let raw = raw_bytes(&db_path);
+        for forbidden in [
+            "secret cleartext message",
+            "secret preview",
+            "secret thread title",
+            "secret deduction text",
+            "secret subject",
+        ] {
+            assert!(
+                raw.windows(forbidden.len())
+                    .all(|w| w != forbidden.as_bytes()),
+                "cleartext '{forbidden}' found in db file",
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn update_last_preview_and_store_message_reject_foreign_thread() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let owner = node_db(&path, "proj-alpha").await;
+        let foreign = node_db(&path, "proj-beta").await;
+
+        let thread = owner
+            .create_thread(Some("alpha title"), None, None)
+            .await
+            .unwrap();
+        owner
+            .store_message(
+                &thread.id,
+                "user",
+                "alpha message",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Foreign project attempts update_last_preview on alpha's thread -> Err
+        let prev_res = foreign
+            .update_last_preview(&thread.id, "foreign preview")
+            .await;
+        assert!(
+            prev_res.is_err(),
+            "update_last_preview on foreign thread must return Err"
+        );
+
+        // Foreign project attempts store_message on alpha's thread -> Err
+        let msg_res = foreign
+            .store_message(
+                &thread.id,
+                "user",
+                "foreign message",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+        assert!(
+            msg_res.is_err(),
+            "store_message on foreign thread must return Err"
+        );
+
+        // Verify no change occurred
+        let thread_after = owner.get_thread(&thread.id).await.unwrap().unwrap();
+        if let Some(preview) = thread_after.last_preview {
+            assert!(
+                !preview.contains("foreign preview"),
+                "foreign preview was stored"
+            );
+        }
+        let msgs = owner.get_thread_messages(&thread.id).await.unwrap();
+        assert_eq!(msgs.len(), 1, "message count must remain unchanged");
+        assert_eq!(msgs[0].content, "alpha message");
+
+        let raw_count: i64 = raw_conn(&path)
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_messages WHERE thread_id = ?1",
+                params![thread.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(raw_count, 1, "database row count must remain unchanged");
+    }
+
+    #[tokio::test]
+    async fn corrupt_legacy_xcn1_row_error_contains_table_column_row_id_and_hint() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "corrupt-test").await;
+        db.create_schema().await.unwrap();
+
+        // Corrupt legacy xcn1 value: valid hex length but modified ciphertext/tag
+        let corrupt_content = flip_at(&legacy_xcn1(&NODE_KEY, "test message"), 10);
+        raw_conn(&path)
+            .execute_batch(&format!(
+                "INSERT INTO conversation_threads (id, project_id, title, started_at, updated_at)
+                 VALUES ('t-corrupt', 'corrupt-test', 'clean title', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                 INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+                 VALUES ('m-corrupt', 't-corrupt', 'user', '{corrupt_content}', '2026-01-01T00:00:00Z');",
+            ))
+            .unwrap();
+
+        let err = db.get_thread_messages("t-corrupt").await.unwrap_err();
+        let err_msg = format!("{err:#}");
+
+        assert!(
+            err_msg.contains("conversation_messages"),
+            "error message '{err_msg}' must contain table name 'conversation_messages'"
+        );
+        assert!(
+            err_msg.contains("content"),
+            "error message '{err_msg}' must contain column name 'content'"
+        );
+        assert!(
+            err_msg.contains("m-corrupt"),
+            "error message '{err_msg}' must contain row id 'm-corrupt'"
+        );
+        assert!(
+            err_msg.contains("restore from backup") || err_msg.contains("delete"),
+            "error message '{err_msg}' must contain repair hint"
+        );
+        assert!(
+            !err_msg.contains(&corrupt_content),
+            "error message must NOT contain corrupt value"
+        );
+        assert!(
+            !err_msg.contains(&corrupt_content[5..]),
+            "error message must NOT contain raw ciphertext"
+        );
+    }
 }
 
 #[cfg(test)]
