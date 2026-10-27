@@ -313,14 +313,34 @@ impl ConversationsDb {
     /// or a seal floor fails closed: a new key could never open it. A fresh
     /// database gets a key created atomically (an existing file is never
     /// replaced; a concurrent creator's key is reused).
+    ///
+    /// The key is looked up again after the sealed-state check, on the same
+    /// connection: a concurrent first writer publishes its key before it
+    /// commits the seal floor, so a floor seen here with the key still absent
+    /// means the key is truly missing, not that it was created meanwhile.
     async fn provision_node_key(&self) -> Result<Sealer> {
         use crate::memory::sqlite_vec_store::at_rest;
         let key_path = at_rest::record_key_path();
         let env_var = at_rest::RECORD_KEY_ENV;
-        let has_sealed = ConnectionManager::global()
-            .with_conn(&self.full_project_id, has_sealed_state)
+        let (has_sealed, reread) = ConnectionManager::global()
+            .with_conn(&self.full_project_id, |conn| {
+                if !has_sealed_state(conn)? {
+                    return Ok((false, None));
+                }
+                Ok((true, Some(at_rest::peek_record_key_with_source())))
+            })
             .await?;
         if has_sealed {
+            match reread {
+                Some((Some(key), _)) => return Ok(Sealer::Node(key)),
+                Some((None, at_rest::KeySource::Unavailable(reason))) => {
+                    return Ok(Sealer::Unavailable(format!(
+                        "at-rest encryption key is unavailable: {reason}. Key is expected at '{}' or via environment variable '{env_var}'",
+                        key_path.display()
+                    )));
+                }
+                _ => {}
+            }
             return Ok(Sealer::Unavailable(format!(
                 "at-rest encryption key is missing: this conversation database already holds sealed data, so a new key will not be generated. Restore the key file at '{}' or set environment variable '{env_var}'",
                 key_path.display()
@@ -4116,6 +4136,107 @@ mod tests {
             assert_eq!(thread.title.as_deref(), Some("first"));
         }
         assert_eq!(at_rest::read_key_file(&key_path).unwrap(), Some(stored));
+    }
+
+    /// The judged interleaving, step by step: B finds the key missing, A then
+    /// creates the key and commits the seal floor, and only then does B decide.
+    /// B must pick up A's key instead of refusing or generating another one.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn key_created_by_concurrent_writer_after_missing_check_is_reused() {
+        use crate::memory::sqlite_vec_store::at_rest;
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = keyless_env(dir.path());
+        let key_path = at_rest::record_key_path();
+        let db_path = dir.path().join("conversations.db");
+
+        let a = ConversationsDb::open_at("same-db-proj", &db_path)
+            .await
+            .unwrap();
+        let b = ConversationsDb::open_at("same-db-proj", &db_path)
+            .await
+            .unwrap();
+        a.create_schema().await.unwrap();
+        b.create_schema().await.unwrap();
+
+        assert!(matches!(b.sealer().unwrap(), Sealer::KeyMissing));
+        let first = a.create_thread(Some("from a"), None, None).await.unwrap();
+        let stored = at_rest::read_key_file(&key_path)
+            .unwrap()
+            .expect("A created the key");
+        assert_eq!(
+            raw_column(&db_path, "SELECT k FROM conv_seal_state"),
+            vec![Some("floor".to_string())]
+        );
+
+        match b.provision_node_key().await.unwrap() {
+            Sealer::Node(k) => assert_eq!(k, stored, "B must reuse A's key"),
+            Sealer::Unavailable(e) => panic!("B refused a key that exists: {e}"),
+            _ => panic!("unexpected sealer"),
+        }
+        let second = b.create_thread(Some("from b"), None, None).await.unwrap();
+        for (db, id, title) in [(&a, &first.id, "from a"), (&b, &second.id, "from b")] {
+            let t = db.get_thread(id).await.unwrap().expect("thread readable");
+            assert_eq!(t.title.as_deref(), Some(title));
+        }
+        assert_eq!(at_rest::read_key_file(&key_path).unwrap(), Some(stored));
+    }
+
+    /// Many handles race their first write into the same new database. Every
+    /// write succeeds and all of them share one key.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    #[serial_test::serial]
+    async fn concurrent_first_writes_to_same_database_all_succeed() {
+        use crate::memory::sqlite_vec_store::at_rest;
+        for round in 0..20 {
+            let dir = tempfile::tempdir().unwrap();
+            let _guard = keyless_env(dir.path());
+            let key_path = at_rest::record_key_path();
+            let db_path = dir.path().join("conversations.db");
+
+            let mut dbs = Vec::new();
+            for _ in 0..8 {
+                let db = ConversationsDb::open_at("same-db-race", &db_path)
+                    .await
+                    .unwrap();
+                db.create_schema().await.unwrap();
+                dbs.push(std::sync::Arc::new(db));
+            }
+            let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(dbs.len()));
+            let tasks: Vec<_> = dbs
+                .iter()
+                .enumerate()
+                .map(|(i, db)| {
+                    let db = db.clone();
+                    let barrier = barrier.clone();
+                    tokio::spawn(async move {
+                        barrier.wait().await;
+                        db.create_thread(Some(&format!("w{i}")), None, None).await
+                    })
+                })
+                .collect();
+            let mut ids = Vec::new();
+            for t in tasks {
+                let res = t.await.unwrap();
+                ids.push(
+                    res.unwrap_or_else(|e| panic!("round {round}: first write failed: {e:#}"))
+                        .id,
+                );
+            }
+            let stored = at_rest::read_key_file(&key_path)
+                .unwrap()
+                .expect("key created");
+            drop(dbs);
+
+            let db = ConversationsDb::open_at("same-db-race", &db_path)
+                .await
+                .unwrap();
+            for (i, id) in ids.iter().enumerate() {
+                let t = db.get_thread(id).await.unwrap().expect("thread readable");
+                assert_eq!(t.title.as_deref(), Some(format!("w{i}").as_str()));
+            }
+            assert_eq!(at_rest::read_key_file(&key_path).unwrap(), Some(stored));
+        }
     }
 
     #[tokio::test]
