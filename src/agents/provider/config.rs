@@ -140,13 +140,9 @@ impl ModelProviderConfig {
                 {
                     Some("openrouter".to_string())
                 } else {
-                    Some(
-                        crate::settings::XavierSettings::current()
-                            .models
-                            .provider
-                            .clone(),
-                    )
-                    .filter(|value| !value.trim().is_empty())
+                    // Vault-free lookup: avoid initializing global settings which triggers
+                    // HardwareVault (keyring) lookups for Telegram secrets.
+                    crate::settings::configured_model_provider()
                 }
             })
             .map(|value| value.trim().to_ascii_lowercase())

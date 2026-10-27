@@ -15,6 +15,7 @@ pub mod serialization;
 pub mod types;
 pub mod validation;
 
+pub use serialization::configured_model_provider;
 pub use types::*;
 
 pub static GLOBAL_SETTINGS: LazyLock<Arc<RwLock<XavierSettings>>> = LazyLock::new(|| {
@@ -171,6 +172,11 @@ impl XavierSettings {
     /// config file — see `serialization` for the defaults/state split (#2801).
     pub fn resolve_runtime_state_path() -> PathBuf {
         serialization::resolve_runtime_state_path(&serialization::resolve_config_path())
+    }
+
+    /// Returns the configured model provider without vault lookups or file seeding.
+    pub fn configured_model_provider() -> Option<String> {
+        serialization::configured_model_provider()
     }
 
     /// Load.
@@ -671,6 +677,34 @@ pub mod tests {
         assert_eq!(settings.server.host, "127.0.0.1");
         assert_eq!(settings.server.port, 8006);
         assert!(settings.auth_token.is_none());
+    }
+
+    #[test]
+    fn test_configured_model_provider_vault_free() {
+        let _env = TempEnv::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // 1. When config path does not exist, returns compiled default
+        let nonexistent = dir.path().join("nonexistent.json");
+        std::env::set_var("XAVIER_CONFIG_PATH", &nonexistent);
+        assert_eq!(
+            configured_model_provider(),
+            Some(XavierSettings::default().models.provider)
+        );
+
+        // 2. When config path exists, returns parsed models.provider
+        let config_path = dir.path().join("xavier.config.json");
+        let mut custom = XavierSettings::default();
+        custom.models.provider = "anthropic".to_string();
+        std::fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&custom).expect("serialize"),
+        )
+        .expect("write");
+        std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
+        assert_eq!(configured_model_provider(), Some("anthropic".to_string()));
+
+        std::env::remove_var("XAVIER_CONFIG_PATH");
     }
 
     #[test]

@@ -335,6 +335,26 @@ fn test_hosted_providers_no_model_defaults_and_unconfigured_reason() {
         "reason should name variable to set: {opencode_reason}"
     );
 
+    // 5. MiniMax
+    let prev_minimax_model = std::env::var("MINIMAX_MODEL").ok();
+    std::env::remove_var("MINIMAX_MODEL");
+
+    let minimax_cfg = ModelProviderConfig::for_provider("minimax");
+    assert_eq!(
+        minimax_cfg.model, "",
+        "minimax model must be empty when unset"
+    );
+    assert!(!minimax_cfg.is_configured());
+    let minimax_reason = minimax_cfg.unconfigured_reason().expect("minimax reason");
+    assert!(
+        minimax_reason.contains("minimax"),
+        "reason should name provider minimax: {minimax_reason}"
+    );
+    assert!(
+        minimax_reason.contains("MINIMAX_MODEL") || minimax_reason.contains("XAVIER_LLM_MODEL"),
+        "reason should name variable to set: {minimax_reason}"
+    );
+
     // Restore environment
     match prev_config_path {
         Some(v) => std::env::set_var("XAVIER_CONFIG_PATH", v),
@@ -367,6 +387,10 @@ fn test_hosted_providers_no_model_defaults_and_unconfigured_reason() {
     match prev_xav_opencode_model {
         Some(v) => std::env::set_var("XAVIER_OPENCODE_MODEL", v),
         None => std::env::remove_var("XAVIER_OPENCODE_MODEL"),
+    }
+    match prev_minimax_model {
+        Some(v) => std::env::set_var("MINIMAX_MODEL", v),
+        None => std::env::remove_var("MINIMAX_MODEL"),
     }
 }
 
@@ -459,5 +483,54 @@ fn test_resolve_provider_label_prefers_model_provider_over_deprecated() {
     match prev_provider {
         Some(v) => std::env::set_var("XAVIER_PROVIDER", v),
         None => std::env::remove_var("XAVIER_PROVIDER"),
+    }
+}
+
+#[test]
+fn test_apply_to_env_honours_deprecated_provider_alias_and_preserves_explicit() {
+    let _guard = env_lock().lock().expect("test assertion");
+    // apply_to_env() exports many variables; restore the whole environment afterwards.
+    let saved_env: Vec<(std::ffi::OsString, std::ffi::OsString)> = std::env::vars_os().collect();
+
+    let prev_model_provider = std::env::var("XAVIER_MODEL_PROVIDER").ok();
+    let prev_provider = std::env::var("XAVIER_PROVIDER").ok();
+
+    // With XAVIER_MODEL_PROVIDER unset and XAVIER_PROVIDER=disabled,
+    // call apply_to_env() on default settings. Then resolve_provider_label() must be "disabled".
+    std::env::remove_var("XAVIER_MODEL_PROVIDER");
+    std::env::set_var("XAVIER_PROVIDER", "disabled");
+
+    let settings = crate::settings::XavierSettings::default();
+    settings.apply_to_env();
+
+    assert_eq!(ModelProviderConfig::resolve_provider_label(), "disabled");
+
+    // Also test that an existing XAVIER_MODEL_PROVIDER=openai is kept.
+    std::env::set_var("XAVIER_MODEL_PROVIDER", "openai");
+    std::env::set_var("XAVIER_PROVIDER", "disabled");
+
+    settings.apply_to_env();
+
+    assert_eq!(
+        std::env::var("XAVIER_MODEL_PROVIDER").ok().as_deref(),
+        Some("openai")
+    );
+    assert_eq!(ModelProviderConfig::resolve_provider_label(), "openai");
+
+    match prev_model_provider {
+        Some(v) => std::env::set_var("XAVIER_MODEL_PROVIDER", v),
+        None => std::env::remove_var("XAVIER_MODEL_PROVIDER"),
+    }
+    match prev_provider {
+        Some(v) => std::env::set_var("XAVIER_PROVIDER", v),
+        None => std::env::remove_var("XAVIER_PROVIDER"),
+    }
+    for (key, _) in std::env::vars_os() {
+        if !saved_env.iter().any(|(k, _)| *k == key) {
+            std::env::remove_var(&key);
+        }
+    }
+    for (key, value) in &saved_env {
+        std::env::set_var(key, value);
     }
 }

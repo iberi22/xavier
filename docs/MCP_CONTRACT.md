@@ -106,7 +106,7 @@ When the client has completed initialization, send as a notification (no `id` fi
 
 `isError` is reserved for tool *execution* failure, not host state. `health_check` sets it only when the collected health status is `unhealthy` or `critical`; `warn`/`degraded` alerts ride inside the payload with `isError: false`.
 
-`xavier_local_status` takes no input and returns `mode` (`local-healthy` · `local-degraded` · `cloud-fallback` · `disabled`), `provider_setting` (from `XAVIER_MODEL_PROVIDER`, else the deprecated `XAVIER_PROVIDER`, else `models.provider`, else `local`), `llm_reachable`, `embedding_reachable`, `ollama_reachable` and an empty `fallback_chain`. `embedding_reachable` is false only when the embedding health level is `Unhealthy`; `ollama_reachable` requires an LLM that is reachable **and** a `local`/`ollama` provider. Call it before delegating reasoning to Xavier. `isError` is always `false`.
+`xavier_local_status` takes no input and returns `mode` (`local-healthy` · `local-degraded` · `cloud-fallback` · `disabled`), `provider_setting` (from `XAVIER_MODEL_PROVIDER`, else the deprecated `XAVIER_PROVIDER`, else OpenRouter when its API key is set, else `models.provider`, else `local`), `llm_reachable`, `embedding_reachable`, `ollama_reachable` and an empty `fallback_chain`. `embedding_reachable` is false only when the embedding health level is `Unhealthy`; `ollama_reachable` requires an LLM that is reachable **and** a `local`/`ollama` provider. Call it before delegating reasoning to Xavier. `isError` is always `false`.
 
 ### Node Self-Management Tools
 

@@ -95,6 +95,29 @@ fn parse_settings(path: &Path) -> Result<XavierSettings> {
     Ok(parsed)
 }
 
+/// Returns the configured model provider without touching the hardware vault or seeding files.
+///
+/// Unlike `current()`, this does not trigger `HardwareVault` lookups for Telegram secrets,
+/// and unlike `load()`, it does not seed template files.
+pub fn configured_model_provider() -> Option<String> {
+    let path = resolve_config_path();
+    if path.exists() {
+        if let Ok(settings) = parse_settings(&path) {
+            let provider = settings.models.provider.trim().to_string();
+            if !provider.is_empty() {
+                return Some(provider);
+            }
+        }
+    }
+    let default = XavierSettings::default().models.provider;
+    let trimmed = default.trim().to_string();
+    if !trimmed.is_empty() {
+        Some(trimmed)
+    } else {
+        None
+    }
+}
+
 /// Load defaults, then overlay the runtime state written by `save()`.
 ///
 /// `None` only when the defaults file is absent AND no runtime state exists:
