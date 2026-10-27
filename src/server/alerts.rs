@@ -320,6 +320,11 @@ mod tests {
         assert_eq!(store.get_mode(), OperationalMode::Disabled);
 
         std::env::remove_var("XAVIER_PROVIDER");
+
+        // XAVIER_MODEL_PROVIDER should be honored when XAVIER_PROVIDER is unset
+        std::env::set_var("XAVIER_MODEL_PROVIDER", "openai");
+        assert_eq!(store.get_mode(), OperationalMode::CloudFallback);
+        std::env::remove_var("XAVIER_MODEL_PROVIDER");
     }
 
     #[test]
