@@ -122,21 +122,31 @@ pub struct LlmProbe {
 impl ModelProviderConfig {
     /// Loads the configuration from environment variables.
     pub fn from_env() -> Self {
-        let settings = crate::settings::XavierSettings::current();
-        let provider = std::env::var("XAVIER_MODEL_PROVIDER")
-            .ok()
+        Self::from_label(&Self::resolve_provider_label())
+    }
+
+    /// Resolves the selected provider label without building the full config
+    /// (no API key or vault lookups), so status checks can call it cheaply.
+    ///
+    /// Precedence: `XAVIER_MODEL_PROVIDER`, then the deprecated `XAVIER_PROVIDER`,
+    /// then OpenRouter when its key is set, then `models.provider` from settings,
+    /// then `local`.
+    pub fn resolve_provider_label() -> String {
+        nonempty_env("XAVIER_MODEL_PROVIDER")
+            .or_else(|| nonempty_env("XAVIER_PROVIDER"))
             .or_else(|| {
                 if std::env::var("XAVIER_OPENROUTER_API_KEY").is_ok()
                     || std::env::var("OPENROUTER_API_KEY").is_ok()
                 {
                     Some("openrouter".to_string())
                 } else {
-                    Some(settings.models.provider.clone())
+                    // Vault-free lookup: avoid initializing global settings which triggers
+                    // HardwareVault (keyring) lookups for Telegram secrets.
+                    crate::settings::configured_model_provider()
                 }
             })
-            .map(|value| value.trim().to_ascii_lowercase());
-
-        Self::from_label(provider.as_deref().unwrap_or("local"))
+            .map(|value| value.trim().to_ascii_lowercase())
+            .unwrap_or_else(|| "local".to_string())
     }
 
     /// Checks if a provider label is recognized.
@@ -557,11 +567,16 @@ impl ModelProviderConfig {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "deepseek".to_string(),
-            model: std::env::var("XAVIER_LLM_MODEL")
-                .or_else(|_| std::env::var("DEEPSEEK_MODEL"))
-                .ok()
-                .or_else(|| settings.models.llm_model.clone())
-                .unwrap_or_else(|| "deepseek-chat".to_string()),
+            model: nonempty_env("XAVIER_LLM_MODEL")
+                .or_else(|| nonempty_env("DEEPSEEK_MODEL"))
+                .or_else(|| {
+                    settings
+                        .models
+                        .llm_model
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                })
+                .unwrap_or_default(),
             api_key: std::env::var("DEEPSEEK_API_KEY")
                 .ok()
                 .or_else(|| {
@@ -642,11 +657,16 @@ impl ModelProviderConfig {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "minimax".to_string(),
-            model: std::env::var("XAVIER_LLM_MODEL")
-                .or_else(|_| std::env::var("MINIMAX_MODEL"))
-                .ok()
-                .or_else(|| settings.models.llm_model.clone())
-                .unwrap_or_else(|| "MiniMax-Text-01".to_string()),
+            model: nonempty_env("XAVIER_LLM_MODEL")
+                .or_else(|| nonempty_env("MINIMAX_MODEL"))
+                .or_else(|| {
+                    settings
+                        .models
+                        .llm_model
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                })
+                .unwrap_or_default(),
             api_key: std::env::var("MINIMAX_API_KEY")
                 .ok()
                 .or_else(|| {
@@ -674,11 +694,16 @@ impl ModelProviderConfig {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "gemini".to_string(),
-            model: std::env::var("XAVIER_LLM_MODEL")
-                .or_else(|_| std::env::var("GEMINI_MODEL"))
-                .ok()
-                .or_else(|| settings.models.llm_model.clone())
-                .unwrap_or_else(|| "gemini-2.0-flash".to_string()),
+            model: nonempty_env("XAVIER_LLM_MODEL")
+                .or_else(|| nonempty_env("GEMINI_MODEL"))
+                .or_else(|| {
+                    settings
+                        .models
+                        .llm_model
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                })
+                .unwrap_or_default(),
             api_key: std::env::var("GEMINI_API_KEY")
                 .ok()
                 .or_else(|| {
@@ -702,11 +727,16 @@ impl ModelProviderConfig {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "z.ai".to_string(),
-            model: std::env::var("XAVIER_ZAI_MODEL")
-                .or_else(|_| std::env::var("ZAI_MODEL"))
-                .ok()
-                .or_else(|| settings.models.zai_model.clone())
-                .unwrap_or_else(|| "glm-5.1".to_string()),
+            model: nonempty_env("XAVIER_ZAI_MODEL")
+                .or_else(|| nonempty_env("ZAI_MODEL"))
+                .or_else(|| {
+                    settings
+                        .models
+                        .zai_model
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                })
+                .unwrap_or_default(),
             api_key: std::env::var("ZAI_API_KEY")
                 .ok()
                 .or_else(|| HardwareVault::new("xavier").get_secret("ZAI_API_KEY").ok())
@@ -736,11 +766,16 @@ impl ModelProviderConfig {
             provider_mode: ProviderMode::Local,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "opencode".to_string(),
-            model: std::env::var("XAVIER_OPENCODE_MODEL")
-                .or_else(|_| std::env::var("OPENCODE_MODEL"))
-                .ok()
-                .or_else(|| settings.models.opencode_model.clone())
-                .unwrap_or_else(|| "opencode/deepseek-v4-flash".to_string()),
+            model: nonempty_env("XAVIER_OPENCODE_MODEL")
+                .or_else(|| nonempty_env("OPENCODE_MODEL"))
+                .or_else(|| {
+                    settings
+                        .models
+                        .opencode_model
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                })
+                .unwrap_or_default(),
             api_key,
             base_url: None,
             target: ProviderTarget::OpenCodeCLI,
@@ -782,7 +817,7 @@ impl ModelProviderConfig {
             ProviderMode::Disabled => false,
             ProviderMode::Local | ProviderMode::ManagedLocal => {
                 if self.target == ProviderTarget::OpenCodeCLI {
-                    return true;
+                    return !self.model.trim().is_empty();
                 }
                 let has_model = !self.model.trim().is_empty();
                 let has_url = self
@@ -793,10 +828,13 @@ impl ModelProviderConfig {
             }
             ProviderMode::Cloud => {
                 let has_model = !self.model.trim().is_empty();
-                let has_url = self
-                    .get_resolved_base_url()
-                    .as_ref()
-                    .is_some_and(|value| !value.trim().is_empty());
+                let has_url = if self.target == ProviderTarget::GeminiLegacy {
+                    true
+                } else {
+                    self.get_resolved_base_url()
+                        .as_ref()
+                        .is_some_and(|value| !value.trim().is_empty())
+                };
                 let has_key = self
                     .api_key
                     .as_ref()
@@ -880,6 +918,14 @@ impl ModelProviderConfig {
             "minimax" => (&["XAVIER_LLM_MODEL", "MINIMAX_MODEL"], &["MINIMAX_API_KEY"]),
             "gemini" => (&["XAVIER_LLM_MODEL", "GEMINI_MODEL"], &["GEMINI_API_KEY"]),
             "z.ai" | "zai" => (&["XAVIER_ZAI_MODEL", "ZAI_MODEL"], &["ZAI_API_KEY"]),
+            "opencode" => (
+                &[
+                    "XAVIER_OPENCODE_MODEL",
+                    "OPENCODE_MODEL",
+                    "models.opencode_model",
+                ],
+                &["OPENCODE_API_KEY"],
+            ),
             _ => (
                 &["XAVIER_LOCAL_LLM_MODEL", "XAVIER_LLM_MODEL"],
                 &["XAVIER_LOCAL_LLM_API_KEY"],
@@ -1352,7 +1398,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_reachable_opencode() {
-        let config = ModelProviderConfig::opencode_from_env();
+        let mut config = ModelProviderConfig::opencode_from_env();
+        config.model = "opencode/deepseek-v4-flash".to_string();
         let reachability = config.is_reachable().await;
         assert_eq!(reachability, ProviderReachability::ConfiguredAndReachable);
     }

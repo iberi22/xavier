@@ -2529,7 +2529,7 @@ async fn start_http_server_inner(
         LlmReconcileStep::CheckUnreachable => {
             // If Ollama/local provider should be up but doesn't respond
             let provider_setting =
-                std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
+                xavier::agents::provider::ModelProviderConfig::resolve_provider_label();
             if (provider_setting == "local" || provider_setting == "ollama")
                 && local_config.is_configured()
             {

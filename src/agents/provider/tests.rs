@@ -138,12 +138,36 @@ fn test_model_provider_config_from_env() {
 
 #[test]
 fn test_zai_provider_config() {
+    let _guard = env_lock().lock().expect("test assertion");
+    let prev_config_path = std::env::var("XAVIER_CONFIG_PATH").ok();
+    std::env::set_var(
+        "XAVIER_CONFIG_PATH",
+        "/tmp/nonexistent-xavier-ci-defaults.json",
+    );
+    let prev_zai_model = std::env::var("ZAI_MODEL").ok();
+    let prev_xav_zai_model = std::env::var("XAVIER_ZAI_MODEL").ok();
+    std::env::remove_var("ZAI_MODEL");
+    std::env::remove_var("XAVIER_ZAI_MODEL");
+
     let config = ModelProviderConfig::for_provider("z.ai");
     assert_eq!(config.provider_label, "z.ai");
     assert_eq!(config.provider_mode, ProviderMode::Cloud);
     assert_eq!(config.api_flavor, ApiFlavor::OpenAICompatible);
     assert_eq!(config.base_url, Some("https://api.z.ai/v1".to_string()));
-    assert_eq!(config.model, "glm-5.1");
+    assert_eq!(config.model, "");
+
+    match prev_config_path {
+        Some(v) => std::env::set_var("XAVIER_CONFIG_PATH", v),
+        None => std::env::remove_var("XAVIER_CONFIG_PATH"),
+    }
+    match prev_zai_model {
+        Some(v) => std::env::set_var("ZAI_MODEL", v),
+        None => std::env::remove_var("ZAI_MODEL"),
+    }
+    match prev_xav_zai_model {
+        Some(v) => std::env::set_var("XAVIER_ZAI_MODEL", v),
+        None => std::env::remove_var("XAVIER_ZAI_MODEL"),
+    }
 }
 
 #[test]
@@ -151,6 +175,11 @@ fn test_opencode_provider_config() {
     let _guard = env_lock().lock().expect("test assertion");
 
     // Clear/Mock environment variables to prevent environment leaks/dependencies
+    let prev_config_path = std::env::var("XAVIER_CONFIG_PATH").ok();
+    std::env::set_var(
+        "XAVIER_CONFIG_PATH",
+        "/tmp/nonexistent-xavier-ci-defaults.json",
+    );
     let old_opencode_model = std::env::var("XAVIER_OPENCODE_MODEL").ok();
     let old_opencode_model_alt = std::env::var("OPENCODE_MODEL").ok();
     let old_opencode_key = std::env::var("OPENCODE_API_KEY").ok();
@@ -163,9 +192,13 @@ fn test_opencode_provider_config() {
     assert_eq!(config.provider_label, "opencode");
     assert_eq!(config.provider_mode, ProviderMode::Local);
     assert_eq!(config.target, ProviderTarget::OpenCodeCLI);
-    assert_eq!(config.model, "opencode/deepseek-v4-flash");
+    assert_eq!(config.model, "");
 
     // Restore environment variables
+    match prev_config_path {
+        Some(v) => std::env::set_var("XAVIER_CONFIG_PATH", v),
+        None => std::env::remove_var("XAVIER_CONFIG_PATH"),
+    }
     if let Some(val) = old_opencode_model {
         std::env::set_var("XAVIER_OPENCODE_MODEL", val);
     }
@@ -190,7 +223,10 @@ async fn test_opencode_provider_generation() {
     std::env::remove_var("XAVIER_OPENCODE_MODEL");
     std::env::remove_var("OPENCODE_MODEL");
 
-    let client = ModelProviderClient::for_provider("opencode", None);
+    let client = ModelProviderClient::for_provider(
+        "opencode",
+        Some("opencode/deepseek-v4-flash".to_string()),
+    );
     let response = client.generate_text("System", "User").await.unwrap();
     assert!(response
         .text
@@ -201,5 +237,300 @@ async fn test_opencode_provider_generation() {
     }
     if let Some(val) = old_model_alt {
         std::env::set_var("OPENCODE_MODEL", val);
+    }
+}
+
+#[test]
+fn test_hosted_providers_no_model_defaults_and_unconfigured_reason() {
+    let _guard = env_lock().lock().expect("test assertion");
+
+    let prev_config_path = std::env::var("XAVIER_CONFIG_PATH").ok();
+    std::env::set_var(
+        "XAVIER_CONFIG_PATH",
+        "/tmp/nonexistent-xavier-ci-defaults.json",
+    );
+
+    // 1. DeepSeek
+    let prev_deepseek_model = std::env::var("DEEPSEEK_MODEL").ok();
+    let prev_llm_model = std::env::var("XAVIER_LLM_MODEL").ok();
+    std::env::remove_var("DEEPSEEK_MODEL");
+    std::env::remove_var("XAVIER_LLM_MODEL");
+
+    let deepseek_cfg = ModelProviderConfig::for_provider("deepseek");
+    assert_eq!(
+        deepseek_cfg.model, "",
+        "deepseek model must be empty when unset"
+    );
+    assert!(!deepseek_cfg.is_configured());
+    let deepseek_reason = deepseek_cfg.unconfigured_reason().expect("deepseek reason");
+    assert!(
+        deepseek_reason.contains("deepseek"),
+        "reason should name provider deepseek: {deepseek_reason}"
+    );
+    assert!(
+        deepseek_reason.contains("DEEPSEEK_MODEL") || deepseek_reason.contains("XAVIER_LLM_MODEL"),
+        "reason should name variable to set: {deepseek_reason}"
+    );
+
+    // 2. Gemini
+    let prev_gemini_model = std::env::var("GEMINI_MODEL").ok();
+    std::env::remove_var("GEMINI_MODEL");
+
+    let gemini_cfg = ModelProviderConfig::for_provider("gemini");
+    assert_eq!(
+        gemini_cfg.model, "",
+        "gemini model must be empty when unset"
+    );
+    assert!(!gemini_cfg.is_configured());
+    let gemini_reason = gemini_cfg.unconfigured_reason().expect("gemini reason");
+    assert!(
+        gemini_reason.contains("gemini"),
+        "reason should name provider gemini: {gemini_reason}"
+    );
+    assert!(
+        gemini_reason.contains("GEMINI_MODEL") || gemini_reason.contains("XAVIER_LLM_MODEL"),
+        "reason should name variable to set: {gemini_reason}"
+    );
+
+    // 3. z.ai / zai
+    let prev_zai_model = std::env::var("ZAI_MODEL").ok();
+    let prev_xav_zai_model = std::env::var("XAVIER_ZAI_MODEL").ok();
+    std::env::remove_var("ZAI_MODEL");
+    std::env::remove_var("XAVIER_ZAI_MODEL");
+
+    let zai_cfg = ModelProviderConfig::for_provider("z.ai");
+    assert_eq!(zai_cfg.model, "", "zai model must be empty when unset");
+    assert!(!zai_cfg.is_configured());
+    let zai_reason = zai_cfg.unconfigured_reason().expect("zai reason");
+    assert!(
+        zai_reason.contains("z.ai") || zai_reason.contains("zai"),
+        "reason should name provider z.ai: {zai_reason}"
+    );
+    assert!(
+        zai_reason.contains("ZAI_MODEL") || zai_reason.contains("XAVIER_ZAI_MODEL"),
+        "reason should name variable to set: {zai_reason}"
+    );
+
+    // 4. OpenCode
+    let prev_opencode_model = std::env::var("OPENCODE_MODEL").ok();
+    let prev_xav_opencode_model = std::env::var("XAVIER_OPENCODE_MODEL").ok();
+    std::env::remove_var("OPENCODE_MODEL");
+    std::env::remove_var("XAVIER_OPENCODE_MODEL");
+
+    let opencode_cfg = ModelProviderConfig::for_provider("opencode");
+    assert_eq!(
+        opencode_cfg.model, "",
+        "opencode model must be empty when unset"
+    );
+    assert!(!opencode_cfg.is_configured());
+    let opencode_reason = opencode_cfg.unconfigured_reason().expect("opencode reason");
+    assert!(
+        opencode_reason.contains("opencode"),
+        "reason should name provider opencode: {opencode_reason}"
+    );
+    assert!(
+        opencode_reason.contains("OPENCODE_MODEL")
+            || opencode_reason.contains("XAVIER_OPENCODE_MODEL")
+            || opencode_reason.contains("opencode_model"),
+        "reason should name variable to set: {opencode_reason}"
+    );
+
+    // 5. MiniMax
+    let prev_minimax_model = std::env::var("MINIMAX_MODEL").ok();
+    std::env::remove_var("MINIMAX_MODEL");
+
+    let minimax_cfg = ModelProviderConfig::for_provider("minimax");
+    assert_eq!(
+        minimax_cfg.model, "",
+        "minimax model must be empty when unset"
+    );
+    assert!(!minimax_cfg.is_configured());
+    let minimax_reason = minimax_cfg.unconfigured_reason().expect("minimax reason");
+    assert!(
+        minimax_reason.contains("minimax"),
+        "reason should name provider minimax: {minimax_reason}"
+    );
+    assert!(
+        minimax_reason.contains("MINIMAX_MODEL") || minimax_reason.contains("XAVIER_LLM_MODEL"),
+        "reason should name variable to set: {minimax_reason}"
+    );
+
+    // Restore environment
+    match prev_config_path {
+        Some(v) => std::env::set_var("XAVIER_CONFIG_PATH", v),
+        None => std::env::remove_var("XAVIER_CONFIG_PATH"),
+    }
+    match prev_deepseek_model {
+        Some(v) => std::env::set_var("DEEPSEEK_MODEL", v),
+        None => std::env::remove_var("DEEPSEEK_MODEL"),
+    }
+    match prev_llm_model {
+        Some(v) => std::env::set_var("XAVIER_LLM_MODEL", v),
+        None => std::env::remove_var("XAVIER_LLM_MODEL"),
+    }
+    match prev_gemini_model {
+        Some(v) => std::env::set_var("GEMINI_MODEL", v),
+        None => std::env::remove_var("GEMINI_MODEL"),
+    }
+    match prev_zai_model {
+        Some(v) => std::env::set_var("ZAI_MODEL", v),
+        None => std::env::remove_var("ZAI_MODEL"),
+    }
+    match prev_xav_zai_model {
+        Some(v) => std::env::set_var("XAVIER_ZAI_MODEL", v),
+        None => std::env::remove_var("XAVIER_ZAI_MODEL"),
+    }
+    match prev_opencode_model {
+        Some(v) => std::env::set_var("OPENCODE_MODEL", v),
+        None => std::env::remove_var("OPENCODE_MODEL"),
+    }
+    match prev_xav_opencode_model {
+        Some(v) => std::env::set_var("XAVIER_OPENCODE_MODEL", v),
+        None => std::env::remove_var("XAVIER_OPENCODE_MODEL"),
+    }
+    match prev_minimax_model {
+        Some(v) => std::env::set_var("MINIMAX_MODEL", v),
+        None => std::env::remove_var("MINIMAX_MODEL"),
+    }
+}
+
+#[test]
+fn test_provider_resolution_honours_xavier_model_provider() {
+    let _guard = env_lock().lock().expect("test assertion");
+
+    let prev_model_provider = std::env::var("XAVIER_MODEL_PROVIDER").ok();
+    let prev_provider = std::env::var("XAVIER_PROVIDER").ok();
+
+    std::env::set_var("XAVIER_MODEL_PROVIDER", "openai");
+    std::env::remove_var("XAVIER_PROVIDER");
+
+    let config = ModelProviderConfig::from_env();
+    assert_eq!(config.provider_label, "openai");
+
+    let alerts = crate::server::alerts::SystemAlertStore::new();
+    assert_eq!(
+        alerts.get_mode(),
+        crate::server::alerts::OperationalMode::CloudFallback
+    );
+
+    match prev_model_provider {
+        Some(v) => std::env::set_var("XAVIER_MODEL_PROVIDER", v),
+        None => std::env::remove_var("XAVIER_MODEL_PROVIDER"),
+    }
+    match prev_provider {
+        Some(v) => std::env::set_var("XAVIER_PROVIDER", v),
+        None => std::env::remove_var("XAVIER_PROVIDER"),
+    }
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn test_generate_text_short_circuits_when_model_unconfigured() {
+    let _guard = env_lock().lock().expect("test assertion");
+
+    let prev_config_path = std::env::var("XAVIER_CONFIG_PATH").ok();
+    std::env::set_var(
+        "XAVIER_CONFIG_PATH",
+        "/tmp/nonexistent-xavier-ci-defaults.json",
+    );
+    let prev_opencode_model = std::env::var("OPENCODE_MODEL").ok();
+    let prev_xav_opencode_model = std::env::var("XAVIER_OPENCODE_MODEL").ok();
+    std::env::remove_var("OPENCODE_MODEL");
+    std::env::remove_var("XAVIER_OPENCODE_MODEL");
+
+    let client =
+        crate::agents::provider::client::ModelProviderClient::for_provider("opencode", None);
+    let res = client.generate_text("System", "User").await;
+    assert!(res.is_err(), "generation must fail when model is unset");
+    let err_msg = res.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("no LLM model configured for provider 'opencode'"),
+        "error must be not-configured message, got: {err_msg}"
+    );
+
+    match prev_config_path {
+        Some(v) => std::env::set_var("XAVIER_CONFIG_PATH", v),
+        None => std::env::remove_var("XAVIER_CONFIG_PATH"),
+    }
+    match prev_opencode_model {
+        Some(v) => std::env::set_var("OPENCODE_MODEL", v),
+        None => std::env::remove_var("OPENCODE_MODEL"),
+    }
+    match prev_xav_opencode_model {
+        Some(v) => std::env::set_var("XAVIER_OPENCODE_MODEL", v),
+        None => std::env::remove_var("XAVIER_OPENCODE_MODEL"),
+    }
+}
+
+#[test]
+fn test_resolve_provider_label_prefers_model_provider_over_deprecated() {
+    let _guard = env_lock().lock().expect("test assertion");
+
+    let prev_model_provider = std::env::var("XAVIER_MODEL_PROVIDER").ok();
+    let prev_provider = std::env::var("XAVIER_PROVIDER").ok();
+
+    std::env::set_var("XAVIER_MODEL_PROVIDER", "OpenAI");
+    std::env::set_var("XAVIER_PROVIDER", "local");
+    assert_eq!(ModelProviderConfig::resolve_provider_label(), "openai");
+
+    std::env::remove_var("XAVIER_MODEL_PROVIDER");
+    assert_eq!(ModelProviderConfig::resolve_provider_label(), "local");
+
+    match prev_model_provider {
+        Some(v) => std::env::set_var("XAVIER_MODEL_PROVIDER", v),
+        None => std::env::remove_var("XAVIER_MODEL_PROVIDER"),
+    }
+    match prev_provider {
+        Some(v) => std::env::set_var("XAVIER_PROVIDER", v),
+        None => std::env::remove_var("XAVIER_PROVIDER"),
+    }
+}
+
+#[test]
+fn test_apply_to_env_honours_deprecated_provider_alias_and_preserves_explicit() {
+    let _guard = env_lock().lock().expect("test assertion");
+    // apply_to_env() exports many variables; restore the whole environment afterwards.
+    let saved_env: Vec<(std::ffi::OsString, std::ffi::OsString)> = std::env::vars_os().collect();
+
+    let prev_model_provider = std::env::var("XAVIER_MODEL_PROVIDER").ok();
+    let prev_provider = std::env::var("XAVIER_PROVIDER").ok();
+
+    // With XAVIER_MODEL_PROVIDER unset and XAVIER_PROVIDER=disabled,
+    // call apply_to_env() on default settings. Then resolve_provider_label() must be "disabled".
+    std::env::remove_var("XAVIER_MODEL_PROVIDER");
+    std::env::set_var("XAVIER_PROVIDER", "disabled");
+
+    let settings = crate::settings::XavierSettings::default();
+    settings.apply_to_env();
+
+    assert_eq!(ModelProviderConfig::resolve_provider_label(), "disabled");
+
+    // Also test that an existing XAVIER_MODEL_PROVIDER=openai is kept.
+    std::env::set_var("XAVIER_MODEL_PROVIDER", "openai");
+    std::env::set_var("XAVIER_PROVIDER", "disabled");
+
+    settings.apply_to_env();
+
+    assert_eq!(
+        std::env::var("XAVIER_MODEL_PROVIDER").ok().as_deref(),
+        Some("openai")
+    );
+    assert_eq!(ModelProviderConfig::resolve_provider_label(), "openai");
+
+    match prev_model_provider {
+        Some(v) => std::env::set_var("XAVIER_MODEL_PROVIDER", v),
+        None => std::env::remove_var("XAVIER_MODEL_PROVIDER"),
+    }
+    match prev_provider {
+        Some(v) => std::env::set_var("XAVIER_PROVIDER", v),
+        None => std::env::remove_var("XAVIER_PROVIDER"),
+    }
+    for (key, _) in std::env::vars_os() {
+        if !saved_env.iter().any(|(k, _)| *k == key) {
+            std::env::remove_var(&key);
+        }
+    }
+    for (key, value) in &saved_env {
+        std::env::set_var(key, value);
     }
 }

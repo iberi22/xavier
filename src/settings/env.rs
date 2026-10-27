@@ -143,7 +143,18 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
         },
     );
 
-    set_if_absent("XAVIER_MODEL_PROVIDER", &settings.models.provider);
+    let model_provider = std::env::var("XAVIER_MODEL_PROVIDER")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    if model_provider.is_none() {
+        let legacy_provider = std::env::var("XAVIER_PROVIDER")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+        let provider_to_set = legacy_provider.unwrap_or_else(|| settings.models.provider.clone());
+        std::env::set_var("XAVIER_MODEL_PROVIDER", provider_to_set);
+    }
     set_if_absent("XAVIER_API_FLAVOR", &settings.models.api_flavor);
     set_optional_if_absent(
         "XAVIER_LOCAL_LLM_MODEL",

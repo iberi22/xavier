@@ -209,7 +209,7 @@ impl SystemAlertStore {
     /// Get mode.
     pub fn get_mode(&self) -> OperationalMode {
         let alerts = self.get_alerts();
-        let provider = std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
+        let provider = crate::agents::provider::ModelProviderConfig::resolve_provider_label();
 
         let has_llm_error = alerts
             .iter()
@@ -320,6 +320,11 @@ mod tests {
         assert_eq!(store.get_mode(), OperationalMode::Disabled);
 
         std::env::remove_var("XAVIER_PROVIDER");
+
+        // XAVIER_MODEL_PROVIDER should be honored when XAVIER_PROVIDER is unset
+        std::env::set_var("XAVIER_MODEL_PROVIDER", "openai");
+        assert_eq!(store.get_mode(), OperationalMode::CloudFallback);
+        std::env::remove_var("XAVIER_MODEL_PROVIDER");
     }
 
     #[test]

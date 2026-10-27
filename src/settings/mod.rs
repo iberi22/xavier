@@ -15,6 +15,7 @@ pub mod serialization;
 pub mod types;
 pub mod validation;
 
+pub use serialization::configured_model_provider;
 pub use types::*;
 
 pub static GLOBAL_SETTINGS: LazyLock<Arc<RwLock<XavierSettings>>> = LazyLock::new(|| {
@@ -171,6 +172,11 @@ impl XavierSettings {
     /// config file — see `serialization` for the defaults/state split (#2801).
     pub fn resolve_runtime_state_path() -> PathBuf {
         serialization::resolve_runtime_state_path(&serialization::resolve_config_path())
+    }
+
+    /// Returns the configured model provider without vault lookups or file seeding.
+    pub fn configured_model_provider() -> Option<String> {
+        serialization::configured_model_provider()
     }
 
     /// Load.
@@ -671,6 +677,92 @@ pub mod tests {
         assert_eq!(settings.server.host, "127.0.0.1");
         assert_eq!(settings.server.port, 8006);
         assert!(settings.auth_token.is_none());
+    }
+
+    #[test]
+    fn test_configured_model_provider_vault_free() {
+        let _env = TempEnv::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // 1. When config path does not exist, returns compiled default
+        let nonexistent = dir.path().join("nonexistent.json");
+        std::env::set_var("XAVIER_CONFIG_PATH", &nonexistent);
+        assert_eq!(
+            configured_model_provider(),
+            Some(XavierSettings::default().models.provider)
+        );
+
+        // 2. When config path exists, returns parsed models.provider
+        let config_path = dir.path().join("xavier.config.json");
+        let mut custom = XavierSettings::default();
+        custom.models.provider = "anthropic".to_string();
+        std::fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&custom).expect("serialize"),
+        )
+        .expect("write");
+        std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
+        assert_eq!(configured_model_provider(), Some("anthropic".to_string()));
+
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+    }
+
+    #[test]
+    fn test_configured_model_provider_honours_saved_runtime_state() {
+        let _env = TempEnv::new();
+        let saved_openrouter: Vec<_> = ["OPENROUTER_API_KEY"]
+            .iter()
+            .map(|k| (*k, std::env::var_os(k)))
+            .collect();
+        for (k, _) in &saved_openrouter {
+            std::env::remove_var(k);
+        }
+        std::env::remove_var("XAVIER_OPENROUTER_API_KEY");
+        std::env::remove_var("XAVIER_MODEL_PROVIDER");
+        std::env::remove_var("XAVIER_PROVIDER");
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("xavier.config.json");
+        let mut custom = XavierSettings::default();
+        custom.models.provider = "anthropic".to_string();
+        std::fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&custom).expect("serialize"),
+        )
+        .expect("write");
+        std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
+        std::env::set_var(
+            "XAVIER_RUNTIME_STATE_PATH",
+            dir.path().join("state").join("runtime.json"),
+        );
+        assert_eq!(configured_model_provider(), Some("anthropic".to_string()));
+
+        // A provider saved at runtime overrides the config file.
+        let mut saved = custom.clone();
+        saved.models.provider = "disabled".to_string();
+        tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(serialization::save(&saved))
+            .expect("save runtime state");
+        assert_eq!(configured_model_provider(), Some("disabled".to_string()));
+        assert_eq!(
+            crate::agents::provider::config::ModelProviderConfig::resolve_provider_label(),
+            "disabled"
+        );
+
+        // It also applies when the config file is absent.
+        std::fs::remove_file(&config_path).expect("remove config");
+        assert_eq!(configured_model_provider(), Some("disabled".to_string()));
+
+        // Reading never seeds a config file from the template.
+        assert!(!config_path.exists());
+
+        for (k, v) in saved_openrouter {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
     }
 
     #[test]
