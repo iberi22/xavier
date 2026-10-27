@@ -97,25 +97,33 @@ fn parse_settings(path: &Path) -> Result<XavierSettings> {
 
 /// Returns the configured model provider without touching the hardware vault or seeding files.
 ///
-/// Unlike `current()`, this does not trigger `HardwareVault` lookups for Telegram secrets,
-/// and unlike `load()`, it does not seed template files.
+/// Resolves like `load()`: the config file (or the compiled-in defaults), with the
+/// runtime state written by `save()` overlaid on top, so a provider saved at runtime
+/// (for example `disabled`) is honoured. Unlike `current()`, this does not trigger
+/// `HardwareVault` lookups for Telegram secrets, and unlike `load()`, it does not
+/// seed template files.
 pub fn configured_model_provider() -> Option<String> {
     let path = resolve_config_path();
-    if path.exists() {
-        if let Ok(settings) = parse_settings(&path) {
-            let provider = settings.models.provider.trim().to_string();
-            if !provider.is_empty() {
-                return Some(provider);
-            }
-        }
-    }
-    let default = XavierSettings::default().models.provider;
-    let trimmed = default.trim().to_string();
-    if !trimmed.is_empty() {
-        Some(trimmed)
+    let base = if path.exists() {
+        parse_settings(&path).ok()
     } else {
         None
+    };
+    let state = load_runtime_state(&path).ok().flatten();
+    let settings = match (base, state) {
+        (base, Some(state)) => merge_runtime_state(&state, base.clone().unwrap_or_default())
+            .ok()
+            .or(base),
+        (base, None) => base,
     }
+    .unwrap_or_default();
+    let provider = settings.models.provider.trim();
+    if !provider.is_empty() {
+        return Some(provider.to_string());
+    }
+    let default = XavierSettings::default().models.provider;
+    let trimmed = default.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 /// Load defaults, then overlay the runtime state written by `save()`.

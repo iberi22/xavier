@@ -708,6 +708,64 @@ pub mod tests {
     }
 
     #[test]
+    fn test_configured_model_provider_honours_saved_runtime_state() {
+        let _env = TempEnv::new();
+        let saved_openrouter: Vec<_> = ["OPENROUTER_API_KEY"]
+            .iter()
+            .map(|k| (*k, std::env::var_os(k)))
+            .collect();
+        for (k, _) in &saved_openrouter {
+            std::env::remove_var(k);
+        }
+        std::env::remove_var("XAVIER_OPENROUTER_API_KEY");
+        std::env::remove_var("XAVIER_MODEL_PROVIDER");
+        std::env::remove_var("XAVIER_PROVIDER");
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("xavier.config.json");
+        let mut custom = XavierSettings::default();
+        custom.models.provider = "anthropic".to_string();
+        std::fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&custom).expect("serialize"),
+        )
+        .expect("write");
+        std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
+        std::env::set_var(
+            "XAVIER_RUNTIME_STATE_PATH",
+            dir.path().join("state").join("runtime.json"),
+        );
+        assert_eq!(configured_model_provider(), Some("anthropic".to_string()));
+
+        // A provider saved at runtime overrides the config file.
+        let mut saved = custom.clone();
+        saved.models.provider = "disabled".to_string();
+        tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(serialization::save(&saved))
+            .expect("save runtime state");
+        assert_eq!(configured_model_provider(), Some("disabled".to_string()));
+        assert_eq!(
+            crate::agents::provider::config::ModelProviderConfig::resolve_provider_label(),
+            "disabled"
+        );
+
+        // It also applies when the config file is absent.
+        std::fs::remove_file(&config_path).expect("remove config");
+        assert_eq!(configured_model_provider(), Some("disabled".to_string()));
+
+        // Reading never seeds a config file from the template.
+        assert!(!config_path.exists());
+
+        for (k, v) in saved_openrouter {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+    }
+
+    #[test]
     fn test_non_empty_helper() {
         assert_eq!(non_empty(""), None);
         assert_eq!(non_empty("   "), None);
