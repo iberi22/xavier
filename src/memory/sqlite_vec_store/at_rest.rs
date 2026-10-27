@@ -154,7 +154,7 @@ fn warn_no_key_once(reason: &str) {
     });
 }
 
-fn read_key_file(path: &std::path::Path) -> Result<Option<[u8; 32]>> {
+pub(crate) fn read_key_file(path: &std::path::Path) -> Result<Option<[u8; 32]>> {
     match std::fs::read_to_string(path) {
         Ok(text) => {
             let hex = text
@@ -183,25 +183,71 @@ fn read_key_file(path: &std::path::Path) -> Result<Option<[u8; 32]>> {
 }
 
 fn generate_key_file(path: &std::path::Path) -> Result<[u8; 32]> {
+    create_record_key_exclusive(path)
+}
+
+/// Create the node record key file without ever replacing an existing one.
+///
+/// The key is written in full to a private (0600) temporary file in the same
+/// directory and then hard-linked into place, which fails if the target exists.
+/// Readers therefore never see a partial key. If another writer created the
+/// file first, its key is read back and returned, so concurrent first writers
+/// all end up with the same key.
+pub fn create_record_key_exclusive(path: &std::path::Path) -> Result<[u8; 32]> {
+    use std::io::Write;
     let mut key = [0u8; 32];
     rand::rngs::OsRng.fill_bytes(&mut key);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("cannot create {}", parent.display()))?;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("cannot create {}", parent.display()))?;
+
+    let mut nonce = [0u8; 8];
+    rand::rngs::OsRng.fill_bytes(&mut nonce);
+    let tmp = parent.join(format!(
+        ".record.key.{}.{}.tmp",
+        std::process::id(),
+        crate::crypto::hex_encode(nonce)
+    ));
+    let write_tmp = || -> Result<()> {
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut file = opts
+            .open(&tmp)
+            .with_context(|| format!("cannot create {}", tmp.display()))?;
+        file.write_all(crate::crypto::hex_encode(key).as_bytes())
+            .with_context(|| format!("cannot write {}", tmp.display()))?;
+        file.sync_all()
+            .with_context(|| format!("cannot sync {}", tmp.display()))?;
+        Ok(())
+    };
+    let linked = write_tmp().and_then(|()| match std::fs::hard_link(&tmp, path) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+        Err(e) => Err(anyhow::anyhow!("cannot create {}: {e}", path.display())),
+    });
+    let _ = std::fs::remove_file(&tmp);
+    if linked? {
+        tracing::info!(
+            "at_rest: generated new node record key at {}",
+            path.display()
+        );
+        return Ok(key);
     }
-    std::fs::write(path, crate::crypto::hex_encode(key))
-        .with_context(|| format!("cannot write {}", path.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("cannot chmod 0600 {}", path.display()))?;
-    }
-    tracing::info!(
-        "at_rest: generated new node record key at {}",
-        path.display()
-    );
-    Ok(key)
+    // Another writer won the race: use its key.
+    read_key_file(path)?.ok_or_else(|| {
+        anyhow::anyhow!(
+            "record key file {} disappeared while it was being created",
+            path.display()
+        )
+    })
 }
 
 /// Whether an `encrypted_dek` blob was wrapped by this module (vs the legacy KEK path).
@@ -2941,6 +2987,44 @@ mod tests {
         Option<Vec<u8>>,
     );
     use super::*;
+
+    #[test]
+    fn concurrent_key_creation_yields_one_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("node").join("record.key");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let path = path.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    create_record_key_exclusive(&path).unwrap()
+                })
+            })
+            .collect();
+        let keys: Vec<[u8; 32]> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        let on_disk = read_key_file(&path).unwrap().unwrap();
+        assert!(
+            keys.iter().all(|k| *k == on_disk),
+            "all writers must share the stored key"
+        );
+        // No temporary files are left behind.
+        let leftovers: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name() != "record.key")
+            .collect();
+        assert!(leftovers.is_empty(), "temporary key files left behind");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+        // An existing key is never replaced.
+        assert_eq!(create_record_key_exclusive(&path).unwrap(), on_disk);
+    }
     use crate::memory::store::MemoryRecord;
     use rusqlite::params;
 

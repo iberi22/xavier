@@ -64,8 +64,14 @@ async fn space_workspace_files_stay_inside_the_space_dir_and_follow_it_to_trash(
     // Let the workspace's background tasks run.
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
 
+    // The node record key is node-wide, not space data: the first sealed
+    // conversation write provisions it in the data dir.
+    let node_key = data.join("node").join("record.key");
     for (label, dir) in [("HOME", &home), ("cwd", &cwd), ("data dir", &data)] {
-        let stray = files_under(dir);
+        let stray: Vec<_> = files_under(dir)
+            .into_iter()
+            .filter(|p| *p != node_key)
+            .collect();
         assert!(
             stray.is_empty(),
             "space wrote outside its dir into {label}: {stray:?}"
