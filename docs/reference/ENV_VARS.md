@@ -160,13 +160,13 @@ These are used when `XAVIER_MODEL_PROVIDER` is set to a specific cloud or hosted
 | `ANTHROPIC_API_KEY` | Anthropic | _none (required)_ (example only: `claude-sonnet-5-5`) | `https://api.anthropic.com/v1` | ✅ |
 | `ANTHROPIC_MODEL` | Anthropic | — | — | ❌ |
 | `ANTHROPIC_BASE_URL` | Anthropic | `https://api.anthropic.com/v1` | — | ❌ |
-| `DEEPSEEK_API_KEY` | DeepSeek | `deepseek-chat` | `https://api.deepseek.com` | ✅ |
+| `DEEPSEEK_API_KEY` | DeepSeek | _none (required)_ (example only: `deepseek-chat`) | `https://api.deepseek.com` | ✅ |
 | `DEEPSEEK_MODEL` | DeepSeek | — | — | ❌ |
 | `DEEPSEEK_BASE_URL` | DeepSeek | `https://api.deepseek.com` | — | ❌ |
-| `MINIMAX_API_KEY` | MiniMax | `MiniMax-Text-01` | `https://api.minimax.chat/v1` | ✅ |
+| `MINIMAX_API_KEY` | MiniMax | _none (required)_ (example only: `MiniMax-Text-01`) | `https://api.minimax.chat/v1` | ✅ |
 | `MINIMAX_MODEL` | MiniMax | — | — | ❌ |
 | `MINIMAX_BASE_URL` | MiniMax | `https://api.minimax.chat/v1` | — | ❌ |
-| `GEMINI_API_KEY` | Gemini | `gemini-2.0-flash` | (no base URL override) | ✅ |
+| `GEMINI_API_KEY` | Gemini | _none (required)_ (example only: `gemini-2.0-flash`) | (no base URL override) | ✅ |
 | `GEMINI_MODEL` | Gemini | — | — | ❌ |
 
 **Precedence**: MCP per-call arg > env > config file > nothing (no compiled default).

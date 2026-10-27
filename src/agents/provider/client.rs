@@ -83,7 +83,10 @@ impl ModelProviderClient {
         user_prompt: &str,
         use_cache: bool,
     ) -> Result<LlmResponse> {
-        if !self.config.is_configured() || self.config.provider_mode == ProviderMode::Disabled {
+        if !self.config.is_configured()
+            || self.config.model.trim().is_empty()
+            || self.config.provider_mode == ProviderMode::Disabled
+        {
             return Err(anyhow!(self
                 .config
                 .unconfigured_reason()
@@ -389,7 +392,10 @@ impl LlmProvider for ModelProviderClient {
     }
 
     async fn evaluate_context(&self, query: &str, context: &[RetrievedDocument]) -> Result<f32> {
-        if !self.config.is_configured() || self.config.provider_mode == ProviderMode::Disabled {
+        if !self.config.is_configured()
+            || self.config.model.trim().is_empty()
+            || self.config.provider_mode == ProviderMode::Disabled
+        {
             return Ok(1.0);
         }
 

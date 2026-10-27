@@ -400,6 +400,7 @@ fn test_provider_resolution_honours_xavier_model_provider() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn test_generate_text_short_circuits_when_model_unconfigured() {
     let _guard = env_lock().lock().expect("test assertion");
 
@@ -434,5 +435,29 @@ async fn test_generate_text_short_circuits_when_model_unconfigured() {
     match prev_xav_opencode_model {
         Some(v) => std::env::set_var("XAVIER_OPENCODE_MODEL", v),
         None => std::env::remove_var("XAVIER_OPENCODE_MODEL"),
+    }
+}
+
+#[test]
+fn test_resolve_provider_label_prefers_model_provider_over_deprecated() {
+    let _guard = env_lock().lock().expect("test assertion");
+
+    let prev_model_provider = std::env::var("XAVIER_MODEL_PROVIDER").ok();
+    let prev_provider = std::env::var("XAVIER_PROVIDER").ok();
+
+    std::env::set_var("XAVIER_MODEL_PROVIDER", "OpenAI");
+    std::env::set_var("XAVIER_PROVIDER", "local");
+    assert_eq!(ModelProviderConfig::resolve_provider_label(), "openai");
+
+    std::env::remove_var("XAVIER_MODEL_PROVIDER");
+    assert_eq!(ModelProviderConfig::resolve_provider_label(), "local");
+
+    match prev_model_provider {
+        Some(v) => std::env::set_var("XAVIER_MODEL_PROVIDER", v),
+        None => std::env::remove_var("XAVIER_MODEL_PROVIDER"),
+    }
+    match prev_provider {
+        Some(v) => std::env::set_var("XAVIER_PROVIDER", v),
+        None => std::env::remove_var("XAVIER_PROVIDER"),
     }
 }

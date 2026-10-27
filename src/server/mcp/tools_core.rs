@@ -1224,9 +1224,7 @@ pub async fn handle_core_tool(
         }
         "xavier_local_status" => {
             let mode = crate::server::alerts::SYSTEM_ALERTS.get_mode();
-            let provider = std::env::var("XAVIER_PROVIDER")
-                .or_else(|_| std::env::var("XAVIER_MODEL_PROVIDER"))
-                .unwrap_or_else(|_| "local".into());
+            let provider = crate::agents::provider::ModelProviderConfig::resolve_provider_label();
             let health = crate::observability::health::HEALTH.get_status().await;
             let llm_reachable = health.llm.reachable;
             let embedding_reachable = shared_embedding_probe().await;

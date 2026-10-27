@@ -209,7 +209,7 @@ impl SystemAlertStore {
     /// Get mode.
     pub fn get_mode(&self) -> OperationalMode {
         let alerts = self.get_alerts();
-        let provider = std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
+        let provider = crate::agents::provider::ModelProviderConfig::resolve_provider_label();
 
         let has_llm_error = alerts
             .iter()

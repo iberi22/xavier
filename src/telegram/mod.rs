@@ -675,9 +675,8 @@ impl XavierBot {
             }
             Command::LocalStatus => {
                 let mode = crate::server::alerts::SYSTEM_ALERTS.get_mode();
-                let provider = std::env::var("XAVIER_PROVIDER")
-                    .or_else(|_| std::env::var("XAVIER_MODEL_PROVIDER"))
-                    .unwrap_or_else(|_| "local".into());
+                let provider =
+                    crate::agents::provider::ModelProviderConfig::resolve_provider_label();
                 let health = crate::observability::health::HEALTH.get_status().await;
                 let (icon, label) = match mode {
                     crate::server::alerts::OperationalMode::LocalHealthy => ("🟢", "Local sano"),
