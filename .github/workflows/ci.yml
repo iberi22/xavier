@@ -515,6 +515,9 @@ jobs:
       - name: Run Secret Scan
         run: bash scripts/check-secrets.sh
 
+      - name: Run Check Env Vars
+        run: python3 scripts/check-env-vars.py
+
   # Job 5: Frontend Build & Security Audit
   # NOTE: deliberately NOT gated behind `needs.changes.outputs.frontend` (see the `changes` job
   # above). This job's `panel-browser-smoke` step runs the panel-ui Playwright e2e suite, which

@@ -5,8 +5,8 @@
 // GitCore SRC Tools for Xavier
 // MCP tools for querying GitCore documentation from Xavier
 
-use serde::{Deserialize, Serialize};
 use crate::memory::store::MemoryStore;
+use serde::{Deserialize, Serialize};
 
 /// Get SRC context for a query
 /// Queries Xavier memory for documentation related to the query
@@ -62,25 +62,35 @@ pub mod gitcore_tools {
         limit: usize,
     ) -> Result<Vec<SrcContextResult>, String> {
         // Search in memory store
-        let results = store.search(
-            query,
-            Some(&format!("project_id:{}", project_id)),
-            Some(&["src".to_string()]),
-            limit,
-        ).await.map_err(|e| e.to_string())?;
+        let results = store
+            .search(
+                query,
+                Some(&format!("project_id:{}", project_id)),
+                Some(&["src".to_string()]),
+                limit,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
 
-        Ok(results.into_iter().map(|r| SrcContextResult {
-            doc_id: r.id.clone(),
-            title: r.title.unwrap_or_default(),
-            content: r.text,
-            score: r.score.unwrap_or(0.0),
-            module: r.metadata.get("module")
-                .cloned()
-                .unwrap_or_else(|| "core".to_string()),
-            doc_type: r.metadata.get("doc_type")
-                .cloned()
-                .unwrap_or_else(|| "general".to_string()),
-        }).collect())
+        Ok(results
+            .into_iter()
+            .map(|r| SrcContextResult {
+                doc_id: r.id.clone(),
+                title: r.title.unwrap_or_default(),
+                content: r.text,
+                score: r.score.unwrap_or(0.0),
+                module: r
+                    .metadata
+                    .get("module")
+                    .cloned()
+                    .unwrap_or_else(|| "core".to_string()),
+                doc_type: r
+                    .metadata
+                    .get("doc_type")
+                    .cloned()
+                    .unwrap_or_else(|| "general".to_string()),
+            })
+            .collect())
     }
 
     /// Search SRC documents by keywords
@@ -101,25 +111,30 @@ pub mod gitcore_tools {
             filters.push(format!("module:{}", m));
         }
 
-        let results = store.search(
-            &query,
-            Some(&filters),
-            Some(&["src".to_string()]),
-            20,
-        ).await.map_err(|e| e.to_string())?;
+        let results = store
+            .search(&query, Some(&filters), Some(&["src".to_string()]), 20)
+            .await
+            .map_err(|e| e.to_string())?;
 
-        Ok(results.into_iter().map(|r| SrcContextResult {
-            doc_id: r.id.clone(),
-            title: r.title.unwrap_or_default(),
-            content: r.text,
-            score: r.score.unwrap_or(0.0),
-            module: r.metadata.get("module")
-                .cloned()
-                .unwrap_or_else(|| "core".to_string()),
-            doc_type: r.metadata.get("doc_type")
-                .cloned()
-                .unwrap_or_else(|| "general".to_string()),
-        }).collect())
+        Ok(results
+            .into_iter()
+            .map(|r| SrcContextResult {
+                doc_id: r.id.clone(),
+                title: r.title.unwrap_or_default(),
+                content: r.text,
+                score: r.score.unwrap_or(0.0),
+                module: r
+                    .metadata
+                    .get("module")
+                    .cloned()
+                    .unwrap_or_else(|| "core".to_string()),
+                doc_type: r
+                    .metadata
+                    .get("doc_type")
+                    .cloned()
+                    .unwrap_or_else(|| "general".to_string()),
+            })
+            .collect())
     }
 
     /// Get module specification
@@ -133,23 +148,26 @@ pub mod gitcore_tools {
             format!("module:{}", module),
         ];
 
-        let results = store.search(
-            "",
-            Some(&filters),
-            Some(&["src".to_string()]),
-            10,
-        ).await.map_err(|e| e.to_string())?;
+        let results = store
+            .search("", Some(&filters), Some(&["src".to_string()]), 10)
+            .await
+            .map_err(|e| e.to_string())?;
 
-        Ok(results.into_iter().map(|r| SrcContextResult {
-            doc_id: r.id.clone(),
-            title: r.title.unwrap_or_default(),
-            content: r.text,
-            score: r.score.unwrap_or(0.0),
-            module: module.to_string(),
-            doc_type: r.metadata.get("doc_type")
-                .cloned()
-                .unwrap_or_else(|| "general".to_string()),
-        }).collect())
+        Ok(results
+            .into_iter()
+            .map(|r| SrcContextResult {
+                doc_id: r.id.clone(),
+                title: r.title.unwrap_or_default(),
+                content: r.text,
+                score: r.score.unwrap_or(0.0),
+                module: module.to_string(),
+                doc_type: r
+                    .metadata
+                    .get("doc_type")
+                    .cloned()
+                    .unwrap_or_else(|| "general".to_string()),
+            })
+            .collect())
     }
 
     /// List all SRC documents for a project
@@ -160,32 +178,37 @@ pub mod gitcore_tools {
     ) -> Result<Vec<SrcContextResult>, String> {
         let filters = vec![format!("project_id:{}", project_id)];
 
-        let results = store.search(
-            "",
-            Some(&filters),
-            Some(&["src".to_string()]),
-            100,
-        ).await.map_err(|e| e.to_string())?;
+        let results = store
+            .search("", Some(&filters), Some(&["src".to_string()]), 100)
+            .await
+            .map_err(|e| e.to_string())?;
 
-        Ok(results.into_iter().map(|r| {
-            let content = if include_content {
-                r.text
-            } else {
-                String::new()
-            };
+        Ok(results
+            .into_iter()
+            .map(|r| {
+                let content = if include_content {
+                    r.text
+                } else {
+                    String::new()
+                };
 
-            SrcContextResult {
-                doc_id: r.id.clone(),
-                title: r.title.unwrap_or_default(),
-                content,
-                score: r.score.unwrap_or(0.0),
-                module: r.metadata.get("module")
-                    .cloned()
-                    .unwrap_or_else(|| "core".to_string()),
-                doc_type: r.metadata.get("doc_type")
-                    .cloned()
-                    .unwrap_or_else(|| "general".to_string()),
-            }
-        }).collect())
+                SrcContextResult {
+                    doc_id: r.id.clone(),
+                    title: r.title.unwrap_or_default(),
+                    content,
+                    score: r.score.unwrap_or(0.0),
+                    module: r
+                        .metadata
+                        .get("module")
+                        .cloned()
+                        .unwrap_or_else(|| "core".to_string()),
+                    doc_type: r
+                        .metadata
+                        .get("doc_type")
+                        .cloned()
+                        .unwrap_or_else(|| "general".to_string()),
+                }
+            })
+            .collect())
     }
 }

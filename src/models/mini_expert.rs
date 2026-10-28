@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::memory::schema::ClearanceLevel;
 
@@ -63,8 +63,8 @@ impl MiniExpertRegistry {
         let raw = std::fs::read_to_string(&storage_path)
             .context("Failed to read mini experts registry file")?;
 
-        let experts: HashMap<String, MiniExpert> = serde_json::from_str(&raw)
-            .context("Failed to parse mini experts registry JSON")?;
+        let experts: HashMap<String, MiniExpert> =
+            serde_json::from_str(&raw).context("Failed to parse mini experts registry JSON")?;
 
         Ok(Self {
             experts,
