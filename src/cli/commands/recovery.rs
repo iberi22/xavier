@@ -39,7 +39,8 @@ pub async fn handle_recovery_command(args: RecoveryArgs) -> Result<()> {
     match args.command {
         RecoveryCommand::Status {
             crypt_passphrase_backed_up,
-        } => status(crypt_passphrase_backed_up),
+            json,
+        } => status(crypt_passphrase_backed_up, json),
         RecoveryCommand::Seal {
             mnemonic,
             passphrase,
@@ -48,6 +49,7 @@ pub async fn handle_recovery_command(args: RecoveryArgs) -> Result<()> {
             replace_mnemonic,
             replace_passphrase,
             rekey,
+            offline_i_know_the_key_is_live,
         } => seal(
             mnemonic,
             passphrase,
@@ -55,8 +57,18 @@ pub async fn handle_recovery_command(args: RecoveryArgs) -> Result<()> {
             words_out,
             replace_mnemonic,
             replace_passphrase,
-            rekey,
-        ),
+            SealSafety {
+                rekey,
+                offline: offline_i_know_the_key_is_live,
+            },
+        )
+        .await
+        .inspect_err(|error| {
+            if let Some(failure) = error.downcast_ref::<SealFailure>() {
+                eprintln!("{failure}");
+                std::process::exit(failure.exit_code());
+            }
+        }),
         RecoveryCommand::Restore { key_file, kcv } => {
             use std::io::Read;
             let content = if key_file.as_os_str() == "-" {
@@ -82,11 +94,84 @@ pub async fn handle_recovery_command(args: RecoveryArgs) -> Result<()> {
     }
 }
 
-fn status(crypt_passphrase_backed_up: bool) -> Result<()> {
+fn status(crypt_passphrase_backed_up: bool, json: bool) -> Result<()> {
     let store = RecoveryStore::from_env_or_default();
-    let (live_key, _) = at_rest::peek_record_key_with_source();
+    let (live_key, source) = at_rest::peek_record_key_with_source();
+    let fingerprint = live_key
+        .as_ref()
+        .map(xavier::recovery::kcv::key_fingerprint);
+    let key_path = resolved_key_path(&source);
     let report = store.status(Some(crypt_passphrase_backed_up), live_key.as_ref());
     let manifest = store.read_manifest().ok().flatten();
+    if json {
+        let present = |name: &str| std::fs::symlink_metadata(store.root().join(name)).is_ok();
+        let seal_json = |health: &SealHealth, name: &str| {
+            serde_json::json!({
+                "present": present(name),
+                "valid": health.is_valid(),
+                "state": match health {
+                    SealHealth::Absent => "absent",
+                    SealHealth::Malformed(_) => "malformed",
+                    SealHealth::Valid { .. } => "valid",
+                },
+                "mode_0600": match health { SealHealth::Valid { mode_0600 } => Some(*mode_0600), _ => None },
+            })
+        };
+        let named_seal = |kind: &str, health: &SealHealth, name: &str| {
+            let mut value = seal_json(health, name);
+            value["kind"] = kind.into();
+            value
+        };
+        let mut warnings = report.gaps();
+        warnings.push("Seal validity is structural; verify words/passphrase with unseal.".into());
+        if manifest.is_none() && present("recovery-manifest.json") {
+            warnings.push("Recovery manifest is malformed or unreadable.".into());
+        }
+        for (health, label) in [
+            (&report.mnemonic_seal, "mnemonic"),
+            (&report.passphrase_seal, "passphrase"),
+        ] {
+            if matches!(health, SealHealth::Malformed(_)) {
+                warnings.push(format!("The {label} seal is malformed or unreadable."));
+            }
+            if matches!(health, SealHealth::Valid { mode_0600: false }) {
+                warnings.push(format!("The {label} seal permissions are not 0600."));
+            }
+        }
+        let kind = match source {
+            at_rest::KeySource::Env => "env",
+            at_rest::KeySource::File(_) | at_rest::KeySource::Generated(_) => "file",
+            at_rest::KeySource::Missing(_) => "missing",
+            at_rest::KeySource::Unavailable(_) => "unavailable",
+        };
+        let manifest_valid = manifest.as_ref().is_some_and(|m| {
+            m.version == xavier::recovery::RECOVERY_FORMAT_VERSION
+                && m.record_key_kcv.len() == 64
+                && m.record_key_kcv.bytes().all(|b| b.is_ascii_hexdigit())
+        });
+        println!(
+            "{}",
+            serde_json::to_string(&serde_json::json!({
+                "schema_version": 1,
+                "recovery_dir": store.root(),
+                "key_source": {"kind": kind, "path": key_path},
+                "key_path": key_path,
+                "key_fingerprint": fingerprint,
+                "manifest": {"present": present("recovery-manifest.json"), "valid": manifest_valid},
+                "kcv": {"present": present("record.key.kcv"), "valid": matches!(report.kcv, KcvState::MatchesLiveKey | KcvState::LiveKeyMissing), "state": report.kcv},
+                "mnemonic_seal": seal_json(&report.mnemonic_seal, MNEMONIC_SEAL_FILE),
+                "passphrase_seal": seal_json(&report.passphrase_seal, PASSPHRASE_SEAL_FILE),
+                "seals": [
+                    named_seal("mnemonic", &report.mnemonic_seal, MNEMONIC_SEAL_FILE),
+                    named_seal("passphrase", &report.passphrase_seal, PASSPHRASE_SEAL_FILE),
+                ],
+                "crypt_passphrase_backed_up": crypt_passphrase_backed_up,
+                "recoverable": report.is_recoverable(),
+                "warnings": warnings,
+            }))?
+        );
+        return Ok(());
+    }
 
     println!("Xavier recovery status");
     println!("  recovery dir    : {}", store.root().display());
@@ -136,6 +221,17 @@ fn status(crypt_passphrase_backed_up: bool) -> Result<()> {
         }
     );
     println!(
+        "  key path        : {}",
+        key_path.as_ref().map_or_else(
+            || "none (environment key or unavailable)".to_string(),
+            |p| p.display().to_string()
+        )
+    );
+    println!(
+        "  key fingerprint : {}",
+        fingerprint.as_deref().unwrap_or("unavailable")
+    );
+    println!(
         "  recoverable     : {}",
         if report.is_recoverable() { "yes" } else { "NO" }
     );
@@ -157,21 +253,133 @@ fn seal_health(health: &SealHealth) -> String {
     }
 }
 
+fn resolved_key_path(source: &at_rest::KeySource) -> Option<PathBuf> {
+    let path = match source {
+        at_rest::KeySource::Env => return None,
+        at_rest::KeySource::File(path)
+        | at_rest::KeySource::Missing(path)
+        | at_rest::KeySource::Generated(path) => path.clone(),
+        at_rest::KeySource::Unavailable(_) => at_rest::record_key_path(),
+    };
+    Some(path.canonicalize().unwrap_or_else(|_| {
+        if path.is_absolute() {
+            path
+        } else {
+            std::env::current_dir().unwrap_or_default().join(path)
+        }
+    }))
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct RecordKeyIdentity {
+    key_fingerprint: Option<String>,
+    key_path: Option<PathBuf>,
+}
+
+/// Read-only daemon identity; key resolution never creates a key.
+pub async fn record_key_identity_handler() -> axum::Json<RecordKeyIdentity> {
+    let (key, source) = at_rest::peek_record_key_with_source();
+    axum::Json(RecordKeyIdentity {
+        key_fingerprint: key.as_ref().map(xavier::recovery::kcv::key_fingerprint),
+        key_path: resolved_key_path(&source),
+    })
+}
+
+struct SealSafety {
+    rekey: bool,
+    offline: bool,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum SealFailure {
+    #[error("stdin is not a TTY; use {0}")]
+    Usage(&'static str),
+    #[error("daemon authentication failed (HTTP {0}); align the CLI token with the daemon")]
+    Auth(u16),
+    #[error("daemon unreachable; refusing to seal an unverified key. Use --offline-i-know-the-key-is-live only after verifying the selected key is live")]
+    Offline,
+}
+
+impl SealFailure {
+    fn exit_code(&self) -> i32 {
+        match self {
+            Self::Usage(_) => 2,
+            Self::Auth(_) => 3,
+            Self::Offline => 4,
+        }
+    }
+}
+
+async fn verify_daemon_key(key: &[u8; 32], offline: bool) -> Result<()> {
+    let url = format!(
+        "{}/admin/recovery/key",
+        crate::cli::config::resolve_base_url().trim_end_matches('/')
+    );
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let response = client
+        .get(url)
+        .bearer_auth(crate::cli::config::require_xavier_token()?)
+        .send()
+        .await;
+    let response = match response {
+        Ok(response) => response,
+        Err(error) if error.is_connect() || error.is_timeout() => {
+            if offline {
+                eprintln!(
+                    "warning: daemon unreachable; using the explicit offline key acknowledgement"
+                );
+                return Ok(());
+            }
+            return Err(SealFailure::Offline.into());
+        }
+        Err(_) => bail!("cannot verify the daemon record key; no seal was written"),
+    };
+    if matches!(response.status().as_u16(), 401 | 403) {
+        return Err(SealFailure::Auth(response.status().as_u16()).into());
+    }
+    if !response.status().is_success() {
+        bail!(
+            "daemon record key verification failed (HTTP {}); no seal was written",
+            response.status().as_u16()
+        );
+    }
+    let identity: RecordKeyIdentity = response.json().await.map_err(|_| {
+        anyhow::anyhow!("daemon returned an invalid key identity; no seal was written")
+    })?;
+    if identity.key_fingerprint.as_deref() != Some(&xavier::recovery::kcv::key_fingerprint(key)) {
+        bail!("selected record key does not match the daemon's live key; align XAVIER_DATA_DIR / XAVIER_RECORD_KEY with the daemon before sealing");
+    }
+    Ok(())
+}
+
 /// Validate all input before installing seals; publish the KCV and manifest last.
-fn seal(
+async fn seal(
     mnemonic: bool,
     passphrase: bool,
     passphrase_file: Option<PathBuf>,
     words_out: Option<PathBuf>,
     replace_mnemonic: bool,
     replace_passphrase: bool,
-    rekey: bool,
+    safety: SealSafety,
 ) -> Result<()> {
-    use std::io::Write;
+    use std::io::{IsTerminal, Write};
     if !mnemonic && !passphrase {
         bail!("choose at least one of --mnemonic or --passphrase");
     }
     // Refuse before any prompt, generation or sealing.
+    if !std::io::stdin().is_terminal() {
+        if mnemonic && words_out.is_none() {
+            return Err(SealFailure::Usage("--words-out <file> to deliver recovery words").into());
+        }
+        if passphrase && passphrase_file.is_none() {
+            return Err(
+                SealFailure::Usage("--passphrase-file <file> to read the passphrase").into(),
+            );
+        }
+    }
     let mut words_tty = if mnemonic && words_out.is_none() {
         use std::io::IsTerminal;
         let tty = std::fs::OpenOptions::new()
@@ -187,13 +395,24 @@ fn seal(
     } else {
         None
     };
-    let (key, _) = at_rest::peek_record_key_with_source();
+    let (key, source) = at_rest::peek_record_key_with_source();
     let key = key.ok_or_else(|| {
         anyhow::anyhow!(
             "no record key at {}; refusing to seal a key that protects no data",
             at_rest::record_key_path().display()
         )
     })?;
+    eprintln!(
+        "record key path: {}",
+        resolved_key_path(&source).map_or_else(
+            || "none (source: XAVIER_RECORD_KEY environment)".to_string(),
+            |p| p.display().to_string()
+        )
+    );
+    eprintln!(
+        "record key fingerprint: {}",
+        xavier::recovery::kcv::key_fingerprint(&key)
+    );
     let store = RecoveryStore::from_env_or_default();
     for (selected, replace, file, flag) in [
         (
@@ -214,9 +433,12 @@ fn seal(
         }
     }
     if let Some(stored) = store.read_kcv()? {
-        if !rekey && xavier::recovery::kcv::verify_kcv(&key, &stored).is_err() {
+        if !safety.rekey && xavier::recovery::kcv::verify_kcv(&key, &stored).is_err() {
             bail!("stored KCV differs from the live key; use --rekey explicitly");
         }
+    }
+    if !safety.rekey {
+        verify_daemon_key(&key, safety.offline).await?;
     }
     let pass = if passphrase {
         let pass = match passphrase_file {
@@ -933,6 +1155,7 @@ mod tests {
                     replace_mnemonic: false,
                     replace_passphrase: false,
                     rekey: false,
+                    offline_i_know_the_key_is_live: false,
                 },
             }))
             .unwrap_err();

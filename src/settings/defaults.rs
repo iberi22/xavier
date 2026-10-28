@@ -88,21 +88,10 @@ impl Default for MemorySettings {
             backend: "vec".to_string(),
             data_dir: data_dir.to_string_lossy().to_string(),
             embedding_dimensions: 768,
-            workspace_dir: data_dir.join("workspaces").to_string_lossy().to_string(),
-            file_path: data_dir
-                .join("workspaces")
-                .join("default")
-                .join("memory-store.json")
-                .to_string_lossy()
-                .to_string(),
-            sqlite_path: data_dir
-                .join("memory-store.sqlite3")
-                .to_string_lossy()
-                .to_string(),
-            vec_path: data_dir
-                .join("vec-store.sqlite3")
-                .to_string_lossy()
-                .to_string(),
+            workspace_dir: "workspaces".to_string(),
+            file_path: "workspaces/default/memory-store.json".to_string(),
+            sqlite_path: "memory-store.sqlite3".to_string(),
+            vec_path: "vec-store.sqlite3".to_string(),
             supabase_url: None,
             supabase_key: None,
             postgres_url: None,
@@ -136,6 +125,9 @@ impl Default for EpisodicMemoryLayerConfig {
 impl Default for ModelSettings {
     fn default() -> Self {
         Self {
+            explain_provider: None,
+            explain_model: None,
+            explain_url: None,
             provider: "local".to_string(),
             api_flavor: "openai-compatible".to_string(),
             local_llm_url: "http://localhost:11434/v1".to_string(),

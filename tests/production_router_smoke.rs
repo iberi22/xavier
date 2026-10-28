@@ -141,6 +141,7 @@ impl Drop for RestoreEnv {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn production_router_smoke() {
     let temp = tempfile::tempdir().unwrap();
     let _env = RestoreEnv::set(&[("HOME", temp.path()), ("XAVIER_DATA_DIR", temp.path())]);
@@ -297,4 +298,91 @@ async fn production_router_smoke() {
         StatusCode::FORBIDDEN,
         "POST /v1/ollama/pull with Readonly JWT should return 403 Forbidden"
     );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn production_recovery_identity_is_authenticated_and_read_only() {
+    let temp = tempfile::tempdir().unwrap();
+    let _env = RestoreEnv::set(&[
+        ("HOME", temp.path()),
+        ("XAVIER_DATA_DIR", temp.path()),
+        (
+            "XAVIER_CONFIG_PATH",
+            &temp.path().join("absent-config.json"),
+        ),
+        (
+            "XAVIER_RUNTIME_STATE_PATH",
+            &temp.path().join("absent-runtime.json"),
+        ),
+    ]);
+    let _env_str = RestoreEnv::set_str(&[
+        ("XAVIER_TOKEN", "recovery-endpoint-test-token"),
+        ("XAVIER_RECORD_KEY", ""),
+    ]);
+    let state = create_test_cli_state(&temp).await;
+    let workspace = Arc::new(
+        WorkspaceState::new_minimal(
+            state.workspace_id.clone(),
+            state.workspace_dir.clone(),
+            Arc::clone(&state.qmd_memory),
+            Arc::clone(&state.store),
+        )
+        .await,
+    );
+    let deps = AppDeps {
+        workspace_ctx: WorkspaceContext {
+            workspace_id: state.workspace_id.clone(),
+            workspace,
+        },
+        space_manager: None,
+        maloca_router: Router::new(),
+        event_bus_for_ws: xavier::coordination::XavierEventBus::new(10),
+        no_ui: true,
+    };
+    let app = build_app(state, deps);
+    let request = |authenticated: bool| {
+        let request = Request::builder().uri("/admin/recovery/key");
+        let request = if authenticated {
+            request.header("Authorization", "Bearer recovery-endpoint-test-token")
+        } else {
+            request
+        };
+        request.body(Body::empty()).unwrap()
+    };
+    let response = app.clone().oneshot(request(false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let key_path = temp.path().join("node/record.key");
+    assert!(!key_path.exists());
+    let response = app.clone().oneshot(request(true)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), 4096)
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({"key_fingerprint": null, "key_path": key_path})
+    );
+    assert!(!key_path.exists(), "identity endpoint created a key");
+
+    std::fs::create_dir_all(key_path.parent().unwrap()).unwrap();
+    let key = [0x19; 32];
+    let encoded = xavier::crypto::hex_encode(key);
+    xavier::keystore::create_private_file_new(&key_path, encoded.as_bytes()).unwrap();
+    let response = app.oneshot(request(true)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), 4096)
+        .await
+        .unwrap();
+    assert!(!String::from_utf8_lossy(&body).contains(&encoded));
+    let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "key_fingerprint": xavier::recovery::kcv::key_fingerprint(&key),
+            "key_path": key_path,
+        })
+    );
+    assert_eq!(std::fs::read_to_string(&key_path).unwrap(), encoded);
 }
