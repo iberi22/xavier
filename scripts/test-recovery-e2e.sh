@@ -81,6 +81,7 @@ run() {
       HOME="$H" \
       XAVIER_DATA_DIR="${DDIR:-$D}" \
       XAVIER_RECOVERY_DIR="${RDIR:-$R}" \
+      XAVIER_URL="http://127.0.0.1:0" \
       XDG_RUNTIME_DIR="$SANDBOX/run" \
       XDG_CONFIG_HOME="$H/.config" XDG_DATA_HOME="$H/.local/share" \
       XDG_CACHE_HOME="$H/.cache" XDG_STATE_HOME="$H/.local/state" \
@@ -124,8 +125,13 @@ grep -q -- '--key-file' "$LOG/restore-help.log" && HAS_KEY_FILE=1
 HAS_WORDS_OUT=0; HAS_PASS_FILE=0
 grep -q -- '--words-out' "$LOG/seal-help.log" && HAS_WORDS_OUT=1
 grep -q -- '--passphrase-file' "$LOG/seal-help.log" && HAS_PASS_FILE=1
+HAS_OFFLINE=0; SEAL_OFFLINE=()
+if grep -q -- '--offline-i-know-the-key-is-live' "$LOG/seal-help.log"; then
+  HAS_OFFLINE=1; SEAL_OFFLINE=(--offline-i-know-the-key-is-live)
+fi
 NEW=$(( HAS_WORDS_OUT && HAS_PASS_FILE ))
 echo "  seal --words-out: $HAS_WORDS_OUT | seal --passphrase-file: $HAS_PASS_FILE"
+echo "  seal --offline-i-know-the-key-is-live: $HAS_OFFLINE"
 [ "$NEW" = 1 ] || echo "  (binario anterior: solo ruta de palabras; status no se usa porque genera record.key)"
 
 KEY="$(rand_hex)"
@@ -140,20 +146,28 @@ printf 'otra frase que no es 999\n' > "$W/pass-wrong.txt"
 printf 'corta\n' > "$W/pass-short.txt"
 
 step "1. seal (no interactivo)"
+if [ "$HAS_OFFLINE" = 1 ]; then
+  run seal-no-offline recovery seal --mnemonic --words-out "$W/words-no-offline.txt"
+  check "seal sin daemon ni confirmación offline -> rechazado" '[ $RC -ne 0 ] && grep -q "daemon unreachable; refusing to seal an unverified key" "$LOG/seal-no-offline.log"' "$LOG/seal-no-offline.log"
+  check "seal rechazado no deja KCV, manifiesto ni sello" '[ ! -e "$R/record.key.kcv" ] && [ ! -e "$R/recovery-manifest.json" ] && [ ! -e "$R/record.mnemonic.seal.json" ] && [ ! -e "$R/record.passphrase.seal.json" ]'
+  check "seal rechazado no deja palabras" '[ ! -e "$W/words-no-offline.txt" ]'
+else
+  skip "seal sin confirmación offline (el binario no soporta el flag)"
+fi
 if [ "$HAS_WORDS_OUT" = 1 ]; then
-  run seal-m recovery seal --mnemonic --words-out "$W/words.txt"
+  run seal-m recovery seal "${SEAL_OFFLINE[@]}" --mnemonic --words-out "$W/words.txt"
   check "seal --mnemonic --words-out sale con 0" '[ $RC -eq 0 ]' "$LOG/seal-m.log"
   check "archivo de palabras 0600" '[ "$(mode "$W/words.txt")" = 600 ]'
   check "archivo de palabras con 24 palabras" '[ "$(wc -w < "$W/words.txt")" -eq 24 ]'
   if [ "$HAS_PASS_FILE" = 1 ]; then
-    run seal-p recovery seal --passphrase --passphrase-file "$W/pass-crlf.txt"
+    run seal-p recovery seal "${SEAL_OFFLINE[@]}" --passphrase --passphrase-file "$W/pass-crlf.txt"
     check "seal --passphrase --passphrase-file (CRLF) sale con 0" '[ $RC -eq 0 ]' "$LOG/seal-p.log"
   else
     skip "seal --passphrase-file (el binario no lo soporta)"
   fi
   check "seal no creó master.key en HOME (no acuña ni escribe keyring)" '[ ! -e "$H/.xavier/master.key" ]'
 else
-  run seal-m recovery seal --mnemonic
+  run seal-m recovery seal "${SEAL_OFFLINE[@]}" --mnemonic
   check "seal --mnemonic (binario anterior) sale con 0" '[ $RC -eq 0 ]' "$LOG/seal-m.log"
   sed -nE 's/^ *[0-9]{1,2}\. ([^[:space:]]+) *$/\1/p' "$LOG/seal-m.log" | tr '\n' ' ' | sed 's/ $//' > "$W/words.txt"
   check "24 palabras leídas de stdout" '[ "$(wc -w < "$W/words.txt")" -eq 24 ]'
@@ -173,7 +187,7 @@ if [ "$NEW" = 1 ]; then
   check "key-check value: matches live key" 'grep -q "matches live key" "$LOG/status-1.log"' "$LOG/status-1.log"
 
   step "3. sellar dos veces no destruye el primer papel"
-  run seal-twice recovery seal --mnemonic --words-out "$W/words2.txt"
+  run seal-twice recovery seal "${SEAL_OFFLINE[@]}" --mnemonic --words-out "$W/words2.txt"
   check "segundo seal --mnemonic rechazado" '[ $RC -ne 0 ]' "$LOG/seal-twice.log"
   check "primer sello intacto" '[ "$(sha "$R/record.mnemonic.seal.json")" = "$M_SEAL_SHA" ]'
   check "no se creó un segundo archivo de palabras" '[ ! -e "$W/words2.txt" ]'
@@ -265,7 +279,7 @@ if [ "$NEW" = 1 ]; then
 
   # KCV de OTRA clave: se sella un segundo nodo y se copia su KCV.
   D2="$SANDBOX/data2"; R2="$SANDBOX/recovery2"; seed_key "$D2" "$(rand_hex)"
-  DDIR="$D2" RDIR="$R2" run seal-other recovery seal --mnemonic --words-out "$W/words-other.txt"
+  DDIR="$D2" RDIR="$R2" run seal-other recovery seal "${SEAL_OFFLINE[@]}" --mnemonic --words-out "$W/words-other.txt"
   M="$SANDBOX/kcv-mismatch"; cp -a "$R" "$M"; cp "$R2/record.key.kcv" "$M/record.key.kcv"
   RDIR="$M" run status-mismatch recovery status
   check "status detecta KCV de otra clave (MISMATCH)" 'grep -q "MISMATCH" "$LOG/status-mismatch.log"' "$LOG/status-mismatch.log"
@@ -274,12 +288,12 @@ if [ "$NEW" = 1 ]; then
 
   step "10. seal se niega a trabajar sin record.key o con frase corta"
   D3="$SANDBOX/data3"; R3="$SANDBOX/recovery3"; mkdir -p "$D3"
-  DDIR="$D3" RDIR="$R3" run seal-nokey recovery seal --mnemonic --words-out "$W/words-nokey.txt"
+  DDIR="$D3" RDIR="$R3" run seal-nokey recovery seal "${SEAL_OFFLINE[@]}" --mnemonic --words-out "$W/words-nokey.txt"
   check "seal sin record.key -> rechazado" '[ $RC -ne 0 ]' "$LOG/seal-nokey.log"
   check "seal sin record.key no acuña una clave" '[ ! -e "$D3/node/record.key" ]'
   check "seal sin record.key no deja palabras" '[ ! -e "$W/words-nokey.txt" ]'
   D4="$SANDBOX/data4"; R4="$SANDBOX/recovery4"; seed_key "$D4" "$(rand_hex)"
-  DDIR="$D4" RDIR="$R4" run seal-short recovery seal --passphrase --passphrase-file "$W/pass-short.txt"
+  DDIR="$D4" RDIR="$R4" run seal-short recovery seal "${SEAL_OFFLINE[@]}" --passphrase --passphrase-file "$W/pass-short.txt"
   check "frase de menos de 12 caracteres -> rechazado" '[ $RC -ne 0 ]' "$LOG/seal-short.log"
   check "frase corta no deja KCV, manifiesto ni sello" '[ ! -e "$R4/record.key.kcv" ] && [ ! -e "$R4/recovery-manifest.json" ] && [ ! -e "$R4/record.passphrase.seal.json" ]'
 fi
