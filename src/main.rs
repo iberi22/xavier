@@ -78,6 +78,10 @@ async fn async_main() -> Result<()> {
         std::process::exit(2);
     }
     let cli = Box::new(Cli::parse());
+    // Config inspection must work even when startup configuration is invalid.
+    if matches!(cli.cmd, Some(xavier_lib::cli::Command::Config(_))) {
+        return cli.run().await;
+    }
     let llm_config_command = matches!(
         cli.cmd.as_ref(),
         Some(xavier_lib::cli::commands::Command::Llm(_))

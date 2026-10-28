@@ -53,3 +53,6 @@ mod xtsp;
 
 #[path = "ready_gate_startup.rs"]
 mod ready_gate_startup;
+
+#[path = "config_cli.rs"]
+mod config_cli;

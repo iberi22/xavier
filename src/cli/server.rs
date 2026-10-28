@@ -449,6 +449,10 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
     } = deps;
 
     let protected_routes = Router::new()
+        .route(
+            "/admin/recovery/key",
+            get(crate::cli::commands::recovery::record_key_identity_handler),
+        )
         .merge(
             xavier::server::training_routes::router(
                 xavier::server::training_routes::TrainingState {
