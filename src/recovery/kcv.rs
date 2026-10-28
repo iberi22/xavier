@@ -48,6 +48,15 @@ pub fn compute_kcv(key: &[u8; 32]) -> [u8; 32] {
     hmac_sha256(key, KCV_LABEL)
 }
 
+/// Short, domain-separated identity for comparing record keys without exposing them.
+pub fn key_fingerprint(key: &[u8; 32]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    hash.update(b"xavier-record-key-fingerprint-v1\0");
+    hash.update(key);
+    hex_encode(hash.finalize())[..12].to_string()
+}
+
 /// Encode a KCV for storage.
 pub fn encode_kcv(key: &[u8; 32]) -> String {
     hex_encode(compute_kcv(key))

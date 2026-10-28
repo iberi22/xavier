@@ -50,7 +50,13 @@ impl Harness {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        self.run_with_input(args, None)
+        if args.first() == Some(&"seal") && !args.contains(&"--offline-i-know-the-key-is-live") {
+            let mut args = args.to_vec();
+            args.push("--offline-i-know-the-key-is-live");
+            self.run_with_input(&args, None)
+        } else {
+            self.run_with_input(args, None)
+        }
     }
 
     fn run_with_input(&self, args: &[&str], input: Option<&str>) -> Output {
@@ -618,6 +624,11 @@ fn recovery_status_json_has_stable_safe_fingerprint_and_schema() {
         assert_eq!(value["recovery_dir"], arg(&h.path("recovery")));
         assert_eq!(value["key_source"]["kind"], "file");
         assert_eq!(value["key_source"]["path"], arg(&h.key_path()));
+        assert_eq!(value["key_path"], value["key_source"]["path"]);
+        assert_eq!(value["seals"].as_array().unwrap().len(), 2);
+        assert_eq!(value["seals"][0]["kind"], "mnemonic");
+        assert_eq!(value["seals"][1]["kind"], "passphrase");
+        assert_eq!(value["seals"][0]["valid"], false);
         assert_eq!(value["key_fingerprint"], expected_fingerprint(&h.key));
         assert_ne!(value["key_fingerprint"], hex_encode(h.key));
         for field in ["manifest", "kcv", "mnemonic_seal", "passphrase_seal"] {
@@ -676,7 +687,11 @@ fn recovery_seal_checks_authenticated_daemon_fingerprint_before_writing() {
 fn recovery_seal_offline_requires_explicit_acknowledgement() {
     let h = Harness::new();
     let words = h.path("offline-words.txt");
-    let output = h.run(&["seal", "--mnemonic", "--words-out", arg(&words)]);
+    let output = h.run_at(
+        &["seal", "--mnemonic", "--words-out", arg(&words)],
+        None,
+        "http://127.0.0.1:0",
+    );
     assert_eq!(output.status.code(), Some(4), "{}", text(&output));
     assert!(text(&output).contains("--offline-i-know-the-key-is-live"));
     assert!(!words.exists());
@@ -701,4 +716,91 @@ fn recovery_seal_non_tty_requires_private_input_and_output_flags() {
         assert!(text(&output).contains(hint));
     }
     assert_eq!(fs::read_dir(h.path("recovery")).unwrap().count(), 0);
+}
+
+#[test]
+fn recovery_seal_offline_flag_does_not_bypass_daemon_failures() {
+    let h = Harness::new();
+    let words = h.path("refused-words.txt");
+    let args = [
+        "seal",
+        "--mnemonic",
+        "--words-out",
+        arg(&words),
+        "--offline-i-know-the-key-is-live",
+    ];
+    let mut server = mockito::Server::new();
+    for (status, body, exit) in [
+        (401, "rejected", 3),
+        (403, "rejected", 3),
+        (404, "not supported", 1),
+        (500, "failed", 1),
+        (302, "redirect", 1),
+        (200, "malformed", 1),
+        (200, r#"{"key_fingerprint":null,"key_path":null}"#, 1),
+        (
+            200,
+            r#"{"key_fingerprint":"000000000000","key_path":null}"#,
+            1,
+        ),
+    ] {
+        let mock = server
+            .mock("GET", "/admin/recovery/key")
+            .match_header("authorization", "Bearer recovery-test-token")
+            .with_status(status)
+            .with_body(body)
+            .with_header("location", "http://127.0.0.1:0/unused")
+            .create();
+        let output = h.run_at(&args, None, &server.url());
+        assert_eq!(
+            output.status.code(),
+            Some(exit),
+            "{status}: {}",
+            text(&output)
+        );
+        assert!(!words.exists());
+        assert_eq!(fs::read_dir(h.path("recovery")).unwrap().count(), 0);
+        assert_eq!(fs::read(h.key_path()).unwrap(), h.key_bytes);
+        mock.assert();
+        mock.remove();
+    }
+}
+
+#[test]
+fn recovery_status_json_tracks_seals_missing_key_and_malformed_files() {
+    let h = Harness::new();
+    h.seal_words();
+    let json = || {
+        serde_json::from_slice::<serde_json::Value>(
+            &h.ok(&["status", "--json", "--crypt-passphrase-backed-up"])
+                .stdout,
+        )
+        .unwrap()
+    };
+    let value = json();
+    assert_eq!(value["mnemonic_seal"]["present"], true);
+    assert_eq!(value["mnemonic_seal"]["valid"], true);
+    assert_eq!(value["kcv"]["state"], "matches_live_key");
+    assert_eq!(value["manifest"]["valid"], true);
+    assert_eq!(value["recoverable"], true);
+    fs::remove_file(h.key_path()).unwrap();
+    let value = json();
+    assert_eq!(value["key_source"]["kind"], "missing");
+    assert!(value["key_fingerprint"].is_null());
+    assert_eq!(value["kcv"]["state"], "live_key_missing");
+    assert!(!h.key_path().exists());
+    fs::write(h.key_path(), b"malformed test key").unwrap();
+    let value = json();
+    assert_eq!(value["key_source"]["kind"], "unavailable");
+    assert_eq!(value["key_source"]["path"], arg(&h.key_path()));
+    assert!(value["key_fingerprint"].is_null());
+    fs::write(h.path("recovery/recovery-manifest.json"), b"{").unwrap();
+    fs::write(h.path(&format!("recovery/{MNEMONIC_SEAL_FILE}")), b"{").unwrap();
+    let value = json();
+    assert_eq!(value["manifest"]["present"], true);
+    assert_eq!(value["manifest"]["valid"], false);
+    assert_eq!(value["mnemonic_seal"]["present"], true);
+    assert_eq!(value["mnemonic_seal"]["valid"], false);
+    assert_eq!(value["recoverable"], false);
+    assert!(value["warnings"].as_array().unwrap().len() > 1);
 }

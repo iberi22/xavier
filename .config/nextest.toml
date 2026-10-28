@@ -44,6 +44,10 @@ filter = 'binary(=suite_07) & test(/^(memory_write_integrity_e2e|mesh_auth_bindi
 test-group = "serial"
 
 [[profile.default.overrides]]
+filter = 'binary(=suite_08) & test(/^(production_router_smoke)::/)'
+test-group = "serial"
+
+[[profile.default.overrides]]
 filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
 test-group = "serial"
 
@@ -73,6 +77,10 @@ test-group = "serial"
 
 [[profile.ci.overrides]]
 filter = 'binary(=suite_07) & test(/^(memory_write_integrity_e2e|mesh_auth_binding_test|mesh_integration)::/)'
+test-group = "serial"
+
+[[profile.ci.overrides]]
+filter = 'binary(=suite_08) & test(/^(production_router_smoke)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
