@@ -626,8 +626,8 @@ pub mod tests {
         assert_eq!(std::env::var("XAVIER_QJL_THRESHOLD").unwrap(), "500");
         assert_eq!(std::env::var("XAVIER_TELEGRAM_ENABLED").unwrap(), "false");
         assert_eq!(
-            std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(),
-            "data/enterprise.db"
+            PathBuf::from(std::env::var_os("XAVIER_ENTERPRISE_DB_PATH").unwrap()),
+            PathBuf::from(&settings.memory.data_dir).join("enterprise.db")
         );
     }
 
@@ -842,8 +842,8 @@ pub mod tests {
 
         // Enterprise
         assert_eq!(
-            std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(),
-            "data/enterprise.db"
+            PathBuf::from(std::env::var_os("XAVIER_ENTERPRISE_DB_PATH").unwrap()),
+            PathBuf::from(&settings.memory.data_dir).join("enterprise.db")
         );
     }
 

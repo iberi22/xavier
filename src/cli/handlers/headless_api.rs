@@ -26,10 +26,15 @@ use xavier::domain::proxy::{ProxyChatCommand, ProxyError};
 pub async fn headless_health() -> impl IntoResponse {
     use xavier::observability::health::HealthLevel;
     let status = xavier::observability::health::HEALTH.get_status().await;
+    let settings = crate::settings::XavierSettings::current();
     AxumJson(json!({
         "status": status.status,
         "mode": status.mode,
         "service": "xavier-headless",
+        "config_paths": {
+            "data_dir": settings.memory.data_dir,
+            "code_graph_db_path": settings.server.code_graph_db_path,
+        },
         "version": env!("CARGO_PKG_VERSION"),
         "uptime_secs": status.system.uptime_secs,
         "llm": {

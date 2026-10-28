@@ -104,7 +104,10 @@ async fn async_main() -> Result<()> {
     if llm_config_command {
         xavier_lib::cli::commands::llm::capture_environment();
     }
-    let loaded_settings = XavierSettings::load()?;
+    let loaded_settings = XavierSettings::load().unwrap_or_else(|error| {
+        eprintln!("Invalid Xavier configuration: {error}");
+        std::process::exit(2);
+    });
     if let Some(ref settings) = loaded_settings {
         if !llm_config_command {
             if let Err(problems) = settings::validation::validate_local_config(settings) {
@@ -118,8 +121,8 @@ async fn async_main() -> Result<()> {
                 std::process::exit(2);
             }
         }
-        settings.apply_to_env();
     }
+    loaded_settings.unwrap_or_default().apply_to_env();
 
     // Setup logging
     let log_filter = std::env::var("RUST_LOG")

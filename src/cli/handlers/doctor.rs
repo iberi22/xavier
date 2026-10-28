@@ -77,7 +77,7 @@ pub const DOCTOR_SCHEDULER_TIMEOUT: std::time::Duration = DOCTOR_CHECK_TIMEOUT;
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct DoctorCheck {
     pub name: String,
-    pub status: CheckStatus, // Ok / Warn / Fail
+    pub status: CheckStatus, // Ok / Warn / Fail / Skip
     pub detail: String,
     pub hint: Option<String>,
     #[serde(default)]
@@ -98,6 +98,7 @@ impl DoctorCheck {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum CheckStatus {
+    Skip,
     Ok,
     Warn,
     Fail,
@@ -107,6 +108,108 @@ pub enum CheckStatus {
 pub struct DoctorReport {
     pub checks: Vec<DoctorCheck>,
     pub overall: CheckStatus,
+}
+
+const CONFIG_AGREEMENT_NAME: &str = "CLI/daemon config agreement";
+
+#[derive(Debug, Deserialize)]
+struct ConfigPaths {
+    data_dir: std::path::PathBuf,
+    code_graph_db_path: std::path::PathBuf,
+}
+
+enum ConfigProbe {
+    Paths(ConfigPaths),
+    Unreachable,
+    AuthFailed,
+    InvalidResponse,
+}
+
+fn config_agreement_check(settings: &XavierSettings, probe: &ConfigProbe) -> DoctorCheck {
+    let (status, detail, hint) = match probe {
+        ConfigProbe::Unreachable => (
+            CheckStatus::Skip,
+            "Daemon unreachable; agreement was not checked".to_string(),
+            None,
+        ),
+        ConfigProbe::AuthFailed => (
+            CheckStatus::Fail,
+            "Daemon authentication failed (HTTP 401/403)".to_string(),
+            Some(
+                "Use the same protected env contract and credentials for CLI and daemon"
+                    .to_string(),
+            ),
+        ),
+        ConfigProbe::InvalidResponse => (
+            CheckStatus::Fail,
+            "Daemon did not report valid resolved configuration paths".to_string(),
+            Some("Upgrade the daemon to support config_paths on /v1/system/health".to_string()),
+        ),
+        ConfigProbe::Paths(paths) => {
+            let agrees = paths.data_dir == std::path::Path::new(&settings.memory.data_dir)
+                && paths.code_graph_db_path
+                    == std::path::Path::new(&settings.server.code_graph_db_path);
+            if agrees {
+                (
+                    CheckStatus::Ok,
+                    "CLI and daemon use the same data and code-graph paths".to_string(),
+                    None,
+                )
+            } else {
+                (CheckStatus::Fail, "CLI and daemon resolve different storage paths".to_string(), Some("Set XAVIER_ENV_FILE to the daemon's shared EnvironmentFile, align XAVIER_DATA_DIR and XAVIER_CODE_GRAPH_DB_PATH, then restart the daemon if its configuration changed".to_string()))
+            }
+        }
+    };
+    DoctorCheck {
+        name: CONFIG_AGREEMENT_NAME.to_string(),
+        status,
+        detail,
+        hint,
+        timed_out: false,
+    }
+}
+
+async fn probe_daemon_config() -> ConfigProbe {
+    probe_daemon_config_at(
+        &crate::cli::config::resolve_base_url(),
+        &crate::cli::config::xavier_token(),
+    )
+    .await
+}
+
+async fn probe_daemon_config_at(base_url: &str, token: &str) -> ConfigProbe {
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(DOCTOR_CHECK_TIMEOUT)
+        .build()
+    else {
+        return ConfigProbe::InvalidResponse;
+    };
+    let url = format!("{}/v1/system/health", base_url.trim_end_matches('/'));
+    let response = client.get(url).bearer_auth(token).send().await;
+    let response = match response {
+        Ok(response) => response,
+        Err(error) if error.is_connect() || error.is_timeout() => return ConfigProbe::Unreachable,
+        Err(_) => return ConfigProbe::InvalidResponse,
+    };
+    if crate::cli::config::is_auth_failure(response.status()) {
+        return ConfigProbe::AuthFailed;
+    }
+    if !response.status().is_success() {
+        return ConfigProbe::InvalidResponse;
+    }
+    #[derive(Deserialize)]
+    struct HealthPaths {
+        config_paths: ConfigPaths,
+    }
+    match response.json::<HealthPaths>().await {
+        Ok(health)
+            if health.config_paths.data_dir.is_absolute()
+                && health.config_paths.code_graph_db_path.is_absolute() =>
+        {
+            ConfigProbe::Paths(health.config_paths)
+        }
+        _ => ConfigProbe::InvalidResponse,
+    }
 }
 
 /// Reports unusable sidecar candidates without executing or changing them.
@@ -943,7 +1046,7 @@ pub fn compute_overall_status(checks: &[DoctorCheck]) -> CheckStatus {
 pub fn doctor_exit_code(overall: CheckStatus) -> i32 {
     match overall {
         CheckStatus::Fail => 1,
-        CheckStatus::Ok | CheckStatus::Warn => 0,
+        CheckStatus::Ok | CheckStatus::Warn | CheckStatus::Skip => 0,
     }
 }
 
@@ -1086,7 +1189,15 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
                 }
             };
 
-        let mut report = execute_doctor_checks(&settings, &scan, verbose).await;
+        let (mut report, probe) = tokio::join!(
+            execute_doctor_checks(&settings, &scan, verbose),
+            probe_daemon_config()
+        );
+        let auth_failed = matches!(probe, ConfigProbe::AuthFailed);
+        report
+            .checks
+            .push(config_agreement_check(&settings, &probe));
+        report.overall = compute_overall_status(&report.checks);
         if scan_timed_out {
             report.checks.insert(
                 0,
@@ -1100,30 +1211,33 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
             );
             report.overall = compute_overall_status(&report.checks);
         }
-        report
+        (report, auth_failed)
     })
     .await;
 
-    let report = match report_res {
+    let (report, auth_failed) = match report_res {
         Ok(rep) => rep,
         Err(_) => {
             tracing::error!(
                 "doctor total diagnostic deadline exceeded ({:?})",
                 DOCTOR_TOTAL_TIMEOUT
             );
-            DoctorReport {
-                checks: vec![DoctorCheck {
-                    name: "Total Diagnostic Deadline".to_string(),
-                    status: CheckStatus::Fail,
-                    detail: format!(
-                        "Doctor diagnosis timed out after {:?}",
-                        DOCTOR_TOTAL_TIMEOUT
-                    ),
-                    hint: Some("Host is under extreme resource pressure".to_string()),
-                    timed_out: true,
-                }],
-                overall: CheckStatus::Fail,
-            }
+            (
+                DoctorReport {
+                    checks: vec![DoctorCheck {
+                        name: "Total Diagnostic Deadline".to_string(),
+                        status: CheckStatus::Fail,
+                        detail: format!(
+                            "Doctor diagnosis timed out after {:?}",
+                            DOCTOR_TOTAL_TIMEOUT
+                        ),
+                        hint: Some("Host is under extreme resource pressure".to_string()),
+                        timed_out: true,
+                    }],
+                    overall: CheckStatus::Fail,
+                },
+                false,
+            )
         }
     };
 
@@ -1135,7 +1249,11 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
     use std::io::Write;
     let _ = std::io::stdout().flush();
 
-    let exit_code = doctor_exit_code(report.overall);
+    let exit_code = if auth_failed {
+        3
+    } else {
+        doctor_exit_code(report.overall)
+    };
     // A timed-out spawn_blocking probe keeps its thread alive and the tokio runtime
     // waits for it on shutdown, so returning normally would hang after printing.
     let any_timed_out = report.checks.iter().any(|c| c.timed_out);
@@ -1186,6 +1304,7 @@ fn format_as_markdown(checks: &[DoctorCheck]) -> String {
     ];
     for check in checks {
         let icon = match check.status {
+            CheckStatus::Skip => "–",
             CheckStatus::Ok => "✓",
             CheckStatus::Warn => "⚠",
             CheckStatus::Fail => "✗",
@@ -1213,6 +1332,7 @@ pub fn format_table_output(checks: &[DoctorCheck]) -> String {
     out.push('\n');
     for check in checks {
         let status_icon = match check.status {
+            CheckStatus::Skip => "  [-] SKIP",
             CheckStatus::Ok => "  [✓] OK",
             CheckStatus::Warn => "  [⚠] WARN",
             CheckStatus::Fail => "  [✗] FAIL",
@@ -1275,6 +1395,129 @@ mod tests {
                 xavier_version: "0.1.0".to_string(),
             },
         }
+    }
+
+    #[tokio::test]
+    async fn config_source_system_health_exposes_only_resolved_paths() {
+        use axum::response::IntoResponse;
+        crate::test_support::isolate_user_dirs();
+        let _env = crate::settings::tests::TempEnv::new();
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("store");
+        std::env::set_var("XAVIER_CONFIG_PATH", root.path().join("config.json"));
+        std::env::set_var(
+            "XAVIER_RUNTIME_STATE_PATH",
+            root.path().join("runtime.json"),
+        );
+        std::env::set_var("XAVIER_ENV_FILE", root.path().join("env"));
+        std::fs::write(root.path().join("env"), "").unwrap();
+        std::env::set_var("XAVIER_DATA_DIR", &data);
+        std::env::set_var("XAVIER_CODE_GRAPH_DB_PATH", "data/graph.db");
+        std::env::set_var("XAVIER_TELEGRAM_TOKEN", "fixture");
+        std::env::set_var("XAVIER_TELEGRAM_NOTIFICATION_CHAT_ID", "fixture");
+        let response = crate::cli::handlers::headless_api::headless_health()
+            .await
+            .into_response();
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            value["config_paths"],
+            serde_json::json!({
+                "data_dir": data,
+                "code_graph_db_path": data.join("graph.db")
+            })
+        );
+    }
+
+    #[test]
+    fn config_source_doctor_supports_skip_without_failing_report() {
+        let check: DoctorCheck = serde_json::from_value(serde_json::json!({
+            "name": "CLI/daemon config agreement",
+            "status": "Skip",
+            "detail": "Daemon unreachable",
+            "hint": null
+        }))
+        .expect("unreachable daemon must be represented as Skip");
+        assert_eq!(compute_overall_status(&[check]), CheckStatus::Ok);
+    }
+
+    #[test]
+    fn config_source_agreement_compares_injected_paths_and_classifies_failures() {
+        let root = tempfile::tempdir().unwrap();
+        let mut settings = XavierSettings::default();
+        settings.memory.data_dir = root.path().join("store").to_string_lossy().into_owned();
+        settings.server.code_graph_db_path = root
+            .path()
+            .join("store/graph.db")
+            .to_string_lossy()
+            .into_owned();
+        let paths = || ConfigPaths {
+            data_dir: settings.memory.data_dir.clone().into(),
+            code_graph_db_path: settings.server.code_graph_db_path.clone().into(),
+        };
+        assert_eq!(
+            config_agreement_check(&settings, &ConfigProbe::Paths(paths())).status,
+            CheckStatus::Ok
+        );
+        for mismatched in [
+            ConfigPaths {
+                data_dir: root.path().join("other"),
+                ..paths()
+            },
+            ConfigPaths {
+                code_graph_db_path: root.path().join("other.db"),
+                ..paths()
+            },
+        ] {
+            let check = config_agreement_check(&settings, &ConfigProbe::Paths(mismatched));
+            assert_eq!(check.status, CheckStatus::Fail);
+            assert!(check.hint.unwrap().contains("XAVIER_ENV_FILE"));
+        }
+        let offline = config_agreement_check(&settings, &ConfigProbe::Unreachable);
+        assert_eq!(offline.status, CheckStatus::Skip);
+        assert_eq!(doctor_exit_code(compute_overall_status(&[offline])), 0);
+        for probe in [ConfigProbe::AuthFailed, ConfigProbe::InvalidResponse] {
+            let check = config_agreement_check(&settings, &probe);
+            assert_eq!(check.status, CheckStatus::Fail);
+            assert!(check.hint.is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn config_source_probe_uses_authenticated_health_and_rejects_bad_responses() {
+        use axum::{routing::get, Json, Router};
+        for (case, (status, body)) in [
+            (200, serde_json::json!({"config_paths": {"data_dir": "/fixture/store", "code_graph_db_path": "/fixture/store/graph.db"}})),
+            (401, serde_json::json!({})),
+            (403, serde_json::json!({})),
+            (200, serde_json::json!({"config_paths": {"data_dir": "relative", "code_graph_db_path": "relative.db"}})),
+            (200, serde_json::json!({})),
+            (500, serde_json::json!({})),
+        ].into_iter().enumerate() {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let app = Router::new().route("/v1/system/health", get(move |headers: axum::http::HeaderMap| async move {
+                assert_eq!(headers.get("authorization").unwrap(), "Bearer fixture-token");
+                (axum::http::StatusCode::from_u16(status).unwrap(), Json(body))
+            }));
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let probe = probe_daemon_config_at(&format!("http://{address}"), "fixture-token").await;
+            server.abort();
+            match case {
+                0 => assert!(matches!(probe, ConfigProbe::Paths(_))),
+                1 | 2 => assert!(matches!(probe, ConfigProbe::AuthFailed)),
+                _ => assert!(matches!(probe, ConfigProbe::InvalidResponse)),
+            }
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        assert!(matches!(
+            probe_daemon_config_at(&format!("http://{address}"), "fixture-token").await,
+            ConfigProbe::Unreachable
+        ));
     }
 
     #[test]

@@ -287,8 +287,14 @@ pub enum Command {
     },
 
     /// Diagnose local-first health (Ollama, models, DB, config, vector store)
-    #[command(name = "doctor")]
+    #[command(
+        name = "doctor",
+        after_long_help = "Examples:\n  xavier doctor --json\n  XAVIER_ENV_FILE=/etc/xavier/env xavier doctor --format json"
+    )]
     Doctor {
+        /// Emit the diagnostic report as JSON on stdout
+        #[arg(long)]
+        json: bool,
         /// Output format: table (default), json, markdown
         #[arg(long, default_value = "table")]
         format: String,
