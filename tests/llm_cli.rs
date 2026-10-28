@@ -1,4 +1,6 @@
 //! Process-level contracts for provider configuration and unattended setup.
+xavier::isolate_test_process!();
+
 use axum::{body::Bytes, extract::State, http::StatusCode, routing::any, Json, Router};
 use serde_json::{json, Value};
 use std::future::IntoFuture;
