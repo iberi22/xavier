@@ -1237,6 +1237,52 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn config_source_system_health_exposes_only_resolved_paths() {
+        use axum::response::IntoResponse;
+        crate::test_support::isolate_user_dirs();
+        let _env = crate::settings::tests::TempEnv::new();
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("store");
+        std::env::set_var("XAVIER_CONFIG_PATH", root.path().join("config.json"));
+        std::env::set_var(
+            "XAVIER_RUNTIME_STATE_PATH",
+            root.path().join("runtime.json"),
+        );
+        std::env::set_var("XAVIER_ENV_FILE", root.path().join("env"));
+        std::fs::write(root.path().join("env"), "").unwrap();
+        std::env::set_var("XAVIER_DATA_DIR", &data);
+        std::env::set_var("XAVIER_CODE_GRAPH_DB_PATH", "data/graph.db");
+        std::env::set_var("XAVIER_TELEGRAM_TOKEN", "fixture");
+        std::env::set_var("XAVIER_TELEGRAM_NOTIFICATION_CHAT_ID", "fixture");
+        let response = crate::cli::handlers::headless_api::headless_health()
+            .await
+            .into_response();
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            value["config_paths"],
+            serde_json::json!({
+                "data_dir": data,
+                "code_graph_db_path": data.join("graph.db")
+            })
+        );
+    }
+
+    #[test]
+    fn config_source_doctor_supports_skip_without_failing_report() {
+        let check: DoctorCheck = serde_json::from_value(serde_json::json!({
+            "name": "CLI/daemon config agreement",
+            "status": "Skip",
+            "detail": "Daemon unreachable",
+            "hint": null
+        }))
+        .expect("unreachable daemon must be represented as Skip");
+        assert_eq!(compute_overall_status(&[check]), CheckStatus::Ok);
+    }
+
     #[test]
     fn test_doctor_report_serialization() {
         let report = DoctorReport {

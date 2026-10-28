@@ -687,3 +687,7 @@ mod tests {
         assert!(loaded.is_none(), "nothing to load is not an error");
     }
 }
+
+#[cfg(test)]
+#[path = "config_source_tests.rs"]
+mod config_source_tests;
