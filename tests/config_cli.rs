@@ -2,6 +2,8 @@ use serde_json::{json, Value};
 use std::process::{Command, Output, Stdio};
 use tempfile::TempDir;
 
+xavier::isolate_test_process!();
+
 struct Fixture(TempDir);
 impl Fixture {
     fn new() -> Self {
