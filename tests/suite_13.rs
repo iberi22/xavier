@@ -8,6 +8,9 @@
 
 xavier::isolate_test_process!();
 
+#[path = "agent_onboarding_cli.rs"]
+mod agent_onboarding_cli;
+
 #[path = "test_store_path_hierarchy.rs"]
 mod test_store_path_hierarchy;
 
