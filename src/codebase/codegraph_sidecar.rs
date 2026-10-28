@@ -632,3 +632,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "codegraph_sidecar_tests.rs"]
+mod hardening_tests;
