@@ -146,6 +146,13 @@
 | `XAVIER_TELEGRAM_ENABLED` | `bool` | `❌` | Enable Telegram bot integration | ❌ |
 | `XAVIER_TELEGRAM_TOKEN` | `string` | `✅` | Telegram Bot API token | ✅ |
 
+## Testing (internal)
+
+| Variable | Type | Default | Description | Secret |
+|----------|------|---------|-------------|--------|
+| `XAVIER_CONFIG_SOURCE_CHILD` | `bool` | (unset) | Test-only marker for the config-source child-process test; not read in production | ❌ |
+| `XAVIER_CONTRACT_LITERAL` | `string` | (unset) | Test-only value used to verify env-contract values are loaded literally; not read in production | ❌ |
+
 ## Training Jobs API
 
 | Variable | Type | Default | Description | Secret |
