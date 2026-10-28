@@ -65,15 +65,54 @@ fn main() -> Result<()> {
 }
 
 async fn async_main() -> Result<()> {
+    // Reject argv credentials before clap can echo an offending argument.
+    if std::env::args_os().nth(1).is_some_and(|arg| arg == "llm")
+        && std::env::args_os().skip(2).any(|arg| {
+            let arg = arg.to_string_lossy();
+            arg == "--api-key" || arg.starts_with("--api-key=")
+        })
+    {
+        eprintln!(
+            "API keys require --api-key-file PATH or --api-key-stdin; never pass keys in argv"
+        );
+        std::process::exit(2);
+    }
+    let cli = Box::new(Cli::parse());
+    let llm_config_command = matches!(
+        cli.cmd.as_ref(),
+        Some(xavier_lib::cli::commands::Command::Llm(_))
+            | Some(xavier_lib::cli::commands::Command::Setup { .. })
+    );
+    if llm_config_command && std::env::var_os("XAVIER_CONFIG_PATH").is_none() {
+        // Pin both paths before loading so CLI setters never seed a repo template.
+        let config = XavierSettings::resolve_config_path();
+        let state = XavierSettings::resolve_runtime_state_path();
+        let config = if config.is_absolute() {
+            config
+        } else {
+            std::env::current_dir()?.join(config)
+        };
+        if std::env::var_os("XAVIER_RUNTIME_STATE_PATH").is_none() {
+            std::env::set_var("XAVIER_RUNTIME_STATE_PATH", state);
+        }
+        std::env::set_var("XAVIER_CONFIG_PATH", config);
+    }
+    if llm_config_command {
+        xavier_lib::cli::commands::llm::capture_environment();
+    }
     let loaded_settings = XavierSettings::load()?;
     if let Some(ref settings) = loaded_settings {
-        if let Err(problems) = settings::validation::validate_local_config(settings) {
-            eprintln!("FATAL: Invalid Xavier configuration:");
-            for p in &problems {
-                eprintln!("  * {p}");
+        if !llm_config_command {
+            if let Err(problems) = settings::validation::validate_local_config(settings) {
+                eprintln!("FATAL: Invalid Xavier configuration:");
+                for p in &problems {
+                    eprintln!("  * {p}");
+                }
+                eprintln!(
+                    "\nFix config/xavier.config.json or run `xavier setup --local` and retry."
+                );
+                std::process::exit(2);
             }
-            eprintln!("\nFix config/xavier.config.json or run `xavier setup --local` and retry.");
-            std::process::exit(2);
         }
         settings.apply_to_env();
     }
@@ -101,6 +140,5 @@ async fn async_main() -> Result<()> {
 
     // Parse and run CLI
     validate_xavier_data_dir_env()?;
-    let cli = Box::new(Cli::parse());
     cli.run().await
 }

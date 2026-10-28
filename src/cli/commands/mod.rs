@@ -27,6 +27,7 @@ pub mod http;
 pub mod improve;
 pub mod installer;
 pub mod license;
+pub mod llm;
 pub mod memory;
 pub mod mesh;
 pub mod mirror;
@@ -350,8 +351,20 @@ impl Cli {
             Command::Token { cmd } => token::handle_token_command(cmd.clone()).await,
             Command::Users { cmd } => users::handle_users_command(cmd.clone()).await,
             Command::Provider { cmd } => provider::handle_provider_command(cmd.clone()).await,
-            Command::Setup { local, model } => {
-                crate::cli::handlers::setup::handle_setup(*local, model.clone()).await
+            Command::Llm(args) => llm::handle(args).await,
+            Command::Setup {
+                local,
+                model,
+                yes,
+                json,
+            } => {
+                crate::cli::handlers::setup::handle_setup_options(
+                    *local,
+                    model.clone(),
+                    *yes,
+                    *json,
+                )
+                .await
             }
             Command::Doctor { format, verbose } => {
                 crate::cli::handlers::doctor::handle_doctor(format.clone(), *verbose).await
