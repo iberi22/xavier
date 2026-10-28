@@ -1,7 +1,7 @@
 # Feature Ledger — `features.json`
 
 The feature ledger is the **source of truth** for what Xavier does and how it is
-verified. It lives at `docs/features/features.json`.
+verified. It lives at `.gitcore/features.json`.
 
 ## Status semantics
 

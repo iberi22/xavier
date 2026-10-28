@@ -2,7 +2,7 @@
 # =============================================================================
 # Xavier Feature Verification Pipeline (public harness)
 #
-# Validates docs/features/features.json and EXECUTES the tests declared by each
+# Validates .gitcore/features.json and EXECUTES the tests declared by each
 # feature. The ledger is the source of truth; this pipeline is the judge.
 #
 #   Usage:  scripts/verify-pipeline.sh [--strict] [--check-only]
