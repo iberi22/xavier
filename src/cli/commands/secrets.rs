@@ -192,6 +192,9 @@ pub(crate) fn keys_revoke_with_vault<V: keygen::KeyVault, W: std::io::Write>(
 
 /// Dispatch a [`KeysCommand`] to the appropriate handler.
 pub async fn handle_keys_command(cmd: KeysCommand) -> Result<()> {
+    if let KeysCommand::List { name: None, json } = &cmd {
+        return super::agent_access::list_keys(*json).await;
+    }
     let vault = HardwareVault::new(CLAVIS_VAULT_SERVICE);
     let mut stdout = std::io::stdout();
     match cmd {
@@ -210,7 +213,23 @@ pub async fn handle_keys_command(cmd: KeysCommand) -> Result<()> {
             std::io::stdout().is_terminal(),
             &mut stdout,
         ),
-        KeysCommand::List { name } => keys_list_with_vault(&vault, &name, &mut stdout),
+        KeysCommand::List {
+            name: Some(name),
+            json,
+        } => {
+            if json {
+                let metadata = keygen::load_metadata(&vault, &name)
+                    .ok_or_else(|| anyhow::anyhow!("No metadata found for the named vault key"))?;
+                println!(
+                    "{}",
+                    serde_json::json!({"schema_version": 1, "keys": [metadata]})
+                );
+                Ok(())
+            } else {
+                keys_list_with_vault(&vault, &name, &mut stdout)
+            }
+        }
+        KeysCommand::List { name: None, .. } => unreachable!("server listing handled above"),
         KeysCommand::Revoke { name } => keys_revoke_with_vault(&vault, &name, &mut stdout),
     }
 }

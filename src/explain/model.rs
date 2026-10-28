@@ -12,9 +12,13 @@ use futures_util::future::BoxFuture;
 
 use super::render::ExplanationModel;
 use crate::agents::provider::client::ModelProviderClient;
-use crate::agents::provider::config::DEFAULT_ANTHROPIC_BASE_URL;
+use crate::agents::provider::config::{
+    DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GROQ_BASE_URL, DEFAULT_OPENAI_BASE_URL,
+};
 use crate::agents::provider::types::{ApiFlavor, ProviderMode, ProviderTarget};
 use crate::agents::provider::ModelProviderConfig;
+use crate::secrets::vault::HardwareVault;
+use crate::settings::XavierSettings;
 
 const EXPLAIN_PROVIDER_ENV: &str = "XAVIER_EXPLAIN_PROVIDER";
 const EXPLAIN_MODEL_ENV: &str = "XAVIER_EXPLAIN_MODEL";
@@ -37,11 +41,7 @@ impl ProviderExplanationModel {
     /// `XAVIER_EXPLAIN_API_KEY_FILE`. A missing or unsafe key file leaves the model
     /// unconfigured instead of falling back to the global chain.
     pub fn from_explain_env() -> Self {
-        let Some(provider) = nonempty_env(EXPLAIN_PROVIDER_ENV) else {
-            return Self::new(ModelProviderClient::from_env());
-        };
-        let config = explain_config(&provider);
-        Self::new(ModelProviderClient::new(config))
+        Self::new(ModelProviderClient::new(resolved_config()))
     }
 }
 
@@ -52,27 +52,82 @@ fn nonempty_env(key: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-/// Builds the explain-only configuration for `provider`. Performs no network I/O.
-fn explain_config(provider: &str) -> ModelProviderConfig {
-    if !provider.trim().eq_ignore_ascii_case("anthropic") {
-        tracing::warn!(
-            provider = %provider,
-            "XAVIER_EXPLAIN_PROVIDER names a provider that is not supported for explanations; explain model not configured"
-        );
-        return ModelProviderConfig::disabled();
+/// Resolves the same scoped configuration for the CLI and explanation route.
+pub(crate) fn resolved_config() -> ModelProviderConfig {
+    let settings = XavierSettings::current();
+    let provider = nonempty_env(EXPLAIN_PROVIDER_ENV).or_else(|| {
+        settings
+            .models
+            .explain_provider
+            .filter(|v| !v.trim().is_empty())
+    });
+    match provider {
+        Some(provider) => explain_config(&provider),
+        None => ModelProviderConfig::from_env(),
     }
+}
 
-    let api_key =
-        nonempty_env(EXPLAIN_KEY_FILE_ENV).and_then(|path| read_explain_key(Path::new(&path)));
-
+/// Builds the explain-only configuration without borrowing general credentials.
+fn explain_config(provider: &str) -> ModelProviderConfig {
+    let settings = XavierSettings::current();
+    let provider = provider.trim().to_ascii_lowercase();
+    let (flavor, target, url) = match provider.as_str() {
+        "anthropic" => (
+            ApiFlavor::AnthropicCompatible,
+            ProviderTarget::AnthropicMessages,
+            DEFAULT_ANTHROPIC_BASE_URL,
+        ),
+        "local" => (
+            ApiFlavor::OpenAICompatible,
+            ProviderTarget::GenericOpenAICompatible,
+            "http://localhost:11434/v1",
+        ),
+        "openai" => (
+            ApiFlavor::OpenAICompatible,
+            ProviderTarget::GenericOpenAICompatible,
+            DEFAULT_OPENAI_BASE_URL,
+        ),
+        "openrouter" => (
+            ApiFlavor::OpenAICompatible,
+            ProviderTarget::GenericOpenAICompatible,
+            "https://openrouter.ai/api/v1",
+        ),
+        "groq" => (
+            ApiFlavor::OpenAICompatible,
+            ProviderTarget::GenericOpenAICompatible,
+            DEFAULT_GROQ_BASE_URL,
+        ),
+        _ => return ModelProviderConfig::disabled(),
+    };
+    // An explicit key file fails closed: never fall back to a different key.
+    let api_key = match nonempty_env(EXPLAIN_KEY_FILE_ENV) {
+        Some(path) => read_explain_key(Path::new(&path)),
+        None => HardwareVault::new("xavier")
+            .get_secret(&format!(
+                "EXPLAIN_{}_API_KEY",
+                provider.to_ascii_uppercase()
+            ))
+            .ok(),
+    };
     ModelProviderConfig {
-        provider_mode: ProviderMode::Cloud,
-        api_flavor: ApiFlavor::AnthropicCompatible,
-        provider_label: "anthropic".to_string(),
-        model: nonempty_env(EXPLAIN_MODEL_ENV).unwrap_or_default(),
+        provider_mode: if provider == "local" {
+            ProviderMode::Local
+        } else {
+            ProviderMode::Cloud
+        },
+        api_flavor: flavor,
+        provider_label: provider,
+        model: nonempty_env(EXPLAIN_MODEL_ENV)
+            .or(settings.models.explain_model)
+            .unwrap_or_default(),
         api_key,
-        base_url: Some(DEFAULT_ANTHROPIC_BASE_URL.to_string()),
-        target: ProviderTarget::AnthropicMessages,
+        base_url: Some(
+            settings
+                .models
+                .explain_url
+                .unwrap_or_else(|| url.to_string()),
+        ),
+        target,
         lease_config: None,
         secret_injection_strategy: None,
         lease_token: None,

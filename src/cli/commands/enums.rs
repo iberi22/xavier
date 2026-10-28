@@ -32,6 +32,8 @@ pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 /// Each variant maps to a distinct subcommand exposed to the user.
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
+    /// Inspect effective settings and edit runtime overrides
+    Config(super::config::ConfigArgs),
     /// Initialize Xavier onboarding and interactive RAG installer wizard
     Init(InitArgs),
     /// Start Xavier HTTP server
@@ -265,7 +267,10 @@ pub enum Command {
         #[command(subcommand)]
         cmd: ProviderCommand,
     },
-    /// Run interactive system detection and setup
+    /// Configure and probe language models (general or explanation scope)
+    Llm(super::llm::LlmArgs),
+    /// Run interactive system detection or unattended local configuration
+    #[command(after_help = "Examples:\n  xavier setup --local --model llama3.2 --yes --json")]
     Setup {
         /// Run 100% local guided flow (Ollama)
         #[arg(long)]
@@ -273,11 +278,23 @@ pub enum Command {
         /// Override LLM model (any id your configured provider serves)
         #[arg(long)]
         model: Option<String>,
+        /// Save supplied values without prompts or model downloads
+        #[arg(long)]
+        yes: bool,
+        /// Emit machine-readable output (also disables prompts)
+        #[arg(long)]
+        json: bool,
     },
 
     /// Diagnose local-first health (Ollama, models, DB, config, vector store)
-    #[command(name = "doctor")]
+    #[command(
+        name = "doctor",
+        after_long_help = "Examples:\n  xavier doctor --json\n  XAVIER_ENV_FILE=/etc/xavier/env xavier doctor --format json"
+    )]
     Doctor {
+        /// Emit the diagnostic report as JSON on stdout
+        #[arg(long)]
+        json: bool,
         /// Output format: table (default), json, markdown
         #[arg(long, default_value = "table")]
         format: String,
@@ -843,6 +860,22 @@ pub enum RegenCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum AgentCommand {
+    /// Show endpoints, health, credential source and an MCP client configuration
+    #[command(
+        after_help = "Examples:\n  xavier agent onboard --client claude --json\n  xavier agent onboard --client codex"
+    )]
+    Onboard {
+        #[arg(long)]
+        json: bool,
+        #[arg(long, value_enum, default_value = "generic")]
+        client: OnboardClient,
+        /// Export the token only to non-terminal stdout with explicit confirmation
+        #[arg(long, requires = "i_understand_output_is_not_a_tty")]
+        reveal: bool,
+        /// Confirm that redirected output will contain a secret
+        #[arg(long, requires = "reveal")]
+        i_understand_output_is_not_a_tty: bool,
+    },
     /// Scan for IDE agent sessions (Cursor, Windsurf, etc.)
     Scan {
         /// Filter by agent/IDE name
@@ -1130,7 +1163,10 @@ pub enum IssueCommand {
 /// Code graph query subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum CodeCommand {
-    /// Install direct CodeGraph binary / sidecar
+    /// Install and verify the CodeGraph sidecar
+    #[command(
+        after_help = "Examples:\n  xavier code install --json\n  xavier code install --from-source --json"
+    )]
     Install {
         /// Build/install from local source repository instead of pre-built release binary
         #[arg(long)]
@@ -1138,7 +1174,7 @@ pub enum CodeCommand {
         /// Force re-installation even if already present and up to date
         #[arg(long)]
         force: bool,
-        /// Output progress and status as JSON
+        /// Output one JSON status object (diagnostics go to stderr)
         #[arg(long)]
         json: bool,
     },
@@ -1261,10 +1297,46 @@ pub enum SystemCommand {
 /// Token generation subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum TokenCommand {
+    /// Issue an expiring scoped REST token; the secret is delivered only once
+    #[command(
+        after_help = "Examples:\n  xavier token issue --agent reader --scope read --ttl 1h --out-file reader.key --json\n  xavier token issue --agent indexer --scope write --ttl 2h --out-file indexer.key"
+    )]
+    Issue {
+        #[arg(long)]
+        agent: String,
+        #[arg(long, value_enum)]
+        scope: TokenScope,
+        /// Positive duration: seconds, or an integer with s/m/h/d/w suffix
+        #[arg(long)]
+        ttl: String,
+        /// Write metadata JSON; requires a separate secret output file
+        #[arg(long, requires = "out_file")]
+        json: bool,
+        /// Create a new private file for the secret (never overwrites)
+        #[arg(long)]
+        out_file: Option<PathBuf>,
+        /// Allow secret-only stdout when stdout is not a terminal
+        #[arg(long)]
+        i_understand_output_is_not_a_tty: bool,
+    },
     /// Generate a new random token for XAVIER_TOKEN
     New,
     /// Generate a signed HMAC token for a user
     Gen { user_id: String },
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+pub enum OnboardClient {
+    Claude,
+    Codex,
+    Opencode,
+    Generic,
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+pub enum TokenScope {
+    Read,
+    Write,
 }
 
 /// Local user account administration subcommands (operador con acceso al nodo).
@@ -1394,12 +1466,17 @@ pub enum KeysCommand {
         #[arg(long, default_value_t = false)]
         yes: bool,
     },
-    /// Show the metadata (fingerprint, expiry, rotations) of an issued key,
-    /// without revealing any value
+    /// List server token metadata, or inspect a named local vault key
+    #[command(
+        after_help = "Examples:\n  xavier keys list --json\n  xavier keys list --name existing-key --json"
+    )]
     List {
-        /// Name of the key to inspect
+        /// Inspect this local vault key instead of listing server tokens
         #[arg(long)]
-        name: String,
+        name: Option<String>,
+        /// Output metadata as JSON, without secret values
+        #[arg(long)]
+        json: bool,
     },
     /// Revoke a key and its metadata from the vault
     Revoke {
@@ -2144,14 +2221,25 @@ pub struct RecoveryArgs {
 #[derive(Subcommand, Debug, Clone)]
 pub enum RecoveryCommand {
     /// Report whether the memory store can actually be recovered.
+    #[command(after_help = "Example: xavier recovery status --json")]
     Status {
+        /// Emit the versioned recovery status schema on stdout.
+        #[arg(long)]
+        json: bool,
         /// Confirm the rclone crypt passphrase is stored outside this host.
         /// Without it the encrypted snapshots are unreadable even with the key.
         #[arg(long)]
         crypt_passphrase_backed_up: bool,
     },
     /// Seal the current record key under a passphrase and/or a 24-word mnemonic.
+    #[command(
+        after_help = "Examples:\n  xavier recovery seal --mnemonic --words-out /secure/recovery-words.txt\n  xavier recovery seal --passphrase --passphrase-file /secure/passphrase.txt\n  xavier recovery seal --mnemonic --words-out /secure/recovery-words.txt --offline-i-know-the-key-is-live"
+    )]
     Seal {
+        /// Acknowledge the selected key is live when the daemon cannot be reached.
+        /// Never bypasses a reachable daemon's response or a stored KCV mismatch.
+        #[arg(long)]
+        offline_i_know_the_key_is_live: bool,
         /// Seal under a freshly generated BIP39 mnemonic delivered to the TTY or --words-out.
         #[arg(long)]
         mnemonic: bool,

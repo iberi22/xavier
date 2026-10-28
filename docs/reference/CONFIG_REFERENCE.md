@@ -7,11 +7,49 @@
 
 Xavier uses a layered configuration system in this priority order (highest first):
 
-1. **Environment variables** — `XAVIER_*` env vars
-2. **Config file** — `config/xavier.config.json` (overridable via `XAVIER_CONFIG_PATH`)
-3. **Hardcoded defaults** — `Default` trait impls in `src/settings.rs`
+1. **Environment variables** — process `XAVIER_*` variables
+2. **Env contract** — `XAVIER_ENV_FILE` or the discovered user contract
+3. **Runtime state** — `XAVIER_RUNTIME_STATE_PATH` or the resolved state file
+4. **Config file** — `config/xavier.config.json` (overridable via `XAVIER_CONFIG_PATH`)
+5. **Hardcoded defaults** — `Default` trait impls in `src/settings.rs`
 
 The config file is loaded at startup via `XavierSettings::load()`. Values from the config file are then applied as env var defaults (via `set_if_absent`), meaning **explicit env vars always override config file values**.
+
+## How the CLI finds the daemon's configuration
+
+The CLI reads `XAVIER_ENV_FILE`, or discovers `~/.config/xavier/env`
+(`$XDG_CONFIG_HOME/xavier/env` when set), before loading settings. Point both
+`xavier http` and CLI invocations at the same contract. For a systemd deployment,
+use that file as the service's `EnvironmentFile`; copy any relevant `XAVIER_*`
+overrides from drop-ins into the shared file. Xavier does not inspect systemd units.
+
+```sh
+XAVIER_ENV_FILE=/etc/xavier/env xavier doctor --json
+xavier doctor --format json
+```
+
+The contract accepts one `KEY=VALUE` per line, blank lines, full-line `#` comments,
+and optional matching single or double quotes around values. Only `XAVIER_*`
+keys are loaded. Existing process variables win. An explicitly selected missing or
+malformed contract fails startup with exit 2; an absent discovered file is allowed.
+Values are literal: no shell
+execution, interpolation, variable expansion, or inline comments. Keep credentials
+in a protected file; contract values are never printed by the loader.
+
+Precedence: process environment > env contract > runtime state > config defaults
+> compiled defaults. To share config defaults as well as environment overrides,
+set absolute `XAVIER_CONFIG_PATH` and `XAVIER_RUNTIME_STATE_PATH` values in the
+contract. Restart processes after editing the contract; it is not hot-reloaded.
+
+Relative `memory.data_dir` / `XAVIER_DATA_DIR` is relative to the user's home.
+Other relative storage paths are relative to the effective data directory, with
+an initial `data/` removed for compatibility with existing defaults. For example,
+with data directory `/srv/xavier`, both `data/code_graph.db` and `code_graph.db`
+resolve to `/srv/xavier/code_graph.db`. Absolute paths remain absolute and empty
+optional paths remain empty. This rule also covers memory stores, workspace
+storage, embedding cache, enterprise storage, router policy, panel storage, and
+Data Commons. No path in this group depends on the invocation directory. Existing
+files are not moved; use absolute storage paths to retain a previous location.
 
 ---
 

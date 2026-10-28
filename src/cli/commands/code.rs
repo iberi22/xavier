@@ -39,10 +39,19 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                     "version": outcome.version,
                     "verified": outcome.verified,
                     "message": outcome.message,
+                    "chosen_binary": outcome.chosen_binary,
+                    "invalid_candidates": outcome.invalid_candidates,
                 }))?
             );
         } else {
-            println!("CodeGraph sidecar installation complete:");
+            println!(
+                "CodeGraph sidecar installation {}:",
+                if outcome.success {
+                    "complete"
+                } else {
+                    "failed"
+                }
+            );
             if let Some(path) = &outcome.bin_path {
                 println!("  Path:     {}", path.display());
             }
@@ -52,6 +61,9 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 if outcome.verified { "yes" } else { "no" }
             );
             println!("  Status:   {}", outcome.message);
+        }
+        if !outcome.success {
+            bail!("CodeGraph sidecar installation failed; see installation status");
         }
         return Ok(());
     }

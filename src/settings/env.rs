@@ -21,6 +21,9 @@ pub fn set_optional_if_absent(key: &str, value: Option<String>) {
 
 /// Apply to env impl.
 pub fn apply_to_env_impl(settings: &XavierSettings) {
+    let mut resolved = settings.clone();
+    super::serialization::resolve_settings_paths(&mut resolved, true);
+    let settings = &resolved;
     set_if_absent("XAVIER_HOST", &settings.server.host);
     set_if_absent("XAVIER_PORT", &settings.server.port.to_string());
     set_if_absent("XAVIER_LOG_LEVEL", &settings.server.log_level);
