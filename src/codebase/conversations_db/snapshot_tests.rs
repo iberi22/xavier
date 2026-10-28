@@ -859,9 +859,16 @@ async fn capture_atomic_and_member() {
     // Membership: NULL project, another project, no thread, orphan messages and
     // an empty thread write nothing.
     insert_thread(&db, "null-project", None).await;
-    store(&db, "null-project", "x").await;
-    insert_thread(&db, "other-project", Some("ws-b")).await;
-    store(&db, "other-project", "x").await;
+    raw(&path)
+        .execute(
+            "INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+             VALUES ('null-msg', 'null-project', 'user', 'x', '2020-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+    let db_b = open_node_db(&path, "ws-b").await;
+    insert_thread(&db_b, "other-project", Some("ws-b")).await;
+    store(&db_b, "other-project", "x").await;
     raw(&path)
         .execute_batch(
             "PRAGMA foreign_keys = OFF;

@@ -2830,10 +2830,15 @@ mod tests {
             "Error: context snapshots are unavailable for this workspace",
         );
 
-        // No key configured.
+        // No key configured. The first conversation write on a fresh database
+        // provisions a node key file, so remove it to leave no key at all.
         let keyless = SnapshotEnv::new(true, None);
         let (state, workspace, _keyless_work) = snapshot_workspace(&keyless).await;
         seed_thread(&workspace, &keyless, SESSION, &["alpha"]).await;
+        let key_file = crate::memory::sqlite_vec_store::at_rest::record_key_path();
+        if key_file.exists() {
+            std::fs::remove_file(&key_file).unwrap();
+        }
         let out = call(
             &state,
             &workspace,

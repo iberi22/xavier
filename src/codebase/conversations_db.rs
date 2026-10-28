@@ -242,7 +242,7 @@ impl ConversationsDb {
     }
 
     /// Pick the sealing key: explicit key, then the default-space key (fail
-    /// closed when a keystore exists), then the node record key, else none.
+    /// closed when a keystore exists), then the node record key, else fail closed.
     fn sealer(&self) -> Result<Sealer> {
         use crate::memory::sqlite_vec_store::at_rest;
         if let Some(k) = self.node_key {
@@ -253,16 +253,40 @@ impl ConversationsDb {
                 e.context("conversations: default-space key unavailable (nothing was stored)")
             })?));
         }
-        Ok(at_rest::peek_record_key_with_source()
-            .0
-            .map_or(Sealer::None, Sealer::Node))
+        let env_var = at_rest::RECORD_KEY_ENV;
+        let key_path = at_rest::record_key_path();
+        let (peeked, source) = at_rest::peek_record_key_with_source();
+        if let Some(k) = peeked {
+            return Ok(Sealer::Node(k));
+        }
+        if std::env::var(env_var).is_ok_and(|v| !v.is_empty()) {
+            return Ok(Sealer::Unavailable(format!(
+                "at-rest encryption key is unavailable: environment variable '{env_var}' is set but invalid. Key is expected at '{}' or via environment variable '{env_var}'",
+                key_path.display()
+            )));
+        }
+        match source {
+            at_rest::KeySource::Unavailable(reason) => Ok(Sealer::Unavailable(format!(
+                "at-rest encryption key is unavailable: {reason}. Key is expected at '{}' or via environment variable '{env_var}'",
+                key_path.display()
+            ))),
+            // Decided in `ready_sealer`, which can inspect the database first.
+            at_rest::KeySource::Missing(_) => Ok(Sealer::KeyMissing),
+            _ => Ok(Sealer::Unavailable(format!(
+                "at-rest encryption key is unavailable. Key is expected at '{}' or via environment variable '{env_var}'",
+                key_path.display()
+            ))),
+        }
     }
 
     /// The sealer for one operation. Node-tier operations verify the seal floor
     /// first; a handle verifies each node key once.
     async fn ready_sealer(&self) -> Result<Sealer> {
         use sha2::{Digest, Sha256};
-        let sealer = self.sealer()?;
+        let mut sealer = self.sealer()?;
+        if matches!(sealer, Sealer::KeyMissing) {
+            sealer = self.provision_node_key().await?;
+        }
         if let Sealer::Node(key) = &sealer {
             let fingerprint: [u8; 32] = Sha256::digest(key).into();
             let verified = self
@@ -283,6 +307,52 @@ impl ConversationsDb {
             }
         }
         Ok(sealer)
+    }
+
+    /// The node key file is missing. A database that already holds sealed data
+    /// or a seal floor fails closed: a new key could never open it. A fresh
+    /// database gets a key created atomically (an existing file is never
+    /// replaced; a concurrent creator's key is reused).
+    ///
+    /// The key is looked up again after the sealed-state check, on the same
+    /// connection: a concurrent first writer publishes its key before it
+    /// commits the seal floor, so a floor seen here with the key still absent
+    /// means the key is truly missing, not that it was created meanwhile.
+    async fn provision_node_key(&self) -> Result<Sealer> {
+        use crate::memory::sqlite_vec_store::at_rest;
+        let key_path = at_rest::record_key_path();
+        let env_var = at_rest::RECORD_KEY_ENV;
+        let (has_sealed, reread) = ConnectionManager::global()
+            .with_conn(&self.full_project_id, |conn| {
+                if !has_sealed_state(conn)? {
+                    return Ok((false, None));
+                }
+                Ok((true, Some(at_rest::peek_record_key_with_source())))
+            })
+            .await?;
+        if has_sealed {
+            match reread {
+                Some((Some(key), _)) => return Ok(Sealer::Node(key)),
+                Some((None, at_rest::KeySource::Unavailable(reason))) => {
+                    return Ok(Sealer::Unavailable(format!(
+                        "at-rest encryption key is unavailable: {reason}. Key is expected at '{}' or via environment variable '{env_var}'",
+                        key_path.display()
+                    )));
+                }
+                _ => {}
+            }
+            return Ok(Sealer::Unavailable(format!(
+                "at-rest encryption key is missing: this conversation database already holds sealed data, so a new key will not be generated. Restore the key file at '{}' or set environment variable '{env_var}'",
+                key_path.display()
+            )));
+        }
+        match at_rest::create_record_key_exclusive(&key_path) {
+            Ok(key) => Ok(Sealer::Node(key)),
+            Err(e) => Ok(Sealer::Unavailable(format!(
+                "at-rest encryption key is unavailable: {e:#}. Key is expected at '{}' or via environment variable '{env_var}'",
+                key_path.display()
+            ))),
+        }
     }
 
     fn refuse_if_disabled(&self) -> Result<()> {
@@ -618,8 +688,20 @@ impl ConversationsDb {
         let id_for_return = id.clone();
         let now_c = now.clone();
         let thread_id_for_update = thread_id.to_string();
+        let pid = self.project_id.clone();
 
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
+            let thread_belongs: bool = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM conversation_threads WHERE id = ?1 AND project_id = ?2)",
+                    params![thread_id_c, pid],
+                    |r| r.get(0),
+                )
+                .context("failed to check thread project")?;
+            if !thread_belongs {
+                anyhow::bail!("thread {thread_id_c} does not belong to project {pid}");
+            }
+
             conn.execute(
                 "INSERT INTO conversation_messages (id, thread_id, role, content, tool_calls, openui_lang, xui_json, metadata, created_at, tokens)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -628,8 +710,8 @@ impl ConversationsDb {
 
             // Update thread's updated_at timestamp
             let _ = conn.execute(
-                "UPDATE conversation_threads SET updated_at = ?1 WHERE id = ?2",
-                params![now_c, thread_id_for_update.clone()],
+                "UPDATE conversation_threads SET updated_at = ?1 WHERE id = ?2 AND project_id = ?3",
+                params![now_c, thread_id_for_update, pid],
             );
             Ok(())
         }).await?;
@@ -671,13 +753,17 @@ impl ConversationsDb {
             preview,
         )?;
         let now_c = Utc::now().to_rfc3339();
+        let pid = self.project_id.clone();
 
         ConnectionManager::global()
             .with_conn(&self.full_project_id, move |conn| {
-                let _ = conn.execute(
-                "UPDATE conversation_threads SET updated_at = ?1, last_preview = ?2 WHERE id = ?3",
-                params![now_c, preview_c, thread_id_c],
-            );
+                let updated = conn.execute(
+                    "UPDATE conversation_threads SET updated_at = ?1, last_preview = ?2 WHERE id = ?3 AND project_id = ?4",
+                    params![now_c, preview_c, thread_id_c, pid],
+                ).context("failed to update thread preview")?;
+                if updated == 0 {
+                    anyhow::bail!("thread {thread_id_c} does not belong to project {pid}");
+                }
                 Ok(())
             })
             .await?;
@@ -1290,6 +1376,25 @@ const SQL_ANY_NODE_SEALED: &str = "SELECT
     OR EXISTS(SELECT 1 FROM beliefs WHERE subject GLOB 'xcn2:*' OR relation GLOB 'xcn2:*'
         OR object GLOB 'xcn2:*' OR proposition GLOB 'xcn2:*')";
 
+/// Whether the database already holds a seal floor or any node-sealed value
+/// (current `xcn2:` or legacy `xcn1:`).
+fn has_sealed_state(conn: &Connection) -> Result<bool> {
+    let floor: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM conv_seal_state WHERE k = 'floor')",
+        [],
+        |r| r.get(0),
+    )?;
+    if floor {
+        return Ok(true);
+    }
+    let current: bool = conn.query_row(SQL_ANY_NODE_SEALED, [], |r| r.get(0))?;
+    if current {
+        return Ok(true);
+    }
+    let legacy_sql = SQL_ANY_NODE_SEALED.replace("'xcn2:*'", "'xcn1:*'");
+    Ok(conn.query_row(&legacy_sql, [], |r| r.get(0))?)
+}
+
 /// Row context bound into every node-tier seal. Fixed for the life of a row:
 /// the handle's trusted project, the parent row (the thread for messages, empty
 /// for top-level rows) and the row id.
@@ -1307,14 +1412,32 @@ enum Sealer {
     Dek(crate::espacio::keys::KeyHandle),
     /// Node record key (`xcn2:` envelope), used before a keystore exists.
     Node([u8; 32]),
-    /// No key available: rows are written as before (clear).
-    None,
+    /// Key source is unavailable: writes must fail closed, clear legacy reads work.
+    Unavailable(String),
+    /// The key file is missing; `ready_sealer` resolves this before use.
+    KeyMissing,
 }
 
 fn is_legacy_node_sealed(v: &str) -> bool {
-    v.strip_prefix(LEGACY_NODE_SEAL_PREFIX).is_some_and(|b| {
-        b.len() >= 56 && b.len() % 2 == 0 && b.bytes().all(|c| c.is_ascii_hexdigit())
-    })
+    v.starts_with(LEGACY_NODE_SEAL_PREFIX)
+}
+
+fn kind_to_table_column(kind: &str) -> (&'static str, &'static str) {
+    match kind {
+        "conv.thread.title" => ("conversation_threads", "title"),
+        "conv.thread.preview" => ("conversation_threads", "last_preview"),
+        "conv.msg.content" => ("conversation_messages", "content"),
+        "conv.msg.tool_calls" => ("conversation_messages", "tool_calls"),
+        "conv.msg.openui_lang" => ("conversation_messages", "openui_lang"),
+        "conv.msg.xui_json" => ("conversation_messages", "xui_json"),
+        "conv.msg.metadata" => ("conversation_messages", "metadata"),
+        "conv.deduction.text" => ("deductions", "deduction"),
+        "conv.belief.subject" => ("beliefs", "subject"),
+        "conv.belief.relation" => ("beliefs", "relation"),
+        "conv.belief.object" => ("beliefs", "object"),
+        "conv.belief.proposition" => ("beliefs", "proposition"),
+        _ => ("conversations", "field"),
+    }
 }
 
 /// Associated data fields of a node-tier field: label, version, tier, project,
@@ -1359,11 +1482,18 @@ fn open_node(key: &[u8; 32], kind: &str, ctx: FieldCtx<'_>, stored: &str) -> Res
 
 /// Open an `xcn1:` value (no AD). Only the seal floor migration reads these.
 fn open_legacy_node(key: &[u8; 32], stored: &str) -> Result<String> {
-    let raw = crate::crypto::hex_decode(&stored[LEGACY_NODE_SEAL_PREFIX.len()..])
-        .map_err(|e| anyhow::anyhow!("conversation row is corrupt: {e}"))?;
+    let body = stored
+        .strip_prefix(LEGACY_NODE_SEAL_PREFIX)
+        .ok_or_else(|| anyhow::anyhow!("missing legacy prefix"))?;
+    anyhow::ensure!(
+        body.len() >= 56 && body.len() % 2 == 0 && body.bytes().all(|c| c.is_ascii_hexdigit()),
+        "invalid legacy node seal format"
+    );
+    let raw = crate::crypto::hex_decode(body)
+        .map_err(|e| anyhow::anyhow!("legacy hex decode failed: {e}"))?;
     let pt = crate::crypto::encryption::aes_decrypt(&raw, key)
-        .map_err(|e| anyhow::anyhow!("conversation row failed authentication: {e}"))?;
-    String::from_utf8(pt).map_err(|_| anyhow::anyhow!("row is not valid UTF-8"))
+        .map_err(|e| anyhow::anyhow!("legacy decrypt failed: {e}"))?;
+    String::from_utf8(pt).map_err(|e| anyhow::anyhow!("legacy utf-8 failed: {e}"))
 }
 
 /// Seal a legacy or clear value for the floor migration. `xr1:` and `xcn2:` values
@@ -1381,7 +1511,13 @@ fn reseal_legacy(
         return Ok(None);
     }
     let plain = if is_legacy_node_sealed(stored) {
-        open_legacy_node(key, stored)?
+        let (table, column) = kind_to_table_column(kind);
+        open_legacy_node(key, stored).map_err(|_| {
+            anyhow::anyhow!(
+                "corrupt legacy xcn1 row in table '{table}', column '{column}', row id '{}': restore from backup or delete the corrupt row",
+                ctx.row
+            )
+        })?
     } else {
         stored.to_string()
     };
@@ -1395,7 +1531,8 @@ impl Sealer {
                 k.seal_record(crate::espacio::keys::DEFAULT_SPACE_ID, kind, ctx.row, plain)
             }
             Sealer::Node(key) => seal_node(key, kind, ctx, plain),
-            Sealer::None => Ok(plain.to_string()),
+            Sealer::Unavailable(msg) => anyhow::bail!("{msg}"),
+            Sealer::KeyMissing => anyhow::bail!("conversations: node key was not provisioned"),
         }
     }
 
@@ -1405,6 +1542,9 @@ impl Sealer {
         ctx: FieldCtx<'_>,
         plain: Option<&str>,
     ) -> Result<Option<String>> {
+        if let Sealer::Unavailable(msg) = self {
+            anyhow::bail!("{msg}");
+        }
         plain.map(|p| self.seal(kind, ctx, p)).transpose()
     }
 
@@ -1413,9 +1553,17 @@ impl Sealer {
         use crate::memory::sqlite_vec_store::at_rest;
         match self {
             Sealer::Node(k) => Ok(*k),
+            Sealer::Unavailable(msg) => anyhow::bail!("{msg}"),
             _ => at_rest::peek_record_key_with_source()
                 .0
-                .ok_or_else(|| anyhow::anyhow!("sealed conversation row but no node key")),
+                .ok_or_else(|| {
+                    let key_path = at_rest::record_key_path();
+                    let env_var = at_rest::RECORD_KEY_ENV;
+                    anyhow::anyhow!(
+                        "sealed conversation row but no node key: key is expected at '{}' or via environment variable '{env_var}'",
+                        key_path.display()
+                    )
+                }),
         }
     }
 
@@ -1440,9 +1588,28 @@ impl Sealer {
             return open_node(&self.read_node_key()?, kind, ctx, &stored);
         }
         match self {
-            Sealer::Node(_) => anyhow::bail!("legacy conversation value after seal floor"),
+            Sealer::Node(_) => {
+                let (table, column) = kind_to_table_column(kind);
+                if is_legacy_node_sealed(&stored) {
+                    anyhow::bail!(
+                        "corrupt legacy xcn1 row in table '{table}', column '{column}', row id '{}': restore from backup or delete the corrupt row",
+                        ctx.row
+                    );
+                } else {
+                    anyhow::bail!(
+                        "legacy plaintext value after seal floor in table '{table}', column '{column}', row id '{}': restore from backup or delete the row",
+                        ctx.row
+                    );
+                }
+            }
             _ if is_legacy_node_sealed(&stored) => {
-                open_legacy_node(&self.read_node_key()?, &stored)
+                let (table, column) = kind_to_table_column(kind);
+                open_legacy_node(&self.read_node_key()?, &stored).map_err(|_| {
+                    anyhow::anyhow!(
+                        "corrupt legacy xcn1 row in table '{table}', column '{column}', row id '{}': restore from backup or delete the corrupt row",
+                        ctx.row
+                    )
+                })
             }
             _ => Ok(stored),
         }
@@ -3539,6 +3706,771 @@ mod tests {
                     .get::<_, i64>(0))
                 .unwrap(),
             0
+        );
+    }
+
+    struct TestEnvGuard {
+        saved_data_dir: Option<std::ffi::OsString>,
+        saved_record_key: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for TestEnvGuard {
+        fn drop(&mut self) {
+            match &self.saved_data_dir {
+                Some(v) => {
+                    std::env::set_var(crate::memory::sqlite_vec_store::at_rest::DATA_DIR_ENV, v)
+                }
+                None => {
+                    std::env::remove_var(crate::memory::sqlite_vec_store::at_rest::DATA_DIR_ENV)
+                }
+            }
+            match &self.saved_record_key {
+                Some(v) => {
+                    std::env::set_var(crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV, v)
+                }
+                None => {
+                    std::env::remove_var(crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV)
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn write_with_unavailable_key_fails_closed() {
+        let _guard = TestEnvGuard {
+            saved_data_dir: std::env::var_os(
+                crate::memory::sqlite_vec_store::at_rest::DATA_DIR_ENV,
+            ),
+            saved_record_key: std::env::var_os(
+                crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV,
+            ),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var(
+            crate::memory::sqlite_vec_store::at_rest::DATA_DIR_ENV,
+            dir.path(),
+        );
+        std::env::remove_var(crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV);
+
+        // Make the node key file corrupt/invalid hex so KeySource::Unavailable is returned
+        let key_path = crate::memory::sqlite_vec_store::at_rest::record_key_path();
+        std::fs::create_dir_all(key_path.parent().unwrap()).unwrap();
+        std::fs::write(&key_path, "not-valid-hex-content").unwrap();
+
+        let db_path = dir.path().join("conversations.db");
+        let db = ConversationsDb::open_at("unavail-proj", &db_path)
+            .await
+            .unwrap();
+        db.create_schema().await.unwrap();
+
+        // Plant an already-clear legacy thread and message directly in SQLite
+        raw_conn(&db_path)
+            .execute_batch(
+                "INSERT INTO conversation_threads (id, project_id, title, started_at, updated_at)
+                 VALUES ('t-legacy', 'unavail-proj', 'legacy clear title', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                 INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+                 VALUES ('m-legacy', 't-legacy', 'user', 'legacy clear content', '2026-01-01T00:00:00Z');",
+            )
+            .unwrap();
+
+        // Reads of already-clear legacy rows keep working
+        let thread = db
+            .get_thread("t-legacy")
+            .await
+            .unwrap()
+            .expect("thread exists");
+        assert_eq!(thread.title.as_deref(), Some("legacy clear title"));
+        let msgs = db.get_thread_messages("t-legacy").await.unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].content, "legacy clear content");
+
+        // Attempting to write with Unavailable key must fail closed (Err)
+        let store_res = db
+            .store_message(
+                "t-legacy",
+                "user",
+                "secret cleartext message",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+        assert!(
+            store_res.is_err(),
+            "store_message must fail closed when key is unavailable"
+        );
+        let err_msg = store_res.unwrap_err().to_string();
+        let key_path_str = key_path.display().to_string();
+        let env_var = crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV;
+        assert!(
+            err_msg.contains(&key_path_str),
+            "error message '{err_msg}' must contain key path '{key_path_str}'"
+        );
+        assert!(
+            err_msg.contains(env_var),
+            "error message '{err_msg}' must contain env var '{env_var}'"
+        );
+
+        let preview_res = db.update_last_preview("t-legacy", "secret preview").await;
+        assert!(
+            preview_res.is_err(),
+            "update_last_preview must fail closed when key is unavailable"
+        );
+
+        let create_thread_res = db
+            .create_thread(Some("secret thread title"), None, None)
+            .await;
+        assert!(
+            create_thread_res.is_err(),
+            "create_thread must fail closed when key is unavailable"
+        );
+
+        let deduction_res = db
+            .record_deduction("secret deduction text", 0.8, None, None)
+            .await;
+        assert!(
+            deduction_res.is_err(),
+            "record_deduction must fail closed when key is unavailable"
+        );
+
+        let belief_res = db
+            .upsert_belief(
+                "secret subject",
+                None,
+                None,
+                None,
+                0.5,
+                1.0,
+                None,
+                None,
+                None,
+            )
+            .await;
+        assert!(
+            belief_res.is_err(),
+            "upsert_belief must fail closed when key is unavailable"
+        );
+
+        // Assert message count unchanged (still 1 legacy message)
+        let msg_count: i64 = raw_conn(&db_path)
+            .query_row("SELECT COUNT(*) FROM conversation_messages", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(msg_count, 1);
+
+        // Assert stored value unchanged
+        let contents = raw_column(&db_path, "SELECT content FROM conversation_messages");
+        assert_eq!(contents, vec![Some("legacy clear content".to_string())]);
+
+        // Assert no clear text in the db file
+        let raw = raw_bytes(&db_path);
+        for forbidden in [
+            "secret cleartext message",
+            "secret preview",
+            "secret thread title",
+            "secret deduction text",
+            "secret subject",
+        ] {
+            assert!(
+                raw.windows(forbidden.len())
+                    .all(|w| w != forbidden.as_bytes()),
+                "cleartext '{forbidden}' found in db file",
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn update_last_preview_and_store_message_reject_foreign_thread() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let owner = node_db(&path, "proj-alpha").await;
+        let foreign = node_db(&path, "proj-beta").await;
+
+        let thread = owner
+            .create_thread(Some("alpha title"), None, None)
+            .await
+            .unwrap();
+        owner
+            .store_message(
+                &thread.id,
+                "user",
+                "alpha message",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Foreign project attempts update_last_preview on alpha's thread -> Err
+        let prev_res = foreign
+            .update_last_preview(&thread.id, "foreign preview")
+            .await;
+        assert!(
+            prev_res.is_err(),
+            "update_last_preview on foreign thread must return Err"
+        );
+
+        // Foreign project attempts store_message on alpha's thread -> Err
+        let msg_res = foreign
+            .store_message(
+                &thread.id,
+                "user",
+                "foreign message",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+        assert!(
+            msg_res.is_err(),
+            "store_message on foreign thread must return Err"
+        );
+
+        // Verify no change occurred
+        let thread_after = owner.get_thread(&thread.id).await.unwrap().unwrap();
+        if let Some(preview) = thread_after.last_preview {
+            assert!(
+                !preview.contains("foreign preview"),
+                "foreign preview was stored"
+            );
+        }
+        let msgs = owner.get_thread_messages(&thread.id).await.unwrap();
+        assert_eq!(msgs.len(), 1, "message count must remain unchanged");
+        assert_eq!(msgs[0].content, "alpha message");
+
+        let raw_count: i64 = raw_conn(&path)
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_messages WHERE thread_id = ?1",
+                params![thread.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(raw_count, 1, "database row count must remain unchanged");
+    }
+
+    #[tokio::test]
+    async fn corrupt_legacy_xcn1_row_error_contains_table_column_row_id_and_hint() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "corrupt-test").await;
+        db.create_schema().await.unwrap();
+
+        // Corrupt legacy xcn1 value: valid hex length but modified ciphertext/tag
+        let corrupt_content = flip_at(&legacy_xcn1(&NODE_KEY, "test message"), 10);
+        raw_conn(&path)
+            .execute_batch(&format!(
+                "INSERT INTO conversation_threads (id, project_id, title, started_at, updated_at)
+                 VALUES ('t-corrupt', 'corrupt-test', 'clean title', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                 INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+                 VALUES ('m-corrupt', 't-corrupt', 'user', '{corrupt_content}', '2026-01-01T00:00:00Z');",
+            ))
+            .unwrap();
+
+        let err = db.get_thread_messages("t-corrupt").await.unwrap_err();
+        let err_msg = format!("{err:#}");
+
+        assert!(
+            err_msg.contains("conversation_messages"),
+            "error message '{err_msg}' must contain table name 'conversation_messages'"
+        );
+        assert!(
+            err_msg.contains("content"),
+            "error message '{err_msg}' must contain column name 'content'"
+        );
+        assert!(
+            err_msg.contains("m-corrupt"),
+            "error message '{err_msg}' must contain row id 'm-corrupt'"
+        );
+        assert!(
+            err_msg.contains("restore from backup") || err_msg.contains("delete"),
+            "error message '{err_msg}' must contain repair hint"
+        );
+        assert!(
+            !err_msg.contains(&corrupt_content),
+            "error message must NOT contain corrupt value"
+        );
+        assert!(
+            !err_msg.contains(&corrupt_content[5..]),
+            "error message must NOT contain raw ciphertext"
+        );
+    }
+
+    fn keyless_env(dir: &Path) -> TestEnvGuard {
+        use crate::memory::sqlite_vec_store::at_rest;
+        let guard = TestEnvGuard {
+            saved_data_dir: std::env::var_os(at_rest::DATA_DIR_ENV),
+            saved_record_key: std::env::var_os(at_rest::RECORD_KEY_ENV),
+        };
+        std::env::set_var(at_rest::DATA_DIR_ENV, dir);
+        std::env::remove_var(at_rest::RECORD_KEY_ENV);
+        guard
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn missing_key_with_existing_seal_floor_fails_closed_and_keeps_key_absent() {
+        use crate::memory::sqlite_vec_store::at_rest;
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = keyless_env(dir.path());
+        let key_path = at_rest::record_key_path();
+        let db_path = dir.path().join("conversations.db");
+
+        let db = ConversationsDb::open_at("floor-key-proj", &db_path)
+            .await
+            .unwrap();
+        db.create_schema().await.unwrap();
+        let thread = db.create_thread(Some("sealed"), None, None).await.unwrap();
+        drop(db);
+        assert!(key_path.exists());
+        assert_eq!(
+            raw_column(&db_path, "SELECT k FROM conv_seal_state"),
+            vec![Some("floor".to_string())]
+        );
+
+        // The key is lost: the database must not get a fresh key.
+        std::fs::remove_file(&key_path).unwrap();
+        let db = ConversationsDb::open_at("floor-key-proj", &db_path)
+            .await
+            .unwrap();
+        let write = db
+            .create_thread(Some("after loss"), None, None)
+            .await
+            .unwrap_err()
+            .to_string();
+        let read = db.get_thread(&thread.id).await.unwrap_err().to_string();
+        for err in [&write, &read] {
+            assert!(err.contains("already holds sealed data"), "{err}");
+            assert!(err.contains(&key_path.display().to_string()), "{err}");
+            assert!(err.contains(at_rest::RECORD_KEY_ENV), "{err}");
+        }
+        assert!(!key_path.exists(), "a missing key must not be regenerated");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn missing_key_with_legacy_sealed_rows_and_no_floor_fails_closed() {
+        use crate::memory::sqlite_vec_store::at_rest;
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = keyless_env(dir.path());
+        let key_path = at_rest::record_key_path();
+        let db_path = dir.path().join("conversations.db");
+
+        let db = ConversationsDb::open_at("legacy-key-proj", &db_path)
+            .await
+            .unwrap();
+        db.create_schema().await.unwrap();
+        drop(db);
+        raw_conn(&db_path)
+            .execute(
+                "INSERT INTO conversation_threads (id, project_id, title, started_at, updated_at) \
+                 VALUES ('t1', 'legacy-key-proj', 'xcn1:AAAA', '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+
+        let db = ConversationsDb::open_at("legacy-key-proj", &db_path)
+            .await
+            .unwrap();
+        let err = db
+            .create_thread(Some("new"), None, None)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(&key_path.display().to_string()), "{err}");
+        assert!(err.contains(at_rest::RECORD_KEY_ENV), "{err}");
+        assert!(!key_path.exists(), "a missing key must not be regenerated");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[serial_test::serial]
+    async fn concurrent_first_writes_share_one_generated_key() {
+        use crate::memory::sqlite_vec_store::at_rest;
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = keyless_env(dir.path());
+        let key_path = at_rest::record_key_path();
+
+        let mut dbs = Vec::new();
+        for i in 0..6 {
+            let project = format!("race-proj-{i}");
+            let path = dir.path().join(format!("conv-{i}.db"));
+            let db = ConversationsDb::open_at(&project, &path).await.unwrap();
+            db.create_schema().await.unwrap();
+            dbs.push((project, path, std::sync::Arc::new(db)));
+        }
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(dbs.len()));
+        let tasks: Vec<_> = dbs
+            .iter()
+            .map(|(_, _, db)| {
+                let db = db.clone();
+                let barrier = barrier.clone();
+                tokio::spawn(async move {
+                    barrier.wait().await;
+                    db.create_thread(Some("first"), None, None).await
+                })
+            })
+            .collect();
+        let mut ids = Vec::new();
+        for t in tasks {
+            ids.push(t.await.unwrap().expect("concurrent first write").id);
+        }
+        let stored = at_rest::read_key_file(&key_path)
+            .unwrap()
+            .expect("key created");
+        drop(dbs);
+
+        // Every database opens with the one stored key.
+        for (i, id) in ids.iter().enumerate() {
+            let project = format!("race-proj-{i}");
+            let path = dir.path().join(format!("conv-{i}.db"));
+            let db = ConversationsDb::open_at(&project, &path).await.unwrap();
+            let thread = db.get_thread(id).await.unwrap().expect("thread readable");
+            assert_eq!(thread.title.as_deref(), Some("first"));
+        }
+        assert_eq!(at_rest::read_key_file(&key_path).unwrap(), Some(stored));
+    }
+
+    /// The judged interleaving, step by step: B finds the key missing, A then
+    /// creates the key and commits the seal floor, and only then does B decide.
+    /// B must pick up A's key instead of refusing or generating another one.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn key_created_by_concurrent_writer_after_missing_check_is_reused() {
+        use crate::memory::sqlite_vec_store::at_rest;
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = keyless_env(dir.path());
+        let key_path = at_rest::record_key_path();
+        let db_path = dir.path().join("conversations.db");
+
+        let a = ConversationsDb::open_at("same-db-proj", &db_path)
+            .await
+            .unwrap();
+        let b = ConversationsDb::open_at("same-db-proj", &db_path)
+            .await
+            .unwrap();
+        a.create_schema().await.unwrap();
+        b.create_schema().await.unwrap();
+
+        assert!(matches!(b.sealer().unwrap(), Sealer::KeyMissing));
+        let first = a.create_thread(Some("from a"), None, None).await.unwrap();
+        let stored = at_rest::read_key_file(&key_path)
+            .unwrap()
+            .expect("A created the key");
+        assert_eq!(
+            raw_column(&db_path, "SELECT k FROM conv_seal_state"),
+            vec![Some("floor".to_string())]
+        );
+
+        match b.provision_node_key().await.unwrap() {
+            Sealer::Node(k) => assert_eq!(k, stored, "B must reuse A's key"),
+            Sealer::Unavailable(e) => panic!("B refused a key that exists: {e}"),
+            _ => panic!("unexpected sealer"),
+        }
+        let second = b.create_thread(Some("from b"), None, None).await.unwrap();
+        for (db, id, title) in [(&a, &first.id, "from a"), (&b, &second.id, "from b")] {
+            let t = db.get_thread(id).await.unwrap().expect("thread readable");
+            assert_eq!(t.title.as_deref(), Some(title));
+        }
+        assert_eq!(at_rest::read_key_file(&key_path).unwrap(), Some(stored));
+    }
+
+    /// Many handles race their first write into the same new database. Every
+    /// write succeeds and all of them share one key.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    #[serial_test::serial]
+    async fn concurrent_first_writes_to_same_database_all_succeed() {
+        use crate::memory::sqlite_vec_store::at_rest;
+        for round in 0..20 {
+            let dir = tempfile::tempdir().unwrap();
+            let _guard = keyless_env(dir.path());
+            let key_path = at_rest::record_key_path();
+            let db_path = dir.path().join("conversations.db");
+
+            let mut dbs = Vec::new();
+            for _ in 0..8 {
+                let db = ConversationsDb::open_at("same-db-race", &db_path)
+                    .await
+                    .unwrap();
+                db.create_schema().await.unwrap();
+                dbs.push(std::sync::Arc::new(db));
+            }
+            let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(dbs.len()));
+            let tasks: Vec<_> = dbs
+                .iter()
+                .enumerate()
+                .map(|(i, db)| {
+                    let db = db.clone();
+                    let barrier = barrier.clone();
+                    tokio::spawn(async move {
+                        barrier.wait().await;
+                        db.create_thread(Some(&format!("w{i}")), None, None).await
+                    })
+                })
+                .collect();
+            let mut ids = Vec::new();
+            for t in tasks {
+                let res = t.await.unwrap();
+                ids.push(
+                    res.unwrap_or_else(|e| panic!("round {round}: first write failed: {e:#}"))
+                        .id,
+                );
+            }
+            let stored = at_rest::read_key_file(&key_path)
+                .unwrap()
+                .expect("key created");
+            drop(dbs);
+
+            let db = ConversationsDb::open_at("same-db-race", &db_path)
+                .await
+                .unwrap();
+            for (i, id) in ids.iter().enumerate() {
+                let t = db.get_thread(id).await.unwrap().expect("thread readable");
+                assert_eq!(t.title.as_deref(), Some(format!("w{i}").as_str()));
+            }
+            assert_eq!(at_rest::read_key_file(&key_path).unwrap(), Some(stored));
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn missing_key_file_and_no_env_generates_key_and_seals() {
+        let _guard = TestEnvGuard {
+            saved_data_dir: std::env::var_os(
+                crate::memory::sqlite_vec_store::at_rest::DATA_DIR_ENV,
+            ),
+            saved_record_key: std::env::var_os(
+                crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV,
+            ),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var(
+            crate::memory::sqlite_vec_store::at_rest::DATA_DIR_ENV,
+            dir.path(),
+        );
+        std::env::remove_var(crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV);
+
+        let key_path = crate::memory::sqlite_vec_store::at_rest::record_key_path();
+        assert!(!key_path.exists(), "key file must not exist before write");
+
+        let db_path = dir.path().join("conversations.db");
+        let db = ConversationsDb::open_at("missing-key-proj", &db_path)
+            .await
+            .unwrap();
+        db.create_schema().await.unwrap();
+
+        let thread = db
+            .create_thread(Some("fresh title"), None, None)
+            .await
+            .expect("write must succeed when key file is missing and no env var is set");
+
+        let msg = db
+            .store_message(
+                &thread.id,
+                "user",
+                "secret fresh message",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("store_message must succeed");
+
+        assert!(key_path.exists(), "key file must exist after write");
+
+        let contents = raw_column(&db_path, "SELECT content FROM conversation_messages");
+        assert_eq!(contents.len(), 1);
+        let stored_content = contents[0].as_ref().expect("content present");
+        assert!(
+            stored_content.starts_with(NODE_SEAL_PREFIX),
+            "stored value must be sealed with node prefix '{NODE_SEAL_PREFIX}', got '{stored_content}'"
+        );
+        assert!(
+            !stored_content.contains("secret fresh message"),
+            "stored value must not be plaintext"
+        );
+
+        let titles = raw_column(&db_path, "SELECT title FROM conversation_threads");
+        assert_eq!(titles.len(), 1);
+        let stored_title = titles[0].as_ref().expect("title present");
+        assert!(
+            stored_title.starts_with(NODE_SEAL_PREFIX),
+            "stored title must be sealed with node prefix"
+        );
+
+        // Verify no cleartext in database files
+        let raw = raw_bytes(&db_path);
+        for forbidden in ["secret fresh message", "fresh title"] {
+            assert!(
+                raw.windows(forbidden.len())
+                    .all(|w| w != forbidden.as_bytes()),
+                "cleartext '{forbidden}' found in db file"
+            );
+        }
+
+        // Verify read back succeeds
+        let msgs = db.get_thread_messages(&thread.id).await.unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].content, "secret fresh message");
+        assert_eq!(msgs[0].id, msg.id);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn invalid_env_value_and_missing_key_file_fails_closed() {
+        let _guard = TestEnvGuard {
+            saved_data_dir: std::env::var_os(
+                crate::memory::sqlite_vec_store::at_rest::DATA_DIR_ENV,
+            ),
+            saved_record_key: std::env::var_os(
+                crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV,
+            ),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var(
+            crate::memory::sqlite_vec_store::at_rest::DATA_DIR_ENV,
+            dir.path(),
+        );
+        std::env::set_var(
+            crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV,
+            "invalid-env-hex-too-short",
+        );
+
+        let key_path = crate::memory::sqlite_vec_store::at_rest::record_key_path();
+        assert!(!key_path.exists(), "key file must not exist");
+
+        let db_path = dir.path().join("conversations.db");
+        let db = ConversationsDb::open_at("invalid-env-proj", &db_path)
+            .await
+            .unwrap();
+        db.create_schema().await.unwrap();
+
+        let write_res = db.create_thread(Some("unsealable title"), None, None).await;
+        assert!(
+            write_res.is_err(),
+            "write must fail when RECORD_KEY_ENV is invalid and key file is missing"
+        );
+        let err_msg = write_res.unwrap_err().to_string();
+        let env_var = crate::memory::sqlite_vec_store::at_rest::RECORD_KEY_ENV;
+        assert!(
+            err_msg.contains(env_var),
+            "error message '{err_msg}' must mention env var '{env_var}'"
+        );
+
+        assert!(
+            !key_path.exists(),
+            "key file must NOT be generated when env var is invalid"
+        );
+
+        let thread_count: i64 = raw_conn(&db_path)
+            .query_row("SELECT COUNT(*) FROM conversation_threads", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(thread_count, 0, "no threads should be stored");
+    }
+
+    #[tokio::test]
+    async fn corrupt_xcn1_inserted_raw_after_seal_floor_reports_table_column_and_row_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "post-floor-corrupt").await;
+        db.create_schema().await.unwrap();
+
+        // Establish the seal floor with a clean thread
+        let thread = db
+            .create_thread(Some("valid thread title"), None, None)
+            .await
+            .unwrap();
+
+        let floor_count: i64 = raw_conn(&path)
+            .query_row(
+                "SELECT COUNT(*) FROM conv_seal_state WHERE k = 'floor'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(floor_count, 1, "seal floor must exist");
+
+        // Insert a corrupt legacy xcn1 value directly into SQLite after the floor exists
+        let corrupt_content = flip_at(&legacy_xcn1(&NODE_KEY, "test post-floor message"), 10);
+        raw_conn(&path)
+            .execute(
+                "INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+                 VALUES ('m-post-floor-corrupt', ?1, 'user', ?2, '2026-01-01T00:00:00Z')",
+                params![thread.id, corrupt_content],
+            )
+            .unwrap();
+
+        let err = db.get_thread_messages(&thread.id).await.unwrap_err();
+        let err_msg = format!("{err:#}");
+
+        assert!(
+            err_msg.contains("conversation_messages"),
+            "error message '{err_msg}' must contain table name 'conversation_messages'"
+        );
+        assert!(
+            err_msg.contains("content"),
+            "error message '{err_msg}' must contain column name 'content'"
+        );
+        assert!(
+            err_msg.contains("m-post-floor-corrupt"),
+            "error message '{err_msg}' must contain row id 'm-post-floor-corrupt'"
+        );
+        assert!(
+            err_msg.contains("restore from backup") || err_msg.contains("delete"),
+            "error message '{err_msg}' must contain repair hint"
+        );
+    }
+
+    #[tokio::test]
+    async fn plaintext_inserted_raw_after_seal_floor_reports_table_column_and_row_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("conversations.db");
+        let db = node_db(&path, "post-floor-plain").await;
+        db.create_schema().await.unwrap();
+
+        let thread = db
+            .create_thread(Some("valid thread title"), None, None)
+            .await
+            .unwrap();
+
+        // Insert a raw plaintext message after the floor exists
+        raw_conn(&path)
+            .execute(
+                "INSERT INTO conversation_messages (id, thread_id, role, content, created_at)
+                 VALUES ('m-post-floor-plain', ?1, 'user', 'plaintext after floor', '2026-01-01T00:00:00Z')",
+                params![thread.id],
+            )
+            .unwrap();
+
+        let err = db.get_thread_messages(&thread.id).await.unwrap_err();
+        let err_msg = format!("{err:#}");
+
+        assert!(
+            err_msg.contains("conversation_messages"),
+            "error message '{err_msg}' must contain table name 'conversation_messages'"
+        );
+        assert!(
+            err_msg.contains("content"),
+            "error message '{err_msg}' must contain column name 'content'"
+        );
+        assert!(
+            err_msg.contains("m-post-floor-plain"),
+            "error message '{err_msg}' must contain row id 'm-post-floor-plain'"
+        );
+        assert!(
+            err_msg.contains("legacy plaintext value after seal floor"),
+            "error message '{err_msg}' must contain 'legacy plaintext value after seal floor'"
         );
     }
 }
