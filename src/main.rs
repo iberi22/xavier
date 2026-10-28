@@ -65,7 +65,10 @@ fn main() -> Result<()> {
 }
 
 async fn async_main() -> Result<()> {
-    let loaded_settings = XavierSettings::load()?;
+    let loaded_settings = XavierSettings::load().unwrap_or_else(|error| {
+        eprintln!("Invalid Xavier configuration: {error}");
+        std::process::exit(2);
+    });
     if let Some(ref settings) = loaded_settings {
         if let Err(problems) = settings::validation::validate_local_config(settings) {
             eprintln!("FATAL: Invalid Xavier configuration:");
@@ -75,8 +78,8 @@ async fn async_main() -> Result<()> {
             eprintln!("\nFix config/xavier.config.json or run `xavier setup --local` and retry.");
             std::process::exit(2);
         }
-        settings.apply_to_env();
     }
+    loaded_settings.unwrap_or_default().apply_to_env();
 
     // Setup logging
     let log_filter = std::env::var("RUST_LOG")

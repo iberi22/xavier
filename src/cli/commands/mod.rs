@@ -353,8 +353,17 @@ impl Cli {
             Command::Setup { local, model } => {
                 crate::cli::handlers::setup::handle_setup(*local, model.clone()).await
             }
-            Command::Doctor { format, verbose } => {
-                crate::cli::handlers::doctor::handle_doctor(format.clone(), *verbose).await
+            Command::Doctor {
+                format,
+                verbose,
+                json,
+            } => {
+                let format = if *json {
+                    "json".to_string()
+                } else {
+                    format.clone()
+                };
+                crate::cli::handlers::doctor::handle_doctor(format, *verbose).await
             }
             Command::DataCommons { cmd } => {
                 data_commons::handle_data_commons_command(cmd.clone()).await

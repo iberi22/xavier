@@ -57,19 +57,149 @@ pub fn resolve_config_path() -> PathBuf {
     PathBuf::from(DEFAULT_CONFIG_PATH)
 }
 
-/// Resolve data dir.
+/// Load a literal environment contract before resolving config and state files.
+/// Process variables win; diagnostics deliberately omit contract values.
+pub(crate) fn load_env_contract() -> Result<()> {
+    let explicit = std::env::var_os("XAVIER_ENV_FILE");
+    let path = explicit
+        .as_ref()
+        .map(PathBuf::from)
+        .or_else(|| dirs::config_dir().map(|dir| dir.join("xavier/env")));
+    let Some(path) = path else {
+        return Ok(());
+    };
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(error) if explicit.is_none() && error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(())
+        }
+        Err(_) => anyhow::bail!(
+            "Cannot read Xavier env contract; set XAVIER_ENV_FILE to a readable KEY=VALUE file"
+        ),
+    };
+    let mut entries = Vec::new();
+    for (index, line) in raw.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let invalid = || {
+            anyhow::anyhow!(
+                "Invalid Xavier env contract at line {}; use literal KEY=VALUE entries",
+                index + 1
+            )
+        };
+        let (key, value) = line.split_once('=').ok_or_else(invalid)?;
+        let key = key.trim();
+        if !key.starts_with("XAVIER_") {
+            continue;
+        }
+        if !key.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_') {
+            return Err(invalid());
+        }
+        let value = value.trim();
+        let value = if value.starts_with(['\'', '"']) {
+            if value.len() < 2 || !value.ends_with(value.chars().next().unwrap()) {
+                return Err(invalid());
+            }
+            &value[1..value.len() - 1]
+        } else {
+            value
+        };
+        if value.contains('\0') {
+            return Err(invalid());
+        }
+        entries.push((key, value));
+    }
+    for (key, value) in entries {
+        super::env::set_if_absent(key, value);
+    }
+    Ok(())
+}
+
+/// Resolve a storage path under the data root, accepting legacy `data/` prefixes.
+/// An empty optional path stays empty; absolute paths remain explicit overrides.
+pub(crate) fn resolve_storage_path(path: &str, data_dir: &Path) -> PathBuf {
+    let path = Path::new(path);
+    if path.as_os_str().is_empty() || path.is_absolute() {
+        return path.to_path_buf();
+    }
+    data_dir.join(path.strip_prefix("data").unwrap_or(path))
+}
+
+fn home_relative(path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        return path;
+    }
+    dirs::home_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join(path)
+}
+
+/// Resolve the data root independently of the process working directory.
 pub fn resolve_data_dir() -> PathBuf {
-    if let Ok(env_path) = std::env::var("XAVIER_DATA_DIR") {
-        return PathBuf::from(env_path);
-    }
+    let path = std::env::var_os("XAVIER_DATA_DIR")
+        .map(PathBuf::from)
+        .or_else(|| dirs::data_dir().map(|dir| dir.join("xavier")))
+        .unwrap_or_else(|| PathBuf::from("data"));
+    let resolved = home_relative(path);
+    crate::test_support::guard_user_path(&resolved);
+    resolved
+}
 
-    if let Some(data_dir) = dirs::data_dir() {
-        let resolved = data_dir.join("xavier");
-        crate::test_support::guard_user_path(&resolved);
-        return resolved;
+/// Apply path environment overrides, then normalize every settings storage path.
+/// Exporting these paths also keeps consumers that read env directly consistent.
+pub(crate) fn resolve_settings_paths(settings: &mut XavierSettings, export: bool) {
+    if let Ok(data_dir) = std::env::var("XAVIER_DATA_DIR") {
+        settings.memory.data_dir = data_dir;
     }
-
-    PathBuf::from("data")
+    let data = home_relative(PathBuf::from(&settings.memory.data_dir));
+    settings.memory.data_dir = data.to_string_lossy().into_owned();
+    if export {
+        std::env::set_var("XAVIER_DATA_DIR", &data);
+    }
+    for (key, path) in [
+        ("XAVIER_WORKSPACE_DIR", &mut settings.memory.workspace_dir),
+        ("XAVIER_MEMORY_FILE_PATH", &mut settings.memory.file_path),
+        (
+            "XAVIER_MEMORY_SQLITE_PATH",
+            &mut settings.memory.sqlite_path,
+        ),
+        ("XAVIER_MEMORY_VEC_PATH", &mut settings.memory.vec_path),
+        (
+            "XAVIER_EMBEDDING_CACHE_DB_PATH",
+            &mut settings.embedding.cache_db_path,
+        ),
+        (
+            "XAVIER_CODE_GRAPH_DB_PATH",
+            &mut settings.server.code_graph_db_path,
+        ),
+        (
+            "XAVIER_ENTERPRISE_DB_PATH",
+            &mut settings.enterprise.db_path,
+        ),
+        (
+            "XAVIER_ROUTER_POLICY_PATH",
+            &mut settings.router.policy_path,
+        ),
+        (
+            "XAVIER_PANEL_STORE_DIR",
+            &mut settings.advanced.panel_store_dir,
+        ),
+    ] {
+        if let Ok(value) = std::env::var(key) {
+            *path = value;
+        }
+        *path = resolve_storage_path(path, &data)
+            .to_string_lossy()
+            .into_owned();
+        if export && !path.is_empty() {
+            std::env::set_var(key, path.as_str());
+        }
+    }
+    settings.data_commons.data_dir = resolve_storage_path(&settings.data_commons.data_dir, &data)
+        .to_string_lossy()
+        .into_owned();
 }
 
 /// Load the read-only defaults file (the versioned config, if any).
@@ -144,6 +274,7 @@ pub fn configured_model_provider() -> Option<String> {
 /// file took the server down with it. The daemon now boots on the defaults and
 /// the failure is reported instead (D10).
 pub fn load() -> Result<Option<XavierSettings>> {
+    load_env_contract()?;
     let path = resolve_config_path();
     seed_config_from_template(&path);
     let defaults = if path.exists() {
@@ -162,26 +293,30 @@ pub fn load() -> Result<Option<XavierSettings>> {
 
     // A state document that exists but cannot be merged must not abort startup:
     // fall back to the defaults and keep every other setting intact.
-    match (defaults, state) {
+    let loaded = match (defaults, state) {
         (Some(defaults), Some(state)) => match merge_runtime_state(&state, defaults.clone()) {
-            Ok(merged) => Ok(Some(merged)),
+            Ok(merged) => Some(merged),
             Err(e) => {
                 report_state_rejection("incompatible", &path, &e);
-                Ok(Some(defaults))
+                Some(defaults)
             }
         },
-        (Some(defaults), None) => Ok(Some(defaults)),
+        (Some(defaults), None) => Some(defaults),
         (None, state) => match state {
             Some(state) => match merge_runtime_state(&state, XavierSettings::default()) {
-                Ok(merged) => Ok(Some(merged)),
+                Ok(merged) => Some(merged),
                 Err(e) => {
                     report_state_rejection("incompatible", &path, &e);
-                    Ok(None)
+                    None
                 }
             },
-            None => Ok(None),
+            None => None,
         },
-    }
+    };
+    Ok(loaded.map(|mut settings| {
+        resolve_settings_paths(&mut settings, false);
+        settings
+    }))
 }
 
 /// First run (#2801): `config/xavier.config.json` is untracked and gitignored,
@@ -427,6 +562,7 @@ pub fn current() -> XavierSettings {
             .ok()
             .and_then(|v| v.parse().ok());
     }
+    resolve_settings_paths(&mut settings, false);
     settings
 }
 
