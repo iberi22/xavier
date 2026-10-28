@@ -65,6 +65,11 @@ fn main() -> Result<()> {
 }
 
 async fn async_main() -> Result<()> {
+    // Config inspection must work even when startup configuration is invalid.
+    let cli = Box::new(Cli::parse());
+    if matches!(cli.cmd, Some(xavier_lib::cli::Command::Config(_))) {
+        return cli.run().await;
+    }
     let loaded_settings = XavierSettings::load()?;
     if let Some(ref settings) = loaded_settings {
         if let Err(problems) = settings::validation::validate_local_config(settings) {
@@ -101,6 +106,5 @@ async fn async_main() -> Result<()> {
 
     // Parse and run CLI
     validate_xavier_data_dir_env()?;
-    let cli = Box::new(Cli::parse());
     cli.run().await
 }

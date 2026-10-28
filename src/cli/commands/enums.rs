@@ -32,6 +32,8 @@ pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 /// Each variant maps to a distinct subcommand exposed to the user.
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
+    /// Inspect effective settings and edit runtime overrides
+    Config(super::config::ConfigArgs),
     /// Initialize Xavier onboarding and interactive RAG installer wizard
     Init(InitArgs),
     /// Start Xavier HTTP server

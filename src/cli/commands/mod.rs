@@ -18,6 +18,7 @@ pub mod airgap;
 pub mod benchmark_runner;
 pub mod cleanup;
 pub mod code;
+pub mod config;
 pub mod data_commons;
 pub mod encrypt_private;
 pub mod encrypt_records;
@@ -90,6 +91,13 @@ impl Cli {
                 }
                 let port = port.unwrap_or_else(resolve_http_port);
                 start_http_server(port, *mcp_port, *no_ui).await
+            }
+            Command::Config(args) => {
+                let code = config::run(args);
+                if code != 0 {
+                    std::process::exit(code);
+                }
+                Ok(())
             }
             Command::Init(ref args) => installer::run_installer(args.clone()),
             Command::Mcp => start_mcp_stdio().await,
