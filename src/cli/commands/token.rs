@@ -9,6 +9,24 @@ use anyhow::Result;
 /// Dispatch a [`TokenCommand`].
 pub async fn handle_token_command(cmd: TokenCommand) -> Result<()> {
     match cmd {
+        TokenCommand::Issue {
+            agent,
+            scope,
+            ttl,
+            json,
+            out_file,
+            i_understand_output_is_not_a_tty,
+        } => {
+            return super::agent_access::issue(
+                &agent,
+                scope,
+                &ttl,
+                json,
+                out_file.as_deref(),
+                i_understand_output_is_not_a_tty,
+            )
+            .await;
+        }
         TokenCommand::New => {
             use rand::RngCore;
             let mut bytes = [0u8; 32];

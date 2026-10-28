@@ -10,6 +10,20 @@ use crate::cli::config::{require_xavier_token, resolve_base_url};
 /// Handle agent commands.
 pub async fn handle_agent_command(cmd: AgentCommand) -> Result<()> {
     match cmd {
+        AgentCommand::Onboard {
+            json,
+            client,
+            reveal,
+            i_understand_output_is_not_a_tty,
+        } => {
+            crate::cli::commands::agent_access::onboard(
+                client,
+                json,
+                reveal,
+                i_understand_output_is_not_a_tty,
+            )
+            .await
+        }
         AgentCommand::Scan { agent, json } => handle_agent_scan(agent, json).await,
         AgentCommand::Index {
             agent,

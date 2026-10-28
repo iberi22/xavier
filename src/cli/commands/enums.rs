@@ -843,6 +843,22 @@ pub enum RegenCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum AgentCommand {
+    /// Show endpoints, health, credential source and an MCP client configuration
+    #[command(
+        after_help = "Examples:\n  xavier agent onboard --client claude --json\n  xavier agent onboard --client codex"
+    )]
+    Onboard {
+        #[arg(long)]
+        json: bool,
+        #[arg(long, value_enum, default_value = "generic")]
+        client: OnboardClient,
+        /// Export the token only to non-terminal stdout with explicit confirmation
+        #[arg(long, requires = "i_understand_output_is_not_a_tty")]
+        reveal: bool,
+        /// Confirm that redirected output will contain a secret
+        #[arg(long, requires = "reveal")]
+        i_understand_output_is_not_a_tty: bool,
+    },
     /// Scan for IDE agent sessions (Cursor, Windsurf, etc.)
     Scan {
         /// Filter by agent/IDE name
@@ -1261,10 +1277,46 @@ pub enum SystemCommand {
 /// Token generation subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum TokenCommand {
+    /// Issue an expiring scoped REST token; the secret is delivered only once
+    #[command(
+        after_help = "Examples:\n  xavier token issue --agent reader --scope read --ttl 1h --out-file reader.key --json\n  xavier token issue --agent indexer --scope write --ttl 2h --out-file indexer.key"
+    )]
+    Issue {
+        #[arg(long)]
+        agent: String,
+        #[arg(long, value_enum)]
+        scope: TokenScope,
+        /// Positive duration: seconds, or an integer with s/m/h/d/w suffix
+        #[arg(long)]
+        ttl: String,
+        /// Write metadata JSON; requires a separate secret output file
+        #[arg(long, requires = "out_file")]
+        json: bool,
+        /// Create a new private file for the secret (never overwrites)
+        #[arg(long)]
+        out_file: Option<PathBuf>,
+        /// Allow secret-only stdout when stdout is not a terminal
+        #[arg(long)]
+        i_understand_output_is_not_a_tty: bool,
+    },
     /// Generate a new random token for XAVIER_TOKEN
     New,
     /// Generate a signed HMAC token for a user
     Gen { user_id: String },
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+pub enum OnboardClient {
+    Claude,
+    Codex,
+    Opencode,
+    Generic,
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+pub enum TokenScope {
+    Read,
+    Write,
 }
 
 /// Local user account administration subcommands (operador con acceso al nodo).
@@ -1394,12 +1446,17 @@ pub enum KeysCommand {
         #[arg(long, default_value_t = false)]
         yes: bool,
     },
-    /// Show the metadata (fingerprint, expiry, rotations) of an issued key,
-    /// without revealing any value
+    /// List server token metadata, or inspect a named local vault key
+    #[command(
+        after_help = "Examples:\n  xavier keys list --json\n  xavier keys list --name existing-key --json"
+    )]
     List {
-        /// Name of the key to inspect
+        /// Inspect this local vault key instead of listing server tokens
         #[arg(long)]
-        name: String,
+        name: Option<String>,
+        /// Output metadata as JSON, without secret values
+        #[arg(long)]
+        json: bool,
     },
     /// Revoke a key and its metadata from the vault
     Revoke {
