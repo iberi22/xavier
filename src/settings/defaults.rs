@@ -136,6 +136,9 @@ impl Default for EpisodicMemoryLayerConfig {
 impl Default for ModelSettings {
     fn default() -> Self {
         Self {
+            explain_provider: None,
+            explain_model: None,
+            explain_url: None,
             provider: "local".to_string(),
             api_flavor: "openai-compatible".to_string(),
             local_llm_url: "http://localhost:11434/v1".to_string(),

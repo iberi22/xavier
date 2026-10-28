@@ -267,7 +267,10 @@ pub enum Command {
         #[command(subcommand)]
         cmd: ProviderCommand,
     },
-    /// Run interactive system detection and setup
+    /// Configure and probe language models (general or explanation scope)
+    Llm(super::llm::LlmArgs),
+    /// Run interactive system detection or unattended local configuration
+    #[command(after_help = "Examples:\n  xavier setup --local --model llama3.2 --yes --json")]
     Setup {
         /// Run 100% local guided flow (Ollama)
         #[arg(long)]
@@ -275,6 +278,12 @@ pub enum Command {
         /// Override LLM model (any id your configured provider serves)
         #[arg(long)]
         model: Option<String>,
+        /// Save supplied values without prompts or model downloads
+        #[arg(long)]
+        yes: bool,
+        /// Emit machine-readable output (also disables prompts)
+        #[arg(long)]
+        json: bool,
     },
 
     /// Diagnose local-first health (Ollama, models, DB, config, vector store)

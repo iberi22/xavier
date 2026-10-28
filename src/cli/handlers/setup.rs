@@ -7,6 +7,25 @@ use std::io::{self, Write};
 use std::process::{Command, Stdio};
 use uuid::Uuid;
 
+/// Unattended setup never scans the machine or downloads models.
+pub async fn handle_setup_options(
+    local: bool,
+    model: Option<String>,
+    yes: bool,
+    json: bool,
+) -> Result<()> {
+    use std::io::IsTerminal;
+    if yes || json || !std::io::stdin().is_terminal() {
+        let model = model.filter(|v| !v.trim().is_empty());
+        if !local || model.is_none() {
+            eprintln!("Unattended setup requires --local --model ID; use xavier setup --local --model ID --yes");
+            std::process::exit(2);
+        }
+        return crate::cli::commands::llm::setup_local(model.unwrap(), json).await;
+    }
+    handle_setup(local, model).await
+}
+
 /// Handle setup.
 pub async fn handle_setup(local: bool, model: Option<String>) -> Result<()> {
     if local {
@@ -96,7 +115,7 @@ pub async fn handle_setup(local: bool, model: Option<String>) -> Result<()> {
             .interact_text()?;
 
         config.headless.auth_token = Uuid::new_v4().to_string();
-        println!("✅ Generated auth token: {}", config.headless.auth_token);
+        println!("✅ Generated headless auth token (value hidden).");
     }
 
     // 5. Notifications
