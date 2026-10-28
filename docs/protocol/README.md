@@ -22,7 +22,7 @@ pipeline re-checks them. Nothing is "done" by declaration — only by a green ru
 | `CLI_CONFIG.md` | Tooling dependency graph and capability map |
 | `rules/` | Agent integration rules (how agents use Xavier's memory) |
 | `../features/README.md` | The feature ledger contract (`features.json`) |
-| `../features/features.json` | Source of truth: every feature, its status and tests |
+| `../../.gitcore/features.json` | Source of truth: every feature, its status and tests |
 | `../features/specs/` | One spec per feature (FEATURE-*.md) |
 | `../../scripts/verify-pipeline.sh` | The verification harness (run it, don't trust) |
 

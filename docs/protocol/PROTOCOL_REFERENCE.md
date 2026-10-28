@@ -1,7 +1,7 @@
 # Protocol Reference — Wave-Based Development
 
 **Scope:** public engineering protocol for Xavier.
-**Source of truth:** `docs/features/features.json` (the feature ledger).
+**Source of truth:** `.gitcore/features.json` (the feature ledger).
 
 ## Pipeline
 
@@ -35,7 +35,7 @@ PHASE 4: VERIFICATION
 
 ## Feature Ledger Contract
 
-`docs/features/features.json` is the single source of truth.
+`.gitcore/features.json` is the single source of truth.
 
 ```json
 {

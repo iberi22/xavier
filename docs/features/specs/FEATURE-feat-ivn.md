@@ -57,4 +57,4 @@ nix-shell -p openssl.dev pkg-config --run "cargo test --test ivn_verdict"
 - Reusar `rand::distributions::WeightedIndex` (no implementar weighted random a mano)
 - KISS: lógica pura, sin DB, sin red
 - No tocar `reputation.rs` / `pricing.rs` / `marketplace.rs` / `mesh_bridge.rs`
-- `docs/features/features.json` reconciliado al final de la wave (nunca a mano)
+- `.gitcore/features.json` reconciliado al final de la wave (nunca a mano)
