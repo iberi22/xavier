@@ -109,6 +109,38 @@ pub struct DoctorReport {
     pub overall: CheckStatus,
 }
 
+/// Reports unusable sidecar candidates without executing or changing them.
+pub fn check_codegraph_sidecar() -> Vec<CheckResult> {
+    let report = crate::codebase::codegraph_sidecar::inspect_codegraph_candidates();
+    let invalid = &report.invalid_candidates;
+    vec![DoctorCheck {
+        name: "CodeGraph Sidecar Candidates".to_string(),
+        status: if invalid.is_empty() {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Warn
+        },
+        detail: if invalid.is_empty() {
+            "No invalid sidecar candidates found".to_string()
+        } else {
+            invalid
+                .iter()
+                .map(|c| format!("{}: {}", c.path.display(), c.reason))
+                .collect::<Vec<_>>()
+                .join("; ")
+        },
+        hint: if invalid.is_empty() {
+            None
+        } else {
+            Some(
+                "Move invalid sidecar files aside, then run `xavier code install --json`."
+                    .to_string(),
+            )
+        },
+        timed_out: false,
+    }]
+}
+
 /// Check database health: SQLite connectivity, WAL mode, integrity check, and record count.
 pub fn check_database(settings: &XavierSettings) -> Vec<CheckResult> {
     let mut checks = Vec::new();
@@ -960,14 +992,21 @@ pub async fn execute_doctor_checks(
         check_scheduler(&settings_sched)
     });
 
-    let (db, emb, mem, mesh, http, sec, sched) = tokio::join!(
+    let sidecar_probe = run_sync_probe(
+        "CodeGraph Sidecar Candidates",
+        DOCTOR_CHECK_TIMEOUT,
+        check_codegraph_sidecar,
+    );
+
+    let (db, emb, mem, mesh, http, sec, sched, sidecar) = tokio::join!(
         db_probe,
         emb_probe,
         mem_probe,
         mesh_probe,
         http_probe,
         sec_probe,
-        sched_probe
+        sched_probe,
+        sidecar_probe
     );
 
     let mut checks = Vec::new();
@@ -978,6 +1017,7 @@ pub async fn execute_doctor_checks(
     checks.extend(http);
     checks.extend(sec);
     checks.extend(sched);
+    checks.extend(sidecar);
 
     let overall = compute_overall_status(&checks);
 
