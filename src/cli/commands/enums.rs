@@ -1130,7 +1130,10 @@ pub enum IssueCommand {
 /// Code graph query subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum CodeCommand {
-    /// Install direct CodeGraph binary / sidecar
+    /// Install and verify the CodeGraph sidecar
+    #[command(
+        after_help = "Examples:\n  xavier code install --json\n  xavier code install --from-source --json"
+    )]
     Install {
         /// Build/install from local source repository instead of pre-built release binary
         #[arg(long)]
@@ -1138,7 +1141,7 @@ pub enum CodeCommand {
         /// Force re-installation even if already present and up to date
         #[arg(long)]
         force: bool,
-        /// Output progress and status as JSON
+        /// Output one JSON status object (diagnostics go to stderr)
         #[arg(long)]
         json: bool,
     },
