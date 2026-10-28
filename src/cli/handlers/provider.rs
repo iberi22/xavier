@@ -1,14 +1,14 @@
 //! Provider management handlers for hot-switching LLM providers.
 
+use crate::cli::handlers::json_response;
+use crate::cli::state::CliState;
 use axum::{
     extract::{Json, State},
     http::StatusCode,
     response::Response,
 };
 use serde::Deserialize;
-use crate::cli::handlers::json_response;
-use crate::cli::state::CliState;
-use xavier::agents::provider::router::{ProviderKind, AutoStrategy};
+use xavier::agents::provider::router::{AutoStrategy, ProviderKind};
 
 #[derive(Deserialize)]
 pub struct ProviderSetPayload {
@@ -38,7 +38,8 @@ pub async fn provider_status_handler(State(state): State<CliState>) -> Response 
         xavier::server::alerts::OperationalMode::CloudFallback => "cloud",
         xavier::server::alerts::OperationalMode::Disabled => "disabled",
     };
-    let local_reachable = xavier::agents::provider::router::ProviderRouter::is_ollama_reachable().await;
+    let local_reachable =
+        xavier::agents::provider::router::ProviderRouter::is_ollama_reachable().await;
 
     json_response(
         StatusCode::OK,

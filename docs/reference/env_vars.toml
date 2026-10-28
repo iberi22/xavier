@@ -1,0 +1,2705 @@
+# Registry of all XAVIER_* environment variables
+
+[[variables]]
+name = "XAVIER_API_URL"
+type = "string"
+default = "(falls back to `XAVIER_URL`)"
+description = "CLI client URL (legacy)"
+category = "CLI / Legacy"
+secret = false
+
+[[variables]]
+name = "XAVIER_AUTH_TOKEN"
+type = "string"
+default = "(falls back to `XAVIER_TOKEN`)"
+description = "CLI client auth token (legacy)"
+category = "CLI / Legacy"
+secret = true
+
+[[variables]]
+name = "XAVIER_CTX_PC_MAX_DOCS"
+type = "usize"
+default = "10"
+description = "Maximum docs for precompact"
+category = "Context Budget"
+secret = false
+
+[[variables]]
+name = "XAVIER_CTX_PC_MAX_TOKENS"
+type = "usize"
+default = "3200"
+description = "Maximum tokens for precompact"
+category = "Context Budget"
+secret = true
+
+[[variables]]
+name = "XAVIER_CTX_PC_MED_DOCS"
+type = "usize"
+default = "7"
+description = "Medium docs for precompact"
+category = "Context Budget"
+secret = false
+
+[[variables]]
+name = "XAVIER_CTX_PC_MED_TOKENS"
+type = "usize"
+default = "1600"
+description = "Medium tokens for precompact"
+category = "Context Budget"
+secret = true
+
+[[variables]]
+name = "XAVIER_CTX_PC_MIN_DOCS"
+type = "usize"
+default = "4"
+description = "Minimal docs for precompact"
+category = "Context Budget"
+secret = false
+
+[[variables]]
+name = "XAVIER_CTX_PC_MIN_TOKENS"
+type = "usize"
+default = "800"
+description = "Minimal tokens for precompact"
+category = "Context Budget"
+secret = true
+
+[[variables]]
+name = "XAVIER_CTX_SS_MAX_DOCS"
+type = "usize"
+default = "8"
+description = "Maximum docs at session start"
+category = "Context Budget"
+secret = false
+
+[[variables]]
+name = "XAVIER_CTX_SS_MAX_TOKENS"
+type = "usize"
+default = "2400"
+description = "Maximum tokens at session start"
+category = "Context Budget"
+secret = true
+
+[[variables]]
+name = "XAVIER_CTX_SS_MED_DOCS"
+type = "usize"
+default = "5"
+description = "Medium docs at session start"
+category = "Context Budget"
+secret = false
+
+[[variables]]
+name = "XAVIER_CTX_SS_MED_TOKENS"
+type = "usize"
+default = "1200"
+description = "Medium tokens at session start"
+category = "Context Budget"
+secret = true
+
+[[variables]]
+name = "XAVIER_CTX_SS_MIN_DOCS"
+type = "usize"
+default = "3"
+description = "Minimal docs at session start"
+category = "Context Budget"
+secret = false
+
+[[variables]]
+name = "XAVIER_CTX_SS_MIN_TOKENS"
+type = "usize"
+default = "600"
+description = "Minimal tokens at session start"
+category = "Context Budget"
+secret = true
+
+[[variables]]
+name = "XAVIER_EMBEDDER"
+type = "string"
+default = "—"
+description = "Legacy embedder selection"
+category = "Embedding"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_API_FLAVOR"
+type = "string"
+default = "\"openai-compatible\""
+description = "API flavor: `openai-compatible`, `anthropic-compatible`"
+category = "Embedding"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_API_KEY"
+type = "string"
+default = "(none)"
+description = "API key for embedding provider"
+category = "Embedding"
+secret = true
+
+[[variables]]
+name = "XAVIER_EMBEDDING_ENDPOINT"
+type = "string"
+default = "(same as EMBEDDING_URL)"
+description = "Alternative embedding endpoint (takes precedence if set)"
+category = "Embedding"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_MODEL"
+type = "string"
+default = "\"embeddinggemma\""
+description = "Embedding model name"
+category = "Embedding"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_URL"
+type = "string"
+default = "\"http://localhost:11434/v1\""
+description = "Primary embedding endpoint URL"
+category = "Embedding"
+secret = false
+
+[[variables]]
+name = "XAVIER_OPENROUTER_API_KEY"
+type = "string"
+default = "(none)"
+description = "OpenRouter-specific API key for embeddings"
+category = "Embedding"
+secret = true
+
+[[variables]]
+name = "XAVIER_API_FLAVOR"
+type = "string"
+default = "\"openai-compatible\""
+description = "API protocol: `openai-compatible`, `anthropic-compatible`"
+category = "LLM Provider"
+secret = false
+
+[[variables]]
+name = "XAVIER_CLOUD_LLM_MODEL"
+type = "string"
+default = "_none (required)_"
+description = "Cloud LLM model (generic mode)"
+category = "LLM Provider"
+secret = false
+
+[[variables]]
+name = "XAVIER_CLOUD_LLM_URL"
+type = "string"
+default = "\"https://api.openai.com/v1\""
+description = "Cloud LLM URL (generic mode)"
+category = "LLM Provider"
+secret = false
+
+[[variables]]
+name = "XAVIER_LLM_API_KEY"
+type = "string"
+default = "(none)"
+description = "Generic LLM API key (fallback for all providers)"
+category = "LLM Provider"
+secret = true
+
+[[variables]]
+name = "XAVIER_LLM_MODEL"
+type = "string"
+default = "_none (required)_"
+description = "Fallback model name for all providers"
+category = "LLM Provider"
+secret = false
+
+[[variables]]
+name = "XAVIER_LOCAL_ANTHROPIC_URL"
+type = "string"
+default = "\"http://localhost:11434\""
+description = "Local Anthropic-compatible endpoint"
+category = "LLM Provider"
+secret = false
+
+[[variables]]
+name = "XAVIER_LOCAL_LLM_API_KEY"
+type = "string"
+default = "\"ollama\""
+description = "Local LLM API key (defaults to \"ollama\")"
+category = "LLM Provider"
+secret = true
+
+[[variables]]
+name = "XAVIER_LOCAL_LLM_MODEL"
+type = "string"
+default = "_none (required)_"
+description = "Local LLM model name (example only: `<any model your server lists at /v1/models>`)"
+category = "LLM Provider"
+secret = false
+
+[[variables]]
+name = "XAVIER_LOCAL_LLM_URL"
+type = "string"
+default = "\"http://localhost:11434/v1\""
+description = "Local LLM endpoint (Ollama, vLLM, llama.cpp, etc.)"
+category = "LLM Provider"
+secret = false
+
+[[variables]]
+name = "XAVIER_MODEL_PROVIDER"
+type = "string"
+default = "\"local\""
+description = "LLM provider: `local`, `cloud`, `disabled`, `openrouter`, `groq`, `anthropic`, `openai`, `deepseek`, `minimax`, `gemini`"
+category = "LLM Provider"
+secret = false
+
+[[variables]]
+name = "XAVIER_GC_DESTRUCTIVE"
+type = "bool"
+default = "—"
+description = "Opt-in scheduled maintenance job for garbage collection (destructive)"
+category = "Maintenance Jobs"
+secret = false
+
+[[variables]]
+name = "XAVIER_SEMANTIC_COMPACTION"
+type = "bool"
+default = "—"
+description = "Opt-in scheduled maintenance job for semantic compaction"
+category = "Maintenance Jobs"
+secret = false
+
+[[variables]]
+name = "XAVIER_TGD_SCHEDULER"
+type = "bool"
+default = "—"
+description = "Opt-in scheduled nightly TGD consolidation"
+category = "Maintenance Jobs"
+secret = false
+
+[[variables]]
+name = "XAVIER_DATA_DIR"
+type = "string"
+default = "\"data\""
+description = "Base data directory"
+category = "Memory Backend"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_DIMENSIONS"
+type = "usize"
+default = "768"
+description = "Embedding vector dimensions"
+category = "Memory Backend"
+secret = false
+
+[[variables]]
+name = "XAVIER_MEMORY_BACKEND"
+type = "string"
+default = "\"vec\""
+description = "Storage backend: `vec`, `sqlite`, `file`"
+category = "Memory Backend"
+secret = false
+
+[[variables]]
+name = "XAVIER_MEMORY_FILE_PATH"
+type = "string"
+default = "\"data/workspaces/default/memory-store.json\""
+description = "JSON file store path"
+category = "Memory Backend"
+secret = false
+
+[[variables]]
+name = "XAVIER_MEMORY_SQLITE_PATH"
+type = "string"
+default = "\"data/memory-store.sqlite3\""
+description = "SQLite store path"
+category = "Memory Backend"
+secret = false
+
+[[variables]]
+name = "XAVIER_MEMORY_VEC_PATH"
+type = "string"
+default = "\"data/vec-store.sqlite3\""
+description = "Vector SQLite store path"
+category = "Memory Backend"
+secret = false
+
+[[variables]]
+name = "XAVIER_WORKSPACE_DIR"
+type = "string"
+default = "\"data/workspaces\""
+description = "Workspace data directory"
+category = "Memory Backend"
+secret = false
+
+[[variables]]
+name = "XAVIER_EPISODIC_MIN_EVENT_IMPORTANCE"
+type = "f32"
+default = "0.5"
+description = "Minimum importance score for key events"
+category = "Memory Layers"
+secret = false
+
+[[variables]]
+name = "XAVIER_EPISODIC_SUMMARY_WINDOW"
+type = "usize"
+default = "10"
+description = "Turns before triggering episodic summary"
+category = "Memory Layers"
+secret = false
+
+[[variables]]
+name = "XAVIER_MAX_EPISODIC_SESSIONS"
+type = "usize"
+default = "50"
+description = "Maximum sessions retained in episodic memory"
+category = "Memory Layers"
+secret = false
+
+[[variables]]
+name = "XAVIER_WORKING_BM25_B"
+type = "f32"
+default = "0.75"
+description = "BM25 scoring parameter b"
+category = "Memory Layers"
+secret = false
+
+[[variables]]
+name = "XAVIER_WORKING_BM25_K1"
+type = "f32"
+default = "1.5"
+description = "BM25 scoring parameter k1"
+category = "Memory Layers"
+secret = false
+
+[[variables]]
+name = "XAVIER_WORKING_LRU_THRESHOLD"
+type = "usize"
+default = "2"
+description = "Access count threshold for LRU exemption"
+category = "Memory Layers"
+secret = false
+
+[[variables]]
+name = "XAVIER_WORKING_MEMORY_CAPACITY"
+type = "usize"
+default = "100"
+description = "Maximum items in working memory"
+category = "Memory Layers"
+secret = false
+
+[[variables]]
+name = "XAVIER_DISABLE_HYDE"
+type = "bool"
+default = "true"
+description = "Disable HyDE (Hypothetical Document Embedding) query expansion"
+category = "Retrieval"
+secret = false
+
+[[variables]]
+name = "XAVIER_EXPERT_KEEP_ALIVE"
+type = "string"
+default = "\"5m\""
+description = "Expert router keep-alive timeout"
+category = "Routing"
+secret = false
+
+[[variables]]
+name = "XAVIER_EXPERT_THRESHOLD"
+type = "f32"
+default = "0.6"
+description = "Expert router relevance threshold"
+category = "Routing"
+secret = false
+
+[[variables]]
+name = "XAVIER_ROUTER_COMPLEX_MODEL"
+type = "string"
+default = ""
+description = "Model for complex reasoning queries"
+category = "Routing"
+secret = false
+
+[[variables]]
+name = "XAVIER_ROUTER_FAST_MODEL"
+type = "string"
+default = "(none)"
+description = "Model for fast/direct queries (router override)"
+category = "Routing"
+secret = false
+
+[[variables]]
+name = "XAVIER_ROUTER_POLICY_PATH"
+type = "string"
+default = "(none)"
+description = "Path to JSON routing policy file"
+category = "Routing"
+secret = false
+
+[[variables]]
+name = "XAVIER_ROUTER_POLICY_REFRESH_SECS"
+type = "u64"
+default = "30"
+description = "Policy file refresh interval"
+category = "Routing"
+secret = false
+
+[[variables]]
+name = "XAVIER_ROUTER_QUALITY_MODEL"
+type = "string"
+default = "(none)"
+description = "Model for quality queries (router override)"
+category = "Routing"
+secret = false
+
+[[variables]]
+name = "XAVIER_ROUTER_RETRIEVED_MODEL"
+type = "string"
+default = ""
+description = "Model for retrieved-augmented queries"
+category = "Routing"
+secret = false
+
+[[variables]]
+name = "XAVIER_ALLOWED_DOMAINS"
+type = "string"
+default = "(none)"
+description = "Comma-separated domain allowlist for URL validator (test-only)"
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_ALLOW_CLI_TOKEN"
+type = "bool"
+default = "false"
+description = "Gates the `--token` CLI flag for node provisioning (`src/nodes/provision.rs`): only honored when `1`/`true`. Test/dev only — production must use `XAVIER_NODE_TOKEN` or stdin."
+category = "Server & Network"
+secret = true
+
+[[variables]]
+name = "XAVIER_AUTH_RATE_LIMIT"
+type = "u32"
+default = "20"
+description = "Max requests per minute, per caller, accepted by the whole `/auth/*` nest (register/login/refresh/logout/2FA/recovery/OAuth), sliding 60s window. See `src/cli/http_setup.rs::auth_rate_limit_middleware`."
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_CODE_GRAPH_DB_PATH"
+type = "string"
+default = "\"data/code_graph.db\""
+description = "Path to code graph SQLite DB"
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_CONFIG_PATH"
+type = "string"
+default = "\"config/xavier.config.json\""
+description = "Override config file location"
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_HOST"
+type = "string"
+default = "\"127.0.0.1\""
+description = "IP address to bind the HTTP server"
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_JWT_SECRET"
+type = "string"
+default = "(none)"
+description = "HMAC signing secret for user-session JWTs issued by `/auth/login` and validated by the MCP/API JWT middleware. Must be set for `/auth/*` login to work at all."
+category = "Server & Network"
+secret = true
+
+[[variables]]
+name = "XAVIER_LOG_LEVEL"
+type = "string"
+default = "\"info\""
+description = "Log level: `trace`, `debug`, `info`, `warn`, `error`"
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_MCP_PORT"
+type = "u16"
+default = "crate::cli::mcp::DEFAULT_MCP_PORT"
+description = "Port for the MCP HTTP+SSE server started alongside `xavier http`. `0` disables the MCP HTTP endpoint."
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_PANEL_STORE_DIR"
+type = "string"
+default = "(see `XAVIER_PANEL_UI_DIR` resolution)"
+description = "Override directory for the Maloca/panel conversations store."
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_PORT"
+type = "u16"
+default = "8006"
+description = "HTTP server port"
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_SECRET_EGRESS"
+type = "string"
+default = "—"
+description = "Egress policy configuration"
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_SHUTDOWN_GRACE_SECS"
+type = "u64"
+default = "10"
+description = "Server shutdown grace period in seconds"
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_STATE_DIR"
+type = "string"
+default = "$HOME` (then `$USERPROFILE`, then `.`)"
+description = "Base directory for persistent server state: `.xavier/auth.db`, Maloca store, node registry, etc. Set it explicitly (e.g. `/data` in Docker) so state survives container restarts."
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_TLS_CERT` / `XAVIER_TLS_KEY"
+type = "string` (PEM paths)"
+default = "(none)"
+description = "When BOTH are set, the HTTP server terminates TLS 1.3 itself (`axum_server::bind_rustls`) instead of plain HTTP. Either var alone is ignored (both required)."
+category = "Server & Network"
+secret = true
+
+[[variables]]
+name = "XAVIER_TOKEN"
+type = "string"
+default = "—"
+description = "Authentication token for HTTP API and CLI clients"
+category = "Server & Network"
+secret = true
+
+[[variables]]
+name = "XAVIER_TOKEN_SECRET"
+type = "string"
+default = "—"
+description = "Secret key for HMAC signing in sync/verification"
+category = "Server & Network"
+secret = true
+
+[[variables]]
+name = "XAVIER_URL"
+type = "string"
+default = "\"http://localhost:8006\""
+description = "Full URL for client, verification, and sync connections"
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_SYNC_INTERVAL_MS"
+type = "u64"
+default = "300000"
+description = "Interval between sync cycles (ms)"
+category = "Synchronization"
+secret = false
+
+[[variables]]
+name = "XAVIER_SYNC_LAG_THRESHOLD_MS"
+type = "u64"
+default = "30000"
+description = "Maximum allowed write lag (ms)"
+category = "Synchronization"
+secret = false
+
+[[variables]]
+name = "XAVIER_SYNC_MAX_RETRIES"
+type = "u32"
+default = "3"
+description = "Maximum health check retries"
+category = "Synchronization"
+secret = false
+
+[[variables]]
+name = "XAVIER_SYNC_MIN_HEALTH_INTERVAL_MS"
+type = "u64"
+default = "1000"
+description = "Min interval between health checks"
+category = "Synchronization"
+secret = false
+
+[[variables]]
+name = "XAVIER_SYNC_RETRY_DELAY_MS"
+type = "u64"
+default = "1000"
+description = "Delay between retries (ms)"
+category = "Synchronization"
+secret = false
+
+[[variables]]
+name = "XAVIER_SYNC_SAVE_OK_RATE_THRESHOLD"
+type = "f32"
+default = "0.95"
+description = "Minimum save success rate"
+category = "Synchronization"
+secret = false
+
+[[variables]]
+name = "XAVIER_SYNC_TIMEOUT_MS"
+type = "u64"
+default = "5000"
+description = "Timeout per health check attempt"
+category = "Synchronization"
+secret = false
+
+[[variables]]
+name = "XAVIER_TELEGRAM_ENABLED"
+type = "bool"
+default = "❌"
+description = "Enable Telegram bot integration"
+category = "Telegram Bot"
+secret = false
+
+[[variables]]
+name = "XAVIER_TELEGRAM_TOKEN"
+type = "string"
+default = "✅"
+description = "Telegram Bot API token"
+category = "Telegram Bot"
+secret = true
+
+[[variables]]
+name = "XAVIER_PYTHON"
+type = "string"
+default = "python3"
+description = "Interpreter used to run the trainer script"
+category = "Training Jobs API"
+secret = false
+
+[[variables]]
+name = "XAVIER_TRAIN_ARTIFACTS_BUDGET_BYTES"
+type = "u64"
+default = "21474836480` (20 GiB)"
+description = "Total size cap for job artifacts; over budget, failed/cancelled jobs are pruned first, then the oldest unreferenced succeeded jobs. `0` disables"
+category = "Training Jobs API"
+secret = false
+
+[[variables]]
+name = "XAVIER_TRAIN_MAX_ARTIFACT_BYTES"
+type = "u64"
+default = "4294967296"
+description = "Max GGUF upload size for manual notebook jobs"
+category = "Training Jobs API"
+secret = false
+
+[[variables]]
+name = "XAVIER_TRAIN_MAX_CONCURRENT"
+type = "usize"
+default = "1"
+description = "Max simultaneous queued/running local jobs (HTTP 429 beyond)"
+category = "Training Jobs API"
+secret = false
+
+[[variables]]
+name = "XAVIER_TRAIN_RETENTION_DAYS"
+type = "u64` (days)"
+default = "30"
+description = "Terminal jobs older than this lose `out/`, `artifacts/`, `notebook/` (logs and DB row stay). Artifacts referenced by a non-retired mini-expert are never deleted. `0` disables"
+category = "Training Jobs API"
+secret = false
+
+[[variables]]
+name = "XAVIER_TRAIN_SCRIPT"
+type = "path"
+default = "scripts/training/train_expert.py` (resolved against the install root)"
+description = "Trainer script"
+category = "Training Jobs API"
+secret = false
+
+[[variables]]
+name = "XAVIER_TRAIN_TIMEOUT"
+type = "u64` (seconds)"
+default = "21600"
+description = "Hard per-job wall-clock limit; the whole process group is killed. `0` disables"
+category = "Training Jobs API"
+secret = false
+
+[[variables]]
+name = "XAVIER_AGENTS_DIR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_AGENT_REGISTRY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_AGENT_SCANNER_INTERVAL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_API_KEY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_AUTH_VAULT_SERVICE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_AUTO_SAVE_TIMEOUT_MS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_AUTO_VERIFY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_BENCHMARK_DATASET"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_BILLING_URL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_BULK_TIMEOUT_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_BUS_QUOTA_PER_WINDOW"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_BUS_QUOTA_WINDOW_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CB_FAILURES"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CB_OPEN_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CHRONICLE_MODEL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CLEARANCE_AUDIT_PATH"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CLEARANCE_AUDIT_SQLITE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CLEARANCE_TRUST_HEADER"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CLOUD"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CLOUD_BACKUP_INTERVAL_MINS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CLOUD_BACKUP_PASSPHRASE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_CLOUD_BACKUP_PASSPHRASE_FILE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_CODEGRAPH_BIN"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CODEGRAPH_INSTALL_ACTIVE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CODEGRAPH_REPROMPT"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CODEGRAPH_UDS_PATH"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CODE_EXTRA_ROOTS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CODE_GRAPH_SKIP_EMBED"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CODE_SCAN"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CODE_SYNC_INTERVAL_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_COMMAND_TIMEOUT_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CONFIG_DIR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CONTEXT_SNAPSHOTS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_CRON_SLEEP_MINUTES"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_DATASETS_DIR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_DEFAULT_CLEARANCE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_DEFAULT_KEY_TTL_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_DRIVE_DIR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMAIL_DEDUP_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDER_CB_COOLDOWN_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDER_CB_THRESHOLD"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_CACHE_CAPACITY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_CACHE_DB_PATH"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_CACHE_ENABLED"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_CACHE_PERSIST"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_CACHE_SIZE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_CACHE_TTL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_CACHE_TTL_HOURS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_CLOUD_MODEL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_FALLBACK_BUDGET_MS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_LOCAL_MODEL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_LOCAL_URL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_PROVIDER"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_TIMEOUT_MS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_TIMEOUT_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBED_PROVIDER"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBED_WARMUP"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBED_WARMUP_INTERVAL_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_ENCRYPTION_AT_REST_ENABLED"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_ENTERPRISE_DB_PATH"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_ENV_FILE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EPHEMERAL_MAX_TOKENS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_EPISODIC_LLM_SUMMARY_ENABLED"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_ERROR_INTERNAL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_ERROR_NOT_FOUND"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_ERROR_SECURITY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_ERROR_VALIDATION"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EVENT_LOG_MAX_AGE_DAYS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EVENT_LOG_MAX_ROWS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EXEC_CANARY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EXEC_HANDLER_CANARY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EXPERT_FALLBACK_TIMEOUT_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EXPLAIN_API_KEY_FILE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_EXPLAIN_MODEL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_EXPLAIN_PROVIDER"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_FAILED_SYNCS_DIR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_FILE_STORE_PATH"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_GLLM_DIMENSION"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_GLLM_MODEL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_GLLM_MODEL_PATH"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_GOOGLE_CLIENT_ID"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_GOOGLE_CLIENT_SECRET"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_GUARD_REAL_HOME"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_HC_SESSIONS_DIR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_HEADLESS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_HOME"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_HTTP_HOST"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_HTTP_TIMEOUT_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_HYDE_ENABLED"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_IMPROVE_STAGE_TIMEOUT_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_IMPROVE_TOTAL_TIMEOUT_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_INGESTION_INTERVAL_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_INSIDE_BUILD"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_INSIDE_TEST"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_INSIDE_TEST_INIT"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_ISOLATE_INIT"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_IS_MAINTAINER"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_KEYWORD_WEIGHT"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_KEY_PREFIX"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_LICENSE_PUBKEY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_LOG"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_LOG_DIR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_LOG_RETENTION_DAYS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MAINTAINER_PRIVATE_KEY_HEX"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_MARKET_ACCESS_GRANT_KEY_WRAP_V1"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_MARKET_ANCHOR_INTERVAL_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MARKET_CURRENCY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MARKET_IVN_QUORUM_RATIO"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MARKET_IVN_VALIDATORS_PER_REQUEST"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MARKET_LEGAL_TEXT_STATUS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MARKET_LICENSES"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MARKET_SETTLEMENT"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MARKET_V2"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MARKET_V2_DB_PATH"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MARKET_V2_ISSUER_SEED"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MASTER_KEY_NAME"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_MAX_CONTEXT_TOKENS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_MEMORY_EAGER_LOAD"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MEMORY_FALLBACK"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MEMORY_WRITE_RPM"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MESH_AUTO_REPAIR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MESH_FALLBACK"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MESH_LOCALHOST_ONLY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MESH_SYNC_WORKSPACES"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MESH_TOKEN"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_MIN_MATCH_SCORE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_MODEL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_NAME"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_NAT_PUNCH_V1"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_NODE_ID"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_NODE_REGISTRY_PATH"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_NODE_TOKEN"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_OAUTH_REDIRECT_BASE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_OAUTH_STATE_SECRET"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_OLLAMA_DIMS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_OLLAMA_MODEL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_OLLAMA_URL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_OPENCODE_MODEL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_OPENROUTER_MODEL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_OPENROUTER_URL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_ARM_ENABLED"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_ARM_WEIGHT"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_DB"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_DUMP"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_INGEST_ROOTS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_LINES_PER_PAGE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_MAX_NODE_TOKENS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_MAX_RESPONSE_CHARS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_MIN_NODE_TOKENS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_PDFIUM_LIB"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_PDF_DIR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_PDF_ONLY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_SUMMARIZE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PAGEINDEX_SUMMARY_MAX_WORDS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PANEL_UI_DIR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PANEL_URL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PEERS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PGHEART_TOKEN"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_PGHEART_URL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PLUGINS_INDEX"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_POSTGRES_URL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_POSTGRES_URL_2"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PRICE_EQUIPO"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PRICE_FUNDADOR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PRICE_PRO"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PRICE_RESPALDO"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PROVIDER"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_PROXY_RATE_LIMIT"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_RECORD_KEY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_RECOVERY_DIR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_REPO_MEMORY_DB_PATH"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_REPO_STORE_ROOTS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_REQUIRED_CLEARANCE_ROUTES"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_RERANK_API_KEY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_RERANK_ENABLED"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_RERANK_ENDPOINT"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_RERANK_MODEL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_RETENTION_SWEEP_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_ROOT"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_RUNTIME_STATE_PATH"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SANDBOX_ROOT"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SCAN_INTERVAL_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SEARCH_DEADLINE_MS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SEARCH_EXPANSION"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SEARCH_EXPANSION_BUDGET_MS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SECRET"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_SECRET_FALLBACK"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_SKILL_MANIFEST"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SKILL_STORE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SPACES"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SPACE_PASSWORD"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_SPACE_RECOVERY_CODE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SPACE_RETENTION_DAYS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SPACE_TOKEN_TTL_DAYS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_SPACE_WORKSPACE_CACHE_MAX"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_STORE_BUDGET"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SUPABASE_KEY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_SUPABASE_KEY_2"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_SUPABASE_URL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SUPABASE_URL_2"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SWAL_DIR"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SWAL_WORKSPACE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SYNC_CLEARANCE_CEILING"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_SYSTEMD_EMBEDDING_MODEL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TELECOM_SESSION_V1"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TELEGRAM_BOT_TOKEN"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_TELEGRAM_NOTIFICATION_CHAT_ID"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TELEMETRY_DB_PATH"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TEMPORAL_HALF_LIFE_DAYS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TEST"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TEST_OLLAMA_PROBE_URL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TEST_OLLAMA_REACHABLE_URL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TEST_REAL_HOME"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TGD_CONFIDENCE_THRESHOLD"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TGD_ENABLED"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TGD_ITERATIONS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TGD_LEARNING_RATE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TGD_MIN_NEW_HISTORY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TGD_REFINEMENT_BATCH_SIZE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TGD_REFINEMENT_THRESHOLD"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TGD_SCHEDULE"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TLS_CERT"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TLS_KEY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_TOKEN_VAULT_ENTRY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
+name = "XAVIER_TRAINING_MAX_RECORDS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TUI_DUMP"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_TUI_TAB"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_VECTOR_WEIGHT"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_VERSION"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_WEEKLY_BUDGET"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_WORKING_SNAPSHOT_INTERVAL_SECS"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_ZAI_MODEL"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_ZONE_BOOST"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_ZONE_PENALTY"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = false
+
+[[variables]]
+name = "XAVIER_AUDIT_CHAIN_ENABLED"
+type = "bool"
+default = "true"
+description = "Enable audit chain validation"
+category = "Vector Store Features"
+secret = false
+
+[[variables]]
+name = "XAVIER_ENTITY_EXTRACTION_ENABLED"
+type = "bool"
+default = "true"
+description = "Enable entity extraction in vector store"
+category = "Vector Store Features"
+secret = false
+
+[[variables]]
+name = "XAVIER_QJL_THRESHOLD"
+type = "usize"
+default = "30000"
+description = "Vector count threshold for QJL quantization (must be > 0)"
+category = "Vector Store Features"
+secret = false
+
+[[variables]]
+name = "XAVIER_RRF_K"
+type = "usize"
+default = "60"
+description = "Reciprocal Rank Fusion k value (must be > 0)"
+category = "Vector Store Features"
+secret = false
+
+[[variables]]
+name = "XAVIER_DEFAULT_PLAN"
+type = "string"
+default = "\"community\""
+description = "Billing plan: `community`, `pro`, `cloud`, `enterprise`"
+category = "Workspace & Billing"
+secret = false
+
+[[variables]]
+name = "XAVIER_DEFAULT_WORKSPACE_ID"
+type = "string"
+default = "\"default\""
+description = "Default workspace ID"
+category = "Workspace & Billing"
+secret = false
+
+[[variables]]
+name = "XAVIER_EMBEDDING_PROVIDER_MODE"
+type = "string"
+default = "\"bring_your_own\""
+description = "Embedding provider: `local`, `cloud`, `bring_your_own`, `disabled`"
+category = "Workspace & Billing"
+secret = false
+
+[[variables]]
+name = "XAVIER_MANAGED_GOOGLE_EMBEDDINGS"
+type = "bool"
+default = "false"
+description = "Enable managed Google embeddings"
+category = "Workspace & Billing"
+secret = false
+
+[[variables]]
+name = "XAVIER_REQUEST_LIMIT"
+type = "usize?"
+default = "null"
+description = "Optional request count cap"
+category = "Workspace & Billing"
+secret = false
+
+[[variables]]
+name = "XAVIER_REQUEST_UNIT_LIMIT"
+type = "u64?"
+default = "null"
+description = "Optional request unit cap"
+category = "Workspace & Billing"
+secret = false
+
+[[variables]]
+name = "XAVIER_STORAGE_LIMIT_BYTES"
+type = "u64?"
+default = "null"
+description = "Optional storage cap"
+category = "Workspace & Billing"
+secret = false
+
+[[variables]]
+name = "XAVIER_SYNC_POLICY"
+type = "string"
+default = "\"local_only\""
+description = "Memory sync policy"
+category = "Workspace & Billing"
+secret = false
+
+[[variables]]
+name = "XAVIER_WORKSPACE_ID"
+type = "string"
+default = "\"default\""
+description = "Legacy fallback workspace ID"
+category = "Workspace & Billing"
+secret = false

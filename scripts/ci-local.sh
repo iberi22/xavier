@@ -26,7 +26,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-GATES=("fmt" "clippy" "check" "test" "secrets")
+GATES=("fmt" "clippy" "check" "test" "secrets" "env")
 declare -A STATUS=()
 declare -A SECONDS_ELAPSED=()
 
@@ -78,6 +78,9 @@ gate_cmd() {
       ;;
     secrets)
       run_gate secrets bash "$ROOT/scripts/check-secrets.sh"
+      ;;
+    env)
+      run_gate env python3 "$ROOT/scripts/check-env-vars.py"
       ;;
     *)
       echo "ERROR: unknown gate '$1' (valid: ${GATES[*]})" >&2

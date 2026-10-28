@@ -74,12 +74,23 @@ impl VerificationResult {
         if self.healthy {
             format!(
                 "✅ [{}] save_ok={} retrieve_ok={} match={:.2} latency={}ms attempts={}",
-                self.path, self.save_ok, self.retrieve_ok, self.match_score, self.latency_ms, self.attempts
+                self.path,
+                self.save_ok,
+                self.retrieve_ok,
+                self.match_score,
+                self.latency_ms,
+                self.attempts
             )
         } else {
             format!(
                 "❌ [{}] save_ok={} retrieve_ok={} match={:.2} latency={}ms attempts={} error={:?}",
-                self.path, self.save_ok, self.retrieve_ok, self.match_score, self.latency_ms, self.attempts, self.error
+                self.path,
+                self.save_ok,
+                self.retrieve_ok,
+                self.match_score,
+                self.latency_ms,
+                self.attempts,
+                self.error
             )
         }
     }
@@ -95,7 +106,11 @@ pub struct VerificationCycle {
 
 impl VerificationCycle {
     /// Create a new VerificationCycle
-    pub fn new(client: Client, xavier_url: impl Into<String>, auth_token: impl Into<String>) -> Self {
+    pub fn new(
+        client: Client,
+        xavier_url: impl Into<String>,
+        auth_token: impl Into<String>,
+    ) -> Self {
         Self {
             client,
             xavier_url: xavier_url.into(),
@@ -116,7 +131,8 @@ impl VerificationCycle {
         path: &str,
         content: &str,
     ) -> Result<VerificationResult, String> {
-        self.verify_save_with_kind(path, content, "verification").await
+        self.verify_save_with_kind(path, content, "verification")
+            .await
     }
 
     /// Run the full save→retrieve→verify cycle with a custom memory kind
@@ -209,9 +225,7 @@ impl VerificationCycle {
             // Step 4: MISMATCH — retry
             let err = format!(
                 "mismatch on attempt {}: match_score={:.2} < threshold={:.2}",
-                attempts,
-                match_score,
-                self.config.min_match_score
+                attempts, match_score, self.config.min_match_score
             );
             warn!("{}", err);
             last_error = Some(err);
@@ -245,7 +259,10 @@ impl VerificationCycle {
                     Some(arr) if !arr.is_empty() => {
                         // Compare retrieved content against original
                         let original_lower = original.to_lowercase();
-                        let original_chars: Vec<char> = original_lower.chars().filter(|c| c.is_alphanumeric()).collect();
+                        let original_chars: Vec<char> = original_lower
+                            .chars()
+                            .filter(|c| c.is_alphanumeric())
+                            .collect();
 
                         let mut max_similarity = 0.0f32;
 
@@ -262,7 +279,8 @@ impl VerificationCycle {
                                 .filter(|c| c.is_alphanumeric())
                                 .collect();
 
-                            let similarity = Self::jaccard_similarity(&original_chars, &retrieved_chars);
+                            let similarity =
+                                Self::jaccard_similarity(&original_chars, &retrieved_chars);
                             max_similarity = max_similarity.max(similarity);
                         }
 
@@ -324,7 +342,10 @@ impl VerificationCycle {
             info!("feedback saved to {}", path);
             Ok(())
         } else {
-            Err(format!("feedback save failed with status {}", resp.status()))
+            Err(format!(
+                "feedback save failed with status {}",
+                resp.status()
+            ))
         }
     }
 }
@@ -340,7 +361,10 @@ impl VerificationCycle {
         let validated_url = crate::security::url_validator::validate_internal_url(&url_str)
             .map_err(|e| format!("XAVIER_URL validation failed: {}", e))?;
 
-        let token = settings.auth_token.clone().ok_or_else(|| "XAVIER_TOKEN not set")?;
+        let token = settings
+            .auth_token
+            .clone()
+            .ok_or_else(|| "XAVIER_TOKEN not set")?;
 
         Ok(Self::new(
             Client::new(),
@@ -360,8 +384,10 @@ pub async fn verify_and_report(
     agent_name: &str,
 ) -> VerificationResult {
     let cycle = VerificationCycle::new(client.clone(), xavier_url, auth_token);
-    let result = cycle.verify_save(path, content).await.unwrap_or_else(|e| {
-        VerificationResult {
+    let result = cycle
+        .verify_save(path, content)
+        .await
+        .unwrap_or_else(|e| VerificationResult {
             path: path.to_string(),
             save_ok: false,
             retrieve_ok: false,
@@ -370,8 +396,7 @@ pub async fn verify_and_report(
             attempts: 0,
             healthy: false,
             error: Some(e),
-        }
-    });
+        });
 
     // Auto-save feedback on failure
     if !result.healthy {
@@ -444,8 +469,14 @@ mod tests {
         assert_eq!(VerificationCycle::jaccard_similarity(&a, &b), 0.0);
 
         // Partial overlap
-        let a: Vec<char> = "hello world".chars().filter(|c| c.is_alphanumeric()).collect();
-        let b: Vec<char> = "hello rust".chars().filter(|c| c.is_alphanumeric()).collect();
+        let a: Vec<char> = "hello world"
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect();
+        let b: Vec<char> = "hello rust"
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect();
         let sim = VerificationCycle::jaccard_similarity(&a, &b);
         assert!(sim > 0.0 && sim < 1.0);
     }
