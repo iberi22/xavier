@@ -1,7 +1,9 @@
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::Duration;
 use xavier_lib::utils::crypto::sha256_hex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,77 +44,163 @@ pub struct SidecarStatusReport {
     pub message: String,
 }
 
-fn which_in_path(binary_name: &str) -> Option<PathBuf> {
-    let path_var = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path_var) {
-        let candidate = dir.join(binary_name);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InvalidSidecarCandidate {
+    pub path: PathBuf,
+    pub reason: String,
 }
 
-/// Resolves the code-graph sidecar binary location in standard paths:
-/// 1. `XAVIER_CODEGRAPH_BIN` environment variable (if set and executable/exists)
-/// 2. Local workspace target (`target/release/code-graph` or `target/debug/code-graph`)
-/// 3. `~/.local/bin/codegraph` or `~/.local/bin/code-graph`
-/// 4. `~/.xavier/plugins/codegraph` or `~/.xavier/plugins/code-graph`
-/// 5. System `PATH` (`which codegraph` or `which code-graph`)
-pub fn resolve_codegraph_binary() -> Option<PathBuf> {
-    if let Ok(env_path) = std::env::var("XAVIER_CODEGRAPH_BIN") {
-        let p = PathBuf::from(env_path);
-        if p.is_file() {
-            return Some(p);
-        }
-    }
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SidecarResolution {
+    pub bin_path: Option<PathBuf>,
+    pub invalid_candidates: Vec<InvalidSidecarCandidate>,
+}
 
-    // Check workspace target directory if code-graph repository / crate is present locally
+fn validate_binary(path: &Path) -> Result<()> {
+    let metadata = std::fs::metadata(path)?;
+    ensure!(metadata.is_file(), "not a regular file");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        ensure!(metadata.permissions().mode() & 0o111 != 0, "not executable");
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let mut magic = [0; 4];
+        std::fs::File::open(path)?
+            .read_exact(&mut magic)
+            .context("not an ELF executable")?;
+        ensure!(magic == *b"\x7fELF", "not an ELF executable");
+    }
+    Ok(())
+}
+
+fn sidecar_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(path) = std::env::var_os("XAVIER_CODEGRAPH_BIN") {
+        candidates.push(PathBuf::from(path));
+    }
     let cwd = std::env::current_dir().unwrap_or_default();
     let target_dir = std::env::var_os("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            let tmp_xavier = PathBuf::from("/tmp/xavier-target");
-            if tmp_xavier.exists() {
-                tmp_xavier
+            let tmp = PathBuf::from("/tmp/xavier-target");
+            if tmp.exists() {
+                tmp
             } else {
                 cwd.join("target")
             }
         });
-    let candidates = [
-        target_dir.join("release").join("code-graph"),
-        target_dir.join("debug").join("code-graph"),
-        cwd.join("target").join("release").join("code-graph"),
-        cwd.join("target").join("debug").join("code-graph"),
-    ];
-    for cand in &candidates {
-        if cand.is_file() {
-            return Some(cand.clone());
+    for root in [target_dir, cwd.join("target")] {
+        for profile in ["release", "debug"] {
+            candidates.push(root.join(profile).join("code-graph"));
         }
     }
-
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    let user_bins = [
-        home.join(".local").join("bin").join("codegraph"),
-        home.join(".local").join("bin").join("code-graph"),
-        home.join(".xavier").join("plugins").join("codegraph"),
-        home.join(".xavier").join("plugins").join("code-graph"),
-    ];
-
-    for bin in &user_bins {
-        if bin.is_file() {
-            return Some(bin.clone());
+    if let Some(home) = dirs::home_dir() {
+        for dir in [home.join(".local/bin"), home.join(".xavier/plugins")] {
+            for name in ["codegraph", "code-graph"] {
+                candidates.push(dir.join(name));
+            }
         }
     }
-
-    if let Some(path) = which_in_path("codegraph") {
-        return Some(path);
+    if let Some(path) = std::env::var_os("PATH") {
+        // Preserve the existing preference for codegraph over code-graph on PATH.
+        for name in ["codegraph", "code-graph"] {
+            candidates.extend(std::env::split_paths(&path).map(|dir| dir.join(name)));
+        }
     }
-    if let Some(path) = which_in_path("code-graph") {
-        return Some(path);
-    }
+    candidates
+}
 
-    None
+fn warn_invalid_candidate(candidate: &InvalidSidecarCandidate) {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+    static WARNED: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+    let mut warned = WARNED
+        .get_or_init(Mutex::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let first_warning = warned.insert(candidate.path.clone());
+    drop(warned);
+    if first_warning {
+        tracing::warn!(path = %candidate.path.display(), reason = %candidate.reason,
+            "Skipping invalid code-graph sidecar candidate");
+    }
+}
+
+/// Inspects every candidate without executing it, reporting invalid files once per path.
+pub fn inspect_codegraph_candidates() -> SidecarResolution {
+    let mut report = SidecarResolution {
+        bin_path: None,
+        invalid_candidates: Vec::new(),
+    };
+    let mut seen = std::collections::HashSet::new();
+    for path in sidecar_candidates() {
+        let path = std::path::absolute(&path).unwrap_or(path);
+        if !seen.insert(path.clone()) {
+            continue;
+        }
+        if std::fs::symlink_metadata(&path)
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+        {
+            continue;
+        }
+        match validate_binary(&path) {
+            Ok(()) => {
+                if report.bin_path.is_none() {
+                    report.bin_path = Some(path);
+                }
+            }
+            Err(error) => {
+                let candidate = InvalidSidecarCandidate {
+                    path,
+                    reason: error.to_string(),
+                };
+                warn_invalid_candidate(&candidate);
+                report.invalid_candidates.push(candidate);
+            }
+        }
+    }
+    report
+}
+
+/// Resolves the first regular executable sidecar, requiring ELF magic on Linux.
+pub fn resolve_codegraph_binary() -> Option<PathBuf> {
+    inspect_codegraph_candidates().bin_path
+}
+
+const VERSION_TIMEOUT: Duration = Duration::from_secs(3);
+
+async fn probe_version(path: &Path, timeout: Duration) -> Result<String> {
+    let mut command = tokio::process::Command::new(path);
+    command
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(timeout, command.output())
+        .await
+        .context("code-graph --version timed out")??;
+    ensure!(output.status.success(), "code-graph --version failed");
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_string())
+}
+
+fn probe_version_sync(path: &Path) -> Result<String> {
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()?
+                    .block_on(probe_version(path, VERSION_TIMEOUT))
+            })
+            .join()
+            .map_err(|_| anyhow!("code-graph version probe panicked"))?
+    })
 }
 
 /// Inspects the sidecar status, version output, and execution capability.
@@ -130,46 +218,20 @@ pub fn get_sidecar_health_status() -> SidecarStatusReport {
         };
     };
 
-    let output = Command::new(&path).arg("--version").output();
-
-    let output = match output {
-        Ok(out) if out.status.success() => Ok(out),
-        _ => Command::new(&path).arg("--help").output(),
-    };
-
-    match output {
-        Ok(out) if out.status.success() => {
-            let stdout_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            let version_str =
-                if stdout_str.starts_with("code-graph ") || stdout_str.starts_with("codegraph ") {
-                    stdout_str.lines().next().unwrap_or("0.1.1").to_string()
-                } else {
-                    "0.1.1".to_string()
-                };
-            SidecarStatusReport {
-                available: true,
-                path: Some(path),
-                version: Some(version_str.clone()),
-                executable: true,
-                message: format!("code-graph sidecar operational ({})", version_str),
-            }
-        }
-        Ok(out) => {
-            let err_str = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            SidecarStatusReport {
-                available: false,
-                path: Some(path),
-                version: None,
-                executable: true,
-                message: format!("code-graph binary failed execution: {}", err_str),
-            }
-        }
-        Err(e) => SidecarStatusReport {
+    match probe_version_sync(&path) {
+        Ok(version) => SidecarStatusReport {
+            available: true,
+            path: Some(path),
+            version: Some(version.clone()),
+            executable: true,
+            message: format!("code-graph sidecar operational ({version})"),
+        },
+        Err(error) => SidecarStatusReport {
             available: false,
             path: Some(path),
             version: None,
-            executable: false,
-            message: format!("Failed to execute code-graph binary: {}", e),
+            executable: true,
+            message: format!("code-graph binary failed version check: {error}"),
         },
     }
 }
@@ -197,6 +259,7 @@ pub async fn install_codegraph_sidecar(from_source: bool) -> Result<PathBuf> {
 
     if already_installing {
         if let Some(existing) = resolve_codegraph_binary() {
+            probe_version(&existing, VERSION_TIMEOUT).await?;
             return Ok(existing);
         }
         return Err(anyhow!(
@@ -217,6 +280,7 @@ pub async fn install_codegraph_sidecar(from_source: bool) -> Result<PathBuf> {
         || std::env::var("CARGO_TARGET_TMPDIR").is_ok();
     if inside_test {
         if let Some(existing) = resolve_codegraph_binary() {
+            probe_version(&existing, VERSION_TIMEOUT).await?;
             return Ok(existing);
         }
         return Err(anyhow!(
@@ -227,7 +291,6 @@ pub async fn install_codegraph_sidecar(from_source: bool) -> Result<PathBuf> {
 
     let home = dirs::home_dir().ok_or_else(|| anyhow!("Failed to locate home directory"))?;
     let local_bin_dir = home.join(".local").join("bin");
-    tokio::fs::create_dir_all(&local_bin_dir).await?;
 
     let code_graph_manifest = Path::new("code-graph/Cargo.toml");
     let should_build_source = from_source || code_graph_manifest.exists();
@@ -243,6 +306,8 @@ pub async fn install_codegraph_sidecar(from_source: bool) -> Result<PathBuf> {
                 "--bin",
                 "code-graph",
             ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(std::io::stderr()))
             .env("XAVIER_INSIDE_BUILD", "1")
             // Heredable por los hijos: cualquier proceso lanzado por este build
             // vera la bandera y no volvera a construir (issue #2260).
@@ -290,10 +355,12 @@ pub async fn install_codegraph_sidecar(from_source: bool) -> Result<PathBuf> {
         let target_bin = local_bin_dir.join("codegraph");
         let alt_bin = local_bin_dir.join("code-graph");
 
-        let temp_target = local_bin_dir.join(".codegraph.tmp");
-        tokio::fs::copy(&built_binary, &temp_target).await?;
-        set_executable_permissions(&temp_target)?;
-        tokio::fs::rename(&temp_target, &target_bin).await?;
+        validate_binary(&built_binary).context("Invalid built code-graph binary")?;
+        let bytes = std::fs::read(&built_binary)?;
+        install_bytes(&bytes, None, &target_bin, |path| async move {
+            probe_version(&path, VERSION_TIMEOUT).await
+        })
+        .await?;
 
         // Symlink or copy to code-graph
         #[cfg(unix)]
@@ -316,37 +383,90 @@ pub async fn install_codegraph_sidecar(from_source: bool) -> Result<PathBuf> {
         "https://raw.githubusercontent.com/swal/xavier-plugins/main/binaries/code-graph-{}",
         target_triple
     );
-    let expected_checksum_url = format!("{}.sha256", download_url);
-
-    let bytes = match reqwest::get(&download_url).await {
-        Ok(resp) if resp.status().is_success() => resp.bytes().await?.to_vec(),
-        _ => b"mock-codegraph-binary".to_vec(),
-    };
-
-    if bytes != b"mock-codegraph-binary" {
-        if let Ok(resp) = reqwest::get(&expected_checksum_url).await {
-            if resp.status().is_success() {
-                if let Ok(expected_checksum) = resp.text().await {
-                    let clean_expected = expected_checksum.trim();
-                    let actual_checksum = sha256_hex(&bytes);
-                    ensure!(
-                        actual_checksum.eq_ignore_ascii_case(clean_expected),
-                        "SHA-256 checksum mismatch for sidecar download: expected {}, got {}",
-                        clean_expected,
-                        actual_checksum
-                    );
-                }
-            }
-        }
-    }
-
     let target_bin = local_bin_dir.join("codegraph");
-    let temp_target = local_bin_dir.join(".codegraph.tmp");
-    tokio::fs::write(&temp_target, &bytes).await?;
-    set_executable_permissions(&temp_target)?;
-    tokio::fs::rename(&temp_target, &target_bin).await?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()?;
+    download_sidecar(
+        &download_url,
+        &target_bin,
+        |url| {
+            let client = client.clone();
+            async move {
+                Ok(client
+                    .get(url)
+                    .send()
+                    .await?
+                    .error_for_status()?
+                    .bytes()
+                    .await?
+                    .to_vec())
+            }
+        },
+        |path| async move { probe_version(&path, VERSION_TIMEOUT).await },
+    )
+    .await
+}
 
-    Ok(target_bin)
+async fn download_sidecar<F, Fut, V, VFut>(
+    url: &str,
+    destination: &Path,
+    mut fetch: F,
+    version_check: V,
+) -> Result<PathBuf>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<u8>>>,
+    V: FnOnce(PathBuf) -> VFut,
+    VFut: std::future::Future<Output = Result<String>>,
+{
+    let bytes = fetch(url.to_string())
+        .await
+        .context("Sidecar download failed")?;
+    let checksum = fetch(format!("{url}.sha256"))
+        .await
+        .context("Sidecar checksum download failed")?;
+    install_bytes(&bytes, Some(&checksum), destination, version_check).await
+}
+
+async fn install_bytes<V, VFut>(
+    bytes: &[u8],
+    checksum: Option<&[u8]>,
+    destination: &Path,
+    version_check: V,
+) -> Result<PathBuf>
+where
+    V: FnOnce(PathBuf) -> VFut,
+    VFut: std::future::Future<Output = Result<String>>,
+{
+    if let Some(checksum) = checksum {
+        let text = std::str::from_utf8(checksum).context("Invalid SHA-256 checksum file")?;
+        let digest = text.split_whitespace().next().unwrap_or_default();
+        ensure!(
+            digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_hexdigit()),
+            "Invalid SHA-256 checksum file"
+        );
+        ensure!(
+            sha256_hex(bytes).eq_ignore_ascii_case(digest),
+            "SHA-256 checksum mismatch"
+        );
+    }
+    let directory = destination
+        .parent()
+        .ok_or_else(|| anyhow!("Missing sidecar destination directory"))?;
+    std::fs::create_dir_all(directory)?;
+    let mut staged = tempfile::Builder::new()
+        .prefix(".codegraph-")
+        .tempfile_in(directory)?;
+    staged.write_all(bytes)?;
+    set_executable_permissions(staged.path())?;
+    staged.as_file().sync_all()?;
+    // Close the writable handle before executing the staged binary.
+    let staged = staged.into_temp_path();
+    validate_binary(&staged).context("Invalid code-graph binary")?;
+    version_check(staged.to_path_buf()).await?;
+    staged.persist(destination).map_err(|e| e.error)?;
+    Ok(destination.to_path_buf())
 }
 
 fn set_executable_permissions(path: &Path) -> Result<()> {
@@ -433,9 +553,12 @@ pub struct SidecarInstallOutcome {
     pub bin_path: Option<PathBuf>,
     pub version: String,
     pub verified: bool,
+    pub chosen_binary: Option<PathBuf>,
+    pub invalid_candidates: Vec<InvalidSidecarCandidate>,
 }
 
 pub fn install_codegraph_sidecar_sync(from_source: bool) -> Result<SidecarInstallOutcome> {
+    let resolution = inspect_codegraph_candidates();
     let path_res = if let Ok(_handle) = tokio::runtime::Handle::try_current() {
         std::thread::scope(|s| {
             s.spawn(|| {
@@ -455,28 +578,29 @@ pub fn install_codegraph_sidecar_sync(from_source: bool) -> Result<SidecarInstal
             .block_on(install_codegraph_sidecar(from_source))
     };
 
+    let path_res =
+        path_res.and_then(|path| probe_version_sync(&path).map(|version| (path, version)));
     match path_res {
-        Ok(bin_path) => {
-            let report = get_sidecar_health_status();
-            Ok(SidecarInstallOutcome {
-                success: true,
-                message: format!(
-                    "CodeGraph sidecar installed successfully at {}",
-                    bin_path.display()
-                ),
-                bin_path: Some(bin_path),
-                version: report
-                    .version
-                    .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
-                verified: report.executable,
-            })
-        }
+        Ok((bin_path, version)) => Ok(SidecarInstallOutcome {
+            success: true,
+            message: format!(
+                "CodeGraph sidecar installed successfully at {}",
+                bin_path.display()
+            ),
+            chosen_binary: Some(bin_path.clone()),
+            bin_path: Some(bin_path),
+            version,
+            verified: true,
+            invalid_candidates: resolution.invalid_candidates,
+        }),
         Err(e) => Ok(SidecarInstallOutcome {
             success: false,
             message: format!("CodeGraph sidecar install failed: {}", e),
             bin_path: None,
             version: env!("CARGO_PKG_VERSION").to_string(),
             verified: false,
+            chosen_binary: resolution.bin_path,
+            invalid_candidates: resolution.invalid_candidates,
         }),
     }
 }
@@ -558,51 +682,28 @@ mod tests {
         }
     }
 
-    /// The mock-download install must resolve — and write — ONLY inside its own
-    /// sandbox. Every lookup root of `resolve_codegraph_binary` is injected:
-    ///
-    /// * `HOME`             — install destination (`~/.local/bin/codegraph`);
-    /// * `CARGO_TARGET_DIR` — first artifact lookup root. A real
-    ///   `release/code-graph` there (built by another test or a previous run)
-    ///   short-circuits the install, so the path returned below used to depend
-    ///   on whatever existed on disk (nextest failure: assertion compared
-    ///   `$CARGO_TARGET_DIR/release/code-graph` against the tempdir path);
-    /// * `PATH`              — a `codegraph` on the real `PATH` resolves just as
-    ///   early (that is the `~/.local/bin/codegraph` this box has);
-    /// * cwd                 — `code-graph/Cargo.toml` in the crate root makes
-    ///   `install_codegraph_sidecar(false)` run a real
-    ///   `cargo build --release -p code-graph`, which unit tests must never do
-    ///   (repo rule, issue #2260 cascade). A private workspace without the
-    ///   manifest forces the precompiled-download path this test is named after.
     #[tokio::test]
     async fn test_install_codegraph_sidecar_mock_download() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let home_override = temp_dir.path().to_path_buf();
-        let target_override = temp_dir.path().join("target-empty");
-        let workspace = temp_dir.path().join("workspace");
-        std::fs::create_dir_all(&target_override).unwrap();
-        std::fs::create_dir_all(&workspace).unwrap();
-
-        let _restore = EnvRestore::new(&["HOME", "CARGO_TARGET_DIR", "PATH", "XAVIER_INSIDE_TEST"]);
-        std::env::set_var("HOME", &home_override);
-        std::env::set_var("CARGO_TARGET_DIR", &target_override);
-        std::env::set_var("PATH", "/usr/bin:/bin");
-        // Clear the suite-wide "never build inside a test" flag ONLY for this
-        // call: without it the install short-circuits before the download path
-        // this test exists to exercise (the private workspace above still keeps
-        // it from ever building anything).
-        std::env::remove_var("XAVIER_INSIDE_TEST");
-        std::env::set_current_dir(&workspace).unwrap();
-
-        // Run download mode (non-source mode with non-existent source)
-        let res = install_codegraph_sidecar(false).await;
-        if let Ok(installed) = res {
-            assert!(installed.exists());
-            assert_eq!(
-                installed,
-                home_override.join(".local").join("bin").join("codegraph")
-            );
-        }
+        let destination = temp_dir.path().join("codegraph");
+        let bytes = b"\x7fELFfixture";
+        let checksum = "26587dd4da66ca8d8a22b44abbea037a5e0a191ff97ff2a53adea144cbb51fcc";
+        let installed = download_sidecar(
+            "stub://sidecar",
+            &destination,
+            |url| async move {
+                Ok(if url.ends_with(".sha256") {
+                    checksum.as_bytes().to_vec()
+                } else {
+                    bytes.to_vec()
+                })
+            },
+            |_| async { Ok("codegraph fixture".to_string()) },
+        )
+        .await
+        .unwrap();
+        assert_eq!(installed, destination);
+        assert_eq!(std::fs::read(installed).unwrap(), bytes);
     }
 
     /// Regresión issue #2260: el guard de reentrada debe abortar la instalación
@@ -632,3 +733,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "codegraph_sidecar_tests.rs"]
+mod hardening_tests;
