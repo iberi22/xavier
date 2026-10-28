@@ -436,3 +436,5 @@ fn issue_to_stdout_requires_confirmation_and_keeps_metadata_separate() {
     let body: Value = serde_json::from_str(requests[0].split_once("\r\n\r\n").unwrap().1).unwrap();
     assert_eq!(body["scopes"], json!(["write"]));
 }
+
+xavier::isolate_test_process!();
