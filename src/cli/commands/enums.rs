@@ -32,6 +32,8 @@ pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 /// Each variant maps to a distinct subcommand exposed to the user.
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
+    /// Inspect effective settings and edit runtime overrides
+    Config(super::config::ConfigArgs),
     /// Initialize Xavier onboarding and interactive RAG installer wizard
     Init(InitArgs),
     /// Start Xavier HTTP server
@@ -265,7 +267,10 @@ pub enum Command {
         #[command(subcommand)]
         cmd: ProviderCommand,
     },
-    /// Run interactive system detection and setup
+    /// Configure and probe language models (general or explanation scope)
+    Llm(super::llm::LlmArgs),
+    /// Run interactive system detection or unattended local configuration
+    #[command(after_help = "Examples:\n  xavier setup --local --model llama3.2 --yes --json")]
     Setup {
         /// Run 100% local guided flow (Ollama)
         #[arg(long)]
@@ -273,6 +278,12 @@ pub enum Command {
         /// Override LLM model (any id your configured provider serves)
         #[arg(long)]
         model: Option<String>,
+        /// Save supplied values without prompts or model downloads
+        #[arg(long)]
+        yes: bool,
+        /// Emit machine-readable output (also disables prompts)
+        #[arg(long)]
+        json: bool,
     },
 
     /// Diagnose local-first health (Ollama, models, DB, config, vector store)
@@ -1136,7 +1147,10 @@ pub enum IssueCommand {
 /// Code graph query subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum CodeCommand {
-    /// Install direct CodeGraph binary / sidecar
+    /// Install and verify the CodeGraph sidecar
+    #[command(
+        after_help = "Examples:\n  xavier code install --json\n  xavier code install --from-source --json"
+    )]
     Install {
         /// Build/install from local source repository instead of pre-built release binary
         #[arg(long)]
@@ -1144,7 +1158,7 @@ pub enum CodeCommand {
         /// Force re-installation even if already present and up to date
         #[arg(long)]
         force: bool,
-        /// Output progress and status as JSON
+        /// Output one JSON status object (diagnostics go to stderr)
         #[arg(long)]
         json: bool,
     },
@@ -2150,14 +2164,25 @@ pub struct RecoveryArgs {
 #[derive(Subcommand, Debug, Clone)]
 pub enum RecoveryCommand {
     /// Report whether the memory store can actually be recovered.
+    #[command(after_help = "Example: xavier recovery status --json")]
     Status {
+        /// Emit the versioned recovery status schema on stdout.
+        #[arg(long)]
+        json: bool,
         /// Confirm the rclone crypt passphrase is stored outside this host.
         /// Without it the encrypted snapshots are unreadable even with the key.
         #[arg(long)]
         crypt_passphrase_backed_up: bool,
     },
     /// Seal the current record key under a passphrase and/or a 24-word mnemonic.
+    #[command(
+        after_help = "Examples:\n  xavier recovery seal --mnemonic --words-out /secure/recovery-words.txt\n  xavier recovery seal --passphrase --passphrase-file /secure/passphrase.txt\n  xavier recovery seal --mnemonic --words-out /secure/recovery-words.txt --offline-i-know-the-key-is-live"
+    )]
     Seal {
+        /// Acknowledge the selected key is live when the daemon cannot be reached.
+        /// Never bypasses a reachable daemon's response or a stored KCV mismatch.
+        #[arg(long)]
+        offline_i_know_the_key_is_live: bool,
         /// Seal under a freshly generated BIP39 mnemonic delivered to the TTY or --words-out.
         #[arg(long)]
         mnemonic: bool,

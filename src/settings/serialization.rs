@@ -342,7 +342,7 @@ fn seed_config_from_template(path: &Path) {
 /// True for JSON keys that hold a credential (D11). Matched by name so a field
 /// added later (or one nested in a list, like `mini_experts[].api_key`) is
 /// covered without touching this list.
-fn is_secret_key(key: &str) -> bool {
+pub(super) fn is_secret_key(key: &str) -> bool {
     key == "api_key"
         || key == "token"
         || key == "password"
@@ -358,7 +358,7 @@ fn is_secret_key(key: &str) -> bool {
 /// Secrets live in the vault / environment (`current()` reads them from there);
 /// the runtime state keeps no value and no reference, so rotating them in `.env`
 /// takes effect and a leaked state file leaks nothing.
-fn strip_secrets(value: &mut Value) {
+pub(super) fn strip_secrets(value: &mut Value) {
     match value {
         Value::Object(map) => {
             map.retain(|k, _| !is_secret_key(k));
@@ -411,7 +411,10 @@ fn load_runtime_state(config_path: &Path) -> Result<Option<Value>> {
 /// `#[serde(default)]`), so this is a whole-struct replacement of the keys the
 /// state file actually carries — a field absent from the state keeps its default
 /// value instead of being zeroed.
-fn merge_runtime_state(state: &Value, defaults: XavierSettings) -> Result<XavierSettings> {
+pub(super) fn merge_runtime_state(
+    state: &Value,
+    defaults: XavierSettings,
+) -> Result<XavierSettings> {
     let base = serde_json::to_value(&defaults)
         .context("failed to serialize default settings for state overlay")?;
     let merged = deep_merge(base, state.clone());

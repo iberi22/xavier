@@ -245,6 +245,11 @@ impl ModelProviderConfig {
                             .clone()
                             .filter(|s| !s.trim().is_empty())
                     })
+                    .or_else(|| {
+                        HardwareVault::new("xavier")
+                            .get_secret("XAVIER_LOCAL_LLM_API_KEY")
+                            .ok()
+                    })
                     .or_else(|| Some("ollama".to_string())),
                 base_url: Some(
                     nonempty_env("XAVIER_LOCAL_LLM_URL")
@@ -278,6 +283,11 @@ impl ModelProviderConfig {
                             .local_llm_api_key
                             .clone()
                             .filter(|s| !s.trim().is_empty())
+                    })
+                    .or_else(|| {
+                        HardwareVault::new("xavier")
+                            .get_secret("XAVIER_LOCAL_LLM_API_KEY")
+                            .ok()
                     })
                     .or_else(|| Some("ollama".to_string())),
                 base_url: Some(
@@ -334,6 +344,11 @@ impl ModelProviderConfig {
                         .local_llm_api_key
                         .clone()
                         .filter(|s| !s.trim().is_empty())
+                })
+                .or_else(|| {
+                    HardwareVault::new("xavier")
+                        .get_secret("XAVIER_LOCAL_LLM_API_KEY")
+                        .ok()
                 })
                 .or_else(|| Some("ollama".to_string())),
             base_url: Some(
@@ -551,7 +566,15 @@ impl ModelProviderConfig {
                         .filter(|s| !s.trim().is_empty())
                 }),
             base_url: Some(
-                nonempty_env("GROQ_BASE_URL").unwrap_or_else(|| DEFAULT_GROQ_BASE_URL.to_string()),
+                nonempty_env("GROQ_BASE_URL")
+                    .or_else(|| {
+                        settings
+                            .models
+                            .cloud_llm_url
+                            .clone()
+                            .filter(|v| !v.trim().is_empty())
+                    })
+                    .unwrap_or_else(|| DEFAULT_GROQ_BASE_URL.to_string()),
             ),
             target: ProviderTarget::GenericOpenAICompatible,
             lease_config: None,

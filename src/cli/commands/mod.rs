@@ -18,6 +18,7 @@ pub mod airgap;
 pub mod benchmark_runner;
 pub mod cleanup;
 pub mod code;
+pub mod config;
 pub mod data_commons;
 pub mod encrypt_private;
 pub mod encrypt_records;
@@ -27,6 +28,7 @@ pub mod http;
 pub mod improve;
 pub mod installer;
 pub mod license;
+pub mod llm;
 pub mod memory;
 pub mod mesh;
 pub mod mirror;
@@ -90,6 +92,13 @@ impl Cli {
                 }
                 let port = port.unwrap_or_else(resolve_http_port);
                 start_http_server(port, *mcp_port, *no_ui).await
+            }
+            Command::Config(args) => {
+                let code = config::run(args);
+                if code != 0 {
+                    std::process::exit(code);
+                }
+                Ok(())
             }
             Command::Init(ref args) => installer::run_installer(args.clone()),
             Command::Mcp => start_mcp_stdio().await,
@@ -350,8 +359,20 @@ impl Cli {
             Command::Token { cmd } => token::handle_token_command(cmd.clone()).await,
             Command::Users { cmd } => users::handle_users_command(cmd.clone()).await,
             Command::Provider { cmd } => provider::handle_provider_command(cmd.clone()).await,
-            Command::Setup { local, model } => {
-                crate::cli::handlers::setup::handle_setup(*local, model.clone()).await
+            Command::Llm(args) => llm::handle(args).await,
+            Command::Setup {
+                local,
+                model,
+                yes,
+                json,
+            } => {
+                crate::cli::handlers::setup::handle_setup_options(
+                    *local,
+                    model.clone(),
+                    *yes,
+                    *json,
+                )
+                .await
             }
             Command::Doctor {
                 format,

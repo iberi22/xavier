@@ -50,3 +50,6 @@ mod router_notifications_auth;
 
 #[path = "router_proxy_agents_auth.rs"]
 mod router_proxy_agents_auth;
+
+#[path = "llm_cli.rs"]
+mod llm_cli;

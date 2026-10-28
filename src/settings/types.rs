@@ -242,6 +242,9 @@ pub struct MemoryLayersSettings {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModelSettings {
+    pub explain_provider: Option<String>,
+    pub explain_model: Option<String>,
+    pub explain_url: Option<String>,
     pub provider: String,
     pub api_flavor: String,
     pub local_llm_url: String,
