@@ -479,9 +479,13 @@ mod tests {
                 let mut req = Vec::new();
                 loop {
                     let n = socket.read(&mut buf).await.unwrap_or(0);
-                    if n == 0 { break; }
+                    if n == 0 {
+                        break;
+                    }
                     req.extend_from_slice(&buf[..n]);
-                    if req.windows(4).any(|w| w == b"\r\n\r\n") { break; }
+                    if req.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
                 }
 
                 let response = format!(
