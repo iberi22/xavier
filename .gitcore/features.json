@@ -3556,7 +3556,8 @@
         "legacy_records_without_integrity_marker_still_load",
         "tests/memory_write_integrity_e2e.rs::http_add_rejects_corrupt_content_without_persisting",
         "tests/memory_write_integrity_e2e.rs::http_add_retry_preserves_id_and_metadata_change_appends",
-        "tests/memory_write_integrity_e2e.rs::http_canonical_metadata_change_increments_persisted_revision"
+        "tests/memory_write_integrity_e2e.rs::http_canonical_metadata_change_increments_persisted_revision",
+        "tests/memory_put_index_atomic_e2e.rs::test_put_index_atomic_rollback"
       ],
       "req_ids": [
         "REQ-074"

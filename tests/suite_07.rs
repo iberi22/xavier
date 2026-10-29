@@ -58,3 +58,6 @@ mod repo_store_isolation_e2e;
 
 #[path = "mcp_tool_parity.rs"]
 mod mcp_tool_parity;
+
+#[path = "memory_put_index_atomic_e2e.rs"]
+mod memory_put_index_atomic_e2e;

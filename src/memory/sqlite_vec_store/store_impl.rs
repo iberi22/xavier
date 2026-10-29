@@ -1773,7 +1773,8 @@ impl VecSqliteMemoryStore {
 
     /// Decomposed put step 4: FTS5 and vector index updates.
     pub fn put_index(&self, conn: &rusqlite::Connection, record: &MemoryRecord) -> Result<()> {
-        conn.execute("DELETE FROM memory_fts WHERE id = ?", params![record.id])?;
+        let tx = conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM memory_fts WHERE id = ?", params![record.id])?;
         // Encrypted rows must not leak plaintext terms into the FTS index:
         // index the path only. (Content search over encrypted rows still works
         // through list()+filter on decrypted records.)
@@ -1788,7 +1789,7 @@ impl VecSqliteMemoryStore {
                 super::fts::code_tokens(&format!("{} {}", record.path, record.content)).join(" "),
             )
         };
-        conn.execute(
+        tx.execute(
             "INSERT INTO memory_fts(id, path, content, code_tokens) VALUES (?, ?, ?, ?)",
             params![record.id, record.path, fts_content, code_tokens],
         )?;
@@ -1804,12 +1805,13 @@ impl VecSqliteMemoryStore {
                 "INSERT OR REPLACE INTO {}(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
                 table_name
             );
-            conn.execute(
+            tx.execute(
                 &sql,
                 params![record.id, record.workspace_id, embedding_json],
             )?;
         }
 
+        tx.commit()?;
         Ok(())
     }
 
