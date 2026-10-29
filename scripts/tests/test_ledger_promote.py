@@ -359,9 +359,18 @@ class PromoterTests(unittest.TestCase):
         self.assertEqual({'test_roundtrip': ['integration']},
                          results['beta']['integration_targets_by_test'])
         for invalid in (log.replace('passed=2', 'passed=0'), log.replace('full,', 'check,'),
-                        log.replace('▶ test_roundtrip', '▶ test_other'),
-                        log.replace('✅ all declared tests passed', '')):
-            self.assertEqual([], collector.parse_log(invalid, self.features)[0]['beta']['passed'])
+                        log.replace('▶ test_roundtrip', '▶ test_other')):
+            res, tgt, evc = collector.parse_log(invalid, self.features)
+            self.assertEqual([], res['beta']['passed'])
+
+        res, tgt, evc = collector.parse_log(log.replace('full,', 'check,'), self.features)
+        self.assertFalse(evc)
+        res, tgt, evc = collector.parse_log(log.replace('▶ test_roundtrip', '▶ test_other'), self.features)
+        self.assertFalse(evc)
+
+        # Missing footer, but complete coverage means evc = True
+        res, tgt, evc = collector.parse_log(log.replace('✅ all declared tests passed', ''), self.features)
+        self.assertTrue(evc)
 
 
 class PlannedBetaPromotionTests(unittest.TestCase):
@@ -603,6 +612,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
     def test_stable_incomplete_evidence_collection_skips_review(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
         self.evidence['per_feature_test_results'] = {}
+        self.evidence['evidence_complete'] = False
         report, _ = self.run_all()
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
@@ -617,7 +627,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertIn('## stable->beta review', err)
 
 
-    def test_stable_incomplete_evidence_collection_skips_review(self):
+    def test_stable_incomplete_evidence_demotions_enabled(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
         self.evidence['evidence_complete'] = False
         report, _ = self.run_all()
@@ -647,11 +657,26 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
     def test_common_evidence_failure_flags_nothing(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
-        self.evidence['ledger_run_conclusion'] = 'failure'
+        self.evidence['ledger_sha'] = 'mismatch'
         report, _ = self.run_all()
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
         self.assertTrue(any('review skipped' in r for r in stable['review_reasons']))
+
+
+    def test_completed_failure_evidence_reaches_stable_review(self):
+        # A test fails, verifier reports failure, but all tests were parsed
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.evidence['ledger_run_conclusion'] = 'failure'
+        self.evidence['per_feature_test_results']['stable'] = dict(
+            declared=['test_stable'], passed=[], failed=['test_stable'],
+            integration_targets_by_test={})
+        self.evidence['evidence_complete'] = True
+
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertIn('declared tests failed: test_stable', stable['review_reasons'])
 
     def test_apply_without_apply_demotions_leaves_flagged_stable(self):
         self.features['features']['stable']['open_gaps'] = ['pending']

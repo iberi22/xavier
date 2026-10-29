@@ -166,8 +166,7 @@ def evaluate(document, evidence, history, root, streak):
     common = []
     if not sha or evidence.get('ledger_sha', sha) != sha or evidence.get('e2e_sha', sha) != sha:
         common.append('ledger/E2E SHA mismatch or missing SHA')
-    if any(evidence.get(k) != 'success' for k in ('ledger_run_conclusion', 'e2e_run_conclusion')):
-        common.append('ledger and E2E must both succeed')
+    run_failed = any(evidence.get(k) != 'success' for k in ('ledger_run_conclusion', 'e2e_run_conclusion'))
     if not evidence.get('run_url'):
         common.append('missing full verifier run URL')
     if not chain or chain[0] != sha or len(set(chain)) != len(chain):
@@ -233,6 +232,11 @@ def evaluate(document, evidence, history, root, streak):
                             'review_flagged': review_flagged,
                             'review_reasons': rev_reasons}
             continue
+        # Apply 'run_failed' to non-stable lanes as a common reason
+        lane_common = list(common)
+        if run_failed:
+            lane_common.append('ledger and E2E must both succeed')
+
         transition = PROMOTABLE_TRANSITIONS.get(status)
         if transition is None:
             results[fid] = {'eligible': False,
@@ -254,7 +258,7 @@ def evaluate(document, evidence, history, root, streak):
             missing_list.append('no declared test list')
             declared = []
         if status == 'beta':
-            reasons = list(common)
+            reasons = list(lane_common)
             reasons.extend(completeness_reasons(feature))
             reasons.extend(missing_list)
             evaluated_passed, evaluated_failed = gating_passed, gating_failed
@@ -262,7 +266,7 @@ def evaluate(document, evidence, history, root, streak):
             evidence_lane = 'gating'
         else:
             blocking, informational = beta_completeness_split(feature)
-            reasons = list(common) + blocking + missing_list
+            reasons = list(lane_common) + blocking + missing_list
             informational = list(informational)
             # Planned/in_progress lane: candidate sets, plus gating sets for
             # names shared with gating features (those names are skipped by
