@@ -586,7 +586,7 @@ mod tests {
     }
 
     #[test]
-    fn concurrent_duplicate_only_one_fresh() {
+    fn concurrent_cap_and_duplicate_claims() {
         let temp_db = NamedTempFile::new().unwrap();
         let path = temp_db.path().to_path_buf();
 

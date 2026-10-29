@@ -62,5 +62,6 @@ mod ticket_dedup_while_open_e2e;
 #[path = "health_truth_e2e.rs"]
 mod health_truth_e2e;
 
+#[cfg(all(unix, feature = "test-utils"))]
 #[path = "headless_packaging_contract_e2e.rs"]
 mod headless_packaging_contract_e2e;
