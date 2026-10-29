@@ -45,8 +45,6 @@ use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 
 const ROOT: &str = "wp13e-root-token";
 
-/// Serializes the process-global env (`XAVIER_TOKEN`, `XAVIER_SPACES`).
-
 fn kek() -> Arc<dyn NodeKek> {
     Arc::new(StaticNodeKek::new([9u8; 32]))
 }

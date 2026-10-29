@@ -49,8 +49,6 @@ use xavier::workspace::{
 const ROOT: &str = "wp13m-root-token";
 const JWT_SECRET: &str = "wp13m-jwt-secret-0123456789abcdef";
 
-/// Serializes the process-global env.
-
 fn kek() -> Arc<dyn NodeKek> {
     Arc::new(StaticNodeKek::new([5u8; 32]))
 }
