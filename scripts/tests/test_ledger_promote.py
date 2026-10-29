@@ -25,6 +25,7 @@ class PromoterTests(unittest.TestCase):
         self.rust.write_text('#[test]\nfn test_roundtrip() {}\n')
         self.features = json.loads((FIXTURES / 'features.json').read_text())
         self.evidence = json.loads((FIXTURES / 'evidence.json').read_text())
+        self.evidence['evidence_complete'] = True
         self.history = json.loads((FIXTURES / 'history.json').read_text())
         self.path = self.root / '.gitcore' / 'features.json'
 
@@ -272,7 +273,7 @@ class PromoterTests(unittest.TestCase):
                '  ▶ test_roundtrip\n    ✅ xavier --lib (passed=1)\n'
                '  ▶ unrelated\n    ✅ --test integration (passed=1)\n'
                '  ✅ all declared tests passed\n')
-        results, targets = collector.parse_log(log, self.features)
+        results, targets, evidence_complete = collector.parse_log(log, self.features)
         self.assertEqual(['test_roundtrip'], results['beta']['passed'])
         self.assertEqual({'test_roundtrip': []}, results['beta']['integration_targets_by_test'])
         self.assertEqual(['integration'], targets)
@@ -313,6 +314,7 @@ class PromoterTests(unittest.TestCase):
                              ('ledger_sha', 'other'), ('e2e_sha', 'other'), ('sha', '')]:
             with self.subTest(field=field):
                 self.evidence = json.loads((FIXTURES / 'evidence.json').read_text())
+                self.evidence['evidence_complete'] = True
                 self.evidence[field] = value
                 self.blocked('SHA' if 'sha' in field else 'both succeed')
 
@@ -343,9 +345,15 @@ class PromoterTests(unittest.TestCase):
             self.assertNotIn('ledger_run_conclusion', record)
             self.assertNotIn('e2e_run_conclusion', record)
 
+
+    def test_parse_log_unrecognized_returns_incomplete_flag(self):
+        log = "Truncated log... no success marker"
+        results, targets, evidence_complete = collector.parse_log(log, self.features)
+        self.assertFalse(evidence_complete)
+
     def test_log_parser_requires_full_positive_exact_result(self):
         log = '==> Xavier verify pipeline (mode: full, root: /repo)\n  ▶ test_roundtrip\n    ✅ --test integration (passed=2)\n  ✅ all declared tests passed\n'
-        results, targets = collector.parse_log(log, self.features)
+        results, targets, evidence_complete = collector.parse_log(log, self.features)
         self.assertEqual(['test_roundtrip'], results['beta']['passed'])
         self.assertEqual(['integration'], targets)
         self.assertEqual({'test_roundtrip': ['integration']},
@@ -374,6 +382,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
             'notes': 'early prototype, TODO remaining',
         }
         self.evidence = json.loads((FIXTURES / 'evidence.json').read_text())
+        self.evidence['evidence_complete'] = True
         self.evidence['per_feature_test_results']['planned'] = dict(
             declared=['test_roundtrip'], passed=[], failed=[],
             integration_targets_by_test={},
@@ -559,7 +568,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
                '  ▶ test_roundtrip [candidate]\n    ✅ --test integration (passed=2)\n'
                '  ✅ all declared tests passed\n')
-        results, targets = collector.parse_log(log, self.features)
+        results, targets, evidence_complete = collector.parse_log(log, self.features)
         # Candidate results never pollute gating sets.
         self.assertEqual([], results['planned']['passed'])
         self.assertEqual([], results['planned']['failed'])
@@ -570,7 +579,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
                          results['planned']['candidate_integration_targets_by_test'])
         self.assertEqual([], targets)
         plain = log.replace(' [candidate]', '')
-        results, targets = collector.parse_log(plain, self.features)
+        results, targets, evidence_complete = collector.parse_log(plain, self.features)
         self.assertEqual([], results['planned']['candidate_tests'])
         self.assertEqual([], results['planned']['candidate_passed'])
         self.assertEqual(['test_roundtrip'], results['planned']['passed'])
@@ -581,7 +590,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
                '  ▶ test_roundtrip\n    ✅ --test integration (passed=2)\n'
                '  ▶ test_roundtrip [candidate]\n    ❌ FAILED: test_roundtrip\n'
                '  ✅ all declared tests passed\n')
-        results, targets = collector.parse_log(log, self.features)
+        results, targets, evidence_complete = collector.parse_log(log, self.features)
         self.assertEqual(['test_roundtrip'], results['beta']['passed'])
         self.assertEqual([], results['beta']['failed'])
         self.assertEqual([], results['beta']['candidate_passed'])
@@ -607,15 +616,14 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertIn('open_gaps present', stable['review_reasons'])
         self.assertIn('## stable->beta review', err)
 
-    def test_stable_failed_declared_test_flagged(self):
-        self.features['features']['stable']['tests'] = ['test_stable']
-        self.evidence['per_feature_test_results']['stable'] = dict(
-            declared=['test_stable'], passed=[], failed=['test_stable'],
-            integration_targets_by_test={})
+
+    def test_stable_incomplete_evidence_collection_skips_review(self):
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.evidence['evidence_complete'] = False
         report, _ = self.run_all()
         stable = report['features']['stable']
-        self.assertTrue(stable.get('review_flagged'))
-        self.assertIn('declared tests failed: test_stable', stable['review_reasons'])
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertTrue(any('review skipped: evidence collection incomplete' in r for r in stable['review_reasons']))
 
     def test_stable_no_linked_evidence_flagged(self):
         self.features['features']['stable']['tests'] = ['test_stable']
