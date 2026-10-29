@@ -50,5 +50,20 @@ mod context_regeneration_test;
 #[path = "e2e/crypto_e2e.rs"]
 mod crypto_e2e;
 
+#[path = "backup_recover_status_e2e.rs"]
+mod backup_recover_status_e2e;
 #[path = "d1_clavis_vault_leak_red.rs"]
 mod d1_clavis_vault_leak_red;
+
+#[path = "incident_ticket_dedup_e2e.rs"]
+mod incident_ticket_dedup_e2e;
+
+#[path = "ticket_dedup_while_open_e2e.rs"]
+mod ticket_dedup_while_open_e2e;
+
+#[path = "health_truth_e2e.rs"]
+mod health_truth_e2e;
+
+#[cfg(all(unix, feature = "test-utils"))]
+#[path = "headless_packaging_contract_e2e.rs"]
+mod headless_packaging_contract_e2e;

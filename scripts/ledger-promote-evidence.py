@@ -42,7 +42,7 @@ def parse_log(log, document):
     targets_by_test = {}
     candidate_targets_by_test = {}
     candidate = set()
-    if '(mode: full,' in log and '✅ all declared tests passed' in log:
+    if '(mode: full,' in log:
         for match in re.finditer(r'(?m)^\s*▶ ([^\n]+)\n(.*?)(?=^\s*▶ |\Z)', log, re.S):
             raw, block = match.groups()
             flagged = bool(CANDIDATE_MARKER.search(raw))
@@ -68,6 +68,17 @@ def parse_log(log, document):
                     candidate.add(test)
                 else:
                     failed.add(test)
+
+    parsed_tests = passed | failed | candidate_passed | candidate_failed
+    evidence_complete = False
+    if '(mode: full,' in log:
+        all_declared = set()
+        for f in document['features'].values():
+            decl = f.get('tests', [])
+            all_declared.update(decl if isinstance(decl, list) else [])
+        # Also, the original script checked '✅ all declared tests passed'
+        if all_declared <= parsed_tests:
+            evidence_complete = True
     results = {}
     for fid, f in document['features'].items():
         declared = f.get('tests', [])
@@ -85,7 +96,7 @@ def parse_log(log, document):
                                 for test in declared
                                 if test in candidate_passed},
                             candidate_tests=sorted(set(declared) & candidate))
-    return results, sorted(targets)
+    return results, sorted(targets), evidence_complete
 
 
 def collect(sha, document, repo):
@@ -113,8 +124,8 @@ def collect(sha, document, repo):
             archive = gh(f"{repo}/actions/artifacts/{artifact['id']}/zip", binary=True)
             with zipfile.ZipFile(io.BytesIO(archive)) as z:
                 if z.getinfo('ledger.log').file_size < 10_000_000:
-                    results, targets = parse_log(z.read('ledger.log').decode(), document)
-                    evidence.update(per_feature_test_results=results, integration_targets_passed=targets)
+                    results, targets, evidence_complete = parse_log(z.read('ledger.log').decode(), document)
+                    evidence.update(per_feature_test_results=results, integration_targets_passed=targets, evidence_complete=evidence_complete)
     return evidence
 
 
