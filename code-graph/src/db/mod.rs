@@ -892,8 +892,8 @@ impl CodeGraphDB {
                 })
             })
             .map_err(|e| GraphError::Database(e.to_string()))?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
 
         Ok(symbols)
     }
@@ -1153,7 +1153,10 @@ impl CodeGraphDB {
             stmt.query_map(params![to_symbol, limit as isize], edge_from_row)
                 .map_err(|e| GraphError::Database(e.to_string()))?
         };
-        Ok(rows.filter_map(|row| row.ok()).collect())
+        let collected_rows = rows
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        Ok(collected_rows)
     }
 
     /// O3 situ core: all symbols defined in one file (exact path match).
@@ -2181,6 +2184,44 @@ impl CodeGraphDB {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_find_by_file_propagates_row_errors() {
+        let db = CodeGraphDB::in_memory().unwrap();
+        // Drop the table to simulate row errors
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute("DROP TABLE symbols", []).unwrap();
+        }
+
+        let result = db.find_by_file("test.rs");
+        assert!(result.is_err());
+
+        // Healthy DB
+        let db2 = CodeGraphDB::in_memory().unwrap();
+        let result2 = db2.find_by_file("test.rs");
+        assert!(result2.is_ok());
+        assert_eq!(result2.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_find_edges_to_propagates_row_errors() {
+        let db = CodeGraphDB::in_memory().unwrap();
+        // Drop the table to simulate row errors
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute("DROP TABLE edges", []).unwrap();
+        }
+
+        let result = db.find_edges_to("symbol_id", None, 10);
+        assert!(result.is_err());
+
+        // Healthy DB
+        let db2 = CodeGraphDB::in_memory().unwrap();
+        let result2 = db2.find_edges_to("symbol_id", None, 10);
+        assert!(result2.is_ok());
+        assert_eq!(result2.unwrap().len(), 0);
+    }
 
     #[test]
     fn parses_plain_text_language_values_from_sqlite() {

@@ -1391,9 +1391,9 @@ mod tests {
         // post sidecar-probe: incompatible PATH sidecars are rejected at
         // registration, so this is the pure-native output for the current
         // tree; re-measure if parsers or fixture sources change)
-        assert_eq!(stats.total_files, 35, "file count mismatch");
-        assert_eq!(stats.total_symbols, 2498, "symbol count mismatch");
-        assert_eq!(edges_count, 13880, "edge count mismatch");
+        assert_eq!(stats.total_files, 36, "file count mismatch");
+        assert_eq!(stats.total_symbols, 2716, "symbol count mismatch");
+        assert_eq!(edges_count, 15780, "edge count mismatch");
     }
 
     #[tokio::test]
