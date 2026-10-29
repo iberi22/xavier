@@ -247,8 +247,19 @@ where
     Option::<String>::deserialize(d).map(Some)
 }
 
+/// Reachability probe result for the billing server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Reachability {
+    pub url: String,
+    pub source: String,
+    pub reachable: bool,
+    pub status: Option<u16>,
+    pub error: Option<String>,
+}
+
 /// Body of xavier-cloud `GET /v1/cloud/usage`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+
 pub struct CloudUsage {
     pub tenant: String,
     /// `None`: the server does not report plans (xavier-cloud older than the
@@ -378,6 +389,33 @@ impl BillingClient {
     /// Endpoints this client uses.
     pub fn endpoints(&self) -> &BillingEndpoints {
         &self.endpoints
+    }
+
+    /// `GET {billing}/v1/xavier/plans` with a 5s timeout to check reachability.
+    pub async fn check_reachability(&self, source: String) -> Reachability {
+        let url = format!("{}/v1/xavier/plans", self.endpoints.billing_url);
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_else(|_| self.http.clone());
+
+        let resp = http.get(&url).send().await;
+        match resp {
+            Ok(r) => Reachability {
+                url: self.endpoints.billing_url.clone(),
+                source,
+                reachable: true,
+                status: Some(r.status().as_u16()),
+                error: None,
+            },
+            Err(e) => Reachability {
+                url: self.endpoints.billing_url.clone(),
+                source,
+                reachable: false,
+                status: e.status().map(|s| s.as_u16()),
+                error: Some(e.to_string()),
+            },
+        }
     }
 
     /// `GET {billing}/v1/xavier/plans`.

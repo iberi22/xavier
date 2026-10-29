@@ -93,13 +93,38 @@ async fn checkout(
 }
 
 async fn status(client: &BillingClient, json: bool) -> Result<()> {
-    let usage = client.cloud_usage().await.map_err(|e| anyhow!(e))?;
-    if json {
-        println!("{}", serde_json::to_string_pretty(&usage)?);
+    let source = if std::env::var(crate::billing::client::BILLING_URL_ENV).is_ok() {
+        "env".to_string()
     } else {
-        print!("{}", render_status(&usage, &client.endpoints().cloud_url));
+        "default".to_string()
+    };
+
+    let reachability = client.check_reachability(source.clone()).await;
+
+    if json {
+        println!("{}", serde_json::to_string(&reachability)?);
+    } else {
+        println!("Billing URL: {}", reachability.url);
+        println!("Source:      {}", reachability.source);
+        println!("Reachable:   {}", reachability.reachable);
+        if let Some(status) = reachability.status {
+            println!("Status:      {}", status);
+        }
+        if let Some(error) = &reachability.error {
+            println!("Error:       {}", error);
+        }
+
+        if source == "default" && !reachability.reachable {
+            println!("
+cannot reach swal-billing at {}. Check your connection, or start swal-billing locally (`pnpm dev`) / set {}", reachability.url, crate::billing::client::BILLING_URL_ENV);
+        }
     }
-    Ok(())
+
+    if reachability.reachable {
+        std::process::exit(0);
+    } else {
+        std::process::exit(2);
+    }
 }
 
 /// Human-readable byte size (binary units).
@@ -247,39 +272,6 @@ pub fn render_checkout(o: &CheckoutOutcome) -> String {
 }
 
 /// Text for `xavier billing status`.
-pub fn render_status(u: &CloudUsage, source: &str) -> String {
-    let plan = match &u.plan {
-        Some(Some(id)) => match Plan::from_catalog_id(id) {
-            Some(p) => format!("{} ({id})", p.display_name()),
-            None => id.clone(),
-        },
-        Some(None) => "none assigned (legacy per-tenant quota)".to_string(),
-        None => "not reported by this xavier-cloud (needs per-plan quotas)".to_string(),
-    };
-    let percent = match u.percent {
-        Some(p) => format!(" ({p:.2}%)"),
-        None if u.quota > 0 => format!(" ({:.2}%)", u.bytes as f64 * 100.0 / u.quota as f64),
-        None => String::new(),
-    };
-    let mut out = format!("xavier-cloud: {source}\n");
-    out.push_str(&format!("Tenant:        {}\n", u.tenant));
-    out.push_str(&format!("Plan:          {plan}\n"));
-    out.push_str(&format!(
-        "Storage:       {} of {}{percent}\n",
-        human_bytes(u.bytes),
-        human_bytes(u.quota)
-    ));
-    if let Some(chunks) = u.chunks {
-        out.push_str(&format!("Chunks:        {chunks}\n"));
-    }
-    out.push_str(&format!(
-        "AI tokens/day: {}\n",
-        u.ai_tokens_per_day
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "not reported".to_string())
-    ));
-    out
-}
 
 #[cfg(test)]
 mod tests {
@@ -455,32 +447,5 @@ mod tests {
             free,
             "Plan 'local' is free and needs no checkout. Nothing was charged."
         );
-    }
-
-    #[test]
-    fn status_explains_missing_and_null_plan() {
-        let mut u = CloudUsage {
-            tenant: "groku-test".into(),
-            plan: None,
-            bytes: 1536,
-            chunks: Some(2),
-            quota: 1000 * 1024,
-            ai_tokens_per_day: None,
-            percent: None,
-        };
-        let s = render_status(&u, "https://xavier-cloud.swal.network");
-        assert!(s.contains("Tenant:        groku-test"));
-        assert!(s.contains("not reported by this xavier-cloud"));
-        assert!(s.contains("AI tokens/day: not reported"));
-        assert!(s.contains("(0.15%)"), "{s}");
-
-        u.plan = Some(None);
-        assert!(render_status(&u, "x").contains("none assigned"));
-
-        u.plan = Some(Some("respaldo".into()));
-        u.ai_tokens_per_day = Some(50_000);
-        let s = render_status(&u, "x");
-        assert!(s.contains("Plan:          Respaldo (respaldo)"), "{s}");
-        assert!(s.contains("AI tokens/day: 50000"));
     }
 }

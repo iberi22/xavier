@@ -228,9 +228,9 @@ loopback hosts. Checkout error response bodies are withheld.
 
 ### `xavier billing status [--json]` (default for `xavier billing`)
 
-Shows your tenant, plan, storage used against your quota, chunks and AI tokens
-per day from xavier-cloud (`GET /v1/cloud/usage`). An xavier-cloud deployment
-without per-plan quotas does not report a plan; the CLI says so instead of guessing.
+Prints the resolved billing URL, whether it came from the environment or the built-in
+default, and performs a reachability probe against the public plan catalog endpoint
+(`GET /v1/xavier/plans`) with a 5s timeout. Exits with 0 when reachable, or 2 when unreachable.
 
 ```bash
 export PGHEART_TOKEN=...            # your tenant API key
