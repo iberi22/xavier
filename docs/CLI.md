@@ -48,6 +48,31 @@ xavier http 8006
 xavier http --mcp-port 8100 --host 127.0.0.1
 ```
 
+### `xavier service` / `xavier logs`
+
+Manage the systemd user unit `xavier.service` with `service status`, `start`,
+`stop`, `reload`, or `restart`. Reload falls back to restart if reload is
+unavailable or fails. Restart polls `/ready` using the CLI URL configuration
+(`XAVIER_URL`, otherwise `XAVIER_HOST` / `XAVIER_PORT` and settings).
+`--timeout <seconds>` bounds the readiness wait, including each HTTP request
+(default: 120 seconds).
+
+Each service subcommand accepts `--json` and emits one JSON object. Failures
+return exit code 1; status also returns 1 when the unit is inactive. Reload's
+JSON status is `restarted` when the fallback was used.
+
+Logs support `--since`, `--grep`, `-n` / `--lines`, `-f` / `--follow`, and
+`--json` (newline-delimited journal JSON records). Both commands disable pagers.
+`XAVIER_SYSTEMCTL_CMD` and `XAVIER_JOURNALCTL_CMD` can override the executables.
+
+```bash
+xavier service status --json
+xavier service restart --timeout 30 --json
+xavier service reload
+xavier logs --since "1 hour ago" --grep "error" -n 100 --json
+xavier logs --follow
+```
+
 ### `xavier mcp`
 
 Start the stdio MCP server.
