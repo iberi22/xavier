@@ -52,3 +52,9 @@ mod kernel_mcp_test;
 
 #[path = "skill_drift_audit.rs"]
 mod skill_drift_audit;
+
+#[path = "maloca_roadmap_route_e2e.rs"]
+mod maloca_roadmap_route_e2e;
+
+#[path = "maloca_store_atomic_persist_e2e.rs"]
+mod maloca_store_atomic_persist_e2e;

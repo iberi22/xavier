@@ -931,7 +931,9 @@
         "server::maloca::roadmap_route::tests::counts_and_progress_mean_per_group",
         "server::maloca::roadmap_route::tests::every_status_lands_in_exactly_one_bucket",
         "server::maloca::roadmap_route::tests::empty_input_yields_empty_roadmap",
-        "server::maloca::roadmap_route::tests::roadmap_endpoint_reads_gitcore_ledgers"
+        "server::maloca::roadmap_route::tests::roadmap_endpoint_reads_gitcore_ledgers",
+        "tests/maloca_roadmap_route_e2e.rs::roadmap_endpoint_reads_gitcore_ledgers_e2e",
+        "tests/maloca_roadmap_route_e2e.rs::roadmap_endpoint_returns_empty_when_no_projects"
       ],
       "user_stories": []
     },
@@ -4064,7 +4066,10 @@
         "maloca::store::tests::persisted_store_json_is_valid_json_after_write",
         "maloca::store::tests::persist_leaves_no_tmp_files_after_success",
         "maloca::store::tests::persist_replaces_store_file_by_rename_not_in_place",
-        "maloca::store::tests::persist_into_read_only_directory_returns_error_without_panicking"
+        "maloca::store::tests::persist_into_read_only_directory_returns_error_without_panicking",
+        "tests/maloca_store_atomic_persist_e2e.rs::persist_leaves_no_tmp_files_after_success_e2e",
+        "tests/maloca_store_atomic_persist_e2e.rs::persisted_store_json_is_valid_json_after_write_e2e",
+        "tests/maloca_store_atomic_persist_e2e.rs::persist_replaces_store_file_by_rename_not_in_place_e2e"
       ],
       "user_stories": []
     }
