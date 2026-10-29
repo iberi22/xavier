@@ -53,7 +53,10 @@ open class BuildTask : DefaultTask() {
         val args = listOf("exec", "tauri", "android", "android-studio-script");
 
         project.exec {
-            workingDir(File(project.projectDir, rootDirRel))
+            // rootDirRel points at panel-ui/src-tauri, which is not a pnpm package, so
+            // `pnpm exec` would resolve from the workspace root (no tauri bin there).
+            // Run from panel-ui, which owns @tauri-apps/cli; the CLI finds src-tauri itself.
+            workingDir(File(File(project.projectDir, rootDirRel), ".."))
             executable(executable)
             args(args)
             if (project.logger.isEnabled(LogLevel.DEBUG)) {
