@@ -611,12 +611,12 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
     def test_stable_incomplete_evidence_collection_skips_review(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
-        self.evidence['per_feature_test_results'] = {}
-        self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': False}}
+        self.evidence['evidence_complete'] = True
         report, _ = self.run_all()
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
-        self.assertTrue(any('review skipped: evidence collection incomplete' in r for r in stable['review_reasons']))
+        self.assertTrue(any('review skipped: incomplete evidence' in r for r in stable['review_reasons']))
 
     def test_stable_open_gaps_flagged(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
@@ -628,12 +628,24 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
 
     def test_stable_incomplete_evidence_demotions_enabled(self):
+        import json
         self.features['features']['stable']['open_gaps'] = ['pending']
-        self.evidence['evidence_complete'] = False
-        report, _ = self.run_all()
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': False}}
+        self.evidence['evidence_complete'] = True
+        evidence = self.root / 'evidence.json'
+        history = self.root / 'history.json'
+        self.path.write_text(json.dumps(self.features))
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        args = ['--features', str(self.path), '--evidence', str(evidence),
+                '--history', str(history), '--apply', '--apply-demotions']
+        import subprocess, sys
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, capture_output=True, text=True, check=True)
+        report = json.loads(result.stdout)
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
-        self.assertTrue(any('review skipped: evidence collection incomplete' in r for r in stable['review_reasons']))
+        self.assertTrue(any('review skipped: incomplete evidence' in r for r in stable['review_reasons']))
+        self.assertNotIn('stable', report.get('demotions_applied', []))
 
     def test_stable_no_linked_evidence_flagged(self):
         self.features['features']['stable']['tests'] = ['test_stable']

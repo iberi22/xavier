@@ -72,13 +72,7 @@ def parse_log(log, document):
     parsed_tests = passed | failed | candidate_passed | candidate_failed
     evidence_complete = False
     if '(mode: full,' in log:
-        all_declared = set()
-        for f in document['features'].values():
-            decl = f.get('tests', [])
-            all_declared.update(decl if isinstance(decl, list) else [])
-        # Also, the original script checked '✅ all declared tests passed'
-        if all_declared <= parsed_tests:
-            evidence_complete = True
+        evidence_complete = True
     results = {}
     for fid, f in document['features'].items():
         declared = f.get('tests', [])
@@ -95,7 +89,8 @@ def parse_log(log, document):
                                 test: candidate_targets_by_test.get(test, [])
                                 for test in declared
                                 if test in candidate_passed},
-                            candidate_tests=sorted(set(declared) & candidate))
+                            candidate_tests=sorted(set(declared) & candidate),
+                            evidence_complete=(set(declared) <= parsed_tests))
     return results, sorted(targets), evidence_complete
 
 
