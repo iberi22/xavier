@@ -664,6 +664,25 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertTrue(any('review skipped' in r for r in stable['review_reasons']))
 
 
+    def test_completed_failure_evidence_reaches_stable_review_from_log(self):
+        log = (FIXTURES / 'failed-evidence.log').read_text()
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.evidence['ledger_run_conclusion'] = 'failure'
+
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+
+        results, targets, evidence_complete = evidence_mod.parse_log(log, self.features)
+        self.evidence['per_feature_test_results'] = results
+        self.evidence['evidence_complete'] = evidence_complete
+
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertIn('declared tests failed: test_stable', stable['review_reasons'])
+
     def test_completed_failure_evidence_reaches_stable_review(self):
         # A test fails, verifier reports failure, but all tests were parsed
         self.features['features']['stable']['tests'] = ['test_stable']

@@ -43,7 +43,7 @@ def parse_log(log, document):
     candidate_targets_by_test = {}
     candidate = set()
     if '(mode: full,' in log:
-        for match in re.finditer(r'(?m)^\s*▶ ([^\n]+)\n(.*?)(?=^\s*▶ |\Z)', log, re.S):
+        for match in re.finditer(r'(?m)^\s*▶ ([^\n]+)\n(.*?)(?=^\s*▶ |^\s*✅ all declared tests passed|^\s*(?:Nextest|cargo test) summary|\Z)', log, re.S):
             raw, block = match.groups()
             flagged = bool(CANDIDATE_MARKER.search(raw))
             test = CANDIDATE_MARKER.sub('', raw).strip()
