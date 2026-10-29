@@ -5,6 +5,8 @@ use router_harness::{test_app, RestoreEnv};
 use serial_test::serial;
 use std::fs;
 
+xavier::isolate_test_process!();
+
 #[tokio::test]
 #[serial]
 #[allow(clippy::await_holding_lock)]

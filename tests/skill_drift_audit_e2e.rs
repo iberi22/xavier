@@ -8,6 +8,8 @@ use serial_test::serial;
 use std::fs;
 use tower::ServiceExt;
 
+xavier::isolate_test_process!();
+
 #[tokio::test]
 #[serial]
 #[allow(clippy::await_holding_lock)]
@@ -59,9 +61,7 @@ name = \"demo\"
 
     // Journal baseline hash
     let journal = xavier::context::skill_controller::state::Journal::new(journal_dir).unwrap();
-    journal
-        .begin_transaction("projection", vec![], false)
-        .unwrap();
+
     use xavier::context::skill_controller::plan::hash_package;
     let manifest = xavier::context::SkillManifest::from_toml(&manifest_content).unwrap();
     let hash = hash_package(&package_dir, &manifest.placements[0])
@@ -72,10 +72,13 @@ name = \"demo\"
         action: xavier::context::skill_controller::state::JournalAction::LinkSymlink {
             source: package_dir.clone(),
         },
-        prior_state: xavier::context::skill_controller::backup::BackupKind::None,
+        prior_state: xavier::context::skill_controller::backup::BackupKind::Absent,
         owned_hash: Some(hash),
     };
-    journal.commit(&[entry]).unwrap();
+    journal
+        .begin_transaction("projection", vec![entry], false)
+        .unwrap();
+    journal.commit_transaction("projection", false).unwrap();
 
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_MANIFEST", manifest_path.to_str().unwrap())]);
     let app = test_app().await;

@@ -10,6 +10,8 @@ use serial_test::serial;
 use std::fs;
 use tower::ServiceExt;
 
+xavier::isolate_test_process!();
+
 #[tokio::test]
 #[serial]
 #[allow(clippy::await_holding_lock)]
