@@ -6,13 +6,18 @@ mod router_harness;
 
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
-use router_harness::{test_app, RestoreEnv, ROOT_TOKEN};
+use axum::Router;
+use router_harness::{create_test_cli_state, RestoreEnv, ROOT_TOKEN};
 use serde_json::Value;
 use serial_test::serial;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
+use tempfile::TempDir;
 use tower::ServiceExt;
+use xavier::cli::server::{build_app, AppDeps};
+use xavier::workspace::{WorkspaceContext, WorkspaceState};
 
 xavier::isolate_test_process!();
 
@@ -28,17 +33,16 @@ fn write_skill(root: &Path, name: &str, description: &str) {
     .unwrap();
 }
 
-#[tokio::test]
-#[serial]
-#[allow(clippy::await_holding_lock)]
-async fn test_build_skill_registry_indexes_every_discovery_root() {
-    let _lock = crate::SUITE_ENV_LOCK.lock().await;
+struct ParityApp {
+    app: Router,
+    _env: RestoreEnv,
+    _temp: TempDir,
+}
 
-    let temp_dir = tempfile::tempdir().unwrap();
-    let user_store = temp_dir.path().join("user-store");
-
-    // Create skills directory inside XAVIER_DATA_DIR (which acts as workspace dir in harness)
-    let workspace_skills = temp_dir.path().join("skills");
+async fn parity_app() -> ParityApp {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let user_store = temp.path().join("user-store");
+    let workspace_skills = temp.path().join("skills");
 
     fs::create_dir_all(&user_store).unwrap();
     fs::create_dir_all(&workspace_skills).unwrap();
@@ -47,14 +51,55 @@ async fn test_build_skill_registry_indexes_every_discovery_root() {
     write_skill(&user_store, "user-skill", "Skill in user store");
     write_skill(&workspace_skills, "workspace-skill", "Skill in workspace");
 
-    // The router_harness sets HOME and XAVIER_DATA_DIR to its own temp dir.
-    // We append XAVIER_SKILL_STORE via RestoreEnv over the top.
-    let _env = RestoreEnv::set_str(&[
+    let env = RestoreEnv::set_str(&[
+        ("HOME", temp.path().to_str().unwrap()),
+        ("XAVIER_CONFIG_PATH", temp.path().to_str().unwrap()),
+        ("XAVIER_RUNTIME_STATE_PATH", temp.path().to_str().unwrap()),
+        ("XAVIER_DATA_DIR", temp.path().to_str().unwrap()),
         ("XAVIER_SKILL_STORE", user_store.to_str().unwrap()),
-        ("XAVIER_DATA_DIR", temp_dir.path().to_str().unwrap()),
+        ("XAVIER_TOKEN", ROOT_TOKEN),
+        ("XAVIER_JWT_SECRET", "router-harness-jwt-secret"),
     ]);
 
-    let app_fixture = test_app().await;
+    let mut state = create_test_cli_state(&temp).await;
+    // VERY IMPORTANT: test_app() hardcodes "test-ws" workspace_id which causes workspace paths
+    // to resolve out of bounds instead of within XAVIER_DATA_DIR. We override it to the temp dir.
+    state.workspace_id = temp.path().to_string_lossy().into_owned();
+    state.workspace_dir = temp.path().to_path_buf();
+
+    let workspace_state = Arc::new(
+        WorkspaceState::new_minimal(
+            state.workspace_id.clone(),
+            state.workspace_dir.clone(),
+            Arc::clone(&state.qmd_memory),
+            Arc::clone(&state.store),
+        )
+        .await,
+    );
+    let deps = AppDeps {
+        workspace_ctx: WorkspaceContext {
+            workspace_id: state.workspace_id.clone(),
+            workspace: workspace_state,
+        },
+        space_manager: None,
+        maloca_router: Router::new(),
+        event_bus_for_ws: xavier::coordination::XavierEventBus::new(10),
+        no_ui: true,
+    };
+    ParityApp {
+        app: build_app(state, deps),
+        _env: env,
+        _temp: temp,
+    }
+}
+
+#[tokio::test]
+#[serial]
+#[allow(clippy::await_holding_lock)]
+async fn test_build_skill_registry_indexes_every_discovery_root() {
+    let _lock = crate::SUITE_ENV_LOCK.lock().await;
+
+    let app_fixture = parity_app().await;
 
     // Helper to get names
     fn extract_names(skills: &[Value]) -> BTreeSet<String> {
@@ -82,19 +127,14 @@ async fn test_build_skill_registry_indexes_every_discovery_root() {
     let rest_skills = rest_body["skills"].as_array().expect("skills array");
     let rest_names = extract_names(rest_skills);
 
-    // 2. MCP context tool listing via HTTP /mcp
+    // 2. MCP context tool listing via HTTP /mcp/tools/call
     let mcp_payload = serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "tools/call",
-        "params": {
-            "name": "xavier_skill_list",
-            "arguments": {}
-        },
-        "id": 1
+        "name": "xavier_skill_list",
+        "arguments": {}
     });
 
     let req_mcp = Request::builder()
-        .uri("/mcp")
+        .uri("/mcp/tools/call")
         .method(Method::POST)
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {}", ROOT_TOKEN))
@@ -110,9 +150,7 @@ async fn test_build_skill_registry_indexes_every_discovery_root() {
     let mcp_body: Value = serde_json::from_slice(&bytes_mcp).unwrap();
 
     // Extract the json array from the text of the first content block
-    let mcp_content_text = mcp_body["result"]["content"][0]["text"]
-        .as_str()
-        .expect("text");
+    let mcp_content_text = mcp_body["content"][0]["text"].as_str().expect("text");
     let mcp_parsed: Value = serde_json::from_str(mcp_content_text).expect("mcp json");
     let mcp_skills = mcp_parsed["skills"].as_array().expect("mcp skills array");
     let mcp_names = extract_names(mcp_skills);
