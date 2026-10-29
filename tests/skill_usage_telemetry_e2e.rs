@@ -6,12 +6,14 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use router_harness::{test_app, RestoreEnv, ROOT_TOKEN};
+use serial_test::serial;
 use std::fs;
 use tower::ServiceExt;
 
 xavier::isolate_test_process!();
 
 #[tokio::test]
+#[serial]
 async fn telemetry_dispatch_ack_and_usage_e2e() {
     let app = test_app().await;
 
@@ -53,6 +55,9 @@ async fn telemetry_dispatch_ack_and_usage_e2e() {
         .unwrap_or("none")
         .to_string();
 
+    // Wait for async telemetry tasks to finish
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
     // 2. Ack
     let ack_payload = serde_json::json!({
         "dispatch_id": dispatch_id,
@@ -71,7 +76,17 @@ async fn telemetry_dispatch_ack_and_usage_e2e() {
     let resp2 = app.app.clone().oneshot(req2).await.unwrap();
     assert_eq!(resp2.status(), StatusCode::OK);
 
+    let body_bytes2 = axum::body::to_bytes(resp2.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json2: serde_json::Value = serde_json::from_slice(&body_bytes2).unwrap();
+    assert_eq!(json2["ok"], true);
+
+    // Wait for async telemetry tasks to finish
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
     // 3. Usage
+    // Note: the test cli state defaults to workspace "test-ws"
     let req3 = Request::builder()
         .method(Method::GET)
         .uri("/api/skill/usage?workspace=test-ws")
@@ -81,9 +96,26 @@ async fn telemetry_dispatch_ack_and_usage_e2e() {
         .unwrap();
     let resp3 = app.app.clone().oneshot(req3).await.unwrap();
     assert_eq!(resp3.status(), StatusCode::OK);
+
+    let body_bytes3 = axum::body::to_bytes(resp3.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json3: serde_json::Value = serde_json::from_slice(&body_bytes3).unwrap();
+
+    // Validate usage counts and workspace attribution
+    let skills = json3["skills"].as_array().expect("skills array");
+    let mut found = false;
+    for skill in skills {
+        if skill["skill_name"] == "trace-audit-e2e" {
+            assert!(skill["invoked"].as_i64().unwrap_or(0) >= 1);
+            found = true;
+        }
+    }
+    assert!(found, "trace-audit-e2e not found in usage summary");
 }
 
 #[tokio::test]
+#[serial]
 async fn usage_endpoint_unauthorized() {
     let app = test_app().await;
     let req = Request::builder()

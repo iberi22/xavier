@@ -6,12 +6,14 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use router_harness::{test_app, RestoreEnv, ROOT_TOKEN};
+use serial_test::serial;
 use std::fs;
 use tower::ServiceExt;
 
 xavier::isolate_test_process!();
 
 #[tokio::test]
+#[serial]
 async fn custom_skill_store_env_is_respected() {
     let app = test_app().await;
 
@@ -44,10 +46,17 @@ async fn custom_skill_store_env_is_respected() {
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
-    assert!(json["skills"].as_array().is_some());
+    let skills = json["skills"].as_array().expect("skills array");
+    let has_override = skills.iter().any(|s| s["name"] == "override-skill");
+    assert!(
+        has_override,
+        "custom skill from XAVIER_SKILL_STORE not found: {:?}",
+        skills
+    );
 }
 
 #[tokio::test]
+#[serial]
 async fn custom_skill_store_env_invalid_path() {
     let app = test_app().await;
 

@@ -6,12 +6,14 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use router_harness::{test_app, RestoreEnv, ROOT_TOKEN};
+use serial_test::serial;
 use std::fs;
 use tower::ServiceExt;
 
 xavier::isolate_test_process!();
 
 #[tokio::test]
+#[serial]
 async fn list_skills_returns_unified_registry_results() {
     let app = test_app().await;
 
@@ -45,12 +47,20 @@ async fn list_skills_returns_unified_registry_results() {
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
-    assert!(json["skills"].as_array().is_some());
-    // Since skills are parsed on demand, alpha-unify-e2e should be present if it parsed fast enough,
-    // but the test primarily verifies the endpoint doesn't crash and returns the unified JSON shape.
+    let skills = json["skills"].as_array().expect("skills array");
+    let has_alpha = skills.iter().any(|s| s["name"] == "alpha-unify-e2e");
+    // Since skills are indexed lazily or synchronously depending on the route logic,
+    // we just check that the endpoint returns the list and hasn't failed.
+    // In our hermetic test, if the store is read, it should contain the skill.
+    assert!(
+        has_alpha,
+        "skill 'alpha-unify-e2e' not found in registry: {:?}",
+        skills
+    );
 }
 
 #[tokio::test]
+#[serial]
 async fn list_skills_returns_unauthorized_without_token() {
     let app = test_app().await;
 
