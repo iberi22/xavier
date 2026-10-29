@@ -2721,6 +2721,22 @@ category = "Testing (internal)"
 secret = false
 
 [[variables]]
+name = "XAVIER_SYSTEMCTL_CMD"
+type = "string"
+default = "\"systemctl\""
+description = "Override the systemctl binary used by `xavier service`/`xavier logs` (used by tests to inject a mock)"
+category = "CLI / Legacy"
+secret = false
+
+[[variables]]
+name = "XAVIER_JOURNALCTL_CMD"
+type = "string"
+default = "\"journalctl\""
+description = "Override the journalctl binary used by `xavier service`/`xavier logs` (used by tests to inject a mock)"
+category = "CLI / Legacy"
+secret = false
+
+[[variables]]
 name = "XAVIER_CODEGRAPH_PROBE_DEPTH"
 type = "string"
 default = "(unset)"

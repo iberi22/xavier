@@ -8,6 +8,8 @@
 |----------|------|---------|-------------|--------|
 | `XAVIER_API_URL` | `string` | (falls back to `XAVIER_URL`) | CLI client URL (legacy) | ❌ |
 | `XAVIER_AUTH_TOKEN` | `string` | (falls back to `XAVIER_TOKEN`) | CLI client auth token (legacy) | ✅ |
+| `XAVIER_JOURNALCTL_CMD` | `string` | `"journalctl"` | Override the journalctl binary used by `xavier service`/`xavier logs` (used by tests to inject a mock) | ❌ |
+| `XAVIER_SYSTEMCTL_CMD` | `string` | `"systemctl"` | Override the systemctl binary used by `xavier service`/`xavier logs` (used by tests to inject a mock) | ❌ |
 
 ## Context Budget
 
