@@ -81,15 +81,38 @@ impl MockServer {
     }
 }
 
+/// Child command with a clean environment that still carries the sandboxed
+/// HOME/XDG/XAVIER_* dirs installed by `isolate_test_process!` (so the child
+/// never reads or writes real user config/logs) and runs in a temp cwd.
+fn xavier_cmd(mock_url: &str, cwd: &std::path::Path) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd.env_clear().current_dir(cwd);
+    for (key, value) in std::env::vars_os() {
+        let k = key.to_string_lossy();
+        if k == "PATH"
+            || k == "HOME"
+            || k.starts_with("XDG_")
+            || (k.starts_with("XAVIER_") && k != "XAVIER_URL" && k != "XAVIER_TOKEN")
+        {
+            cmd.env(&key, &value);
+        }
+    }
+    assert!(
+        std::env::var_os("HOME").is_some(),
+        "isolate_test_process! must have sandboxed HOME"
+    );
+    cmd.env("XAVIER_URL", mock_url)
+        .env("XAVIER_TOKEN", "my-test-token");
+    cmd
+}
+
 #[test]
 fn test_cli_index_self() {
     let mock = MockServer::new();
+    let cwd = tempfile::tempdir().expect("temp cwd");
 
     // (a) `xavier index-self --json` hits POST /memory/index-self with token
-    let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
-        .env_clear()
-        .env("XAVIER_URL", &mock.url)
-        .env("XAVIER_TOKEN", "my-test-token")
+    let output = xavier_cmd(&mock.url, cwd.path())
         .args(["index-self", "--json"])
         .output()
         .expect("failed to execute");
@@ -108,17 +131,16 @@ fn test_cli_index_self() {
 
     // (b) server 500 -> non-zero exit and {"ok":false,"error":...} on stdout
     *mock.state.status_code.lock().unwrap() = StatusCode::INTERNAL_SERVER_ERROR;
-    let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
-        .env_clear()
-        .env("XAVIER_URL", &mock.url)
-        .env("XAVIER_TOKEN", "my-test-token")
+    let output = xavier_cmd(&mock.url, cwd.path())
         .args(["index-self", "--json"])
         .output()
         .expect("failed to execute");
 
     assert!(!output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(r#"{"ok":false,"error":"{\"error\":\"internal error\"}"}"#));
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("JSON on stdout");
+    assert_eq!(v["ok"], false);
+    assert!(v["error"].as_str().unwrap().contains("internal error"));
 
     {
         let mut reqs = mock.state.requests.lock().unwrap();
@@ -128,10 +150,7 @@ fn test_cli_index_self() {
 
     // (c) `xavier memory index-self` hits the same route
     *mock.state.status_code.lock().unwrap() = StatusCode::OK;
-    let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
-        .env_clear()
-        .env("XAVIER_URL", &mock.url)
-        .env("XAVIER_TOKEN", "my-test-token")
+    let output = xavier_cmd(&mock.url, cwd.path())
         .args(["memory", "index-self", "--json"])
         .output()
         .expect("failed to execute");
@@ -149,3 +168,28 @@ fn test_cli_index_self() {
 
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
 xavier::isolate_test_process!();
+
+/// Connection failure (nothing listening) with --json still emits one JSON
+/// object on stdout and exits nonzero, for both entry points.
+#[test]
+fn test_cli_index_self_json_on_connection_failure() {
+    let cwd = tempfile::tempdir().expect("temp cwd");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let dead_url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+    drop(listener);
+    for args in [
+        &["index-self", "--json"][..],
+        &["memory", "index-self", "--json"][..],
+    ] {
+        let output = xavier_cmd(&dead_url, cwd.path())
+            .args(args)
+            .output()
+            .expect("failed to execute");
+        assert!(!output.status.success(), "{:?} must fail", args);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let v: serde_json::Value = serde_json::from_str(stdout.trim())
+            .unwrap_or_else(|e| panic!("{:?}: stdout not JSON ({e}): {stdout}", args));
+        assert_eq!(v["ok"], false);
+        assert!(v["error"].as_str().is_some_and(|e| !e.is_empty()));
+    }
+}

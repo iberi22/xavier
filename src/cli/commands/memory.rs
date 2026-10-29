@@ -230,42 +230,58 @@ async fn show_consolidation_status() -> Result<()> {
     }
 }
 
-pub(crate) async fn run_index_self(json_out: bool) -> Result<()> {
+/// Call `POST /memory/index-self` and return the parsed JSON body, or a
+/// human-readable error for every failure (token, connection, timeout,
+/// HTTP error, invalid JSON).
+async fn request_index_self() -> std::result::Result<serde_json::Value, String> {
     let base_url = resolve_base_url();
-    let token = require_xavier_token()?;
+    let token = require_xavier_token().map_err(|e| e.to_string())?;
     let client = CLI_HTTP_CLIENT.clone();
-
-    if !json_out {
-        eprintln!("📚 Indexing Xavier's foundational documents...");
-    }
 
     let resp = client
         .post(format!("{}/memory/index-self", base_url))
         .header("X-Xavier-Token", &token)
         .send()
-        .await?;
+        .await
+        .map_err(|e| format!("request failed: {}", e.without_url()))?;
 
-    if resp.status().is_success() {
-        let body: serde_json::Value = resp.json().await?;
-        if json_out {
-            println!("{}", serde_json::to_string(&body)?);
-        } else {
-            eprintln!(
-                "✅ Self-indexing complete: {}",
-                serde_json::to_string_pretty(&body)?
-            );
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("failed to read response: {}", e.without_url()))?;
+    if !status.is_success() {
+        return Err(format!("HTTP {}: {}", status.as_u16(), text));
+    }
+    serde_json::from_str(&text).map_err(|e| format!("invalid JSON response: {}", e))
+}
+
+pub(crate) async fn run_index_self(json_out: bool) -> Result<()> {
+    if !json_out {
+        eprintln!("📚 Indexing Xavier's foundational documents...");
+    }
+
+    match request_index_self().await {
+        Ok(body) => {
+            if json_out {
+                println!("{}", serde_json::to_string(&body)?);
+            } else {
+                eprintln!(
+                    "✅ Self-indexing complete: {}",
+                    serde_json::to_string_pretty(&body)?
+                );
+            }
+            Ok(())
         }
-        Ok(())
-    } else {
-        let err_text = resp.text().await?;
-        if json_out {
-            println!(
-                r#"{{"ok":false,"error":{}}}"#,
-                serde_json::to_string(&err_text)?
-            );
-            std::process::exit(1);
-        } else {
-            bail!("❌ Self-indexing failed: {}", err_text);
+        Err(err_text) => {
+            if json_out {
+                // Every failure keeps the --json contract: one JSON object on
+                // stdout and a nonzero exit.
+                println!("{}", serde_json::json!({"ok": false, "error": err_text}));
+                std::process::exit(1);
+            } else {
+                bail!("❌ Self-indexing failed: {}", err_text);
+            }
         }
     }
 }
