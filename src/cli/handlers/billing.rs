@@ -11,7 +11,7 @@
 use anyhow::{anyhow, Result};
 
 use crate::billing::client::{
-    BillingClient, BillingEndpoints, CatalogPlanView, CheckoutOutcome, CheckoutRequest, CloudUsage,
+    BillingClient, BillingEndpoints, CatalogPlanView, CheckoutOutcome, CheckoutRequest,
     PlansResponse,
 };
 use crate::billing::plans::{Plan, CATALOG_VERSION};
@@ -295,6 +295,7 @@ mod tests {
             reqwest::Client::new(),
             BillingEndpoints {
                 billing_url: url.into(),
+                billing_url_source: "env",
                 cloud_url: url.into(),
                 cloud_token: Some("test-key".into()),
             },

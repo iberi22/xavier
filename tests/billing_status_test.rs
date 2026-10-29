@@ -57,6 +57,8 @@ fn billing_status_reachable() {
     assert_eq!(json["reachable"], true);
     assert_eq!(json["source"], "env");
     assert_eq!(json["status"], 200);
+    assert_eq!(json["url"], url);
+    assert!(json["error"].is_null());
 }
 
 #[test]
@@ -80,6 +82,8 @@ fn billing_status_unreachable() {
 
     assert_eq!(json["reachable"], false);
     assert_eq!(json["source"], "env");
+    assert_eq!(json["url"], url);
+    assert!(json["status"].is_null());
     assert!(json["error"].is_string());
 }
 
