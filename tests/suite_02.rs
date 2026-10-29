@@ -67,3 +67,6 @@ mod health_truth_e2e;
 #[cfg(all(unix, feature = "test-utils"))]
 #[path = "headless_packaging_contract_e2e.rs"]
 mod headless_packaging_contract_e2e;
+
+#[path = "mcp_telecom_tools_visibility_e2e.rs"]
+mod mcp_telecom_tools_visibility_e2e;

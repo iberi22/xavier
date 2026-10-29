@@ -26,12 +26,14 @@ pub(crate) fn root_credential_present() -> bool {
 }
 
 /// Get xavier tools.
-pub fn get_xavier_tools() -> Vec<MCPTool> {
+pub fn get_xavier_tools(has_telecom: bool) -> Vec<MCPTool> {
     let mut tools = super::tools_core::get_xavier_core_tools();
     tools.extend(super::tools_secrets::get_xavier_secrets_tools());
     tools.extend(super::tools_memory::get_xavier_memory_tools());
     tools.extend(super::tools_context::get_xavier_context_tools());
-    tools.extend(super::telecom_tools::register_telecom_mcp_tools());
+    if has_telecom {
+        tools.extend(super::telecom_tools::register_telecom_mcp_tools());
+    }
     tools.extend(super::tools_expert::get_expert_tools());
     #[cfg(feature = "pageindex")]
     tools.extend(super::tools_pageindex::get_pageindex_tools());
