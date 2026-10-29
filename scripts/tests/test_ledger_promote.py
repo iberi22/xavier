@@ -664,6 +664,42 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertTrue(any('review skipped' in r for r in stable['review_reasons']))
 
 
+    def test_completed_failure_evidence_reaches_stable_review_from_log(self):
+        log = (FIXTURES / 'failed-evidence.log').read_text()
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.evidence['ledger_run_conclusion'] = 'failure'
+
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+
+        results, targets, evidence_complete = evidence_mod.parse_log(log, self.features)
+        self.evidence['per_feature_test_results'] = results
+        self.evidence['evidence_complete'] = evidence_complete
+
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertIn('declared tests failed: test_stable', stable['review_reasons'])
+
+        # also run the fixture through --apply WITHOUT --apply-demotions and assert every promotion is ineligible, demotions_applied is empty, and the ledger file bytes are unchanged.
+        report_apply, _ = self.run_all(apply=True)
+        self.assertEqual([], report_apply.get('demotions_applied', []))
+        for fid, res in report_apply['features'].items():
+            self.assertFalse(res.get('eligible'))
+
+        import json
+        with open(self.path) as f:
+            data = json.load(f)
+        self.assertEqual('stable', data['features']['stable']['status'])
+
+        # exact parsed-result assertions that fail if the parser change is reverted
+        self.assertEqual(['test_roundtrip'], results['beta']['passed'])
+        self.assertEqual([], results['beta']['failed'])
+        self.assertEqual([], results['stable']['passed'])
+        self.assertEqual(['test_stable'], results['stable']['failed'])
+
     def test_completed_failure_evidence_reaches_stable_review(self):
         # A test fails, verifier reports failure, but all tests were parsed
         self.features['features']['stable']['tests'] = ['test_stable']
