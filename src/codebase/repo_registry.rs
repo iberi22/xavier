@@ -31,10 +31,20 @@ impl RepoRegistry {
             std::fs::create_dir_all(parent)?;
         }
 
-        let temp_path = path.with_extension("json.tmp");
+        // A unique temp file per save, in the destination directory, so
+        // concurrent writers never share (and truncate) the same inode before
+        // the atomic rename.
+        let dir = path.parent().unwrap_or_else(|| Path::new("."));
+        let temp_path = dir.join(format!(".code_repos.json.{}.tmp", uuid::Uuid::new_v4()));
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(&temp_path, content)?;
-        std::fs::rename(temp_path, path)?;
+        if let Err(e) = std::fs::write(&temp_path, content) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(e.into());
+        }
+        if let Err(e) = std::fs::rename(&temp_path, &path) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(e.into());
+        }
         Ok(())
     }
 
@@ -61,6 +71,11 @@ impl RepoRegistry {
         // First try removing it exactly if it matches an absolute canonical path.
         let as_path = Path::new(path_or_name);
         if as_path.is_absolute() {
+            // The stored path is canonical; remove it verbatim first so a repo
+            // that was deleted or moved (canonicalize fails) can still be removed.
+            if self.repos.remove(as_path) {
+                return;
+            }
             if let Ok(canonical) = std::fs::canonicalize(as_path) {
                 if self.repos.remove(&canonical) {
                     return;
@@ -188,6 +203,71 @@ mod tests {
         // Remove by absolute path
         registry.remove(&repo2.to_string_lossy());
         assert!(registry.list().is_empty());
+
+        std::env::remove_var("XAVIER_DATA_DIR");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_repo_registry_remove_deleted_repo_by_path() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let tmp = tempdir().unwrap();
+        std::env::set_var("XAVIER_DATA_DIR", tmp.path());
+
+        let mut registry = RepoRegistry::load().unwrap();
+        let repo = tmp.path().join("gone_repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        registry.add(&repo).unwrap();
+        let stored = registry.list()[0].clone();
+        registry.save().unwrap();
+
+        // The repository disappears from disk; its stored path must still be removable.
+        std::fs::remove_dir_all(&repo).unwrap();
+        let mut registry = RepoRegistry::load().unwrap();
+        registry.remove(&stored.to_string_lossy());
+        assert!(registry.list().is_empty());
+        registry.save().unwrap();
+        assert!(RepoRegistry::load().unwrap().list().is_empty());
+
+        std::env::remove_var("XAVIER_DATA_DIR");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_repo_registry_concurrent_saves_stay_valid() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let tmp = tempdir().unwrap();
+        std::env::set_var("XAVIER_DATA_DIR", tmp.path());
+
+        let mut handles = Vec::new();
+        for i in 0..8 {
+            let root = tmp.path().to_path_buf();
+            handles.push(std::thread::spawn(move || {
+                let repo = root.join(format!("repo_{i}"));
+                std::fs::create_dir_all(repo.join(".git")).unwrap();
+                let mut registry = RepoRegistry::default();
+                registry.add(&repo).unwrap();
+                for _ in 0..10 {
+                    registry.save().unwrap();
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        // Last writer wins, but the file is always one complete, parseable registry.
+        let loaded = RepoRegistry::load().unwrap();
+        assert_eq!(loaded.list().len(), 1);
+        let leftovers: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp files left behind: {leftovers:?}"
+        );
 
         std::env::remove_var("XAVIER_DATA_DIR");
     }
