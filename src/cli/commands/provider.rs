@@ -12,42 +12,65 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
 
     match cmd {
         ProviderCommand::Status => {
-            let resp = client
+            let resp_result = client
                 .get(format!("{}/headless/provider/status", base_url))
                 .header("X-Xavier-Token", &token)
                 .send()
-                .await?;
+                .await;
 
-            if resp.status().is_success() {
-                let status: serde_json::Value = resp.json().await?;
-                println!("{}", serde_json::to_string_pretty(&status)?);
-            } else {
-                let status_code = resp.status();
-                let body = resp.text().await?;
-                let body_str = if body.is_empty() {
-                    "(empty body)"
-                } else {
-                    &body
-                };
-                println!(
-                    "❌ Failed to get provider status: {} {}",
-                    status_code, body_str
-                );
+            let exit_code = crate::cli::utils::exit_code_for(&resp_result);
+
+            match resp_result {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        let status: serde_json::Value = resp.json().await?;
+                        println!("{}", serde_json::to_string_pretty(&status)?);
+                    } else {
+                        let status_code = resp.status();
+                        let body = resp.text().await.unwrap_or_default();
+                        let body_str = if body.is_empty() {
+                            "(empty body)"
+                        } else {
+                            &body
+                        };
+                        println!(
+                            "❌ Failed to get provider status: {} {}",
+                            status_code, body_str
+                        );
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to get provider status: {}", e);
+                }
             }
+            std::process::exit(exit_code);
         }
         ProviderCommand::List => {
-            let resp = client
+            let resp_result = client
                 .get(format!("{}/v1/provider/list", base_url))
                 .header("X-Xavier-Token", &token)
                 .send()
-                .await?;
+                .await;
 
-            if resp.status().is_success() {
-                let list: serde_json::Value = resp.json().await?;
-                println!("{}", serde_json::to_string_pretty(&list)?);
-            } else {
-                println!("❌ Failed to list providers: {}", resp.text().await?);
+            let exit_code = crate::cli::utils::exit_code_for(&resp_result);
+
+            match resp_result {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        let list: serde_json::Value = resp.json().await?;
+                        println!("{}", serde_json::to_string_pretty(&list)?);
+                    } else {
+                        println!(
+                            "❌ Failed to list providers: {}",
+                            resp.text().await.unwrap_or_default()
+                        );
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to list providers: {}", e);
+                }
             }
+            std::process::exit(exit_code);
         }
         ProviderCommand::Set { name } => {
             let resp = client
@@ -64,7 +87,10 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
                     res["message"].as_str().unwrap_or("Switched provider")
                 );
             } else {
-                println!("❌ Failed to set provider: {}", resp.text().await?);
+                println!(
+                    "❌ Failed to set provider: {}",
+                    resp.text().await.unwrap_or_default()
+                );
             }
         }
         ProviderCommand::Auto { strategy } => {
@@ -82,7 +108,10 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
                     res["message"].as_str().unwrap_or("Set auto strategy")
                 );
             } else {
-                println!("❌ Failed to set auto strategy: {}", resp.text().await?);
+                println!(
+                    "❌ Failed to set auto strategy: {}",
+                    resp.text().await.unwrap_or_default()
+                );
             }
         }
         ProviderCommand::Fallback { providers } => {

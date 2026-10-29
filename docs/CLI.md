@@ -226,9 +226,9 @@ of showing defaults.
 
 | Variable | Used by | Default |
 |---|---|---|
-| `XAVIER_BILLING_URL` | `plans`, `checkout` | `http://127.0.0.1:8787` (`pnpm dev` in swal-billing; there is no public deployment yet) |
-| `PGHEART_URL` (alias `XAVIER_PGHEART_URL`) | `status`, `checkout` | `https://xavier-cloud.swal.network` |
-| `PGHEART_TOKEN` (alias `XAVIER_PGHEART_TOKEN`) | `status`, `checkout` | none: your xavier-cloud tenant API key, sent as `Authorization: Bearer` |
+| `XAVIER_BILLING_URL` | `plans`, `checkout`, `status` | `http://127.0.0.1:8787` (`pnpm dev` in swal-billing; there is no public deployment yet) |
+| `PGHEART_URL` (alias `XAVIER_PGHEART_URL`) | `checkout` | `https://xavier-cloud.swal.network` |
+| `PGHEART_TOKEN` (alias `XAVIER_PGHEART_TOKEN`) | `checkout` | none: your xavier-cloud tenant API key, sent as `Authorization: Bearer` |
 
 The `PGHEART_*` names win over the `XAVIER_PGHEART_*` aliases when both are set.
 
@@ -253,9 +253,9 @@ loopback hosts. Checkout error response bodies are withheld.
 
 ### `xavier billing status [--json]` (default for `xavier billing`)
 
-Shows your tenant, plan, storage used against your quota, chunks and AI tokens
-per day from xavier-cloud (`GET /v1/cloud/usage`). An xavier-cloud deployment
-without per-plan quotas does not report a plan; the CLI says so instead of guessing.
+Prints the resolved billing URL, whether it came from the environment or the built-in
+default, and performs a reachability probe against the public plan catalog endpoint
+(`GET /v1/xavier/plans`) with a 5s timeout. Exits with 0 when reachable, or 2 when unreachable.
 
 ```bash
 export PGHEART_TOKEN=...            # your tenant API key

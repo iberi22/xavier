@@ -7,6 +7,10 @@ on:
         description: Report only (owner must separately enable the repository variable)
         type: boolean
         default: true
+      apply_demotions:
+        description: 'Also apply stable->beta demotions flagged by the review lane'
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -76,9 +80,15 @@ jobs:
           path: /tmp
       - name: Apply evaluated promotions
         run: |
-          python3 scripts/ledger-promote.py --features .gitcore/features.json \
-            --evidence /tmp/ledger-evidence.json --history /tmp/ledger-history.json \
-            --apply > /tmp/ledger-report.json 2> /tmp/ledger-report.md
+          if [ "${{ inputs.apply_demotions }}" == "true" ]; then
+            python3 scripts/ledger-promote.py --features .gitcore/features.json \
+              --evidence /tmp/ledger-evidence.json --history /tmp/ledger-history.json \
+              --apply --apply-demotions > /tmp/ledger-report.json 2> /tmp/ledger-report.md
+          else
+            python3 scripts/ledger-promote.py --features .gitcore/features.json \
+              --evidence /tmp/ledger-evidence.json --history /tmp/ledger-history.json \
+              --apply > /tmp/ledger-report.json 2> /tmp/ledger-report.md
+          fi
       # The owner must enable "Allow GitHub Actions to create and approve pull requests",
       # or a GitHub App token must be used for push, PR creation, and dispatch.
       - name: Open promotion PR and dispatch required checks
@@ -91,7 +101,11 @@ jobs:
           sha=$(git rev-parse HEAD)
           # Refuse a stale snapshot; the next dispatch can use the new main.
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$sha"
-          branch="ledger/promote-$sha"
+          if [ "${{ inputs.apply_demotions }}" == "true" ]; then
+            branch="ledger/promote-$sha-demote"
+          else
+            branch="ledger/promote-$sha"
+          fi
           if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" >/dev/null 2>&1; then
             git switch -c "$branch"
             git config user.name 'github-actions[bot]'

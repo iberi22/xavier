@@ -22,6 +22,7 @@ fn principal(id: &str) -> Claims {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_ivn_api_full_lifecycle() {
     let temp = tempfile::tempdir().unwrap();
     struct RestoreCwd(std::path::PathBuf);
