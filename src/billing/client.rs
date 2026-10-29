@@ -33,6 +33,7 @@ pub const CLOUD_TOKEN_ENVS: [&str; 2] = ["PGHEART_TOKEN", "XAVIER_PGHEART_TOKEN"
 pub struct BillingEndpoints {
     /// swal-billing base URL (no trailing slash).
     pub billing_url: String,
+    pub billing_url_source: &'static str,
     /// xavier-cloud base URL (no trailing slash).
     pub cloud_url: String,
     /// Tenant API key for xavier-cloud, if configured.
@@ -67,12 +68,16 @@ impl BillingEndpoints {
     /// Resolve endpoints from an arbitrary key lookup (env vars in production,
     /// a map in tests).
     pub fn resolve_with(lookup: &dyn Fn(&str) -> Option<String>) -> Self {
-        let billing_url = first_non_empty(lookup, &[BILLING_URL_ENV])
-            .unwrap_or_else(|| DEFAULT_BILLING_URL.to_string());
+        let (billing_url, billing_url_source) = if let Some(url) = first_non_empty(lookup, &[BILLING_URL_ENV]) {
+            (url, "env")
+        } else {
+            (DEFAULT_BILLING_URL.to_string(), "default")
+        };
         let cloud_url = first_non_empty(lookup, &CLOUD_URL_ENVS)
             .unwrap_or_else(|| DEFAULT_CLOUD_URL.to_string());
         Self {
             billing_url: normalize_url(&billing_url),
+            billing_url_source,
             cloud_url: normalize_url(&cloud_url),
             cloud_token: first_non_empty(lookup, &CLOUD_TOKEN_ENVS),
         }
@@ -392,7 +397,8 @@ impl BillingClient {
     }
 
     /// `GET {billing}/v1/xavier/plans` with a 5s timeout to check reachability.
-    pub async fn check_reachability(&self, source: String) -> Reachability {
+    pub async fn check_reachability(&self) -> Reachability {
+        let source = self.endpoints.billing_url_source.to_string();
         let url = format!("{}/v1/xavier/plans", self.endpoints.billing_url);
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
@@ -673,6 +679,7 @@ mod tests {
     fn endpoints(billing: &str, cloud: &str, token: Option<&str>) -> BillingEndpoints {
         BillingEndpoints {
             billing_url: billing.to_string(),
+            billing_url_source: "env",
             cloud_url: cloud.to_string(),
             cloud_token: token.map(str::to_string),
         }

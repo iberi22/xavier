@@ -92,32 +92,31 @@ async fn checkout(
     }
 }
 
-async fn status(client: &BillingClient, json: bool) -> Result<()> {
-    let source = if std::env::var(crate::billing::client::BILLING_URL_ENV).is_ok() {
-        "env".to_string()
-    } else {
-        "default".to_string()
-    };
+pub fn render_reachability_human(reachability: &crate::billing::client::Reachability) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("Billing URL: {}\n", reachability.url));
+    out.push_str(&format!("Source:      {}\n", reachability.source));
+    out.push_str(&format!("Reachable:   {}\n", reachability.reachable));
+    if let Some(status) = reachability.status {
+        out.push_str(&format!("Status:      {}\n", status));
+    }
+    if let Some(error) = &reachability.error {
+        out.push_str(&format!("Error:       {}\n", error));
+    }
 
-    let reachability = client.check_reachability(source.clone()).await;
+    if reachability.source == "default" && !reachability.reachable {
+        out.push_str(&format!("\ncannot reach swal-billing at {}. Check your connection, or start swal-billing locally (`pnpm dev`) / set {}", reachability.url, crate::billing::client::BILLING_URL_ENV));
+    }
+    out
+}
+
+async fn status(client: &BillingClient, json: bool) -> Result<()> {
+    let reachability = client.check_reachability().await;
 
     if json {
         println!("{}", serde_json::to_string(&reachability)?);
     } else {
-        println!("Billing URL: {}", reachability.url);
-        println!("Source:      {}", reachability.source);
-        println!("Reachable:   {}", reachability.reachable);
-        if let Some(status) = reachability.status {
-            println!("Status:      {}", status);
-        }
-        if let Some(error) = &reachability.error {
-            println!("Error:       {}", error);
-        }
-
-        if source == "default" && !reachability.reachable {
-            println!("
-cannot reach swal-billing at {}. Check your connection, or start swal-billing locally (`pnpm dev`) / set {}", reachability.url, crate::billing::client::BILLING_URL_ENV);
-        }
+        println!("{}", render_reachability_human(&reachability));
     }
 
     let _ = std::io::Write::flush(&mut std::io::stdout());
@@ -275,6 +274,21 @@ pub fn render_checkout(o: &CheckoutOutcome) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn render_reachability_human_format() {
+        let r = crate::billing::client::Reachability {
+            url: "http://127.0.0.1:8787".to_string(),
+            source: "default".to_string(),
+            reachable: false,
+            status: None,
+            error: Some("connection refused".to_string()),
+        };
+        let out = render_reachability_human(&r);
+        assert!(out.contains("Billing URL: http://127.0.0.1:8787"));
+        assert!(out.contains("cannot reach swal-billing at http://127.0.0.1:8787"));
+        assert!(out.contains("XAVIER_BILLING_URL"));
+    }
 
     fn test_client(url: &str) -> BillingClient {
         BillingClient::new(
