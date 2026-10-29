@@ -114,19 +114,24 @@ impl Daemon {
         // the application router is installed before the first real request.
         let mut last_ready = String::new();
         let mut ready = false;
-        for _ in 0..240 {
-            if let Ok(r) = http.get(format!("{url}/ready")).send().await {
-                let body = r.text().await.unwrap_or_default();
-                let starting = serde_json::from_str::<Value>(&body)
-                    .ok()
-                    .and_then(|v| v.get("status").and_then(|s| s.as_str()).map(str::to_owned))
-                    .as_deref()
-                    == Some("starting");
-                if !starting {
-                    ready = true;
-                    break;
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        while std::time::Instant::now() < deadline {
+            let resp = http
+                .get(format!("{url}/ready"))
+                .timeout(Duration::from_secs(2))
+                .send()
+                .await;
+            if let Ok(r) = resp {
+                if let Ok(body) = r.text().await {
+                    // Only a parsed body that is not the gate's `starting` reply counts.
+                    if let Ok(v) = serde_json::from_str::<Value>(&body) {
+                        if v.get("status").and_then(|s| s.as_str()) != Some("starting") {
+                            ready = true;
+                            break;
+                        }
+                    }
+                    last_ready = body;
                 }
-                last_ready = body;
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
