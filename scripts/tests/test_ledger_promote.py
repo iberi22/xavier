@@ -689,7 +689,37 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
     def test_metadata_recomputed(self):
         import json
-        self.features['metadata'] = {'features_stable': 1, 'features_beta': 0, 'in_progress': 0, 'features_planned': 0, 'total_features': 1, 'overall_progress_pct': 100.0}
+        self.features['metadata'] = {'features_stable': 1, 'features_beta': 0, 'features_in_progress': 0, 'features_planned': 0, 'features_complete': 1, 'total_features': 1, 'overall_progress_pct': 100.0, 'last_verified': '2000-01-01'}
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['progress_pct'] = 100
+
+        evidence = self.root / 'evidence.json'
+        history = self.root / 'history.json'
+        self.evidence['verified_at'] = '2026-11-10T12:00:00Z'
+        self.path.write_text(json.dumps(self.features))
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        args = ['--features', str(self.path), '--evidence', str(evidence),
+                '--history', str(history), '--apply', '--apply-demotions']
+        import subprocess, sys
+        subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, check=True)
+
+        with open(self.path) as f:
+            data = json.load(f)
+
+        meta = data['metadata']
+        self.assertEqual(1, meta.get('features_stable', 0))
+        self.assertEqual(2, meta.get('features_beta', 0))
+        self.assertEqual(0, meta.get('features_planned', 0))
+        self.assertEqual(4, meta.get('total_features', 0))
+        self.assertEqual(1, meta.get('features_complete', 0))
+        self.assertEqual(60.0, meta.get('overall_progress_pct', 0))
+        self.assertEqual('2026-11-10', meta.get('last_verified'))
+
+    def test_metadata_initializes_if_absent(self):
+        import json
+        if 'metadata' in self.features:
+            del self.features['metadata']
         self.features['features']['stable']['open_gaps'] = ['pending']
         self.features['features']['stable']['progress_pct'] = 100
 
@@ -706,9 +736,12 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         with open(self.path) as f:
             data = json.load(f)
 
+        self.assertIn('metadata', data)
         meta = data['metadata']
         self.assertEqual(1, meta.get('features_stable', 0))
         self.assertEqual(2, meta.get('features_beta', 0))
+        self.assertEqual(4, meta.get('total_features', 0))
+        self.assertEqual(1, meta.get('features_complete', 0))
 
 if __name__ == '__main__':
     unittest.main()

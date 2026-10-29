@@ -379,27 +379,38 @@ def main():
                         notes=(str(prior) + '\n' if prior else '') + note)
 
         if changed:
-            meta = document.get('metadata', {})
-            if isinstance(meta, dict):
-                meta['total_features'] = len(document['features'])
-                counts = {'stable': 0, 'beta': 0, 'in_progress': 0, 'planned': 0}
-                key_map = {'stable': 'features_stable', 'beta': 'features_beta', 'planned': 'features_planned'}
-                progress_sum = 0
-                for feat in document['features'].values():
-                    s = feat.get('status')
-                    if s in counts:
-                        counts[s] += 1
-                    p = feat.get('progress_pct')
-                    if isinstance(p, (int, float)) and __import__('math').isfinite(p):
-                        progress_sum += p
-                for k, v in counts.items():
-                    mk = key_map.get(k, k)
-                    if mk in meta:
-                        meta[mk] = v
-                num_feats = len(document['features'])
-                meta['overall_progress_pct'] = round(progress_sum / num_feats, 1) if num_feats else 0.0
-                if evidence.get('verified_at'):
-                    meta['last_verified'] = evidence['verified_at'][:10]
+            if 'metadata' not in document or not isinstance(document['metadata'], dict):
+                document['metadata'] = {}
+            meta = document['metadata']
+
+            meta['total_features'] = len(document['features'])
+            counts = {'stable': 0, 'beta': 0, 'in_progress': 0, 'planned': 0}
+            key_map = {'stable': 'features_stable', 'beta': 'features_beta', 'planned': 'features_planned', 'in_progress': 'features_in_progress'}
+            progress_sum = 0
+            for feat in document['features'].values():
+                s = feat.get('status')
+                if s in counts:
+                    counts[s] += 1
+                p = feat.get('progress_pct')
+                if isinstance(p, (int, float)) and __import__('math').isfinite(p):
+                    progress_sum += p
+
+            # Map counts to existing keys, or insert if initialized from scratch
+            for k, v in counts.items():
+                mk = key_map.get(k, k)
+                meta[mk] = v
+
+            # If features_stable was updated, update features_complete as well
+            # (assuming complete is an alias or sum, but memory says "features_complete unchanged when stable counts change -> recompute it together with features_stable")
+            # Wait, what does the user prompt say exactly?
+            # "metadata sync leaves existing features_complete unchanged when stable counts change -> recompute it together with features_stable"
+            if 'features_stable' in meta:
+                meta['features_complete'] = meta['features_stable']
+
+            num_feats = len(document['features'])
+            meta['overall_progress_pct'] = round(progress_sum / num_feats, 1) if num_feats else 0.0
+            if evidence.get('verified_at'):
+                meta['last_verified'] = evidence['verified_at'][:10]
             write(args.features, document)
     promotions = {}
     for fid in eligible:
