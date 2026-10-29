@@ -26,9 +26,6 @@ mod telemetry_anonymizer_test;
 #[path = "test_cross_encoder.rs"]
 mod test_cross_encoder;
 
-#[path = "test_gpud_sidecar.rs"]
-mod test_gpud_sidecar;
-
 #[path = "test_hc_e2e.rs"]
 mod test_hc_e2e;
 

@@ -53,6 +53,9 @@ mod kernel_mcp_test;
 #[path = "skill_drift_audit.rs"]
 mod skill_drift_audit;
 
+#[path = "maloca_governance_wiring_e2e.rs"]
+mod maloca_governance_wiring_e2e;
+
 #[path = "maloca_roadmap_route_e2e.rs"]
 mod maloca_roadmap_route_e2e;
 

@@ -402,15 +402,18 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.history['planned'] = ['a', 'b']
         self.path = self.root / '.gitcore' / 'features.json'
 
-    def run_all(self, apply=False):
+    def run_all(self, apply=False, apply_demotions=False):
         self.path.write_text(json.dumps(self.features))
         evidence, history = self.root / 'evidence.json', self.root / 'history.json'
         evidence.write_text(json.dumps(self.evidence))
         history.write_text(json.dumps(self.history))
         before = {p: p.read_bytes() for p in (self.path, evidence, history)}
+        args = ['--apply'] if apply else []
+        if apply_demotions:
+            args.append('--apply-demotions')
         result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py'),
                                  '--features', str(self.path), '--evidence', str(evidence),
-                                 '--history', str(history)] + (['--apply'] if apply else []),
+                                 '--history', str(history)] + args,
                                 capture_output=True, text=True, check=True)
         self.assertIn('# Ledger promotion', result.stderr)
         if not apply:
@@ -609,10 +612,13 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
 
 
-    def test_stable_incomplete_evidence_collection_skips_review(self):
+    def test_stable_missing_results_skips_review_without_apply(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
-        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': False}}
-        self.evidence['evidence_complete'] = True
+        self.features['features']['stable']['tests'] = ['test_missing']
+        log = '==> Xavier verify pipeline (mode: full, root: /repo)\n  ✅ all declared tests passed\n'
+        results, targets, evc = collector.parse_log(log, self.features)
+        self.evidence['per_feature_test_results'] = results
+        self.evidence['evidence_complete'] = evc
         report, _ = self.run_all()
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
@@ -620,18 +626,25 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
     def test_stable_open_gaps_flagged(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = []
+        log = '==> Xavier verify pipeline (mode: full, root: /repo)\n  ✅ all declared tests passed\n'
+        results, targets, evc = collector.parse_log(log, self.features)
+        self.evidence['per_feature_test_results'] = results
+        self.evidence['evidence_complete'] = evc
         report, err = self.run_all()
         stable = report['features']['stable']
         self.assertTrue(stable.get('review_flagged'))
         self.assertIn('open_gaps present', stable['review_reasons'])
         self.assertIn('## stable->beta review', err)
 
-
-    def test_stable_incomplete_evidence_demotions_enabled(self):
-        import json
+    def test_stable_missing_results_demotions_enabled_produces_no_demotions(self):
+        import json, subprocess, sys
         self.features['features']['stable']['open_gaps'] = ['pending']
-        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': False}}
-        self.evidence['evidence_complete'] = True
+        self.features['features']['stable']['tests'] = ['test_missing']
+        log = '==> Xavier verify pipeline (mode: full, root: /repo)\n  ✅ all declared tests passed\n'
+        results, targets, evc = collector.parse_log(log, self.features)
+        self.evidence['per_feature_test_results'] = results
+        self.evidence['evidence_complete'] = evc
         evidence = self.root / 'evidence.json'
         history = self.root / 'history.json'
         self.path.write_text(json.dumps(self.features))
@@ -639,7 +652,6 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         history.write_text(json.dumps(self.history))
         args = ['--features', str(self.path), '--evidence', str(evidence),
                 '--history', str(history), '--apply', '--apply-demotions']
-        import subprocess, sys
         result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, capture_output=True, text=True, check=True)
         report = json.loads(result.stdout)
         stable = report['features']['stable']
@@ -647,11 +659,55 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertTrue(any('review skipped: incomplete evidence' in r for r in stable['review_reasons']))
         self.assertNotIn('stable', report.get('demotions_applied', []))
 
+        # Assert byte-equal ledger (unchanged persisted status)
+        with open(self.path) as f:
+            data = json.load(f)
+        self.assertEqual('stable', data['features']['stable']['status'])
+
+    def test_stable_partial_results_demotions_enabled_produces_no_demotions(self):
+        import json, subprocess, sys
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = ['test_stable', 'test_missing']
+        log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
+               '  ▶ test_stable\n    ✅ --test integration (passed=2)\n'
+               '  ✅ all declared tests passed\n')
+        results, targets, evc = collector.parse_log(log, self.features)
+        self.evidence['per_feature_test_results'] = results
+        self.evidence['evidence_complete'] = evc
+        evidence = self.root / 'evidence.json'
+        history = self.root / 'history.json'
+        self.path.write_text(json.dumps(self.features))
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        args = ['--features', str(self.path), '--evidence', str(evidence),
+                '--history', str(history), '--apply', '--apply-demotions']
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, capture_output=True, text=True, check=True)
+        report = json.loads(result.stdout)
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertTrue(any('review skipped: incomplete evidence' in r for r in stable['review_reasons']))
+        self.assertNotIn('stable', report.get('demotions_applied', []))
+
+    def test_stable_all_declared_tests_allows_review(self):
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = ['test_stable']
+        log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
+               '  ▶ test_stable\n    ✅ --test integration (passed=2)\n'
+               '  ✅ all declared tests passed\n')
+        results, targets, evc = collector.parse_log(log, self.features)
+        self.evidence['per_feature_test_results'] = results
+        self.evidence['evidence_complete'] = evc
+        self.evidence['integration_targets_passed'] = targets
+        report, _ = self.run_all(apply=True)
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertIn('open_gaps present', stable['review_reasons'])
+
     def test_stable_no_linked_evidence_flagged(self):
         self.features['features']['stable']['tests'] = ['test_stable']
         self.evidence['per_feature_test_results']['stable'] = dict(
             declared=['test_stable'], passed=['test_stable'], failed=[],
-            integration_targets_by_test={})
+            integration_targets_by_test={}, evidence_complete=True)
         report, _ = self.run_all()
         stable = report['features']['stable']
         self.assertTrue(stable.get('review_flagged'))
@@ -676,13 +732,49 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertTrue(any('review skipped' in r for r in stable['review_reasons']))
 
 
+    def test_completed_failure_evidence_reaches_stable_review_from_log(self):
+        log = (FIXTURES / 'failed-evidence.log').read_text()
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.evidence['ledger_run_conclusion'] = 'failure'
+
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+
+        results, targets, evidence_complete = evidence_mod.parse_log(log, self.features)
+        self.evidence['per_feature_test_results'] = results
+        self.evidence['evidence_complete'] = evidence_complete
+
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertIn('declared tests failed: test_stable', stable['review_reasons'])
+
+        # also run the fixture through --apply WITHOUT --apply-demotions and assert every promotion is ineligible, demotions_applied is empty, and the ledger file bytes are unchanged.
+        report_apply, _ = self.run_all(apply=True)
+        self.assertEqual([], report_apply.get('demotions_applied', []))
+        for fid, res in report_apply['features'].items():
+            self.assertFalse(res.get('eligible'))
+
+        import json
+        with open(self.path) as f:
+            data = json.load(f)
+        self.assertEqual('stable', data['features']['stable']['status'])
+
+        # exact parsed-result assertions that fail if the parser change is reverted
+        self.assertEqual(['test_roundtrip'], results['beta']['passed'])
+        self.assertEqual([], results['beta']['failed'])
+        self.assertEqual([], results['stable']['passed'])
+        self.assertEqual(['test_stable'], results['stable']['failed'])
+
     def test_completed_failure_evidence_reaches_stable_review(self):
         # A test fails, verifier reports failure, but all tests were parsed
         self.features['features']['stable']['tests'] = ['test_stable']
         self.evidence['ledger_run_conclusion'] = 'failure'
         self.evidence['per_feature_test_results']['stable'] = dict(
             declared=['test_stable'], passed=[], failed=['test_stable'],
-            integration_targets_by_test={})
+            integration_targets_by_test={}, evidence_complete=True)
         self.evidence['evidence_complete'] = True
 
         report, _ = self.run_all()
@@ -692,6 +784,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
     def test_apply_without_apply_demotions_leaves_flagged_stable(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
+        self.evidence['per_feature_test_results']['stable'] = {'evidence_complete': True}
         report, _ = self.run_all(apply=True)
         self.assertTrue(report['features']['stable'].get('review_flagged'))
         import json
@@ -702,6 +795,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
     def test_apply_apply_demotions_sets_beta(self):
         import json
         self.features['features']['stable']['open_gaps'] = ['pending']
+        self.evidence['per_feature_test_results']['stable'] = {'evidence_complete': True}
         self.features['features']['stable']['progress_pct'] = 100
         self.features['features']['stable']['ledger'] = {'promoted_by': 'bot'}
 
@@ -745,6 +839,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         import json
         self.features['metadata'] = {'features_stable': 1, 'features_beta': 0, 'features_in_progress': 0, 'features_planned': 0, 'features_complete': 1, 'total_features': 1, 'overall_progress_pct': 100.0, 'last_verified': '2000-01-01'}
         self.features['features']['stable']['open_gaps'] = ['pending']
+        self.evidence['per_feature_test_results']['stable'] = {'evidence_complete': True}
         self.features['features']['stable']['progress_pct'] = 100
 
         evidence = self.root / 'evidence.json'
@@ -781,6 +876,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         if 'metadata' in self.features:
             del self.features['metadata']
         self.features['features']['stable']['open_gaps'] = ['pending']
+        self.evidence['per_feature_test_results']['stable'] = {'evidence_complete': True}
         self.features['features']['stable']['progress_pct'] = 100
 
         evidence = self.root / 'evidence.json'

@@ -202,7 +202,9 @@
       "implemented_in": "code-graph/, src/codebase/",
       "tests": [
         "test_fts5_symbols_search_and_sync",
-        "test_extract_call_names"
+        "test_extract_call_names",
+        "code-graph/src/db/mod.rs::test_find_by_file_propagates_row_errors",
+        "code-graph/src/db/mod.rs::test_find_edges_to_propagates_row_errors"
       ],
       "req_ids": [
         "REQ-011"
@@ -2639,7 +2641,9 @@
         "maloca::store::tests::support_status_names_round_trip",
         "maloca::governance::tests::tie_at_exact_threshold_is_rejected",
         "maloca::governance::tests::majority_at_exact_threshold_passes",
-        "maloca::tests::support_patch_maps_moves_to_200_409_and_404"
+        "maloca::tests::support_patch_maps_moves_to_200_409_and_404",
+        "tests/maloca_governance_wiring_e2e.rs::proposal_lifecycle_e2e",
+        "tests/maloca_governance_wiring_e2e.rs::governance_proposal_rejection_e2e"
       ],
       "user_stories": []
     },
@@ -3011,7 +3015,9 @@
         "test_with_defaults_skill_store_env_wiring",
         "test_unset_skill_env_preserves_all_three_scan_roots",
         "test_unset_home_fails_open_workspace_only",
-        "test_resolve_skill_store_wiring"
+        "test_resolve_skill_store_wiring",
+        "tests/skill_store_config_e2e.rs::custom_skill_store_env_is_respected",
+        "tests/skill_store_config_e2e.rs::custom_skill_store_env_invalid_path"
       ],
       "implemented_in": "src/context/skill_registry.rs, src/api/skills.rs, src/cli/handlers/skills.rs"
     },
@@ -3132,7 +3138,9 @@
         "test_fixture_reports_description_reference_conflict_and_secret",
         "test_proposal_never_leaks_any_secret_family_the_review_listed",
         "test_proposal_is_a_unified_diff_and_leaves_the_source_byte_identical",
-        "test_audit_hash_drift_blocking_and_endpoint_match"
+        "test_audit_hash_drift_blocking_and_endpoint_match",
+        "tests/skill_drift_audit_e2e.rs::audit_endpoint_returns_json_report",
+        "tests/skill_drift_audit_e2e.rs::audit_endpoint_returns_not_found_when_manifest_missing"
       ],
       "implemented_in": "src/context/skill_controller/audit/, src/api/skills.rs, src/cli/commands/mod.rs"
     },
@@ -3155,7 +3163,9 @@
         "record_ack_is_idempotent_for_invoked_and_completed",
         "emit_selected_delivered_has_unknown_ack_coverage_and_no_task_text",
         "prune_removes_expired_events_only",
-        "dispatch_telemetry_failure_leaves_result_unchanged"
+        "dispatch_telemetry_failure_leaves_result_unchanged",
+        "tests/skill_usage_telemetry_e2e.rs::telemetry_dispatch_ack_and_usage_e2e",
+        "tests/skill_usage_telemetry_e2e.rs::usage_endpoint_unauthorized"
       ],
       "implemented_in": "src/context/skill_controller/telemetry.rs, src/context/skill_dispatcher.rs, src/server/mcp/tools_context.rs"
     },

@@ -43,7 +43,7 @@ def parse_log(log, document):
     candidate_targets_by_test = {}
     candidate = set()
     if '(mode: full,' in log:
-        for match in re.finditer(r'(?m)^\s*▶ ([^\n]+)\n(.*?)(?=^\s*▶ |\Z)', log, re.S):
+        for match in re.finditer(r'(?m)^\s*▶ ([^\n]+)\n(.*?)(?=^\s*▶ |^\s*✅ all declared tests passed|^\s*(?:Nextest|cargo test) summary|\Z)', log, re.S):
             raw, block = match.groups()
             flagged = bool(CANDIDATE_MARKER.search(raw))
             test = CANDIDATE_MARKER.sub('', raw).strip()
@@ -72,7 +72,13 @@ def parse_log(log, document):
     parsed_tests = passed | failed | candidate_passed | candidate_failed
     evidence_complete = False
     if '(mode: full,' in log:
-        evidence_complete = True
+        all_declared = set()
+        for f in document['features'].values():
+            decl = f.get('tests', [])
+            all_declared.update(decl if isinstance(decl, list) else [])
+        # Also, the original script checked '✅ all declared tests passed'
+        if all_declared <= parsed_tests:
+            evidence_complete = True
     results = {}
     for fid, f in document['features'].items():
         declared = f.get('tests', [])

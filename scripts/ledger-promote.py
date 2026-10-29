@@ -216,8 +216,12 @@ def evaluate(document, evidence, history, root, streak):
                     rev_reasons.append(f"declared tests failed: {', '.join(failed_tests)}")
                 if not integration_linked(declared, result, targets):
                     rev_reasons.append('no linked integration/E2E evidence')
-                if not result.get('evidence_complete', True):
+
+                # Check for explicit completeness to skip absent/incomplete evidence for this feature
+                if result.get('evidence_complete') is not True:
                     rev_reasons = ['review skipped: incomplete evidence']
+                    review_flagged = False
+                    trans = None
                 elif rev_reasons:
                     review_flagged = True
                     trans = 'stable->beta'
