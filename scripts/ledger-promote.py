@@ -195,6 +195,42 @@ def evaluate(document, evidence, history, root, streak):
     results = {}
     for fid, feature in sorted(document['features'].items()):
         status = feature.get('status')
+        if status == 'stable':
+            declared = feature.get('tests', [])
+            if not isinstance(declared, list):
+                declared = []
+
+            result = per_feature.get(fid, {})
+            gating_failed = set(result.get('failed', []))
+
+            review_flagged = False
+            trans = None
+            if common:
+                rev_reasons = ['review skipped: ' + r for r in common]
+            else:
+                rev_reasons = []
+                gaps = feature.get('open_gaps', [])
+                if isinstance(gaps, list) and gaps:
+                    rev_reasons.append('open_gaps present')
+                failed_tests = sorted(gating_failed & set(declared))
+                if failed_tests:
+                    rev_reasons.append(f"declared tests failed: {', '.join(failed_tests)}")
+                if not integration_linked(declared, result, targets):
+                    rev_reasons.append('no linked integration/E2E evidence')
+                if rev_reasons:
+                    review_flagged = True
+                    trans = 'stable->beta'
+
+            results[fid] = {'eligible': False,
+                            'reasons': ['status is not beta, planned, or in_progress'],
+                            'transition': trans, 'informational': [],
+                            'evidence_lane': 'none', 'gating_passed': [],
+                            'gating_failed': [], 'candidate_passed': [],
+                            'candidate_failed': [], 'evaluated_passed': [],
+                            'evaluated_failed': [],
+                            'review_flagged': review_flagged,
+                            'review_reasons': rev_reasons}
+            continue
         transition = PROMOTABLE_TRANSITIONS.get(status)
         if transition is None:
             results[fid] = {'eligible': False,
@@ -296,7 +332,10 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--dry-run', action='store_true', default=True)
     mode.add_argument('--apply', action='store_true')
+    parser.add_argument('--apply-demotions', action='store_true')
     args = parser.parse_args()
+    if getattr(args, 'apply_demotions', False) and not getattr(args, 'apply', False):
+        parser.error('--apply-demotions requires --apply')
     if args.streak < 1:
         parser.error('--streak must be positive')
     document, evidence, history = map(load, (args.features, args.evidence, args.history))
@@ -305,31 +344,74 @@ def main():
         root = root.parent
     results = evaluate(document, evidence, history, root, args.streak)
     eligible = [fid for fid, result in results.items() if result['eligible']]
-    if args.apply and eligible:
+    demotions_applied = []
+    if getattr(args, 'apply', False):
+        changed = False
         now = evidence.get('verified_at') or dt.datetime.now(dt.timezone.utc).isoformat()
-        for fid in eligible:
-            if results[fid].get('transition') == 'beta->stable':
-                document['features'][fid].update(
-                    status='stable', passes=True, progress_pct=100, last_tested=now[:10],
-                    ledger=dict(promoted_by='post-merge-ci', full_verifier_run=evidence['run_url'],
-                                sha=evidence['sha'], promoted_at=now))
-            else:
-                # planned/in_progress -> beta edits status only (plus a dated
-                # note); progress_pct and every other field are left untouched.
-                old = document['features'][fid].get('status')
-                note = (f"promoted {old}->beta by ledger promoter "
-                        f"on {evidence['sha']} ({now[:10]})")
-                prior = document['features'][fid].get('notes', '')
-                document['features'][fid].update(
-                    status='beta',
-                    notes=(str(prior) + '\n' if prior else '') + note)
-        write(args.features, document)
+        if eligible:
+            changed = True
+            for fid in eligible:
+                if results[fid].get('transition') == 'beta->stable':
+                    document['features'][fid].update(
+                        status='stable', passes=True, progress_pct=100, last_tested=now[:10],
+                        ledger=dict(promoted_by='post-merge-ci', full_verifier_run=evidence['run_url'],
+                                    sha=evidence['sha'], promoted_at=now))
+                else:
+                    old = document['features'][fid].get('status')
+                    note = (f"promoted {old}->beta by ledger promoter "
+                            f"on {evidence['sha']} ({now[:10]})")
+                    prior = document['features'][fid].get('notes', '')
+                    document['features'][fid].update(
+                        status='beta',
+                        notes=(str(prior) + '\n' if prior else '') + note)
+
+        if getattr(args, 'apply_demotions', False):
+            flagged = [fid for fid, r in results.items() if r.get('review_flagged')]
+            if flagged:
+                changed = True
+                for fid in flagged:
+                    demotions_applied.append(fid)
+                    note = (f"demoted stable->beta by ledger promoter "
+                            f"on {evidence['sha']} ({now[:10]}): {'; '.join(results[fid]['review_reasons'])}")
+                    prior = document['features'][fid].get('notes', '')
+                    document['features'][fid].update(
+                        status='beta', passes=False,
+                        notes=(str(prior) + '\n' if prior else '') + note)
+
+        if changed:
+            meta = document.get('metadata', {})
+            if isinstance(meta, dict):
+                meta['total_features'] = len(document['features'])
+                counts = {'stable': 0, 'beta': 0, 'in_progress': 0, 'planned': 0}
+                progress_sum = 0
+                for feat in document['features'].values():
+                    s = feat.get('status')
+                    if s in counts:
+                        counts[s] += 1
+                    p = feat.get('progress_pct')
+                    if isinstance(p, (int, float)) and __import__('math').isfinite(p):
+                        progress_sum += p
+                for k, v in counts.items():
+                    if k in meta:
+                        meta[k] = v
+                num_feats = len(document['features'])
+                meta['overall_progress_pct'] = round(progress_sum / num_feats, 1) if num_feats else 0.0
+                if evidence.get('verified_at'):
+                    meta['last_verified'] = evidence['verified_at'][:10]
+            write(args.features, document)
     promotions = {}
     for fid in eligible:
         promotions.setdefault(results[fid].get('transition'), []).append(fid)
     promotions = {key: sorted(fids) for key, fids in sorted(promotions.items())}
-    report = dict(sha=evidence.get('sha'), dry_run=not args.apply,
-                  promotions=promotions, features=results)
+
+    review_flagged_fids = sorted(fid for fid, r in results.items() if r.get('review_flagged'))
+    review_dict = {'stable->beta': review_flagged_fids}
+
+    report = dict(sha=evidence.get('sha'), dry_run=not getattr(args, 'apply', False),
+                  promotions=promotions, review=review_dict, features=results)
+    if getattr(args, 'apply', False):
+        report['demotions_applied'] = locals().get('demotions_applied', [])
+
     print(json.dumps(report, indent=2, sort_keys=True))
     print('# Ledger promotion\n', file=sys.stderr)
     for transition in ('beta->stable', 'planned->beta', 'in_progress->beta'):
@@ -345,9 +427,15 @@ def main():
                 if info:
                     detail += '; beta-incomplete: ' + '; '.join(info)
             print(f'- {fid}: {detail}', file=sys.stderr)
+
+    if review_flagged_fids:
+        print(f'## stable->beta review ({len(review_flagged_fids)})', file=sys.stderr)
+        for fid in review_flagged_fids:
+            print(f"- {fid}: {'; '.join(results[fid]['review_reasons'])}", file=sys.stderr)
+
     print('## not promoted', file=sys.stderr)
     for fid, result in results.items():
-        if result['eligible']:
+        if result['eligible'] or result.get('review_flagged'):
             continue
         detail = '; '.join(result['reasons'])
         info = result.get('informational', [])

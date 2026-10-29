@@ -589,5 +589,126 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertEqual(['integration'], targets)
 
 
+
+    def test_stable_open_gaps_flagged(self):
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        report, err = self.run_all()
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertIn('open_gaps present', stable['review_reasons'])
+        self.assertIn('## stable->beta review', err)
+
+    def test_stable_failed_declared_test_flagged(self):
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.evidence['per_feature_test_results']['stable'] = dict(
+            declared=['test_stable'], passed=[], failed=['test_stable'],
+            integration_targets_by_test={})
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertIn('declared tests failed: test_stable', stable['review_reasons'])
+
+    def test_stable_no_linked_evidence_flagged(self):
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.evidence['per_feature_test_results']['stable'] = dict(
+            declared=['test_stable'], passed=['test_stable'], failed=[],
+            integration_targets_by_test={})
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertIn('no linked integration/E2E evidence', stable['review_reasons'])
+
+    def test_fully_evidenced_stable_not_flagged(self):
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.evidence['per_feature_test_results']['stable'] = dict(
+            declared=['test_stable'], passed=['test_stable'], failed=[],
+            integration_targets_by_test={'test_stable': ['integration']})
+        report, err = self.run_all()
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertNotIn('test_stable', err)
+
+    def test_common_evidence_failure_flags_nothing(self):
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.evidence['ledger_run_conclusion'] = 'failure'
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertTrue(any('review skipped' in r for r in stable['review_reasons']))
+
+    def test_apply_without_apply_demotions_leaves_flagged_stable(self):
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        report, _ = self.run_all(apply=True)
+        self.assertTrue(report['features']['stable'].get('review_flagged'))
+        import json
+        with open(self.path) as f:
+            data = json.load(f)
+        self.assertEqual('stable', data['features']['stable']['status'])
+
+    def test_apply_apply_demotions_sets_beta(self):
+        import json
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['progress_pct'] = 100
+        self.features['features']['stable']['ledger'] = {'promoted_by': 'bot'}
+
+        evidence = self.root / 'evidence.json'
+        history = self.root / 'history.json'
+        self.path.write_text(json.dumps(self.features))
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        args = ['--features', str(self.path), '--evidence', str(evidence),
+                '--history', str(history), '--apply', '--apply-demotions']
+        import subprocess, sys
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, capture_output=True, text=True, check=True)
+        report = json.loads(result.stdout)
+        self.assertIn('stable', report['demotions_applied'])
+
+        with open(self.path) as f:
+            data = json.load(f)
+
+        stable = data['features']['stable']
+        self.assertEqual('beta', stable['status'])
+        self.assertFalse(stable['passes'])
+        self.assertIn('demoted stable->beta', stable['notes'])
+        self.assertIn('open_gaps present', stable['notes'])
+        self.assertEqual(100, stable['progress_pct'])
+        self.assertEqual({'promoted_by': 'bot'}, stable['ledger'])
+
+    def test_apply_demotions_without_apply_usage_error(self):
+        import json
+        evidence = self.root / 'evidence.json'
+        history = self.root / 'history.json'
+        self.path.write_text(json.dumps(self.features))
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        args = ['--features', str(self.path), '--evidence', str(evidence),
+                '--history', str(history), '--apply-demotions']
+        import subprocess, sys
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, capture_output=True, text=True)
+        self.assertEqual(2, result.returncode)
+
+    def test_metadata_recomputed(self):
+        import json
+        self.features['metadata'] = {'stable': 1, 'beta': 0, 'in_progress': 0, 'planned': 0, 'total_features': 1, 'overall_progress_pct': 100.0}
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['progress_pct'] = 100
+
+        evidence = self.root / 'evidence.json'
+        history = self.root / 'history.json'
+        self.path.write_text(json.dumps(self.features))
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        args = ['--features', str(self.path), '--evidence', str(evidence),
+                '--history', str(history), '--apply', '--apply-demotions']
+        import subprocess, sys
+        subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, check=True)
+
+        with open(self.path) as f:
+            data = json.load(f)
+
+        meta = data['metadata']
+        self.assertEqual(1, meta.get('stable', 0))
+        self.assertEqual(2, meta.get('beta', 0))
+
 if __name__ == '__main__':
     unittest.main()

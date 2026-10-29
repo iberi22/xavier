@@ -1,109 +1,72 @@
 name: Ledger Promoter
 
 on:
+  workflow_run:
+    workflows: ["Xavier CI / CD", "E2E Segmented"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Report only (owner must separately enable the repository variable)
+        description: 'Dry run (do not open a PR)'
         type: boolean
+        required: true
         default: true
+      apply_demotions:
+        description: 'Also apply stable->beta demotions flagged by the review lane'
+        type: boolean
+        required: true
+        default: false
 
-permissions: {}
-
-concurrency:
-  group: ledger-promoter
-  cancel-in-progress: false
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   evaluate:
-    if: vars.LEDGER_PROMOTER_ENABLED == 'true' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      actions: read
+    if: vars.LEDGER_PROMOTER_ENABLED == 'true' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'))
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      sha: ${{ steps.snapshot.outputs.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          ref: main
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Record evaluated snapshot
-        id: snapshot
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Gather same-SHA main evidence and reconstruct history
+          python-version: '3.11'
+      - name: Fetch recent runs
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ledger-promote-evidence.py
-      # Promotions: beta -> stable (complete) plus planned/in_progress -> beta
-      # (built, tested, still incomplete). This step only reports; --apply in
-      # the propose job performs the evaluated promotions grouped by transition.
-      - name: Evaluate ledger features (beta->stable, planned/in_progress->beta)
-        shell: bash
-        run: |
-          python3 scripts/ledger-promote.py --features .gitcore/features.json \
-            --evidence /tmp/ledger-evidence.json --history /tmp/ledger-history.json \
-            --dry-run > /tmp/ledger-report.json 2> /tmp/ledger-report.md
-          cat /tmp/ledger-report.md >> "$GITHUB_STEP_SUMMARY"
-      - name: Preserve evidence and report
-        uses: actions/upload-artifact@v7
-        with:
-          name: ledger-promoter-evidence
-          path: |
-            /tmp/ledger-*.json
-            /tmp/ledger-report.md
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/ledger-fetch-evidence.py
+      - name: Evaluate promotion
+        run: scripts/ledger-promote.py --features docs/reference/features.json --evidence data/evidence.json --history data/history.json
 
   propose:
     needs: evaluate
-    if: inputs.dry_run == false
-    permissions:
-      contents: write
-      pull-requests: write
-      actions: write
+    if: github.event_name != 'workflow_dispatch' || inputs.dry_run == false
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          ref: ${{ needs.evaluate.outputs.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/download-artifact@v8
-        with:
-          name: ledger-promoter-evidence
-          path: /tmp
-      - name: Apply evaluated promotions
-        run: |
-          python3 scripts/ledger-promote.py --features .gitcore/features.json \
-            --evidence /tmp/ledger-evidence.json --history /tmp/ledger-history.json \
-            --apply > /tmp/ledger-report.json 2> /tmp/ledger-report.md
-      # The owner must enable "Allow GitHub Actions to create and approve pull requests",
-      # or a GitHub App token must be used for push, PR creation, and dispatch.
-      - name: Open promotion PR and dispatch required checks
+          python-version: '3.11'
+      - name: Fetch recent runs
         env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/ledger-fetch-evidence.py
+      - name: Apply promotion
         run: |
-          set -euo pipefail
-          git diff --quiet -- .gitcore/features.json && exit 0
-          sha=$(git rev-parse HEAD)
-          # Refuse a stale snapshot; the next dispatch can use the new main.
-          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$sha"
-          branch="ledger/promote-$sha"
-          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" >/dev/null 2>&1; then
-            git switch -c "$branch"
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add .gitcore/features.json
-            git commit -m "chore: promote verified ledger features"
-            gh auth setup-git
-            git push origin "$branch"
+          if [ "${{ github.event_name == 'workflow_dispatch' && inputs.apply_demotions == true }}" = "true" ]; then
+            scripts/ledger-promote.py --features docs/reference/features.json --evidence data/evidence.json --history data/history.json --apply --apply-demotions
+          else
+            scripts/ledger-promote.py --features docs/reference/features.json --evidence data/evidence.json --history data/history.json --apply
           fi
-          if [ "$(gh pr list --head "$branch" --base main --state all --json number --jq length)" != 0 ]; then exit 0; fi
-          gh pr create --base main --head "$branch" --title "Promote verified ledger features" --body-file /tmp/ledger-report.md
-          # Both workflows support workflow_dispatch; explicit dispatch runs checks
-          # even when the branch and PR were created with GITHUB_TOKEN.
-          gh workflow run ci.yml --ref "$branch"
-          gh workflow run fast-gate.yml --ref "$branch"
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore(ledger): apply automated feature promotions'
+          branch: 'bot/ledger-promote'
+          title: 'chore(ledger): apply automated feature promotions'
+          body: 'Automated changes by the Ledger Promoter workflow.'
