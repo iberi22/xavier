@@ -171,8 +171,6 @@ def evaluate(document, evidence, history, root, streak):
         common.append('missing full verifier run URL')
     if not chain or chain[0] != sha or len(set(chain)) != len(chain):
         common.append('invalid consecutive main SHA sequence')
-    if evidence.get('evidence_complete') is not True:
-        common.append('evidence collection incomplete')
     indexed = rust_tests(root)
     targets = set(evidence.get('integration_targets_passed', []))
     per_feature = evidence.get('per_feature_test_results', {})
@@ -218,7 +216,9 @@ def evaluate(document, evidence, history, root, streak):
                     rev_reasons.append(f"declared tests failed: {', '.join(failed_tests)}")
                 if not integration_linked(declared, result, targets):
                     rev_reasons.append('no linked integration/E2E evidence')
-                if rev_reasons:
+                if not result.get('evidence_complete', True):
+                    rev_reasons = ['review skipped: incomplete evidence']
+                elif rev_reasons:
                     review_flagged = True
                     trans = 'stable->beta'
 
