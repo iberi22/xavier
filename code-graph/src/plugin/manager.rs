@@ -62,6 +62,18 @@ fn sidecar_speaks_protocol(command: &str) -> bool {
 }
 
 fn probe_once(command: &str) -> bool {
+    if std::env::var("XAVIER_CODEGRAPH_PROBE_DEPTH").is_ok() {
+        return false;
+    }
+
+    if let Ok(cmd_path) = std::fs::canonicalize(command) {
+        if let Ok(exe_path) = std::env::current_exe().and_then(|p| std::fs::canonicalize(p)) {
+            if cmd_path == exe_path {
+                return false;
+            }
+        }
+    }
+
     use std::io::Write;
     let timeout = probe_timeout();
     if timeout.is_zero() {
@@ -75,6 +87,7 @@ fn probe_once(command: &str) -> bool {
         Err(_) => return false,
     };
     let mut child = match std::process::Command::new(command)
+        .env("XAVIER_CODEGRAPH_PROBE_DEPTH", "1")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -635,6 +648,59 @@ impl PluginRegistry for DefaultRegistry {
 
 #[cfg(test)]
 mod tests {
+    struct EnvGuard;
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            std::env::remove_var("XAVIER_CODEGRAPH_PROBE_DEPTH");
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[cfg(unix)]
+    fn test_probe_rejects_self_path() {
+        let exe = std::env::current_exe().unwrap();
+        let symlink_path =
+            std::env::temp_dir().join(format!("test-symlink-{}", std::process::id()));
+        let _ = std::fs::remove_file(&symlink_path);
+        std::os::unix::fs::symlink(&exe, &symlink_path).unwrap();
+        let symlink_path_str = symlink_path.to_string_lossy();
+        let result = probe_once(&symlink_path_str);
+        std::fs::remove_file(&symlink_path).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[cfg(windows)]
+    fn test_probe_rejects_self_path() {
+        let exe = std::env::current_exe().unwrap();
+        let symlink_path =
+            std::env::temp_dir().join(format!("test-symlink-{}", std::process::id()));
+        let _ = std::fs::remove_file(&symlink_path);
+        std::os::windows::fs::symlink_file(&exe, &symlink_path).unwrap();
+        let symlink_path_str = symlink_path.to_string_lossy();
+        let result = probe_once(&symlink_path_str);
+        std::fs::remove_file(&symlink_path).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_probe_depth_guard() {
+        let _guard = EnvGuard;
+        std::env::set_var("XAVIER_CODEGRAPH_PROBE_DEPTH", "1");
+        assert!(!probe_once("echo"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_recursive_probe_is_blocked_by_guard() {
+        let _guard = EnvGuard;
+        std::env::set_var("XAVIER_CODEGRAPH_PROBE_DEPTH", "1");
+        // probe_once should return false without blocking or spawning
+        assert!(!probe_once("sleep"));
+    }
     use super::*;
 
     #[tokio::test]

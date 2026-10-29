@@ -2719,3 +2719,11 @@ default = "(unset)"
 description = "Test-only value used to verify env-contract values are loaded literally; not read in production"
 category = "Testing (internal)"
 secret = false
+
+[[variables]]
+name = "XAVIER_CODEGRAPH_PROBE_DEPTH"
+type = "string"
+default = "(unset)"
+description = "Recursion guard for sidecar probing"
+category = "Uncategorized"
+secret = false
