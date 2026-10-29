@@ -205,7 +205,6 @@ These features are experimental or beta: APIs and on-disk formats may change bet
 | Autonomous Delivery Pipeline | planned | Evidence-gated ship/show/ask delivery (ledger: `feat-autonomous-delivery`). |
 | Generative UI (OpenUI) | planned | Structured answers rendered as OpenUI markup (ledger: `feat-generative-ui`). |
 | Skill store / registry / projector / ephemeral / drift-audit / usage-telemetry | planned | Skill subsystem redesign, grouped (ledger: `feat-skill-*`: store-config, registry-unify, projector, ephemeral, drift-audit, usage-telemetry). |
-| `gpud` router (`/v1/gpud/*`) | design only | Defined in `src/server/gpud_sidecar.rs` but never mounted; paths are unreachable. |
 | `telecom_*` MCP tools | preview | Tool names are registered, but dispatch has no backend wired and returns `telecom backend unavailable` (`src/server/mcp/telecom_tools.rs`, `src/server/mcp/server.rs`). |
 | Maloca model router (`/v1/maloca/models/*`) | placeholder | Handlers return `501 Not Implemented` (`src/server/maloca/model_routes.rs`). |
 | Maloca alignment routes (`/v1/maloca/alignment*`) | preview | Returns a static checklist and score (`src/server/maloca/alignment_route.rs`). |
@@ -263,17 +262,8 @@ All authenticated HTTP routes require the `X-Xavier-Token` or `Authorization: Be
 | `/v1/maloca/challenges/list` | `GET` | List active challenges |
 | `/v1/maloca/challenges/stats` | `GET` | Retrieve challenge engine statistics |
 
-#### Not mounted (design only)
 
-The `gpud` router is never merged into the server, so these paths are unreachable today.
 
-#### GPU Discovery & Sidecar (`/v1/gpud/*`)
-| Endpoint | Method | Description |
-|---|---|---|
-| `/v1/gpud/health` | `GET` | GPU sidecar health check |
-| `/v1/gpud/detect` | `GET` | Hardware acceleration probe (NVIDIA nvcc/nvidia-smi, ROCm, Apple Silicon) |
-| `/v1/gpud/serve` | `POST` | Request GPU compute allocation |
-| `/v1/gpud/status` | `GET` | Monitor current VRAM allocation and fallback CPU state |
 
 #### Maintenance & Memory (`/v1/maintenance/*`, `/memory/*`)
 | Endpoint | Method | Description |

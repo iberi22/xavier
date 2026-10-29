@@ -34,7 +34,6 @@ As of v0.0.1 stabilization, features declared in `.gitcore/features.json` were `
 | Soft-delete prune with audit | Stable | Tombstone-based pruning. `memory_prune` tool removes soft-deleted records with audit trail. |
 | MCP Streamable HTTP (port 8100) | Stable | Native MCP server with Streamable HTTP transport. Tools: `create_memory`, `search_memory`, `memory_prune`. |
 | Clavis key masking | Stable | API keys masked in logs. Auto-rotation support. |
-| GPU sidecar (`xavier gpud`) | Experimental | 3 endpoints (health, detect, serve). No mesh, no discovery, no plugin system. |
 | Provider router local URIs | Stable | Local model URIs resolved correctly in provider router. |
 
 ## XTSP Integration Tests
