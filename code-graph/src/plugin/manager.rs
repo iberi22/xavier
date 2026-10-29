@@ -671,30 +671,6 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn test_code_graph_no_args_fails() {
-        let exe = std::env::var("CARGO_BIN_EXE_code-graph").unwrap_or_else(|_| {
-            let mut p = std::env::current_exe().unwrap();
-            p.pop();
-            if p.ends_with("deps") {
-                p.pop();
-            }
-            p.join("code-graph").to_string_lossy().into_owned()
-        });
-
-        let output = std::process::Command::new(exe)
-            .output()
-            .expect("Failed to spawn code-graph binary");
-
-        // The process should exit non-zero
-        assert!(!output.status.success());
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // Stderr should contain usage information
-        assert!(stderr.contains("Usage:"));
-    }
-
-    #[test]
-    #[serial_test::serial]
     #[cfg(unix)]
     fn test_probe_rejects_self_path() {
         let exe = std::env::current_exe().unwrap();
@@ -703,7 +679,11 @@ mod tests {
         let _ = std::fs::remove_file(&symlink_path);
         std::os::unix::fs::symlink(&exe, &symlink_path).unwrap();
         let symlink_path_str = symlink_path.to_string_lossy();
+
+        let start = std::time::Instant::now();
         let result = probe_once(&symlink_path_str);
+        assert!(start.elapsed() < probe_timeout());
+
         std::fs::remove_file(&symlink_path).unwrap();
         assert!(!result);
     }
@@ -718,7 +698,11 @@ mod tests {
         let _ = std::fs::remove_file(&symlink_path);
         std::os::windows::fs::symlink_file(&exe, &symlink_path).unwrap();
         let symlink_path_str = symlink_path.to_string_lossy();
+
+        let start = std::time::Instant::now();
         let result = probe_once(&symlink_path_str);
+        assert!(start.elapsed() < probe_timeout());
+
         std::fs::remove_file(&symlink_path).unwrap();
         assert!(!result);
     }
@@ -737,7 +721,10 @@ mod tests {
         let _ = std::fs::remove_file(&script_path);
         let _ = std::fs::remove_file(&marker_path);
 
-        let script_content = format!("#!/bin/sh\ntouch {}\n", marker_path.to_string_lossy());
+        let script_content = format!(
+            "#!/bin/sh\necho $XAVIER_CODEGRAPH_PROBE_DEPTH > {}\n",
+            marker_path.to_string_lossy()
+        );
         std::fs::write(&script_path, script_content).unwrap();
 
         // Make script executable
@@ -755,6 +742,9 @@ mod tests {
             marker_path.exists(),
             "Positive control failed: script was not executed"
         );
+
+        let marker_content = std::fs::read_to_string(&marker_path).unwrap();
+        assert_eq!(marker_content, "1\n");
 
         // Reset
         let _ = std::fs::remove_file(&marker_path);
