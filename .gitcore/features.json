@@ -2641,7 +2641,9 @@
         "maloca::store::tests::support_status_names_round_trip",
         "maloca::governance::tests::tie_at_exact_threshold_is_rejected",
         "maloca::governance::tests::majority_at_exact_threshold_passes",
-        "maloca::tests::support_patch_maps_moves_to_200_409_and_404"
+        "maloca::tests::support_patch_maps_moves_to_200_409_and_404",
+        "tests/maloca_governance_wiring_e2e.rs::proposal_lifecycle_e2e",
+        "tests/maloca_governance_wiring_e2e.rs::governance_proposal_rejection_e2e"
       ],
       "user_stories": []
     },
