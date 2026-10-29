@@ -932,8 +932,8 @@ impl CodeGraphDB {
                 })
             })
             .map_err(|e| GraphError::Database(e.to_string()))?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
 
         Ok(symbols)
     }
@@ -1122,7 +1122,10 @@ impl CodeGraphDB {
             stmt.query_map(params![from_symbol, limit as isize], edge_from_row)
                 .map_err(|e| GraphError::Database(e.to_string()))?
         };
-        Ok(rows.filter_map(|row| row.ok()).collect())
+        let collected_rows = rows
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        Ok(collected_rows)
     }
 
     pub fn find_edges_to(
@@ -1190,7 +1193,10 @@ impl CodeGraphDB {
                 })
             })
             .map_err(|e| GraphError::Database(e.to_string()))?;
-        Ok(rows.filter_map(|row| row.ok()).collect())
+        let collected_rows = rows
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        Ok(collected_rows)
     }
 
     pub fn symbol_by_stable_id(&self, stable_id: &str) -> Result<Option<Symbol>> {
@@ -2188,16 +2194,26 @@ mod tests {
     #[test]
     fn test_find_by_file_propagates_row_errors() {
         let db = CodeGraphDB::in_memory().unwrap();
-        // Drop the table to simulate row errors
+        // Insert a row with an invalid string into a TEXT column that cannot be parsed as a known kind
         {
             let conn = db.conn.lock().unwrap();
-            conn.execute("DROP TABLE symbols", []).unwrap();
+            // SQLite lets us insert TEXT where we expect INTEGER if we disable strict constraints or use untyped functions,
+            // but the easiest way to cause a decoding failure is a mismatched type. Since it didn't like NULL because of a NOT NULL constraint,
+            // we will bypass the normal schema by dropping and creating a non-strict version of the table
+            conn.execute_batch("
+                DROP TABLE symbols;
+                CREATE TABLE symbols (
+                    id TEXT, stable_id TEXT, name TEXT, kind TEXT, lang TEXT, file_path TEXT, start_line TEXT, end_line TEXT, start_col TEXT, end_col TEXT, signature TEXT, parent TEXT, complexity TEXT
+                );
+                INSERT INTO symbols (id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity)
+                VALUES ('this_should_be_an_int', 'stable_id', 'name', 'Function', 'Rust', 'test.rs', 'not_int', 'not_int', 'not_int', 'not_int', 'fn()', 'parent', 'not_float');
+            ").unwrap();
         }
 
         let result = db.find_by_file("test.rs");
         assert!(result.is_err());
 
-        // Healthy DB
+        // Healthy empty DB
         let db2 = CodeGraphDB::in_memory().unwrap();
         let result2 = db2.find_by_file("test.rs");
         assert!(result2.is_ok());
@@ -2207,16 +2223,23 @@ mod tests {
     #[test]
     fn test_find_edges_to_propagates_row_errors() {
         let db = CodeGraphDB::in_memory().unwrap();
-        // Drop the table to simulate row errors
+        // Insert a row with an invalid type
         {
             let conn = db.conn.lock().unwrap();
-            conn.execute("DROP TABLE edges", []).unwrap();
+            conn.execute_batch("
+                DROP TABLE edges;
+                CREATE TABLE edges (
+                    id TEXT, from_symbol TEXT, to_symbol TEXT, edge_type TEXT, file_path TEXT, line TEXT, confidence TEXT, metadata TEXT
+                );
+                INSERT INTO edges (id, from_symbol, to_symbol, edge_type, file_path, line, confidence, metadata)
+                VALUES ('this_should_be_an_int', 'from', 'symbol_id', 'Calls', 'test.rs', 'not_int', 'not_float', '{}');
+            ").unwrap();
         }
 
         let result = db.find_edges_to("symbol_id", None, 10);
         assert!(result.is_err());
 
-        // Healthy DB
+        // Healthy empty DB
         let db2 = CodeGraphDB::in_memory().unwrap();
         let result2 = db2.find_edges_to("symbol_id", None, 10);
         assert!(result2.is_ok());
