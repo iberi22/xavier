@@ -121,20 +121,21 @@ async fn proposal_lifecycle_e2e() {
     assert_eq!(prop.outcome.as_deref(), Some("approved"));
 
     // 5. Verify the decision persisted
-    let reopened_store = MalocaStore::open(dir.path());
-    let persisted_prop = reopened_store
-        .list_proposals()
-        .into_iter()
-        .find(|p| p.id == prop_id)
-        .unwrap();
-    assert_eq!(persisted_prop.status, ProposalStatus::Closed);
-    assert_eq!(persisted_prop.outcome.as_deref(), Some("approved"));
-
-    let decisions = reopened_store.list_decisions();
-    assert!(decisions
+    // 5. Verify the decision persisted on disk
+    let state = read_store_json(&dir);
+    let persisted_prop = state["proposals"]
+        .as_array()
+        .unwrap()
         .iter()
-        .any(|d| d.kind == xavier::maloca::types::DecisionKind::Closed
-            && d.proposal_id.as_deref() == Some(prop_id.as_str())));
+        .find(|p| p["id"] == prop_id)
+        .unwrap();
+    assert_eq!(persisted_prop["status"], "closed");
+    assert_eq!(persisted_prop["outcome"], "approved");
+    assert!(state["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|d| d["kind"] == "closed" && d["proposal_id"] == prop_id));
 }
 
 #[tokio::test]
@@ -224,18 +225,19 @@ async fn governance_proposal_rejection_e2e() {
     assert_eq!(prop.outcome.as_deref(), Some("rejected"));
 
     // 5. Verify the decision persisted
-    let reopened_store = MalocaStore::open(dir.path());
-    let persisted_prop = reopened_store
-        .list_proposals()
-        .into_iter()
-        .find(|p| p.id == prop_id)
-        .unwrap();
-    assert_eq!(persisted_prop.status, ProposalStatus::Closed);
-    assert_eq!(persisted_prop.outcome.as_deref(), Some("rejected"));
-
-    let decisions = reopened_store.list_decisions();
-    assert!(decisions
+    // 5. Verify the decision persisted on disk
+    let state = read_store_json(&dir);
+    let persisted_prop = state["proposals"]
+        .as_array()
+        .unwrap()
         .iter()
-        .any(|d| d.kind == xavier::maloca::types::DecisionKind::Closed
-            && d.proposal_id.as_deref() == Some(prop_id.as_str())));
+        .find(|p| p["id"] == prop_id)
+        .unwrap();
+    assert_eq!(persisted_prop["status"], "closed");
+    assert_eq!(persisted_prop["outcome"], "rejected");
+    assert!(state["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|d| d["kind"] == "closed" && d["proposal_id"] == prop_id));
 }
