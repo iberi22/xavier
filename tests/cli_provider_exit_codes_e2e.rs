@@ -5,7 +5,9 @@ use tokio::net::TcpListener;
 
 xavier::isolate_test_process!();
 
-#[tokio::test]
+// multi_thread: std::process::Command::status() blocks this thread; the mock
+// server must keep running on another worker or the CLI times out.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial_test::serial]
 async fn test_provider_status_exit_codes() {
     let tmp_config = TempDir::new().unwrap();
