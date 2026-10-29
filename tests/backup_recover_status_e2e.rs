@@ -1,7 +1,7 @@
 xavier::isolate_test_process!();
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 
 struct Harness {
@@ -73,8 +73,7 @@ impl Harness {
 }
 
 fn text(output: &Output) -> String {
-    String::from_utf8_lossy(&output.stdout).into_owned()
-        + &String::from_utf8_lossy(&output.stderr).into_owned()
+    String::from_utf8_lossy(&output.stdout).into_owned() + &String::from_utf8_lossy(&output.stderr)
 }
 
 #[test]
