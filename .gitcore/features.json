@@ -1537,7 +1537,7 @@
         "ready_gate_startup::graceful_shutdown_ends_serving_while_still_starting"
       ],
       "user_stories": [],
-      "notes": "Merged (#3549) but stable promotion happens later through scripts/ledger-promote.py."
+      "notes": "Needs promoter review (merged in #3549 but still planned)."
     },
     "feat-store-path-hierarchy": {
       "id": "feat-store-path-hierarchy",
@@ -1586,7 +1586,7 @@
       "verified_by": "automated",
       "github_issue": 1382,
       "last_tested": "2026-10-18",
-      "notes": "Wave I (MKT-20 / #3225). Re-scoped to marketplace v2 IVN routes (/v2/ivn/*) backed by xavier_market persistent SQLite tables and ed25519-signed validator votes behind market-v2 / XAVIER_MARKET_V2=beta. Legacy v1 routes in src/ remain untouched. Status kept stable to retain gating coverage, despite audit noting stale planned specs.",
+      "notes": "Wave I (MKT-20 / #3225). Re-scoped to marketplace v2 IVN routes (/v2/ivn/*) backed by xavier_market persistent SQLite tables and ed25519-signed validator votes behind market-v2 / XAVIER_MARKET_V2=beta. Legacy v1 routes in src/ remain untouched. Needs promoter review (audit contradiction).",
       "open_gaps": [
         "Legacy /v1/identity/* routes in src/ remain in memory without signature verification; v2 IVN routes (/v2/ivn/*) are behind market-v2 and XAVIER_MARKET_V2=beta default-off"
       ],
@@ -1671,7 +1671,7 @@
       "verified_by": "wave-4",
       "github_issue": 1381,
       "last_tested": "2026-08-31",
-      "notes": "Public readiness gate: karma rewards & EigenTrust routing active; dynamic validator scoring in beta (honest 55%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] Persistence follow-up: karma and exclusions share the IVN root (XAVIER_DATA_DIR or OS user data directory); legacy cwd karma is read once without modification, canonical writes are atomic and private, and load failures log. Wave I (MKT-20 / #3225): legacy karma engine remains in src/; marketplace v2 IVN store uses simplified quorum without karma weighting. Status kept stable to retain gating coverage, despite audit noting stale planned specs.",
+      "notes": "Public readiness gate: karma rewards & EigenTrust routing active; dynamic validator scoring in beta (honest 55%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] Persistence follow-up: karma and exclusions share the IVN root (XAVIER_DATA_DIR or OS user data directory); legacy cwd karma is read once without modification, canonical writes are atomic and private, and load failures log. Wave I (MKT-20 / #3225): legacy karma engine remains in src/; marketplace v2 IVN store uses simplified quorum without karma weighting. Needs promoter review (audit contradiction).",
       "open_gaps": [
         "Karma weighting and sanctions exist only in legacy v1 src/data_commons/ivn.rs; marketplace v2 IVN store uses simple quorum without karma"
       ],
@@ -1770,7 +1770,7 @@
       "verified_by": "verify-pipeline",
       "github_issue": 1380,
       "last_tested": "2026-10-18",
-      "notes": "Wave I (MKT-20 / #3225). Re-scoped to marketplace v2 IVN core path in xavier_market (persistent SQLite store, ed25519-signed validator votes, deterministic validator assignment). Legacy in-memory IVN engine in src/ kept for backward compatibility. Status kept stable to retain gating coverage, despite audit noting stale planned specs.",
+      "notes": "Wave I (MKT-20 / #3225). Re-scoped to marketplace v2 IVN core path in xavier_market (persistent SQLite store, ed25519-signed validator votes, deterministic validator assignment). Legacy in-memory IVN engine in src/ kept for backward compatibility. Needs promoter review (audit contradiction).",
       "open_gaps": [
         "Legacy IVN core in src/ is in memory without signature checks; v2 IVN core is in xavier_market behind market-v2 / XAVIER_MARKET_V2=beta default-off"
       ],
@@ -2257,7 +2257,7 @@
       "id": "feat-codegraph-walk-hardening",
       "name": "CodeGraph walk hardening (tgrep-extracted)",
       "category": "code-graph",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Binary-extension rejection, 8KiB NUL sniff and 64MiB size cap in code-graph walk + parse_file guards, with WalkSkipStats counters. Techniques extracted from microsoft/tgrep v1.0.5.",
       "steps": [
@@ -2271,7 +2271,7 @@
       "verified_by": "verify-pipeline.sh exit 0 + cargo test -p code-graph 24/24 + fmt + clippy clean",
       "github_issue": 75,
       "last_tested": "2026-09-08",
-      "notes": "Pipeline green. Merged to main via PR #2037. 24/24 indexer tests pass, fmt+clippy clean. Demoted to beta per IMPLEMENTATION-AUDIT_2026-10-28.md contradiction (code exists but lacks E2E evidence).",
+      "notes": "Pipeline green. Merged to main via PR #2037. 24/24 indexer tests pass, fmt+clippy clean. Needs promoter review (audit contradiction).",
       "implemented_in": "code-graph/src/indexer/mod.rs, code-graph/src/error.rs",
       "tests": [
         "walk_skips_binary_extension_before_any_io",
@@ -4009,7 +4009,7 @@
         "tests::invalid_empty_or_oversized_identity_and_nonce_rejected",
         "tests::sqlite_open_or_transaction_error_is_not_fresh",
         "tests::timestamp_extremes_are_rejected_without_overflow",
-        "tests::concurrent_duplicate_only_one_fresh"
+        "tests::concurrent_cap_and_duplicate_claims"
       ],
       "passes": false,
       "spec_reference": "docs/features/specs/FEATURE-MESH-REPLAY-STORE.md",
