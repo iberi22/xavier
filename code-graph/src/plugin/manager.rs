@@ -62,12 +62,12 @@ fn sidecar_speaks_protocol(command: &str) -> bool {
 }
 
 fn probe_once(command: &str) -> bool {
-    if std::env::var("XAVIER_CODEGRAPH_PROBE_DEPTH").is_ok() {
+    if std::env::var_os("XAVIER_CODEGRAPH_PROBE_DEPTH").is_some() {
         return false;
     }
 
     if let Ok(cmd_path) = std::fs::canonicalize(command) {
-        if let Ok(exe_path) = std::env::current_exe().and_then(|p| std::fs::canonicalize(p)) {
+        if let Ok(exe_path) = std::env::current_exe().and_then(std::fs::canonicalize) {
             if cmd_path == exe_path {
                 return false;
             }
@@ -648,11 +648,49 @@ impl PluginRegistry for DefaultRegistry {
 
 #[cfg(test)]
 mod tests {
-    struct EnvGuard;
+    struct EnvGuard {
+        original: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn new() -> Self {
+            Self {
+                original: std::env::var_os("XAVIER_CODEGRAPH_PROBE_DEPTH"),
+            }
+        }
+    }
+
     impl Drop for EnvGuard {
         fn drop(&mut self) {
-            std::env::remove_var("XAVIER_CODEGRAPH_PROBE_DEPTH");
+            match &self.original {
+                Some(val) => std::env::set_var("XAVIER_CODEGRAPH_PROBE_DEPTH", val),
+                None => std::env::remove_var("XAVIER_CODEGRAPH_PROBE_DEPTH"),
+            }
         }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_code_graph_no_args_fails() {
+        let exe = std::env::var("CARGO_BIN_EXE_code-graph").unwrap_or_else(|_| {
+            let mut p = std::env::current_exe().unwrap();
+            p.pop();
+            if p.ends_with("deps") {
+                p.pop();
+            }
+            p.join("code-graph").to_string_lossy().into_owned()
+        });
+
+        let output = std::process::Command::new(exe)
+            .output()
+            .expect("Failed to spawn code-graph binary");
+
+        // The process should exit non-zero
+        assert!(!output.status.success());
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Stderr should contain usage information
+        assert!(stderr.contains("Usage:"));
     }
 
     #[test]
@@ -687,19 +725,54 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
+    #[cfg(unix)]
     fn test_probe_depth_guard() {
-        let _guard = EnvGuard;
-        std::env::set_var("XAVIER_CODEGRAPH_PROBE_DEPTH", "1");
-        assert!(!probe_once("echo"));
-    }
+        let _guard = EnvGuard::new();
 
-    #[test]
-    #[serial_test::serial]
-    fn test_recursive_probe_is_blocked_by_guard() {
-        let _guard = EnvGuard;
+        let script_path =
+            std::env::temp_dir().join(format!("test-script-{}.sh", std::process::id()));
+        let marker_path = std::env::temp_dir().join(format!("test-marker-{}", std::process::id()));
+
+        // Clean up from previous runs
+        let _ = std::fs::remove_file(&script_path);
+        let _ = std::fs::remove_file(&marker_path);
+
+        let script_content = format!("#!/bin/sh\ntouch {}\n", marker_path.to_string_lossy());
+        std::fs::write(&script_path, script_content).unwrap();
+
+        // Make script executable
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&script_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms).unwrap();
+
+        let script_path_str = script_path.to_string_lossy();
+
+        // Positive control: without guard, the script should run (even if probe returns false)
+        std::env::remove_var("XAVIER_CODEGRAPH_PROBE_DEPTH");
+        let _ = probe_once(&script_path_str);
+        assert!(
+            marker_path.exists(),
+            "Positive control failed: script was not executed"
+        );
+
+        // Reset
+        let _ = std::fs::remove_file(&marker_path);
+
+        // Negative control: with guard, script should not be spawned
         std::env::set_var("XAVIER_CODEGRAPH_PROBE_DEPTH", "1");
-        // probe_once should return false without blocking or spawning
-        assert!(!probe_once("sleep"));
+        let result = probe_once(&script_path_str);
+
+        // Ensure early exit
+        assert!(!result);
+
+        // Assert the child was NOT spawned because marker is absent
+        assert!(
+            !marker_path.exists(),
+            "Negative control failed: script was executed despite the guard"
+        );
+
+        let _ = std::fs::remove_file(&script_path);
     }
     use super::*;
 
