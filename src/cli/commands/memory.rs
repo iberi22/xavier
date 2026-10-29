@@ -472,20 +472,36 @@ mod tests {
         let body = body.to_string();
 
         let server = tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
+            let accepted =
+                tokio::time::timeout(std::time::Duration::from_secs(10), listener.accept()).await;
+            if let Ok(Ok((mut socket, _))) = accepted {
                 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+                // Read the full request (headers + Content-Length body) before
+                // responding, so closing never leaves unread bytes (TCP reset).
                 let mut buf = [0; 1024];
                 let mut req = Vec::new();
+                let mut expected: Option<usize> = None;
                 loop {
+                    if expected.is_none() {
+                        if let Some(pos) = req.windows(4).position(|w| w == b"\r\n\r\n") {
+                            let headers = String::from_utf8_lossy(&req[..pos]).to_ascii_lowercase();
+                            let len = headers
+                                .lines()
+                                .find_map(|l| l.strip_prefix("content-length:"))
+                                .and_then(|v| v.trim().parse::<usize>().ok())
+                                .unwrap_or(0);
+                            expected = Some(pos + 4 + len);
+                        }
+                    }
+                    if matches!(expected, Some(total) if req.len() >= total) {
+                        break;
+                    }
                     let n = socket.read(&mut buf).await.unwrap_or(0);
                     if n == 0 {
                         break;
                     }
                     req.extend_from_slice(&buf[..n]);
-                    if req.windows(4).any(|w| w == b"\r\n\r\n") {
-                        break;
-                    }
                 }
 
                 let response = format!(
