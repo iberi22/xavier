@@ -1891,9 +1891,9 @@ pub enum DataCommonsCommand {
 /// `xavier billing` subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum BillingCommand {
-    /// Your xavier-cloud plan and usage (GET /v1/cloud/usage; needs PGHEART_TOKEN)
+    /// Show the resolved billing URL and check its reachability
     Status {
-        /// Print the raw JSON returned by xavier-cloud
+        /// Print the outcome as JSON
         #[arg(long)]
         json: bool,
     },
