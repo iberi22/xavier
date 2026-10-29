@@ -62,6 +62,18 @@ fn sidecar_speaks_protocol(command: &str) -> bool {
 }
 
 fn probe_once(command: &str) -> bool {
+    if std::env::var_os("XAVIER_CODEGRAPH_PROBE_DEPTH").is_some() {
+        return false;
+    }
+
+    if let Ok(cmd_path) = std::fs::canonicalize(command) {
+        if let Ok(exe_path) = std::env::current_exe().and_then(std::fs::canonicalize) {
+            if cmd_path == exe_path {
+                return false;
+            }
+        }
+    }
+
     use std::io::Write;
     let timeout = probe_timeout();
     if timeout.is_zero() {
@@ -75,6 +87,7 @@ fn probe_once(command: &str) -> bool {
         Err(_) => return false,
     };
     let mut child = match std::process::Command::new(command)
+        .env("XAVIER_CODEGRAPH_PROBE_DEPTH", "1")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -635,6 +648,122 @@ impl PluginRegistry for DefaultRegistry {
 
 #[cfg(test)]
 mod tests {
+    struct EnvGuard {
+        original: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn new() -> Self {
+            Self {
+                original: std::env::var_os("XAVIER_CODEGRAPH_PROBE_DEPTH"),
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.original {
+                Some(val) => std::env::set_var("XAVIER_CODEGRAPH_PROBE_DEPTH", val),
+                None => std::env::remove_var("XAVIER_CODEGRAPH_PROBE_DEPTH"),
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[cfg(unix)]
+    fn test_probe_rejects_self_path() {
+        let exe = std::env::current_exe().unwrap();
+        let symlink_path =
+            std::env::temp_dir().join(format!("test-symlink-{}", std::process::id()));
+        let _ = std::fs::remove_file(&symlink_path);
+        std::os::unix::fs::symlink(&exe, &symlink_path).unwrap();
+        let symlink_path_str = symlink_path.to_string_lossy();
+
+        let start = std::time::Instant::now();
+        let result = probe_once(&symlink_path_str);
+        assert!(start.elapsed() < probe_timeout());
+
+        std::fs::remove_file(&symlink_path).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[cfg(windows)]
+    fn test_probe_rejects_self_path() {
+        let exe = std::env::current_exe().unwrap();
+        let symlink_path =
+            std::env::temp_dir().join(format!("test-symlink-{}", std::process::id()));
+        let _ = std::fs::remove_file(&symlink_path);
+        std::os::windows::fs::symlink_file(&exe, &symlink_path).unwrap();
+        let symlink_path_str = symlink_path.to_string_lossy();
+
+        let start = std::time::Instant::now();
+        let result = probe_once(&symlink_path_str);
+        assert!(start.elapsed() < probe_timeout());
+
+        std::fs::remove_file(&symlink_path).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[cfg(unix)]
+    fn test_probe_depth_guard() {
+        let _guard = EnvGuard::new();
+
+        let script_path =
+            std::env::temp_dir().join(format!("test-script-{}.sh", std::process::id()));
+        let marker_path = std::env::temp_dir().join(format!("test-marker-{}", std::process::id()));
+
+        // Clean up from previous runs
+        let _ = std::fs::remove_file(&script_path);
+        let _ = std::fs::remove_file(&marker_path);
+
+        let script_content = format!(
+            "#!/bin/sh\necho $XAVIER_CODEGRAPH_PROBE_DEPTH > {}\n",
+            marker_path.to_string_lossy()
+        );
+        std::fs::write(&script_path, script_content).unwrap();
+
+        // Make script executable
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&script_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms).unwrap();
+
+        let script_path_str = script_path.to_string_lossy();
+
+        // Positive control: without guard, the script should run (even if probe returns false)
+        std::env::remove_var("XAVIER_CODEGRAPH_PROBE_DEPTH");
+        let _ = probe_once(&script_path_str);
+        assert!(
+            marker_path.exists(),
+            "Positive control failed: script was not executed"
+        );
+
+        let marker_content = std::fs::read_to_string(&marker_path).unwrap();
+        assert_eq!(marker_content, "1\n");
+
+        // Reset
+        let _ = std::fs::remove_file(&marker_path);
+
+        // Negative control: with guard, script should not be spawned
+        std::env::set_var("XAVIER_CODEGRAPH_PROBE_DEPTH", "1");
+        let result = probe_once(&script_path_str);
+
+        // Ensure early exit
+        assert!(!result);
+
+        // Assert the child was NOT spawned because marker is absent
+        assert!(
+            !marker_path.exists(),
+            "Negative control failed: script was executed despite the guard"
+        );
+
+        let _ = std::fs::remove_file(&script_path);
+    }
     use super::*;
 
     #[tokio::test]

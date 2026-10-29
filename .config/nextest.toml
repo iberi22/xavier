@@ -28,7 +28,7 @@ filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red)::/)'
+filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red|health_truth_e2e|incident_ticket_dedup_e2e|ticket_dedup_while_open_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -64,7 +64,7 @@ filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red)::/)'
+filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red|health_truth_e2e|incident_ticket_dedup_e2e|ticket_dedup_while_open_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]

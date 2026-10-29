@@ -226,8 +226,7 @@ jobs:
   rust-affected:
     name: Affected Rust Tests
     needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
-    continue-on-error: true
+    if: (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -268,8 +267,26 @@ jobs:
         env:
           SWAL_BUILD_SLOTS: "1"
         run: |
-          git fetch origin ${{ github.base_ref }} --depth=200 || true
-          scripts/affected-tests.sh --base origin/${{ github.base_ref }} --no-clippy
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            git fetch origin ${{ github.base_ref }} --depth=200 || true
+            scripts/affected-tests.sh --base origin/${{ github.base_ref }} --no-clippy
+          else
+            # For main/workflow_dispatch, run all integration suites in tests/suite_NN.rs
+            # Extract real `mod name;` modules to pass to xavier_cargo_test to avoid "unknown test target".
+            source scripts/xavier-test-target.sh
+            for suite in tests/suite_[0-9][0-9].rs; do
+              [ -e "$suite" ] || continue
+              modules=$(awk '
+                /^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+[A-Za-z0-9_]+[[:space:]]*;/ {
+                  m = $0; sub(/^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+/, "", m); sub(/[[:space:]]*;.*/, "", m)
+                  print m
+                }
+              ' "$suite")
+              if [ -n "$modules" ]; then
+                xavier_cargo_test ci-safe $modules
+              fi
+            done
+          fi
 
   # Job: Test-write tripwire
   # `scripts/check-test-writes.sh` is the guard that keeps the suite from
@@ -387,6 +404,62 @@ jobs:
   # Job 3a: Marketplace V2 (market-v2 feature, xavier-market crate)
   #
   # Own job, not a step of `rust-integration`: the market-v2 feature set is a
+
+  integration-suites-setup:
+    name: Setup Integration Suites
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Verify Test Script
+        run: bash scripts/tests/test_xavier_test_target.sh
+
+      - name: Generate test matrix
+        id: set-matrix
+        run: |
+          echo "matrix=$(python3 scripts/generate-test-matrix.py)" >> $GITHUB_OUTPUT
+
+  integration-suites:
+    name: Integration Suite (${{ matrix.suite }})
+    needs: integration-suites-setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.integration-suites-setup.outputs.matrix) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94
+
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-integration-${{ matrix.suite }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Run Integration Suite
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --package xavier --locked --features ci-safe --test ${{ matrix.suite }} -- --test-threads=1 2>&1 | tee test-output.log
+
+      - name: Upload Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.suite }}
+          path: test-output.log
   # separate compile of `xavier` on top of the ~20 test binaries that job
   # already builds and links, and the combined run hit its 20-minute cap.
   market-v2-tests:
