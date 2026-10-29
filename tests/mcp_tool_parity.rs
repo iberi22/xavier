@@ -50,6 +50,11 @@ impl Drop for EnvGuard {
 async fn mcp_endpoints_expose_same_tool_list() {
     let temp = TempDir::new().expect("tempdir");
     let temp_str = temp.path().to_str().unwrap();
+    let vec_path = temp.path().join("vec.sqlite3");
+    let vec_path_str = vec_path.to_str().unwrap();
+    let cg_path = temp.path().join("code_graph.db");
+    let cg_path_str = cg_path.to_str().unwrap();
+
     let _guard = EnvGuard::new(
         temp.path(),
         &[
@@ -60,6 +65,9 @@ async fn mcp_endpoints_expose_same_tool_list() {
             ("HOME", temp_str),
             ("XAVIER_TOKEN", "test-token"),
             ("XAVIER_JWT_SECRET", "test-secret"),
+            ("XAVIER_MEMORY_VEC_PATH", vec_path_str),
+            ("XAVIER_CODE_GRAPH_DB_PATH", cg_path_str),
+            ("XAVIER_EMBEDDER", "disabled"),
         ],
     );
 
