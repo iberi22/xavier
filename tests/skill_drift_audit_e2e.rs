@@ -114,7 +114,7 @@ name = \"demo\"
 
     // Assert secret detection and redaction
     assert!(
-        findings.iter().any(|f| f["rule"] == "skill.code.secret"),
+        findings.iter().any(|f| f["rule"] == "skill.secret.found"),
         "Expected secret detection rule to fire"
     );
     let response_text = json.to_string();

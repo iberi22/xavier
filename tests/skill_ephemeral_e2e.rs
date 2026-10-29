@@ -31,6 +31,7 @@ async fn publish_task_skill_lifecycle_e2e() {
     let journal =
         xavier::context::skill_controller::state::Journal::new(state.join("journal")).unwrap();
 
+    fs::create_dir_all(&worktree).unwrap();
     // Publish
     let content = "skill body content here";
     let out = xavier::context::skill_controller::lease::publish_task_skill_bounded(
