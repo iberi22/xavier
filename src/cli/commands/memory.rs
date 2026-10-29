@@ -28,7 +28,9 @@ pub async fn handle_memory_command(
                 run_consolidation(nightly).await
             }
         }
-        crate::cli::commands::enums::memory::MemoryCommand::IndexSelf => run_index_self().await,
+        crate::cli::commands::enums::memory::MemoryCommand::IndexSelf { json } => {
+            run_index_self(json).await
+        }
         crate::cli::commands::enums::memory::MemoryCommand::ImportMarkdown { dir } => {
             run_import_markdown(&dir).await
         }
@@ -228,12 +230,14 @@ async fn show_consolidation_status() -> Result<()> {
     }
 }
 
-async fn run_index_self() -> Result<()> {
+pub(crate) async fn run_index_self(json_out: bool) -> Result<()> {
     let base_url = resolve_base_url();
     let token = require_xavier_token()?;
     let client = CLI_HTTP_CLIENT.clone();
 
-    println!("📚 Indexing Xavier's foundational documents...");
+    if !json_out {
+        eprintln!("📚 Indexing Xavier's foundational documents...");
+    }
 
     let resp = client
         .post(format!("{}/memory/index-self", base_url))
@@ -243,13 +247,26 @@ async fn run_index_self() -> Result<()> {
 
     if resp.status().is_success() {
         let body: serde_json::Value = resp.json().await?;
-        println!(
-            "✅ Self-indexing complete: {}",
-            serde_json::to_string_pretty(&body)?
-        );
+        if json_out {
+            println!("{}", serde_json::to_string(&body)?);
+        } else {
+            eprintln!(
+                "✅ Self-indexing complete: {}",
+                serde_json::to_string_pretty(&body)?
+            );
+        }
         Ok(())
     } else {
-        bail!("❌ Self-indexing failed: {}", resp.text().await?);
+        let err_text = resp.text().await?;
+        if json_out {
+            println!(
+                r#"{{"ok":false,"error":{}}}"#,
+                serde_json::to_string(&err_text)?
+            );
+            std::process::exit(1);
+        } else {
+            bail!("❌ Self-indexing failed: {}", err_text);
+        }
     }
 }
 
@@ -464,6 +481,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_show_consolidation_status_failure_returns_err() {
         let _env = crate::settings::tests::TempEnv::new();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -496,6 +514,7 @@ error";
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_run_index_self_failure_returns_err() {
         let _env = crate::settings::tests::TempEnv::new();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -515,7 +534,7 @@ error";
 
         std::env::set_var("XAVIER_URL", format!("http://127.0.0.1:{}", port));
         std::env::set_var("XAVIER_TOKEN", "test-token");
-        let result = run_index_self().await;
+        let result = run_index_self(false).await;
         std::env::remove_var("XAVIER_URL");
         std::env::remove_var("XAVIER_TOKEN");
         let _ = server.await;

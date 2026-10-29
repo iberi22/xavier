@@ -103,10 +103,7 @@ impl Cli {
             }
             Command::Init(ref args) => installer::run_installer(args.clone()),
             Command::Mcp => start_mcp_stdio().await,
-            Command::IndexSelf => {
-                println!("IndexSelf is not yet implemented.");
-                Ok(())
-            }
+            Command::IndexSelf { json } => memory::run_index_self(*json).await,
             Command::Search {
                 query,
                 limit,
