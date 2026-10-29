@@ -397,6 +397,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Verify Test Script
+        run: bash scripts/tests/test_xavier_test_target.sh
+
       - name: Generate test matrix
         id: set-matrix
         run: |
@@ -429,7 +432,10 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run Integration Suite
-        run: cargo test --package xavier --locked --test ${{ matrix.suite }} -- --test-threads=1 2>&1 | tee test-output.log
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --package xavier --locked --features ci-safe --test ${{ matrix.suite }} -- --test-threads=1 2>&1 | tee test-output.log
 
       - name: Upload Logs
         if: always()

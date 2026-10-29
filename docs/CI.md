@@ -56,4 +56,4 @@ To manually run the full integration suite matrix on `main` or another branch, t
 4. Select the branch you want to test (e.g., `main`).
 5. Click **Run workflow**.
 
-This will spawn the `integration-suites-setup` job to discover all `suite_[0-9][0-9].rs` files in the repository and dynamically generate a matrix job (`integration-suites`) that runs each suite in parallel, using `--test-threads=1` and failing fast. It is safe to use this to quickly verify all integration tests when required.
+This will spawn the `integration-suites-setup` job to discover all `suite_[0-9][0-9].rs` files in the repository and dynamically generate a matrix job (`integration-suites`) that runs each suite in parallel, using `--test-threads=1` and with `fail-fast: false`. It is safe to use this to quickly verify all integration tests when required.

@@ -12,6 +12,15 @@ if [ "$out" != "suite_01" ]; then
     FAILED=1
 fi
 
+echo "Testing valid suite name filter: suite_01"
+out_filter=$(xavier_test_filter suite_01)
+if [ -n "$out_filter" ]; then
+    echo "Expected empty filter for suite_01, got '$out_filter'"
+    FAILED=1
+fi
+
+
+
 echo "Testing unknown suite name: suite_99"
 if xavier_test_suite suite_99 >/dev/null 2>&1; then
     echo "Expected failure for unknown suite, but it succeeded"
@@ -22,6 +31,6 @@ fi
 
 if [ $FAILED -ne 0 ]; then
     echo "Tests failed"
-    sh -c "exit 1"
+    exit 1
 fi
 echo "Success"
