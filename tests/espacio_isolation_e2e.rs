@@ -109,6 +109,31 @@ impl Daemon {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
         assert!(healthy, "daemon not healthy at {url} within 60s");
+        // `/health` answers 200 as soon as the listener binds, while the ready gate
+        // still returns 503 {"status":"starting"} for every other route. Wait until
+        // the application router is installed before the first real request.
+        let mut last_ready = String::new();
+        let mut ready = false;
+        for _ in 0..240 {
+            if let Ok(r) = http.get(format!("{url}/ready")).send().await {
+                let body = r.text().await.unwrap_or_default();
+                let starting = serde_json::from_str::<Value>(&body)
+                    .ok()
+                    .and_then(|v| v.get("status").and_then(|s| s.as_str()).map(str::to_owned))
+                    .as_deref()
+                    == Some("starting");
+                if !starting {
+                    ready = true;
+                    break;
+                }
+                last_ready = body;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        assert!(
+            ready,
+            "daemon at {url} still starting after 60s; last /ready body: {last_ready}"
+        );
         Self {
             _child: guard,
             url,
