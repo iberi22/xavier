@@ -4037,7 +4037,9 @@
         "packaging_contract::headless_feature_excludes_tui_and_panel",
         "packaging_contract::system_unit_runs_headless_as_dedicated_user",
         "packaging_contract::installer_rejects_tampered_archive",
-        "packaging_contract::installer_user_mode_installs_binary_and_private_token"
+        "packaging_contract::installer_user_mode_installs_binary_and_private_token",
+        "tests/headless_packaging_contract_e2e.rs::installer_rejects_tampered_archive",
+        "tests/headless_packaging_contract_e2e.rs::installer_user_mode_installs_binary_and_private_token"
       ],
       "user_stories": []
     },
