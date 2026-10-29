@@ -240,6 +240,29 @@ pub enum Command {
         #[command(subcommand)]
         cmd: Option<BillingCommand>,
     },
+    /// Manage the background Xavier daemon process
+    Service {
+        #[command(subcommand)]
+        cmd: ServiceCommand,
+    },
+    /// View Xavier daemon logs
+    Logs {
+        /// Show logs newer than a relative duration (e.g. 1h, 30m) or an ISO-8601 date
+        #[arg(long)]
+        since: Option<String>,
+        /// Filter log lines matching a pattern
+        #[arg(long)]
+        grep: Option<String>,
+        /// Number of recent log lines to display
+        #[arg(short = 'n', long)]
+        lines: Option<usize>,
+        /// Follow the log output continuously
+        #[arg(short, long)]
+        follow: bool,
+        /// Output logs in JSON format
+        #[arg(long)]
+        json: bool,
+    },
     /// List and synchronize Xavier tasks
     Tasks {
         #[command(subcommand)]
@@ -530,6 +553,44 @@ pub enum Command {
     Skills {
         #[command(subcommand)]
         cmd: SkillsCommand,
+    },
+}
+
+/// Service management subcommands.
+#[derive(Subcommand, Debug, Clone)]
+pub enum ServiceCommand {
+    /// Show the status of the Xavier daemon
+    Status {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Restart the Xavier daemon and wait until it is ready
+    Restart {
+        /// Timeout in seconds to wait for readiness (default: 120)
+        #[arg(long, default_value = "120")]
+        timeout: u64,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Reload the Xavier daemon configuration (or restart if unavailable)
+    Reload {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Start the Xavier daemon
+    Start {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Stop the Xavier daemon
+    Stop {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
     },
 }
 
