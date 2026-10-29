@@ -3067,7 +3067,8 @@
         "test_mcp_context_tools_own_no_registry_constructor",
         "test_build_skill_registry_indexes_every_discovery_root",
         "test_fusion_e2e_seeded_thread_injects_skill",
-        "test_confidence_calibration_range"
+        "test_confidence_calibration_range",
+        "tests/skill_registry_unify_parity_e2e.rs::test_build_skill_registry_indexes_every_discovery_root"
       ],
       "implemented_in": "src/context/skill_registry.rs, src/api/skills.rs, src/server/mcp/tools_context.rs, src/server/http/context.rs"
     },
