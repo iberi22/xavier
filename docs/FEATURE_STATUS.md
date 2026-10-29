@@ -61,7 +61,7 @@ Verified by `test_maloca_http_e2e` (5/5), `test_hc_e2e` (1/1), `maloca-core` uni
 
 | # | Delta | File | Estado | Tests |
 |---|-------|------|--------|-------|
-| 3.01 | Mesh libp2p gossipsub + NAT | `src/mesh/libp2p_transport.rs` | stable | `test_mesh_libp2p_single_peer` |
+| 3.01 | Mesh libp2p gossipsub + NAT | REMOVED | stable | None |
 | 3.02 | Clearance 6 levels + redaction middleware | `src/security/clearance.rs` | stable | `test_redact_middleware` |
 | 3.03 | Groups/ACL + audit trail | `src/security/groups.rs` | stable | `audit_trail` |
 | 3.04 | Clavis KeyLeaseManager + on_task_start | `src/clavis/manager.rs` | stable | 4 tests |

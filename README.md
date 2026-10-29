@@ -211,7 +211,7 @@ These features are experimental or beta: APIs and on-disk formats may change bet
 | Maloca alignment routes (`/v1/maloca/alignment*`) | preview | Returns a static checklist and score (`src/server/maloca/alignment_route.rs`). |
 | Mesh tokenomics / wallet | placeholder | Module header describes a placeholder XP system (`src/mesh/tokenomics/mod.rs`). |
 | Mesh governance / DAO | preview | Off-chain proposal store with fixed example entries; on-chain client is behind the optional `dao-evm` build feature (`src/mesh/governance/`, `Cargo.toml`). |
-| Mesh transports (iroh / libp2p) | preview | `mesh` (iroh) is an optional build feature; `libp2p` is an empty feature and the code notes the transport as a deprecated stub (`Cargo.toml`, `src/mesh/maturity.rs`). |
+| Mesh transports (iroh / libp2p) | preview | `mesh` (iroh) is an optional build feature; `libp2p` transport was removed (`Cargo.toml`, `src/mesh/maturity.rs`). |
 | Mesh maturity in `/health` | preview | Reports 0/100 projections of checked flags and starts unmeasured (`src/mesh/maturity.rs`, `src/mesh/dashboard.rs`). |
 | Master key export/import over HTTP | not implemented | The endpoint returns `501`; key backup and restore go through the `xavier recovery` CLI (`src/cli/handlers/recovery.rs`). |
 

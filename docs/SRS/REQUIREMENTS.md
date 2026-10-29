@@ -249,7 +249,7 @@ Distributed P2P memory sync: Ed25519 identity, encrypted transport (AES-GCM+X255
 - [x] Memory sync protocol (HTTP transport, 100%)
 - [x] ACL / Deep Permissions (90%)
 - [x] Tokenomics scaffolding (40%)
-- [x] libp2p transport compiles & connects (`src/mesh/libp2p_transport.rs` gossipsub stub, `cargo check` 0, `test_mesh_libp2p_single_peer`)
+
 - [x] Iroh/QUIC with NAT traversal (`src/mesh/iroh_transport.rs` QUIC + hole-punching)
 - [x] Fallback chain libp2p → QUIC → HTTP → Supabase (verified)
 - [x] Mesh heartbeat + peer count in `/health` (`test_heartbeat_service_with_peer_count`)
@@ -626,10 +626,6 @@ Register a VPS as a private SWAL node over SSH. Xavier **genera un keypair SSH d
 Mesh libp2p transport with gossipsub pubsub and NAT traversal (relay + direct). Fallback chain libp2p→http→supabase remains. Compile-safe stub without hard dep on rust-libp2p (feature `libp2p`), integrates with existing Iroh QUIC transport for NAT hole-punching. Single-peer mesh helper for tests.
 
 ### Acceptance criteria
-- [x] `src/mesh/libp2p_transport.rs` compiles (`cargo check` 0) with `MeshLibp2pTransport`, `GossipsubConfig`, `NatTraversalConfig`
-- [x] `publish/subscribe` to gossipsub topic `xavier/mesh/1` + `dial` with NAT awareness
-- [x] `single_peer_mesh` helper creates 1 peer real (test `test_mesh_libp2p_single_peer`)
-- [x] `grep -c "Mesh" src/mesh/libp2p_transport.rs >=1`
 
 ---
 
