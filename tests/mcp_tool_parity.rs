@@ -1,44 +1,97 @@
-use serde_json::Value;
+use axum::{body::Body, http::{Request, Method}};
+use serial_test::serial;
 use std::collections::HashSet;
+use serde_json::Value;
+use tower::ServiceExt;
+use axum::body::to_bytes;
+use std::env;
+use tempfile::TempDir;
 
 xavier::isolate_test_process!();
 
+struct EnvGuard {
+    vars: Vec<(String, Option<String>)>,
+    prev_dir: std::path::PathBuf,
+}
+
+impl EnvGuard {
+    fn new(dir: &std::path::Path, vars: &[(&str, &str)]) -> Self {
+        let prev_dir = env::current_dir().unwrap();
+        let mut saved = Vec::new();
+        for &(k, v) in vars {
+            saved.push((k.to_string(), env::var(k).ok()));
+            env::set_var(k, v);
+        }
+        env::set_current_dir(dir).unwrap();
+        Self { vars: saved, prev_dir }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        let _ = env::set_current_dir(&self.prev_dir);
+        for (k, v) in &self.vars {
+            if let Some(v) = v {
+                env::set_var(k, v);
+            } else {
+                env::remove_var(k);
+            }
+        }
+    }
+}
+
 #[tokio::test]
+#[serial]
 async fn mcp_endpoints_expose_same_tool_list() {
-    // Both endpoints (stdio and HTTP JSON-RPC) share the same build_mcp_state fn,
-    // which builds the AppState and WorkspaceContext for them.
-    // They both dispatch requests to `dispatch_mcp_value` internally.
+    let temp = TempDir::new().expect("tempdir");
+    let temp_str = temp.path().to_str().unwrap();
+    let _guard = EnvGuard::new(temp.path(), &[
+        ("TMPDIR", temp_str),
+        ("XAVIER_DATA_DIR", temp_str),
+        ("XAVIER_CONFIG_PATH", temp_str),
+        ("XAVIER_RUNTIME_STATE_PATH", temp_str),
+        ("HOME", temp_str),
+        ("XAVIER_TOKEN", "test-token"),
+        ("XAVIER_JWT_SECRET", "test-secret"),
+    ]);
+
+    // Build state
     let (state, workspace) = xavier::cli::mcp::build_mcp_state()
         .await
         .expect("build_mcp_state failed");
 
-    // Build the request payload for tools/list
     let payload = serde_json::json!({
         "jsonrpc": "2.0",
         "method": "tools/list",
         "id": 1
     });
 
-    // 1. Simulate the HTTP /mcp tools/list handler (HTTP transport uses the workspace authenticated user)
-    // The HTTP transport delegates to `dispatch_mcp_value` with some claims.
-    let claims = xavier::security::auth::Claims::new(
+    // 1. Simulate the HTTP /mcp tools/list handler
+    let app = xavier::server::mcp::transport::build_mcp_http_router(state.clone(), workspace.clone());
+
+    let user = xavier::security::auth::User::new(
         "test-sub".to_string(),
         "test@example.com".to_string(),
         xavier::security::auth::UserRole::Admin,
-        chrono::Duration::hours(1),
     );
-    let http_response = xavier::server::mcp::session::dispatch_mcp_value(
-        state.clone(),
-        workspace.clone(),
-        Some(&claims),
-        payload.clone(),
-    )
-    .await
-    .expect("dispatch http")
-    .expect("expected response");
+    let token = xavier::security::auth::generate_jwt(&user, b"test-secret").expect("jwt");
+
+    let req = Request::builder()
+        .uri("/mcp")
+        .method(Method::POST)
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Origin", "http://localhost")
+        .body(Body::from(payload.to_string()))
+        .expect("request");
+
+    let response = app.oneshot(req).await.expect("response");
+    assert!(response.status().is_success(), "HTTP request failed: {:?}", response.status());
+
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.expect("body");
+    let http_response: Value = serde_json::from_slice(&bytes).expect("json");
 
     // 2. Simulate the stdio / xavier mcp tools/list path
-    // The stdio transport overrides some caller constraints before calling dispatch_mcp_value.
     let stdio_response = xavier::server::mcp_stdio::dispatch_stdio_value(
         state.clone(),
         workspace.clone(),
@@ -58,17 +111,11 @@ async fn mcp_endpoints_expose_same_tool_list() {
             .as_array()
             .expect("tools is not an array");
 
-        let mut names = HashSet::new();
-        for tool in tools_array {
-            let name = tool
-                .get("name")
-                .expect("missing name")
-                .as_str()
-                .expect("name is not string")
-                .to_string();
-            names.insert(name);
-        }
-        names
+        let mut names: Vec<String> = tools_array.iter().map(|t| {
+            t.get("name").expect("missing name").as_str().expect("name is not string").to_string()
+        }).collect();
+        names.sort();
+        names.into_iter().collect()
     }
 
     let http_names = extract_tool_names(&http_response);
