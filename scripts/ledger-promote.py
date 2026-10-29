@@ -209,8 +209,8 @@ def evaluate(document, evidence, history, root, streak):
                 rev_reasons = ['review skipped: ' + r for r in common]
             else:
                 rev_reasons = []
-                gaps = feature.get('open_gaps', [])
-                if isinstance(gaps, list) and gaps:
+                gaps = feature.get('open_gaps')
+                if gaps:
                     rev_reasons.append('open_gaps present')
                 failed_tests = sorted(gating_failed & set(declared))
                 if failed_tests:
@@ -383,6 +383,7 @@ def main():
             if isinstance(meta, dict):
                 meta['total_features'] = len(document['features'])
                 counts = {'stable': 0, 'beta': 0, 'in_progress': 0, 'planned': 0}
+                key_map = {'stable': 'features_stable', 'beta': 'features_beta', 'planned': 'features_planned'}
                 progress_sum = 0
                 for feat in document['features'].values():
                     s = feat.get('status')
@@ -392,8 +393,9 @@ def main():
                     if isinstance(p, (int, float)) and __import__('math').isfinite(p):
                         progress_sum += p
                 for k, v in counts.items():
-                    if k in meta:
-                        meta[k] = v
+                    mk = key_map.get(k, k)
+                    if mk in meta:
+                        meta[mk] = v
                 num_feats = len(document['features'])
                 meta['overall_progress_pct'] = round(progress_sum / num_feats, 1) if num_feats else 0.0
                 if evidence.get('verified_at'):
@@ -409,8 +411,7 @@ def main():
 
     report = dict(sha=evidence.get('sha'), dry_run=not getattr(args, 'apply', False),
                   promotions=promotions, review=review_dict, features=results)
-    if getattr(args, 'apply', False):
-        report['demotions_applied'] = locals().get('demotions_applied', [])
+    report['demotions_applied'] = demotions_applied
 
     print(json.dumps(report, indent=2, sort_keys=True))
     print('# Ledger promotion\n', file=sys.stderr)
@@ -437,7 +438,7 @@ def main():
     for fid, result in results.items():
         if result['eligible'] or result.get('review_flagged'):
             continue
-        detail = '; '.join(result['reasons'])
+        detail = '; '.join(result['reasons'] + result.get('review_reasons', []))
         info = result.get('informational', [])
         if info:
             suffix = 'beta-incomplete: ' + '; '.join(info)

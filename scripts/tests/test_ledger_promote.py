@@ -689,7 +689,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
     def test_metadata_recomputed(self):
         import json
-        self.features['metadata'] = {'stable': 1, 'beta': 0, 'in_progress': 0, 'planned': 0, 'total_features': 1, 'overall_progress_pct': 100.0}
+        self.features['metadata'] = {'features_stable': 1, 'features_beta': 0, 'in_progress': 0, 'features_planned': 0, 'total_features': 1, 'overall_progress_pct': 100.0}
         self.features['features']['stable']['open_gaps'] = ['pending']
         self.features['features']['stable']['progress_pct'] = 100
 
@@ -707,8 +707,8 @@ class PlannedBetaPromotionTests(unittest.TestCase):
             data = json.load(f)
 
         meta = data['metadata']
-        self.assertEqual(1, meta.get('stable', 0))
-        self.assertEqual(2, meta.get('beta', 0))
+        self.assertEqual(1, meta.get('features_stable', 0))
+        self.assertEqual(2, meta.get('features_beta', 0))
 
 if __name__ == '__main__':
     unittest.main()
