@@ -185,6 +185,7 @@ fn navigate_to_tab(app: &tauri::AppHandle, tab: &str) {
 fn show_main(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
@@ -394,10 +395,14 @@ fn start_backend(app: &tauri::App, port: u16, state: &SidecarState) -> Backend {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+    let mut builder = tauri::Builder::default();
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
-        }))
+        }));
+    }
+    let app = builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_log::Builder::default().build())
