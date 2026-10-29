@@ -3920,7 +3920,9 @@
         "code-graph/tests/fingerprint.rs::c_preprocessor_split_else_if_keeps_function_whole",
         "fingerprint::tests::kgram_key_uses_unit_separator_join",
         "fingerprint::tests::last_ident_takes_final_segment",
-        "fingerprint::tests::ranges_parse_and_reject"
+        "fingerprint::tests::ranges_parse_and_reject",
+        "tests/codegraph_fingerprint_e2e.rs::test_fingerprint_stable_unchanged",
+        "tests/codegraph_fingerprint_e2e.rs::test_fingerprint_changes"
       ]
     },
     "chore-oss-scanner-enrollment": {
