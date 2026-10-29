@@ -180,6 +180,7 @@ fn corrupt_karma_is_not_overwritten_after_reward_or_decay() {
 #[test]
 #[serial_test::serial]
 fn corrupt_exclusions_are_not_overwritten() {
+    xavier::data_commons::ivn::reset_exclusion_store_for_tests();
     use xavier::data_commons::ivn::{clear_exclusions, is_excluded_at, record_exclusion};
     use xavier::data_commons::types::WalletAddress;
 

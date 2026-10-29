@@ -1691,7 +1691,8 @@
         "karma_uses_ivn_root_and_imports_legacy_once_without_writing_it",
         "atomic_json_publishes_complete_private_documents",
         "atomic_json_preserves_previous_file_and_cleans_failed_temporary_files",
-        "json_load_reports_corruption_and_read_errors"
+        "json_load_reports_corruption_and_read_errors",
+        "tests/ivn_storage_persistence.rs::corrupt_exclusions_are_not_overwritten"
       ],
       "spec": "docs/features/specs/FEATURE-feat-ivn-karma.md"
     },

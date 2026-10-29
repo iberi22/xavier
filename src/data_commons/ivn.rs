@@ -694,3 +694,10 @@ mod tests {
         }
     }
 }
+
+#[cfg(any(test, feature = "test-utils"))]
+#[doc(hidden)]
+pub fn reset_exclusion_store_for_tests() {
+    let mut store = EXCLUSION_STORE.write().unwrap();
+    *store = None;
+}
