@@ -226,8 +226,7 @@ jobs:
   rust-affected:
     name: Affected Rust Tests
     needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
-    continue-on-error: true
+    if: (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -268,8 +267,26 @@ jobs:
         env:
           SWAL_BUILD_SLOTS: "1"
         run: |
-          git fetch origin ${{ github.base_ref }} --depth=200 || true
-          scripts/affected-tests.sh --base origin/${{ github.base_ref }} --no-clippy
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            git fetch origin ${{ github.base_ref }} --depth=200 || true
+            scripts/affected-tests.sh --base origin/${{ github.base_ref }} --no-clippy
+          else
+            # For main/workflow_dispatch, run all integration suites in tests/suite_NN.rs
+            # Extract real `mod name;` modules to pass to xavier_cargo_test to avoid "unknown test target".
+            source scripts/xavier-test-target.sh
+            for suite in tests/suite_[0-9][0-9].rs; do
+              [ -e "$suite" ] || continue
+              modules=$(awk '
+                /^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+[A-Za-z0-9_]+[[:space:]]*;/ {
+                  m = $0; sub(/^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+/, "", m); sub(/[[:space:]]*;.*/, "", m)
+                  print m
+                }
+              ' "$suite")
+              if [ -n "$modules" ]; then
+                xavier_cargo_test ci-safe $modules
+              fi
+            done
+          fi
 
   # Job: Test-write tripwire
   # `scripts/check-test-writes.sh` is the guard that keeps the suite from
