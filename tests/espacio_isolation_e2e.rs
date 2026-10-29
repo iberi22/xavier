@@ -38,39 +38,6 @@ fn free_port() -> u16 {
         .port()
 }
 
-async fn wait_until_ready(base_url: &str, timeout: Duration) {
-    let http = Client::new();
-    let mut last_ready = String::new();
-    let mut ready = false;
-    let deadline = std::time::Instant::now() + timeout;
-    let mut backoff = 100;
-    while std::time::Instant::now() < deadline {
-        let resp = http
-            .get(format!("{base_url}/ready"))
-            .timeout(Duration::from_secs(2))
-            .send()
-            .await;
-        if let Ok(r) = resp {
-            if let Ok(body) = r.text().await {
-                // Only a parsed body that is not the gate's `starting` reply counts.
-                if let Ok(v) = serde_json::from_str::<Value>(&body) {
-                    if v.get("status").and_then(|s| s.as_str()) != Some("starting") {
-                        ready = true;
-                        break;
-                    }
-                }
-                last_ready = body;
-            }
-        }
-        tokio::time::sleep(Duration::from_millis(backoff)).await;
-        backoff = std::cmp::min(250, backoff + 50);
-    }
-    assert!(
-        ready,
-        "daemon at {base_url} still starting after {timeout:?}; last /ready body: {last_ready}"
-    );
-}
-
 struct Daemon {
     _child: ChildGuard,
     url: String,
@@ -272,7 +239,6 @@ fn scratch() -> (tempfile::TempDir, PathBuf, BinCopy) {
 async fn isolation_matrix_over_real_http_and_across_restart() {
     let (_keep, home, bin) = scratch();
     let d = Daemon::spawn(&bin.0, &home, false).await;
-    wait_until_ready(&d.url, Duration::from_secs(60)).await;
 
     // --- boot migration: the legacy workspace is recorded by reference ---
     let desc: Value = serde_json::from_slice(
@@ -518,7 +484,6 @@ async fn isolation_matrix_over_real_http_and_across_restart() {
     // --- restart: persistence + isolation hold ---
     drop(d);
     let d = Daemon::spawn(&bin.0, &home, false).await;
-    wait_until_ready(&d.url, Duration::from_secs(60)).await;
     let (st, l) = d
         .call(
             Method::GET,
@@ -591,7 +556,6 @@ async fn isolation_matrix_over_real_http_and_across_restart() {
 async fn invites_are_single_use_admin_gated_and_grant_read() {
     let (_keep, home, bin) = scratch();
     let d = Daemon::spawn(&bin.0, &home, false).await;
-    wait_until_ready(&d.url, Duration::from_secs(60)).await;
     let ta = create_space(&d, "esp_a", false).await;
     d.add(&ta, "notes/a", "inviteonly platypus").await;
     let inv = "/api/v1/espacio/spaces/esp_a/invites";
@@ -665,7 +629,6 @@ async fn invites_are_single_use_admin_gated_and_grant_read() {
 async fn spaces_off_leaves_the_legacy_path_unchanged() {
     let (_keep, home, bin) = scratch();
     let d = Daemon::spawn(&bin.0, &home, true).await;
-    wait_until_ready(&d.url, Duration::from_secs(60)).await;
     // Espacio is disabled: 503 for root, and nothing was created on disk.
     let (st, _) = d
         .call(
@@ -700,7 +663,6 @@ async fn spaces_off_leaves_the_legacy_path_unchanged() {
 async fn password_space_starts_locked_and_unlocks_over_http() {
     let (_keep, home, bin) = scratch();
     let d = Daemon::spawn(&bin.0, &home, false).await;
-    wait_until_ready(&d.url, Duration::from_secs(60)).await;
 
     let space_id = "esp_pw";
     let password = "correct-horse-battery-staple";
@@ -733,7 +695,6 @@ async fn password_space_starts_locked_and_unlocks_over_http() {
     // 2. Restart the daemon so the space starts locked
     drop(d);
     let d = Daemon::spawn(&bin.0, &home, false).await;
-    wait_until_ready(&d.url, Duration::from_secs(60)).await;
 
     // 3. GET status says locked
     let (st, status_val) = d

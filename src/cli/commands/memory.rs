@@ -28,9 +28,7 @@ pub async fn handle_memory_command(
                 run_consolidation(nightly).await
             }
         }
-        crate::cli::commands::enums::memory::MemoryCommand::IndexSelf { json } => {
-            run_index_self(json).await
-        }
+        crate::cli::commands::enums::memory::MemoryCommand::IndexSelf => run_index_self().await,
         crate::cli::commands::enums::memory::MemoryCommand::ImportMarkdown { dir } => {
             run_import_markdown(&dir).await
         }
@@ -230,59 +228,28 @@ async fn show_consolidation_status() -> Result<()> {
     }
 }
 
-/// Call `POST /memory/index-self` and return the parsed JSON body, or a
-/// human-readable error for every failure (token, connection, timeout,
-/// HTTP error, invalid JSON).
-async fn request_index_self() -> std::result::Result<serde_json::Value, String> {
+async fn run_index_self() -> Result<()> {
     let base_url = resolve_base_url();
-    let token = require_xavier_token().map_err(|e| e.to_string())?;
+    let token = require_xavier_token()?;
     let client = CLI_HTTP_CLIENT.clone();
+
+    println!("📚 Indexing Xavier's foundational documents...");
 
     let resp = client
         .post(format!("{}/memory/index-self", base_url))
         .header("X-Xavier-Token", &token)
         .send()
-        .await
-        .map_err(|e| format!("request failed: {}", e.without_url()))?;
+        .await?;
 
-    let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| format!("failed to read response: {}", e.without_url()))?;
-    if !status.is_success() {
-        return Err(format!("HTTP {}: {}", status.as_u16(), text));
-    }
-    serde_json::from_str(&text).map_err(|e| format!("invalid JSON response: {}", e))
-}
-
-pub(crate) async fn run_index_self(json_out: bool) -> Result<()> {
-    if !json_out {
-        eprintln!("📚 Indexing Xavier's foundational documents...");
-    }
-
-    match request_index_self().await {
-        Ok(body) => {
-            if json_out {
-                println!("{}", serde_json::to_string(&body)?);
-            } else {
-                eprintln!(
-                    "✅ Self-indexing complete: {}",
-                    serde_json::to_string_pretty(&body)?
-                );
-            }
-            Ok(())
-        }
-        Err(err_text) => {
-            if json_out {
-                // Every failure keeps the --json contract: one JSON object on
-                // stdout and a nonzero exit.
-                println!("{}", serde_json::json!({"ok": false, "error": err_text}));
-                std::process::exit(1);
-            } else {
-                bail!("❌ Self-indexing failed: {}", err_text);
-            }
-        }
+    if resp.status().is_success() {
+        let body: serde_json::Value = resp.json().await?;
+        println!(
+            "✅ Self-indexing complete: {}",
+            serde_json::to_string_pretty(&body)?
+        );
+        Ok(())
+    } else {
+        bail!("❌ Self-indexing failed: {}", resp.text().await?);
     }
 }
 
@@ -496,70 +463,29 @@ mod tests {
         }
     }
 
-    async fn spawn_mock_server(status: &str, body: &str) -> (u16, tokio::task::JoinHandle<()>) {
+    #[tokio::test]
+    async fn test_show_consolidation_status_failure_returns_err() {
+        let _env = crate::settings::tests::TempEnv::new();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind");
         let port = listener.local_addr().expect("local_addr").port();
-        let status = status.to_string();
-        let body = body.to_string();
-
         let server = tokio::spawn(async move {
-            let accepted =
-                tokio::time::timeout(std::time::Duration::from_secs(10), listener.accept()).await;
-            if let Ok(Ok((mut socket, _))) = accepted {
-                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::AsyncWriteExt;
+                let response = b"HTTP/1.1 500 Internal Server Error
+Content-Length: 5
 
-                // Read the full request (headers + Content-Length body) before
-                // responding, so closing never leaves unread bytes (TCP reset).
-                let mut buf = [0; 1024];
-                let mut req = Vec::new();
-                let mut expected: Option<usize> = None;
-                loop {
-                    if expected.is_none() {
-                        if let Some(pos) = req.windows(4).position(|w| w == b"\r\n\r\n") {
-                            let headers = String::from_utf8_lossy(&req[..pos]).to_ascii_lowercase();
-                            let len = headers
-                                .lines()
-                                .find_map(|l| l.strip_prefix("content-length:"))
-                                .and_then(|v| v.trim().parse::<usize>().ok())
-                                .unwrap_or(0);
-                            expected = Some(pos + 4 + len);
-                        }
-                    }
-                    if matches!(expected, Some(total) if req.len() >= total) {
-                        break;
-                    }
-                    let n = socket.read(&mut buf).await.unwrap_or(0);
-                    if n == 0 {
-                        break;
-                    }
-                    req.extend_from_slice(&buf[..n]);
-                }
-
-                let response = format!(
-                    "HTTP/1.1 {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    status,
-                    body.len(),
-                    body
-                );
-                let _ = socket.write_all(response.as_bytes()).await;
-                let _ = socket.shutdown().await;
+error";
+                let _ = socket.write_all(response).await;
             }
         });
-        (port, server)
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn test_show_consolidation_status_failure_returns_err() {
-        let _env = crate::settings::tests::TempEnv::new();
-        let (port, server) = spawn_mock_server("500 Internal Server Error", "error").await;
 
         std::env::set_var("XAVIER_URL", format!("http://127.0.0.1:{}", port));
         std::env::set_var("XAVIER_TOKEN", "test-token");
         let result = show_consolidation_status().await;
-
+        std::env::remove_var("XAVIER_URL");
+        std::env::remove_var("XAVIER_TOKEN");
         let _ = server.await;
 
         assert!(result.is_err());
@@ -570,15 +496,28 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial_test::serial]
     async fn test_run_index_self_failure_returns_err() {
         let _env = crate::settings::tests::TempEnv::new();
-        let (port, server) = spawn_mock_server("500 Internal Server Error", "error").await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("local_addr").port();
+        let server = tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::AsyncWriteExt;
+                let response = b"HTTP/1.1 500 Internal Server Error
+Content-Length: 5
+
+error";
+                let _ = socket.write_all(response).await;
+            }
+        });
 
         std::env::set_var("XAVIER_URL", format!("http://127.0.0.1:{}", port));
         std::env::set_var("XAVIER_TOKEN", "test-token");
-        let result = run_index_self(false).await;
-
+        let result = run_index_self().await;
+        std::env::remove_var("XAVIER_URL");
+        std::env::remove_var("XAVIER_TOKEN");
         let _ = server.await;
 
         assert!(result.is_err());

@@ -65,10 +65,6 @@ xavier_test_suite() {
         return 1
     fi
     root="$(_xavier_test_root)" || return 1
-    if [[ "$name" =~ ^suite_[0-9]{2}$ ]] && [ -f "$root/tests/${name}.rs" ]; then
-        printf '%s\n' "$name"
-        return 0
-    fi
     for f in "$root"/tests/suite_[0-9][0-9].rs; do
         [ -f "$f" ] || continue
         if grep -Eq "^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+${name}[[:space:]]*;" "$f" \
@@ -97,9 +93,6 @@ xavier_test_module() {
         return 0
     fi
     root="$(_xavier_test_root)" || return 1
-    if [[ "$name" =~ ^suite_[0-9]{2}$ ]]; then
-        module=""
-    else
     f="$root/tests/$suite.rs"
     module="$(awk -v n="$name" '
         function modname(s) {
@@ -122,12 +115,7 @@ xavier_test_module() {
         /^[[:space:]]*(#\[|$)/ { next }
         { want = 0 }
     ' "$f")"
-    fi
-    if [ -n "$module" ]; then
-        printf '%s\n' "$module"
-    else
-        printf '%s\n' "$name"
-    fi
+    printf '%s\n' "${module:-$name}"
 }
 
 # Prints the nextest/libtest name filter for a grouped module; prints nothing for a standalone target.
@@ -136,10 +124,8 @@ xavier_test_filter() {
     name="$(_xavier_test_canonical "${1:-}")"
     resolved="$(xavier_test_suite "$name")" || return 1
     if [[ "$resolved" =~ ^suite_[0-9]{2}$ ]]; then
-        if [[ ! "$name" =~ ^suite_[0-9]{2}$ ]]; then
-            module="$(xavier_test_module "$name")" || return 1
-            printf '%s::\n' "$module"
-        fi
+        module="$(xavier_test_module "$name")" || return 1
+        printf '%s::\n' "$module"
     fi
     return 0
 }

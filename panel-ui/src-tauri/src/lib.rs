@@ -13,12 +13,11 @@ use std::process::Command as StdCommand;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use sysinfo::System;
-use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-
-#[cfg(desktop)]
-use tauri::menu::{Menu, MenuItemBuilder};
-#[cfg(desktop)]
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{
+    menu::{Menu, MenuItemBuilder},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
+};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
@@ -175,7 +174,6 @@ fn save_initial_config(config: InitialConfig) -> Result<(), String> {
 
 // ── Navigate helper ────────────────────────────────────────────
 
-#[cfg(desktop)]
 fn navigate_to_tab(app: &tauri::AppHandle, tab: &str) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.emit("navigate-to", tab);
@@ -184,11 +182,9 @@ fn navigate_to_tab(app: &tauri::AppHandle, tab: &str) {
     }
 }
 
-#[cfg(desktop)]
 fn show_main(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
@@ -398,15 +394,10 @@ fn start_backend(app: &tauri::App, port: u16, state: &SidecarState) -> Backend {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[allow(unused_mut)]
-    let mut builder = tauri::Builder::default();
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+    let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
-        }));
-    }
-    let app = builder
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_log::Builder::default().build())
@@ -444,7 +435,6 @@ pub fn run() {
             // Tray is best-effort: GNOME etc. may have no indicator host.
             // The indicator library is dlopen'd and panics when missing, so
             // treat a panic like an error: the window must still open.
-            #[cfg(desktop)]
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| build_tray(app))) {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => log::warn!("System tray unavailable: {e}"),
@@ -488,12 +478,11 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(
-            #[cfg(desktop)]
-            tauri::generate_handler![scan_system, save_initial_config, register_window],
-            #[cfg(not(desktop))]
-            tauri::generate_handler![scan_system, save_initial_config],
-        )
+        .invoke_handler(tauri::generate_handler![
+            scan_system,
+            save_initial_config,
+            register_window,
+        ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
@@ -506,7 +495,6 @@ pub fn run() {
     });
 }
 
-#[cfg(desktop)]
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let open_app = MenuItemBuilder::with_id("open_app", "Open Xavier").build(app)?;
     let open_history = MenuItemBuilder::with_id("open_history", "Open History").build(app)?;
@@ -557,7 +545,6 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-#[cfg(desktop)]
 #[tauri::command]
 fn register_window(_window: tauri::Window) {
     log::info!("Frontend registered for tray events");

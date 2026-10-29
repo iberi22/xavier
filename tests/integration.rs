@@ -238,16 +238,14 @@ mod integration {
 
         assert!(response.status().is_success());
         let body: Value = response.json().await.expect("read body");
-        // Accept "ok", "healthy", "warn", "unhealthy" or "degraded" ("degraded" is what
-        // /health reports while the ready gate is still closed) — unhealthy can happen
+        // Accept "ok", "healthy", "warn" or "unhealthy" — unhealthy can happen
         // when system metrics (swap zram 100%, disk) degrade in the test env.
         assert!(
             body["status"] == "ok"
                 || body["status"] == "healthy"
                 || body["status"] == "warn"
-                || body["status"] == "unhealthy"
-                || body["status"] == "degraded",
-            "expected ok, healthy, warn, unhealthy or degraded, got {}",
+                || body["status"] == "unhealthy",
+            "expected ok, healthy, warn or unhealthy, got {}",
             body["status"]
         );
     }

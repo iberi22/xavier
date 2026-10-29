@@ -25,7 +25,6 @@ class PromoterTests(unittest.TestCase):
         self.rust.write_text('#[test]\nfn test_roundtrip() {}\n')
         self.features = json.loads((FIXTURES / 'features.json').read_text())
         self.evidence = json.loads((FIXTURES / 'evidence.json').read_text())
-        self.evidence['evidence_complete'] = True
         self.history = json.loads((FIXTURES / 'history.json').read_text())
         self.path = self.root / '.gitcore' / 'features.json'
 
@@ -273,7 +272,7 @@ class PromoterTests(unittest.TestCase):
                '  ▶ test_roundtrip\n    ✅ xavier --lib (passed=1)\n'
                '  ▶ unrelated\n    ✅ --test integration (passed=1)\n'
                '  ✅ all declared tests passed\n')
-        results, targets, evidence_complete = collector.parse_log(log, self.features)
+        results, targets = collector.parse_log(log, self.features)
         self.assertEqual(['test_roundtrip'], results['beta']['passed'])
         self.assertEqual({'test_roundtrip': []}, results['beta']['integration_targets_by_test'])
         self.assertEqual(['integration'], targets)
@@ -314,7 +313,6 @@ class PromoterTests(unittest.TestCase):
                              ('ledger_sha', 'other'), ('e2e_sha', 'other'), ('sha', '')]:
             with self.subTest(field=field):
                 self.evidence = json.loads((FIXTURES / 'evidence.json').read_text())
-                self.evidence['evidence_complete'] = True
                 self.evidence[field] = value
                 self.blocked('SHA' if 'sha' in field else 'both succeed')
 
@@ -345,32 +343,17 @@ class PromoterTests(unittest.TestCase):
             self.assertNotIn('ledger_run_conclusion', record)
             self.assertNotIn('e2e_run_conclusion', record)
 
-
-    def test_parse_log_unrecognized_returns_incomplete_flag(self):
-        log = "Truncated log... no success marker"
-        results, targets, evidence_complete = collector.parse_log(log, self.features)
-        self.assertFalse(evidence_complete)
-
     def test_log_parser_requires_full_positive_exact_result(self):
         log = '==> Xavier verify pipeline (mode: full, root: /repo)\n  ▶ test_roundtrip\n    ✅ --test integration (passed=2)\n  ✅ all declared tests passed\n'
-        results, targets, evidence_complete = collector.parse_log(log, self.features)
+        results, targets = collector.parse_log(log, self.features)
         self.assertEqual(['test_roundtrip'], results['beta']['passed'])
         self.assertEqual(['integration'], targets)
         self.assertEqual({'test_roundtrip': ['integration']},
                          results['beta']['integration_targets_by_test'])
         for invalid in (log.replace('passed=2', 'passed=0'), log.replace('full,', 'check,'),
-                        log.replace('▶ test_roundtrip', '▶ test_other')):
-            res, tgt, evc = collector.parse_log(invalid, self.features)
-            self.assertEqual([], res['beta']['passed'])
-
-        res, tgt, evc = collector.parse_log(log.replace('full,', 'check,'), self.features)
-        self.assertFalse(evc)
-        res, tgt, evc = collector.parse_log(log.replace('▶ test_roundtrip', '▶ test_other'), self.features)
-        self.assertFalse(evc)
-
-        # Missing footer, but complete coverage means evc = True
-        res, tgt, evc = collector.parse_log(log.replace('✅ all declared tests passed', ''), self.features)
-        self.assertTrue(evc)
+                        log.replace('▶ test_roundtrip', '▶ test_other'),
+                        log.replace('✅ all declared tests passed', '')):
+            self.assertEqual([], collector.parse_log(invalid, self.features)[0]['beta']['passed'])
 
 
 class PlannedBetaPromotionTests(unittest.TestCase):
@@ -391,7 +374,6 @@ class PlannedBetaPromotionTests(unittest.TestCase):
             'notes': 'early prototype, TODO remaining',
         }
         self.evidence = json.loads((FIXTURES / 'evidence.json').read_text())
-        self.evidence['evidence_complete'] = True
         self.evidence['per_feature_test_results']['planned'] = dict(
             declared=['test_roundtrip'], passed=[], failed=[],
             integration_targets_by_test={},
@@ -577,7 +559,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
                '  ▶ test_roundtrip [candidate]\n    ✅ --test integration (passed=2)\n'
                '  ✅ all declared tests passed\n')
-        results, targets, evidence_complete = collector.parse_log(log, self.features)
+        results, targets = collector.parse_log(log, self.features)
         # Candidate results never pollute gating sets.
         self.assertEqual([], results['planned']['passed'])
         self.assertEqual([], results['planned']['failed'])
@@ -588,7 +570,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
                          results['planned']['candidate_integration_targets_by_test'])
         self.assertEqual([], targets)
         plain = log.replace(' [candidate]', '')
-        results, targets, evidence_complete = collector.parse_log(plain, self.features)
+        results, targets = collector.parse_log(plain, self.features)
         self.assertEqual([], results['planned']['candidate_tests'])
         self.assertEqual([], results['planned']['candidate_passed'])
         self.assertEqual(['test_roundtrip'], results['planned']['passed'])
@@ -599,197 +581,13 @@ class PlannedBetaPromotionTests(unittest.TestCase):
                '  ▶ test_roundtrip\n    ✅ --test integration (passed=2)\n'
                '  ▶ test_roundtrip [candidate]\n    ❌ FAILED: test_roundtrip\n'
                '  ✅ all declared tests passed\n')
-        results, targets, evidence_complete = collector.parse_log(log, self.features)
+        results, targets = collector.parse_log(log, self.features)
         self.assertEqual(['test_roundtrip'], results['beta']['passed'])
         self.assertEqual([], results['beta']['failed'])
         self.assertEqual([], results['beta']['candidate_passed'])
         self.assertEqual(['test_roundtrip'], results['beta']['candidate_failed'])
         self.assertEqual(['integration'], targets)
 
-
-
-
-    def test_stable_incomplete_evidence_collection_skips_review(self):
-        self.features['features']['stable']['open_gaps'] = ['pending']
-        self.evidence['per_feature_test_results'] = {}
-        self.evidence['evidence_complete'] = False
-        report, _ = self.run_all()
-        stable = report['features']['stable']
-        self.assertFalse(stable.get('review_flagged'))
-        self.assertTrue(any('review skipped: evidence collection incomplete' in r for r in stable['review_reasons']))
-
-    def test_stable_open_gaps_flagged(self):
-        self.features['features']['stable']['open_gaps'] = ['pending']
-        report, err = self.run_all()
-        stable = report['features']['stable']
-        self.assertTrue(stable.get('review_flagged'))
-        self.assertIn('open_gaps present', stable['review_reasons'])
-        self.assertIn('## stable->beta review', err)
-
-
-    def test_stable_incomplete_evidence_demotions_enabled(self):
-        self.features['features']['stable']['open_gaps'] = ['pending']
-        self.evidence['evidence_complete'] = False
-        report, _ = self.run_all()
-        stable = report['features']['stable']
-        self.assertFalse(stable.get('review_flagged'))
-        self.assertTrue(any('review skipped: evidence collection incomplete' in r for r in stable['review_reasons']))
-
-    def test_stable_no_linked_evidence_flagged(self):
-        self.features['features']['stable']['tests'] = ['test_stable']
-        self.evidence['per_feature_test_results']['stable'] = dict(
-            declared=['test_stable'], passed=['test_stable'], failed=[],
-            integration_targets_by_test={})
-        report, _ = self.run_all()
-        stable = report['features']['stable']
-        self.assertTrue(stable.get('review_flagged'))
-        self.assertIn('no linked integration/E2E evidence', stable['review_reasons'])
-
-    def test_fully_evidenced_stable_not_flagged(self):
-        self.features['features']['stable']['tests'] = ['test_stable']
-        self.evidence['per_feature_test_results']['stable'] = dict(
-            declared=['test_stable'], passed=['test_stable'], failed=[],
-            integration_targets_by_test={'test_stable': ['integration']})
-        report, err = self.run_all()
-        stable = report['features']['stable']
-        self.assertFalse(stable.get('review_flagged'))
-        self.assertNotIn('test_stable', err)
-
-    def test_common_evidence_failure_flags_nothing(self):
-        self.features['features']['stable']['open_gaps'] = ['pending']
-        self.evidence['ledger_sha'] = 'mismatch'
-        report, _ = self.run_all()
-        stable = report['features']['stable']
-        self.assertFalse(stable.get('review_flagged'))
-        self.assertTrue(any('review skipped' in r for r in stable['review_reasons']))
-
-
-    def test_completed_failure_evidence_reaches_stable_review(self):
-        # A test fails, verifier reports failure, but all tests were parsed
-        self.features['features']['stable']['tests'] = ['test_stable']
-        self.evidence['ledger_run_conclusion'] = 'failure'
-        self.evidence['per_feature_test_results']['stable'] = dict(
-            declared=['test_stable'], passed=[], failed=['test_stable'],
-            integration_targets_by_test={})
-        self.evidence['evidence_complete'] = True
-
-        report, _ = self.run_all()
-        stable = report['features']['stable']
-        self.assertTrue(stable.get('review_flagged'))
-        self.assertIn('declared tests failed: test_stable', stable['review_reasons'])
-
-    def test_apply_without_apply_demotions_leaves_flagged_stable(self):
-        self.features['features']['stable']['open_gaps'] = ['pending']
-        report, _ = self.run_all(apply=True)
-        self.assertTrue(report['features']['stable'].get('review_flagged'))
-        import json
-        with open(self.path) as f:
-            data = json.load(f)
-        self.assertEqual('stable', data['features']['stable']['status'])
-
-    def test_apply_apply_demotions_sets_beta(self):
-        import json
-        self.features['features']['stable']['open_gaps'] = ['pending']
-        self.features['features']['stable']['progress_pct'] = 100
-        self.features['features']['stable']['ledger'] = {'promoted_by': 'bot'}
-
-        evidence = self.root / 'evidence.json'
-        history = self.root / 'history.json'
-        self.path.write_text(json.dumps(self.features))
-        evidence.write_text(json.dumps(self.evidence))
-        history.write_text(json.dumps(self.history))
-        args = ['--features', str(self.path), '--evidence', str(evidence),
-                '--history', str(history), '--apply', '--apply-demotions']
-        import subprocess, sys
-        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, capture_output=True, text=True, check=True)
-        report = json.loads(result.stdout)
-        self.assertIn('stable', report['demotions_applied'])
-
-        with open(self.path) as f:
-            data = json.load(f)
-
-        stable = data['features']['stable']
-        self.assertEqual('beta', stable['status'])
-        self.assertFalse(stable['passes'])
-        self.assertIn('demoted stable->beta', stable['notes'])
-        self.assertIn('open_gaps present', stable['notes'])
-        self.assertEqual(100, stable['progress_pct'])
-        self.assertEqual({'promoted_by': 'bot'}, stable['ledger'])
-
-    def test_apply_demotions_without_apply_usage_error(self):
-        import json
-        evidence = self.root / 'evidence.json'
-        history = self.root / 'history.json'
-        self.path.write_text(json.dumps(self.features))
-        evidence.write_text(json.dumps(self.evidence))
-        history.write_text(json.dumps(self.history))
-        args = ['--features', str(self.path), '--evidence', str(evidence),
-                '--history', str(history), '--apply-demotions']
-        import subprocess, sys
-        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, capture_output=True, text=True)
-        self.assertEqual(2, result.returncode)
-
-    def test_metadata_recomputed(self):
-        import json
-        self.features['metadata'] = {'features_stable': 1, 'features_beta': 0, 'features_in_progress': 0, 'features_planned': 0, 'features_complete': 1, 'total_features': 1, 'overall_progress_pct': 100.0, 'last_verified': '2000-01-01'}
-        self.features['features']['stable']['open_gaps'] = ['pending']
-        self.features['features']['stable']['progress_pct'] = 100
-
-        evidence = self.root / 'evidence.json'
-        history = self.root / 'history.json'
-        self.evidence['verified_at'] = '2026-11-10T12:00:00Z'
-        self.path.write_text(json.dumps(self.features))
-        evidence.write_text(json.dumps(self.evidence))
-        history.write_text(json.dumps(self.history))
-        args = ['--features', str(self.path), '--evidence', str(evidence),
-                '--history', str(history), '--apply', '--apply-demotions']
-        import subprocess, sys
-        subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, check=True)
-
-        with open(self.path) as f:
-            data = json.load(f)
-
-        meta = data['metadata']
-        self.assertEqual(1, meta.get('features_stable', 0))
-        self.assertEqual(2, meta.get('features_beta', 0))
-        self.assertEqual(0, meta.get('features_planned', 0))
-        self.assertEqual(4, meta.get('total_features', 0))
-        self.assertEqual(1, meta.get('features_complete', 0))
-        self.assertEqual(60.0, meta.get('overall_progress_pct', 0))
-        self.assertEqual('2026-11-10', meta.get('last_verified'))
-
-
-    def test_workflow_branch_identity(self):
-        with open('.github/workflows/ledger-promote.yml') as f:
-            workflow = f.read()
-        self.assertIn('branch="ledger/promote-$sha-demote"', workflow)
-
-    def test_metadata_initializes_if_absent(self):
-        import json
-        if 'metadata' in self.features:
-            del self.features['metadata']
-        self.features['features']['stable']['open_gaps'] = ['pending']
-        self.features['features']['stable']['progress_pct'] = 100
-
-        evidence = self.root / 'evidence.json'
-        history = self.root / 'history.json'
-        self.path.write_text(json.dumps(self.features))
-        evidence.write_text(json.dumps(self.evidence))
-        history.write_text(json.dumps(self.history))
-        args = ['--features', str(self.path), '--evidence', str(evidence),
-                '--history', str(history), '--apply', '--apply-demotions']
-        import subprocess, sys
-        subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, check=True)
-
-        with open(self.path) as f:
-            data = json.load(f)
-
-        self.assertIn('metadata', data)
-        meta = data['metadata']
-        self.assertEqual(1, meta.get('features_stable', 0))
-        self.assertEqual(2, meta.get('features_beta', 0))
-        self.assertEqual(4, meta.get('total_features', 0))
-        self.assertEqual(1, meta.get('features_complete', 0))
 
 if __name__ == '__main__':
     unittest.main()

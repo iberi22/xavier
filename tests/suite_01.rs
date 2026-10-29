@@ -60,9 +60,5 @@ mod clavis_namespace_e2e;
 #[path = "clavis_vault_smoke_e2e.rs"]
 mod clavis_vault_smoke_e2e;
 
-#[path = "cli_index_self.rs"]
-mod cli_index_self;
-#[path = "cli_provider_exit_codes_e2e.rs"]
-mod cli_provider_exit_codes_e2e;
 #[path = "skill_store_config.rs"]
 mod skill_store_config;

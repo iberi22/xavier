@@ -203,19 +203,3 @@ async fn test_parser_rust_plugin_execution() {
         "Function kind should not equal namespace symbol kind"
     );
 }
-
-#[test]
-fn test_code_graph_no_args_fails() {
-    let exe = env!("CARGO_BIN_EXE_code-graph");
-    let output = std::process::Command::new(exe)
-        .output()
-        .expect("Failed to spawn code-graph binary");
-
-    // The process should exit non-zero
-    assert!(!output.status.success());
-    assert_eq!(output.status.code(), Some(1));
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    // Stderr should contain usage information
-    assert!(stderr.contains("Usage:"));
-}
