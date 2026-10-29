@@ -683,6 +683,23 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertTrue(stable.get('review_flagged'))
         self.assertIn('declared tests failed: test_stable', stable['review_reasons'])
 
+        # also run the fixture through --apply WITHOUT --apply-demotions and assert every promotion is ineligible, demotions_applied is empty, and the ledger file bytes are unchanged.
+        report_apply, _ = self.run_all(apply=True)
+        self.assertEqual([], report_apply.get('demotions_applied', []))
+        for fid, res in report_apply['features'].items():
+            self.assertFalse(res.get('eligible'))
+
+        import json
+        with open(self.path) as f:
+            data = json.load(f)
+        self.assertEqual('stable', data['features']['stable']['status'])
+
+        # exact parsed-result assertions that fail if the parser change is reverted
+        self.assertEqual(['test_roundtrip'], results['beta']['passed'])
+        self.assertEqual([], results['beta']['failed'])
+        self.assertEqual([], results['stable']['passed'])
+        self.assertEqual(['test_stable'], results['stable']['failed'])
+
     def test_completed_failure_evidence_reaches_stable_review(self):
         # A test fails, verifier reports failure, but all tests were parsed
         self.features['features']['stable']['tests'] = ['test_stable']
