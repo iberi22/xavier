@@ -40,6 +40,10 @@ filter = 'binary(=suite_04) & test(/^(guardian_truth_test)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
+filter = 'binary(=suite_05) & test(/^(maloca_roadmap_route_e2e)::/)'
+test-group = "serial"
+
+[[profile.default.overrides]]
 filter = 'binary(=suite_07) & test(/^(memory_write_integrity_e2e|mesh_auth_binding_test|mesh_integration)::/)'
 test-group = "serial"
 

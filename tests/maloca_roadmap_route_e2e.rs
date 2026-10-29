@@ -31,10 +31,9 @@ async fn roadmap_endpoint_reads_gitcore_ledgers_e2e() {
     )
     .unwrap();
 
-    std::env::set_var("SWAL_WORKSPACE_DIR", workspace_path);
-
     // Build the app with maloca_router mounted using existing harness helpers
     let _env_str = router_harness::RestoreEnv::set_str(&[
+        ("SWAL_WORKSPACE_DIR", workspace_path.to_str().unwrap()),
         ("XAVIER_TOKEN", router_harness::ROOT_TOKEN),
         ("XAVIER_JWT_SECRET", router_harness::JWT_SECRET),
     ]);
@@ -102,10 +101,9 @@ async fn roadmap_endpoint_returns_empty_when_no_projects() {
     let workspace_path = workspace_dir.path();
 
     // Empty workspace dir
-    std::env::set_var("SWAL_WORKSPACE_DIR", workspace_path);
-
     // Build the app with maloca_router mounted using existing harness helpers
     let _env_str = router_harness::RestoreEnv::set_str(&[
+        ("SWAL_WORKSPACE_DIR", workspace_path.to_str().unwrap()),
         ("XAVIER_TOKEN", router_harness::ROOT_TOKEN),
         ("XAVIER_JWT_SECRET", router_harness::JWT_SECRET),
     ]);

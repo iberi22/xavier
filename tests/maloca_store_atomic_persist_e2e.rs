@@ -72,7 +72,15 @@ fn persist_replaces_store_file_by_rename_not_in_place_e2e() {
     });
 
     let store_file = tmp.path().join("maloca").join("store.json");
-    let _inode_before = std::fs::metadata(&store_file).unwrap().clone();
+    // Hold a handle on the original file: an atomic rename-replace leaves the
+    // old inode (and its contents) intact for this reader, while an in-place
+    // write would truncate/overwrite what the handle sees.
+    let mut old_handle = std::fs::File::open(&store_file).unwrap();
+    #[cfg(unix)]
+    let inode_before = {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata(&store_file).unwrap().ino()
+    };
 
     store.create_support(CreateSupportBody {
         title: "subsequent".into(),
@@ -80,12 +88,25 @@ fn persist_replaces_store_file_by_rename_not_in_place_e2e() {
         feature_id: None,
     });
 
-    let _inode_after = std::fs::metadata(&store_file).unwrap().clone();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let inode_after = std::fs::metadata(&store_file).unwrap().ino();
+        assert_ne!(
+            inode_before, inode_after,
+            "persist must replace store.json via rename, not rewrite it in place"
+        );
+    }
 
-    // On Linux/macOS we can check inodes, or simply trust that if atomic replace
-    // occurs, the modified time or underlying file identity might change, but standard
-    // std::fs::metadata doesn't expose inode directly in a cross-platform way without os extensions.
-    // At minimum, it must exist and contain the new data.
+    let mut old_content = String::new();
+    std::io::Read::read_to_string(&mut old_handle, &mut old_content).unwrap();
+    assert!(old_content.contains("initial"), "{old_content}");
+    assert!(
+        !old_content.contains("subsequent"),
+        "the pre-existing file must be untouched by the replacement: {old_content}"
+    );
+
     let content = std::fs::read_to_string(&store_file).unwrap();
+    assert!(content.contains("initial"));
     assert!(content.contains("subsequent"));
 }
