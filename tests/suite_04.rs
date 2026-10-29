@@ -52,3 +52,14 @@ mod hormer_integration;
 
 #[path = "skill_ephemeral_lifecycle.rs"]
 mod skill_ephemeral_lifecycle;
+
+#[path = "skill_drift_audit_e2e.rs"]
+mod skill_drift_audit_e2e;
+
+#[path = "skill_store_config_e2e.rs"]
+mod skill_store_config_e2e;
+
+#[path = "skill_usage_telemetry_e2e.rs"]
+mod skill_usage_telemetry_e2e;
+
+pub static SUITE_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
