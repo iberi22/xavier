@@ -10,8 +10,6 @@ use serial_test::serial;
 use std::fs;
 use tower::ServiceExt;
 
-xavier::isolate_test_process!();
-
 #[tokio::test]
 #[serial]
 async fn telemetry_dispatch_ack_and_usage_e2e() {
@@ -22,7 +20,11 @@ async fn telemetry_dispatch_ack_and_usage_e2e() {
     fs::create_dir_all(&skill_dir).unwrap();
     fs::write(
         skill_dir.join("SKILL.md"),
-        "---\nname: trace-audit-e2e\ndescription: \"Audit the failed traces of a run\"\n---\nbody",
+        "---
+name: trace-audit-e2e
+description: \"Audit the failed traces of a run\"
+---
+body",
     )
     .unwrap();
 
@@ -52,13 +54,10 @@ async fn telemetry_dispatch_ack_and_usage_e2e() {
     let json1: serde_json::Value = serde_json::from_slice(&body_bytes1).unwrap();
     let dispatch_id = json1["data"]["dispatch_id"]
         .as_str()
-        .unwrap_or("none")
+        .expect("must require a dispatch ID from dispatch JSON")
         .to_string();
 
-    // Wait for async telemetry tasks to finish
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-    // 2. Ack
+    // 2. Ack (Invoked)
     let ack_payload = serde_json::json!({
         "dispatch_id": dispatch_id,
         "skill_name": "trace-audit-e2e",
@@ -72,21 +71,27 @@ async fn telemetry_dispatch_ack_and_usage_e2e() {
         .header("Authorization", format!("Bearer {}", ROOT_TOKEN))
         .body(Body::from(ack_payload.to_string()))
         .unwrap();
-
     let resp2 = app.app.clone().oneshot(req2).await.unwrap();
     assert_eq!(resp2.status(), StatusCode::OK);
 
-    let body_bytes2 = axum::body::to_bytes(resp2.into_body(), usize::MAX)
-        .await
+    // 2b. Ack (Completed)
+    let ack_payload_comp = serde_json::json!({
+        "dispatch_id": dispatch_id,
+        "skill_name": "trace-audit-e2e",
+        "stage": "completed",
+        "tool": "http-test"
+    });
+    let req2b = Request::builder()
+        .method(Method::POST)
+        .uri("/api/skill/ack")
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", ROOT_TOKEN))
+        .body(Body::from(ack_payload_comp.to_string()))
         .unwrap();
-    let json2: serde_json::Value = serde_json::from_slice(&body_bytes2).unwrap();
-    assert_eq!(json2["ok"], true);
-
-    // Wait for async telemetry tasks to finish
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let resp2b = app.app.clone().oneshot(req2b).await.unwrap();
+    assert_eq!(resp2b.status(), StatusCode::OK);
 
     // 3. Usage
-    // Note: the test cli state defaults to workspace "test-ws"
     let req3 = Request::builder()
         .method(Method::GET)
         .uri("/api/skill/usage?workspace=test-ws")
@@ -102,16 +107,30 @@ async fn telemetry_dispatch_ack_and_usage_e2e() {
         .unwrap();
     let json3: serde_json::Value = serde_json::from_slice(&body_bytes3).unwrap();
 
-    // Validate usage counts and workspace attribution
     let skills = json3["skills"].as_array().expect("skills array");
-    let mut found = false;
-    for skill in skills {
-        if skill["skill_name"] == "trace-audit-e2e" {
-            assert!(skill["invoked"].as_i64().unwrap_or(0) >= 1);
-            found = true;
-        }
-    }
-    assert!(found, "trace-audit-e2e not found in usage summary");
+    let skill = skills
+        .iter()
+        .find(|s| s["skill_name"] == "trace-audit-e2e")
+        .expect("trace-audit-e2e not found in usage summary");
+
+    assert_eq!(skill["invoked"].as_i64(), Some(1));
+    assert_eq!(skill["completed"].as_i64(), Some(1));
+    assert_eq!(skill["invocation_coverage"].as_str(), Some("observed"));
+
+    // 4. Excluded from another workspace
+    let req4 = Request::builder()
+        .method(Method::GET)
+        .uri("/api/skill/usage?workspace=ws-other")
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", ROOT_TOKEN))
+        .body(Body::empty())
+        .unwrap();
+    let resp4 = app.app.clone().oneshot(req4).await.unwrap();
+    let bytes4 = axum::body::to_bytes(resp4.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json4: serde_json::Value = serde_json::from_slice(&bytes4).unwrap();
+    assert!(json4["skills"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]

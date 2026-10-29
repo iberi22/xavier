@@ -10,8 +10,6 @@ use serial_test::serial;
 use std::fs;
 use tower::ServiceExt;
 
-xavier::isolate_test_process!();
-
 #[tokio::test]
 #[serial]
 async fn custom_skill_store_env_is_respected() {

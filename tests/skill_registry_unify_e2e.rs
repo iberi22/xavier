@@ -10,8 +10,6 @@ use serial_test::serial;
 use std::fs;
 use tower::ServiceExt;
 
-xavier::isolate_test_process!();
-
 #[tokio::test]
 #[serial]
 async fn list_skills_returns_unified_registry_results() {

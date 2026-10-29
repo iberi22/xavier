@@ -3119,7 +3119,7 @@
         "test_secret_finding_blocks_publication_without_creating_link",
         "release_removes_unchanged_entries_and_owned_directory",
         "test_live_composition_hash_matches_composer_without_files",
-        "tests/skill_ephemeral_e2e.rs::dispatch_skill_returns_context_pack"
+        "tests/skill_ephemeral_e2e.rs::publish_task_skill_lifecycle_e2e"
       ],
       "implemented_in": "src/context/skill_controller/composer.rs, src/context/skill_controller/lease.rs, src/context/skill_dispatcher.rs, src/server/mcp/tools_context.rs, src/server/http/context.rs, src/cli/commands/spawn.rs"
     },

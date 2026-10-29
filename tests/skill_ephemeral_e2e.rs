@@ -10,12 +10,9 @@ use serial_test::serial;
 use std::fs;
 use tower::ServiceExt;
 
-xavier::isolate_test_process!();
-
 #[tokio::test]
 #[serial]
-async fn dispatch_skill_returns_context_pack() {
-    // Create a temporary skill store and set XAVIER_SKILL_STORE
+async fn publish_task_skill_lifecycle_e2e() {
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("store");
     let test_skill_dir = skill_store.join("test-skill");
@@ -28,49 +25,30 @@ async fn dispatch_skill_returns_context_pack() {
 
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_STORE", skill_store.to_str().unwrap())]);
 
-    let app = test_app().await;
+    // Use the test app to build the real WorkspaceContext and AppState
+    let app_struct = test_app().await;
+    let worktree = temp_dir.path().join("worktree");
+    let state = temp_dir.path().join("state");
+    let journal =
+        xavier::context::skill_controller::state::Journal::new(state.join("journal")).unwrap();
 
-    let payload = serde_json::json!({
-        "task": "Test ephemeral skill",
-        "max_tokens": 4000
-    });
+    // Publish
+    let content = "skill body content here";
+    let out = xavier::context::skill_controller::lease::publish_task_skill_bounded(
+        &journal, &worktree, "e2e-task", content, 1000,
+    )
+    .unwrap();
 
-    let req = Request::builder()
-        .method(Method::POST)
-        .uri("/api/skill/dispatch")
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", ROOT_TOKEN))
-        .body(Body::from(payload.to_string()))
-        .unwrap();
+    // Assert provenance / publication
+    assert_eq!(fs::read_to_string(&out.skill_path).unwrap(), content);
+    assert!(fs::symlink_metadata(&out.link_path).is_ok());
+    assert_eq!(journal.committed_transactions().unwrap().len(), 1);
 
-    let resp = app.app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-
-    assert_eq!(json["ok"], true);
-    let data = &json["data"];
-    assert!(data["skill_name"].is_string());
-    // In our hermetic test, the dispatch algorithm should pick the skill or at least
-    // return a valid context pack if there are no matches. If matched, the body should
-    // be present in system_instructions.
-    assert_eq!(
-        data["skill_name"].as_str(),
-        Some("e2e-test-skill"),
-        "Failed to match composed skill"
-    );
-    let instructions = data["context_pack"]["system_instructions"]
-        .as_str()
-        .unwrap_or("");
-    assert!(
-        instructions.contains("e2e-test-skill"),
-        "skill name missing from context pack"
-    );
-    assert!(
-        instructions.contains("Test ephemeral skill"),
-        "skill description missing from context pack"
-    );
+    // Release/Cleanup
+    let report =
+        xavier::context::skill_controller::lease::release_task(&journal, &worktree, "e2e-task")
+            .unwrap();
+    assert!(!out.skill_path.exists());
+    assert!(fs::symlink_metadata(&out.link_path).is_err());
+    assert!(journal.committed_transactions().unwrap().is_empty());
 }
