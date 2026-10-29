@@ -11,7 +11,7 @@
 use anyhow::{anyhow, Result};
 
 use crate::billing::client::{
-    BillingClient, BillingEndpoints, CatalogPlanView, CheckoutOutcome, CheckoutRequest, CloudUsage,
+    BillingClient, BillingEndpoints, CatalogPlanView, CheckoutOutcome, CheckoutRequest,
     PlansResponse,
 };
 use crate::billing::plans::{Plan, CATALOG_VERSION};
@@ -39,7 +39,10 @@ async fn plans(client: &BillingClient, json: bool) -> Result<()> {
     } else {
         print!(
             "{}",
-            render_plans(&catalog, &client.endpoints().billing_url)
+            render_plans(
+                &catalog,
+                &crate::billing::client::redact_url(&client.endpoints().billing_url)
+            )
         );
     }
     Ok(())
@@ -92,14 +95,39 @@ async fn checkout(
     }
 }
 
-async fn status(client: &BillingClient, json: bool) -> Result<()> {
-    let usage = client.cloud_usage().await.map_err(|e| anyhow!(e))?;
-    if json {
-        println!("{}", serde_json::to_string_pretty(&usage)?);
-    } else {
-        print!("{}", render_status(&usage, &client.endpoints().cloud_url));
+pub fn render_reachability_human(reachability: &crate::billing::client::Reachability) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("Billing URL: {}\n", reachability.url));
+    out.push_str(&format!("Source:      {}\n", reachability.source));
+    out.push_str(&format!("Reachable:   {}\n", reachability.reachable));
+    if let Some(status) = reachability.status {
+        out.push_str(&format!("Status:      {}\n", status));
     }
-    Ok(())
+    if let Some(error) = &reachability.error {
+        out.push_str(&format!("Error:       {}\n", error));
+    }
+
+    if reachability.source == "default" && !reachability.reachable {
+        out.push_str(&format!("\ncannot reach swal-billing at {}. Check your connection, or start swal-billing locally (`pnpm dev`) / set {}", reachability.url, crate::billing::client::BILLING_URL_ENV));
+    }
+    out
+}
+
+async fn status(client: &BillingClient, json: bool) -> Result<()> {
+    let reachability = client.check_reachability().await;
+
+    if json {
+        println!("{}", serde_json::to_string(&reachability)?);
+    } else {
+        println!("{}", render_reachability_human(&reachability));
+    }
+
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    if reachability.reachable {
+        std::process::exit(0);
+    } else {
+        std::process::exit(2);
+    }
 }
 
 /// Human-readable byte size (binary units).
@@ -246,50 +274,31 @@ pub fn render_checkout(o: &CheckoutOutcome) -> String {
     }
 }
 
-/// Text for `xavier billing status`.
-pub fn render_status(u: &CloudUsage, source: &str) -> String {
-    let plan = match &u.plan {
-        Some(Some(id)) => match Plan::from_catalog_id(id) {
-            Some(p) => format!("{} ({id})", p.display_name()),
-            None => id.clone(),
-        },
-        Some(None) => "none assigned (legacy per-tenant quota)".to_string(),
-        None => "not reported by this xavier-cloud (needs per-plan quotas)".to_string(),
-    };
-    let percent = match u.percent {
-        Some(p) => format!(" ({p:.2}%)"),
-        None if u.quota > 0 => format!(" ({:.2}%)", u.bytes as f64 * 100.0 / u.quota as f64),
-        None => String::new(),
-    };
-    let mut out = format!("xavier-cloud: {source}\n");
-    out.push_str(&format!("Tenant:        {}\n", u.tenant));
-    out.push_str(&format!("Plan:          {plan}\n"));
-    out.push_str(&format!(
-        "Storage:       {} of {}{percent}\n",
-        human_bytes(u.bytes),
-        human_bytes(u.quota)
-    ));
-    if let Some(chunks) = u.chunks {
-        out.push_str(&format!("Chunks:        {chunks}\n"));
-    }
-    out.push_str(&format!(
-        "AI tokens/day: {}\n",
-        u.ai_tokens_per_day
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "not reported".to_string())
-    ));
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn render_reachability_human_format() {
+        let r = crate::billing::client::Reachability {
+            url: "http://127.0.0.1:8787".to_string(),
+            source: "default".to_string(),
+            reachable: false,
+            status: None,
+            error: Some("connection refused".to_string()),
+        };
+        let out = render_reachability_human(&r);
+        assert!(out.contains("Billing URL: http://127.0.0.1:8787"));
+        assert!(out.contains("cannot reach swal-billing at http://127.0.0.1:8787"));
+        assert!(out.contains("XAVIER_BILLING_URL"));
+    }
 
     fn test_client(url: &str) -> BillingClient {
         BillingClient::new(
             reqwest::Client::new(),
             BillingEndpoints {
                 billing_url: url.into(),
+                billing_url_source: "env",
                 cloud_url: url.into(),
                 cloud_token: Some("test-key".into()),
             },
@@ -455,32 +464,5 @@ mod tests {
             free,
             "Plan 'local' is free and needs no checkout. Nothing was charged."
         );
-    }
-
-    #[test]
-    fn status_explains_missing_and_null_plan() {
-        let mut u = CloudUsage {
-            tenant: "groku-test".into(),
-            plan: None,
-            bytes: 1536,
-            chunks: Some(2),
-            quota: 1000 * 1024,
-            ai_tokens_per_day: None,
-            percent: None,
-        };
-        let s = render_status(&u, "https://xavier-cloud.swal.network");
-        assert!(s.contains("Tenant:        groku-test"));
-        assert!(s.contains("not reported by this xavier-cloud"));
-        assert!(s.contains("AI tokens/day: not reported"));
-        assert!(s.contains("(0.15%)"), "{s}");
-
-        u.plan = Some(None);
-        assert!(render_status(&u, "x").contains("none assigned"));
-
-        u.plan = Some(Some("respaldo".into()));
-        u.ai_tokens_per_day = Some(50_000);
-        let s = render_status(&u, "x");
-        assert!(s.contains("Plan:          Respaldo (respaldo)"), "{s}");
-        assert!(s.contains("AI tokens/day: 50000"));
     }
 }

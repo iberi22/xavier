@@ -49,7 +49,7 @@ pub async fn run_stdio_loop(state: AppState, workspace: WorkspaceContext) -> Res
 /// Subject of the local stdio identity; it carries no root credential.
 pub(crate) const STDIO_LOCAL_SUBJECT: &str = "stdio_local";
 
-pub(crate) async fn dispatch_stdio_value(
+pub async fn dispatch_stdio_value(
     state: AppState,
     workspace: WorkspaceContext,
     payload: serde_json::Value,
