@@ -387,6 +387,56 @@ jobs:
   # Job 3a: Marketplace V2 (market-v2 feature, xavier-market crate)
   #
   # Own job, not a step of `rust-integration`: the market-v2 feature set is a
+
+  integration-suites-setup:
+    name: Setup Integration Suites
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Generate test matrix
+        id: set-matrix
+        run: |
+          echo "matrix=$(python3 scripts/generate-test-matrix.py)" >> $GITHUB_OUTPUT
+
+  integration-suites:
+    name: Integration Suite (${{ matrix.suite }})
+    needs: integration-suites-setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.integration-suites-setup.outputs.matrix) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94
+
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-integration-${{ matrix.suite }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Run Integration Suite
+        run: cargo test --package xavier --locked --test ${{ matrix.suite }} -- --test-threads=1 2>&1 | tee test-output.log
+
+      - name: Upload Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.suite }}
+          path: test-output.log
   # separate compile of `xavier` on top of the ~20 test binaries that job
   # already builds and links, and the combined run hit its 20-minute cap.
   market-v2-tests:

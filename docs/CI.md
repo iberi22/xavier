@@ -45,3 +45,15 @@ cargo test --package xavier --features ci-safe --test observability_contract -- 
 ## Verifying across parallel worktrees
 
 Worktrees that share one `CARGO_TARGET_DIR` all produce the same `target/debug/deps/xavier-<hash>` test binary. If cargo decides nothing changed, the binary you run may come from another worktree. Before a verification run, `touch src/lib.rs`, check that the build log says `Compiling xavier ... (<this worktree>)`, and confirm the new test names appear in the test output. The pre-commit hook lints with **default features** (no `ci-safe`), so run clippy both ways.
+
+## Manual Integration Suites Dispatch
+
+To manually run the full integration suite matrix on `main` or another branch, trigger the `workflow_dispatch` event in the GitHub Actions UI:
+
+1. Navigate to the **Actions** tab in the repository.
+2. Select **Xavier CI / CD** from the list of workflows on the left.
+3. Click the **Run workflow** dropdown on the right side.
+4. Select the branch you want to test (e.g., `main`).
+5. Click **Run workflow**.
+
+This will spawn the `integration-suites-setup` job to discover all `suite_[0-9][0-9].rs` files in the repository and dynamically generate a matrix job (`integration-suites`) that runs each suite in parallel, using `--test-threads=1` and failing fast. It is safe to use this to quickly verify all integration tests when required.
