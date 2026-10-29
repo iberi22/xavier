@@ -3039,6 +3039,8 @@
       ],
       "tests": [
         "self_manage::ticket_create_tests::ticket_open_fingerprint_dedupes",
+        "tests/ticket_dedup_while_open_e2e.rs::ticket_dedup_creates_new_ticket_when_previous_is_resolved",
+        "tests/ticket_dedup_while_open_e2e.rs::ticket_dedup_deduplicates_when_open",
         "self_manage::ticket_create_tests::ticket_closed_fingerprint_creates_new_ticket",
         "self_manage::ticket_create_tests::ticket_unknown_status_dedupes",
         "self_manage::ticket_create_tests::ticket_closed_recurrence_still_rate_limited",
@@ -3410,6 +3412,8 @@
       ],
       "tests": [
         "scheduler::daemon::alert_ticket_tests::repeated_alert_samples_deduplicate_to_one_ticket",
+        "tests/incident_ticket_dedup_e2e.rs::incident_ticket_deduplicates_on_same_fingerprint",
+        "tests/incident_ticket_dedup_e2e.rs::incident_ticket_creates_fresh_for_different_fingerprint",
         "self_manage::ticket_create_tests::test_ticket_deduplication_and_rate_limiting"
       ],
       "user_stories": []
@@ -3458,6 +3462,7 @@
       "implemented_in": "src/health/mod.rs, src/adapters/inbound/http/routes.rs",
       "tests": [
         "embedding_coverage_default_is_not_healthy_when_empty",
+        "tests/health_truth_e2e.rs::unmeasured_subsystems_report_unknown_or_degraded_not_healthy",
         "embedding_coverage_unmeasured_store_is_unknown",
         "degraded_reasons_distinguishes_host_pressure_from_subsystem_failure",
         "degraded_reasons_empty_when_status_healthy"
@@ -4008,7 +4013,7 @@
         "tests::invalid_empty_or_oversized_identity_and_nonce_rejected",
         "tests::sqlite_open_or_transaction_error_is_not_fresh",
         "tests::timestamp_extremes_are_rejected_without_overflow",
-        "tests::concurrent_duplicate_only_one_fresh"
+        "tests::concurrent_cap_and_duplicate_claims"
       ],
       "passes": false,
       "spec_reference": "docs/features/specs/FEATURE-MESH-REPLAY-STORE.md",
