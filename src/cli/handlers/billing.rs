@@ -120,6 +120,7 @@ cannot reach swal-billing at {}. Check your connection, or start swal-billing lo
         }
     }
 
+    let _ = std::io::Write::flush(&mut std::io::stdout());
     if reachability.reachable {
         std::process::exit(0);
     } else {
@@ -270,8 +271,6 @@ pub fn render_checkout(o: &CheckoutOutcome) -> String {
         CheckoutOutcome::NotConfigured { message } => format!("Checkout not configured: {message}"),
     }
 }
-
-/// Text for `xavier billing status`.
 
 #[cfg(test)]
 mod tests {

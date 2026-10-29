@@ -3,6 +3,8 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process::Command;
 
+xavier::isolate_test_process!();
+
 // Integration test for `xavier billing status`
 
 /// Create a Command invoking the Xavier CLI.
@@ -11,7 +13,7 @@ fn xavier_cli() -> Command {
         std::env::var("CARGO_BIN_EXE_xavier")
             .unwrap_or_else(|_| env!("CARGO_BIN_EXE_xavier").to_string()),
     );
-    cmd.env("XAVIER_CONFIG_PATH", "/dev/null");
+
     cmd
 }
 
@@ -25,7 +27,17 @@ fn billing_status_reachable() {
     std::thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
             let mut buf = [0; 1024];
-            let _ = stream.read(&mut buf);
+            let mut read = 0;
+            while read < buf.len() {
+                let n = stream.read(&mut buf[read..]).unwrap_or(0);
+                if n == 0 {
+                    break;
+                }
+                read += n;
+                if buf[..read].windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
             let response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}";
             let _ = stream.write_all(response.as_bytes());
             let _ = stream.flush();
