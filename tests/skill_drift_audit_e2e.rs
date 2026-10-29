@@ -64,7 +64,18 @@ name = \"demo\"
 
     use xavier::context::skill_controller::plan::hash_package;
     let manifest = xavier::context::SkillManifest::from_toml(&manifest_content).unwrap();
-    let hash = hash_package(&package_dir, &manifest.placements[0])
+    let policy = xavier::context::skill_controller::policy::FsPolicy::new(
+        std::slice::from_ref(&sources_dir),
+        std::slice::from_ref(&targets_dir),
+    )
+    .unwrap();
+    let authorized = policy
+        .authorize(
+            xavier::context::skill_controller::policy::RootKind::Source,
+            &package_dir,
+        )
+        .unwrap();
+    let hash = hash_package(&authorized, &manifest.placements[0])
         .unwrap()
         .hash;
     let entry = xavier::context::skill_controller::state::JournalEntry {
