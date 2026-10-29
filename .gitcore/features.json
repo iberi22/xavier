@@ -1516,11 +1516,12 @@
       "id": "fix-daemon-serve-while-starting",
       "implemented_in": "src/server/http/ready_gate.rs, src/cli/server.rs, tests/ready_gate_startup.rs",
       "name": "Daemon Serves While Starting",
+      "notes": "Promoted to beta per PR #3549 evidence (lacks E2E).",
       "passes": false,
       "progress_pct": 0,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3547",
-      "status": "planned",
+      "status": "beta",
       "steps": [
         "Add ReadyGate with a starting response and pass-through once open",
         "Serve right after bind behind the gate",
@@ -1569,7 +1570,8 @@
       "id": "feat-ivn-api",
       "name": "Identity Verification HTTP API + Storage",
       "category": "identity",
-      "status": "stable",
+      "status": "planned",
+      "notes": "Demoted to planned per IMPLEMENTATION-AUDIT_2026-10-28.md contradiction.",
       "progress_pct": 100,
       "description": "REST API for identity verification: requests, validator votes, verified nodes. Persistent storage in marketplace v2 SQLite store (ivn_* tables).",
       "steps": [
@@ -1655,7 +1657,8 @@
       "id": "feat-ivn-karma",
       "name": "IVN Karma Rewards & Sanctions",
       "category": "identity",
-      "status": "stable",
+      "status": "planned",
+      "notes": "Demoted to planned per IMPLEMENTATION-AUDIT_2026-10-28.md contradiction.",
       "progress_pct": 100,
       "description": "Karma deltas: +20 verified, +5 correct validator, +1 abstain, -10 false positive (+90d), -50 liar (+180d). Integrated with EigenTrustEngine (hybrid karma, decision b).",
       "steps": [
@@ -1754,7 +1757,8 @@
       "id": "feat-ivn",
       "name": "Identity Verification Core (selection + verdict + sanctions)",
       "category": "identity",
-      "status": "stable",
+      "status": "planned",
+      "notes": "Demoted to planned per IMPLEMENTATION-AUDIT_2026-10-28.md contradiction.",
       "progress_pct": 100,
       "description": "Deterministic validator assignment, ed25519-signed votes, and append-only SQLite storage in xavier_market behind market-v2 / XAVIER_MARKET_V2=beta.",
       "steps": [
@@ -2256,7 +2260,8 @@
       "id": "feat-codegraph-walk-hardening",
       "name": "CodeGraph walk hardening (tgrep-extracted)",
       "category": "code-graph",
-      "status": "stable",
+      "status": "beta",
+      "notes": "Demoted to beta per IMPLEMENTATION-AUDIT_2026-10-28.md contradiction (code exists but lacks E2E evidence).",
       "progress_pct": 100,
       "description": "Binary-extension rejection, 8KiB NUL sniff and 64MiB size cap in code-graph walk + parse_file guards, with WalkSkipStats counters. Techniques extracted from microsoft/tgrep v1.0.5.",
       "steps": [
@@ -3002,7 +3007,7 @@
       "id": "feat-skill-store-config",
       "name": "Configurable Skill Store and Roots",
       "category": "skills",
-      "status": "planned",
+      "status": "in_progress",
       "progress_pct": 0,
       "description": "Replace hardcoded $HOME/.hermes/skills and config paths with XAVIER_SKILL_STORE/MANIFEST/SOURCE_ROOTS/TARGET_ROOTS env vars; defaults reproduce the current scan set exactly (D5, D7a)",
       "steps": [
@@ -3011,7 +3016,7 @@
         "Enforce host-owned root allowlists and workspace-only fallback when HOME is unset"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-store-config.md (Configurable Skill Store and Scan Paths). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D5, D7a). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-store-config.md (Configurable Skill Store and Scan Paths). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D5, D7a). Planned test filters run as cargo test -p xavier --lib <filter> after implementation. Promoted to in_progress per code paths in src/context/skill_controller/.",
       "tests": [
         "test_skill_store_env_override_respected",
         "test_with_defaults_skill_store_env_wiring",
@@ -3050,7 +3055,7 @@
       "id": "feat-skill-registry-unify",
       "name": "Single Skill Registry Construction",
       "category": "skills",
-      "status": "planned",
+      "status": "in_progress",
       "progress_pct": 0,
       "description": "One build_skill_registry(workspace) used by REST, MCP and session fusion; named, documented dispatch (0.40) and fusion (0.5) confidence constants (D7b, D7c)",
       "steps": [
@@ -3059,7 +3064,7 @@
         "Verify candidate parity and preserve existing response shapes"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-registry-unify.md (Unified Skill Registry Constructor and Thresholds). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D7b, D7c). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-registry-unify.md (Unified Skill Registry Constructor and Thresholds). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D7b, D7c). Planned test filters run as cargo test -p xavier --lib <filter> after implementation. Promoted to in_progress per code paths in src/context/skill_controller/.",
       "tests": [
         "test_mcp_skill_list_matches_rest_on_same_fixture",
         "test_mcp_context_tools_own_no_registry_constructor",
@@ -3073,7 +3078,7 @@
       "id": "feat-skill-projector",
       "name": "Declarative Skill Manifest and Projector",
       "category": "skills",
-      "status": "planned",
+      "status": "in_progress",
       "progress_pct": 0,
       "description": "TOML v1 manifest + CLI plan/apply/rollback projecting one symlink per selected skill into allowlisted tool roots; dry-run default, journal, backups, atomic swap (D1-D4, D9)",
       "steps": [
@@ -3082,7 +3087,7 @@
         "Verify symlink ownership, backups, atomic swaps and idempotent rollback"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md (Declarative Skill Manifest and Projector). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D1-D4, D9). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md (Declarative Skill Manifest and Projector). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D1-D4, D9). Planned test filters run as cargo test -p xavier --lib <filter> after implementation. Promoted to in_progress per code paths in src/context/skill_controller/.",
       "tests": [
         "test_manifest_rejections",
         "test_dry_run_apply_reports_without_touching_disk",
@@ -3099,7 +3104,7 @@
       "id": "feat-skill-ephemeral",
       "name": "Task-Scoped Ephemeral Skills",
       "category": "skills",
-      "status": "planned",
+      "status": "in_progress",
       "progress_pct": 0,
       "description": "Deterministic, bounded, provenance-stamped composition of registry skills + scoped memories + Code-Graph into <worktree>/.agents/skills/eph-<task>; same pack over MCP for live sessions (D11)",
       "steps": [
@@ -3108,7 +3113,7 @@
         "Deliver live MCP packs without files and clean up only journaled unchanged ephemeral paths"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-ephemeral.md (Deterministic Ephemeral Skill Composer). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D4, D10, D11). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-ephemeral.md (Deterministic Ephemeral Skill Composer). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D4, D10, D11). Planned test filters run as cargo test -p xavier --lib <filter> after implementation. Promoted to in_progress per code paths in src/context/skill_controller/.",
       "tests": [
         "composition_stays_within_the_token_budget",
         "out_of_scope_memories_and_decisions_are_excluded",
@@ -3122,7 +3127,7 @@
       "id": "feat-skill-drift-audit",
       "name": "Skill Drift and Secret Audit",
       "category": "skills",
-      "status": "planned",
+      "status": "in_progress",
       "progress_pct": 0,
       "description": "Report-only audit: package/projection hashes, frontmatter, dead paths, version contradictions, native secret scan; proposed diffs for human approval (D10, D13)",
       "steps": [
@@ -3131,7 +3136,7 @@
         "Offer reviewable diffs without automatically rewriting canonical sources"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-drift-audit.md (Skill Drift Audit and Secret Scanner). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D10, D13). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-drift-audit.md (Skill Drift Audit and Secret Scanner). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D10, D13). Planned test filters run as cargo test -p xavier --lib <filter> after implementation. Promoted to in_progress per code paths in src/context/skill_controller/.",
       "tests": [
         "test_fixture_reports_description_reference_conflict_and_secret",
         "test_proposal_never_leaks_any_secret_family_the_review_listed",
@@ -3144,7 +3149,7 @@
       "id": "feat-skill-usage-telemetry",
       "name": "Skill Usage Telemetry",
       "category": "skills",
-      "status": "planned",
+      "status": "in_progress",
       "progress_pct": 0,
       "description": "Local SQLite events (selected/delivered/invoked/completed) with opaque IDs and 30-day retention to inform pruning; never auto-deletes (D12)",
       "steps": [
@@ -3153,7 +3158,7 @@
         "Report observation coverage and prune only event records after 30 days"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-usage-telemetry.md (Local Skill Usage Telemetry). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D12). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-usage-telemetry.md (Local Skill Usage Telemetry). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D12). Planned test filters run as cargo test -p xavier --lib <filter> after implementation. Promoted to in_progress per code paths in src/context/skill_controller/.",
       "tests": [
         "every_stage_round_trips_through_the_schema",
         "record_ack_is_idempotent_for_invoked_and_completed",
@@ -3987,7 +3992,7 @@
       "id": "feat-mesh-replay-store",
       "name": "Mesh Replay Store",
       "category": "mesh",
-      "status": "planned",
+      "status": "in_progress",
       "progress_pct": 0,
       "description": "A reusable SQLite storage primitive to ensure replay requests are rejected and new ones recorded durably.",
       "steps": [
@@ -4015,7 +4020,8 @@
       "req_ids": [
         "REQ-012"
       ],
-      "user_stories": []
+      "user_stories": [],
+      "notes": "Promoted to in_progress per code paths in src/mesh/replay_store.rs."
     },
     "feat-headless-server-packaging": {
       "category": "packaging",
