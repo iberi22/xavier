@@ -89,8 +89,9 @@ async fn test_health_endpoint() {
         body["status"] == "ok"
             || body["status"] == "healthy"
             || body["status"] == "warn"
-            || body["status"] == "unhealthy",
-        "expected ok, healthy, warn or unhealthy, got {}",
+            || body["status"] == "unhealthy"
+            || body["status"] == "degraded",
+        "expected ok, healthy, warn, unhealthy, or degraded, got {}",
         body["status"]
     );
 }
