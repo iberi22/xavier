@@ -1202,6 +1202,10 @@ Manages local accounts directly in `<state>/.xavier/auth.db` — the same databa
 
 List local accounts (id, email, role). Never prints password hashes.
 
+### `xavier tenants list` and `xavier tenants show <id>`
+
+Manage multi-tenant configurations. The `list` command retrieves all tenants available on the server. The `show <id>` command retrieves details of a specific tenant by its ID. Both commands support the `--json` flag to return a JSON document representing the data.
+
 | Flag | Default | Description |
 |---|---|---|
 | `--json` | `false` | Emit JSON instead of a table. |
@@ -1280,6 +1284,7 @@ xavier users totp-enroll --email admin@example.com
 | `xavier node <subcommand>` | SWAL node identity: `create`, `recover`, `status`, `anchor`, `anchor-pack`. |
 | `xavier nodes <subcommand>` | Node provisioning: `add`, `list`, `show`, `rotate`, `remove`, `status`. |
 | `xavier governance <subcommand>` | `list`, `create <title> <description>`, `status <id>`, `vote <id>`, `council`. |
+| `xavier tenants <subcommand>` | `list` (`--json`), `show <id>` (`--json`). |
 | `xavier wallet <subcommand>` | `balance`, `transactions` (`-l, --limit`, default `10`). Skeleton. |
 | `xavier maturity <subcommand>` | Feature maturity scan and reporting. |
 | `xavier telecom <subcommand>` | Private node-to-node telecom. |

@@ -283,6 +283,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: UsersCommand,
     },
+    /// Manage multi-tenant configurations
+    Tenants {
+        #[command(subcommand)]
+        cmd: TenantsCommand,
+    },
     /// Show API quotas and limits for providers
     Quota,
     /// Manage LLM providers and hot-switching
@@ -1401,6 +1406,24 @@ pub enum OnboardClient {
 pub enum TokenScope {
     Read,
     Write,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum TenantsCommand {
+    /// List all tenants
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a specific tenant
+    Show {
+        /// Tenant ID
+        id: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Local user account administration subcommands (operador con acceso al nodo).

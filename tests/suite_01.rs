@@ -48,6 +48,9 @@ mod ci_version_gate;
 #[path = "clavis_auth_pipeline_e2e.rs"]
 mod clavis_auth_pipeline_e2e;
 
+#[path = "cli_tenants_e2e.rs"]
+mod cli_tenants_e2e;
+
 #[path = "clavis_http_e2e.rs"]
 mod clavis_http_e2e;
 
