@@ -61,3 +61,6 @@ mod ticket_dedup_while_open_e2e;
 
 #[path = "health_truth_e2e.rs"]
 mod health_truth_e2e;
+
+#[path = "headless_packaging_contract_e2e.rs"]
+mod headless_packaging_contract_e2e;
