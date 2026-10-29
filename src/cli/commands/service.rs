@@ -1,6 +1,5 @@
 use crate::cli::commands::enums::ServiceCommand;
-use crate::settings::XavierSettings;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde_json::json;
 use std::env;
 use std::process::Command;
@@ -57,8 +56,10 @@ pub async fn run_service_cmd(cmd: &ServiceCommand) -> Result<()> {
             let timeout_dur = Duration::from_secs(*timeout);
             let mut ready = false;
             let http_client = reqwest::Client::new();
-            let port = XavierSettings::current().server.port;
-            let url = format!("http://127.0.0.1:{}/ready", port);
+            let url = format!(
+                "{}/ready",
+                crate::cli::config::resolve_base_url().trim_end_matches('/')
+            );
 
             while start.elapsed() < timeout_dur {
                 if let Ok(resp) = http_client.get(&url).send().await {
@@ -235,7 +236,7 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         drop(listener);
 
-        env::set_var("XAVIER_PORT", port.to_string());
+        env::set_var("XAVIER_URL", format!("http://127.0.0.1:{}", port));
 
         let addr = format!("127.0.0.1:{}", port);
 
@@ -258,7 +259,7 @@ mod tests {
         let result = run_service_cmd(&cmd).await;
 
         listener_task.abort();
-        env::remove_var("XAVIER_PORT");
+        env::remove_var("XAVIER_URL");
 
         assert!(result.is_ok());
     }
