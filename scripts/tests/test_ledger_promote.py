@@ -265,6 +265,20 @@ class PromoterTests(unittest.TestCase):
         self.features['features']['beta']['status'] = 'stable'
         self.blocked('status is not beta, planned, or in_progress')
 
+    def test_deferred_is_frozen(self):
+        self.features['features']['planned']['status'] = 'deferred'
+        evidence, history = self.root / 'evidence.json', self.root / 'history.json'
+        self.path.write_text(json.dumps(self.features))
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py'),
+                                 '--features', str(self.path), '--evidence', str(evidence),
+                                 '--history', str(history)],
+                                capture_output=True, text=True, check=True)
+        report = json.loads(result.stdout)
+        self.assertFalse(report['features']['planned']['eligible'])
+        self.assertIn('deferred features are frozen', report['features']['planned']['reasons'])
+
     def test_unit_only_name_collision_is_rejected(self):
         (self.root / 'src').mkdir()
         (self.root / 'src' / 'lib.rs').write_text('#[test]\nfn test_roundtrip() {}')
@@ -753,6 +767,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertEqual(1, meta.get('features_stable', 0))
         self.assertEqual(2, meta.get('features_beta', 0))
         self.assertEqual(0, meta.get('features_planned', 0))
+        self.assertEqual(0, meta.get('features_deferred', 0))
         self.assertEqual(4, meta.get('total_features', 0))
         self.assertEqual(1, meta.get('features_complete', 0))
         self.assertEqual(60.0, meta.get('overall_progress_pct', 0))

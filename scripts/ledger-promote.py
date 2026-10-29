@@ -237,6 +237,15 @@ def evaluate(document, evidence, history, root, streak):
         if run_failed:
             lane_common.append('ledger and E2E must both succeed')
 
+        if status == 'deferred':
+            results[fid] = {'eligible': False,
+                            'reasons': ['deferred features are frozen'],
+                            'transition': None, 'informational': [],
+                            'evidence_lane': 'none', 'gating_passed': [],
+                            'gating_failed': [], 'candidate_passed': [],
+                            'candidate_failed': [], 'evaluated_passed': [],
+                            'evaluated_failed': []}
+            continue
         transition = PROMOTABLE_TRANSITIONS.get(status)
         if transition is None:
             results[fid] = {'eligible': False,
@@ -389,17 +398,18 @@ def main():
                 document['metadata'] = {}
             meta = document['metadata']
 
-            meta['total_features'] = len(document['features'])
-            counts = {'stable': 0, 'beta': 0, 'in_progress': 0, 'planned': 0}
-            key_map = {'stable': 'features_stable', 'beta': 'features_beta', 'planned': 'features_planned', 'in_progress': 'features_in_progress'}
+            meta['total_features'] = sum(1 for f in document['features'].values() if f.get('status') != 'deferred')
+            counts = {'stable': 0, 'beta': 0, 'in_progress': 0, 'planned': 0, 'deferred': 0}
+            key_map = {'stable': 'features_stable', 'beta': 'features_beta', 'planned': 'features_planned', 'in_progress': 'features_in_progress', 'deferred': 'features_deferred'}
             progress_sum = 0
             for feat in document['features'].values():
                 s = feat.get('status')
                 if s in counts:
                     counts[s] += 1
-                p = feat.get('progress_pct')
-                if isinstance(p, (int, float)) and __import__('math').isfinite(p):
-                    progress_sum += p
+                if s != 'deferred':
+                    p = feat.get('progress_pct')
+                    if isinstance(p, (int, float)) and __import__('math').isfinite(p):
+                        progress_sum += p
 
             # Map counts to existing keys, or insert if initialized from scratch
             for k, v in counts.items():
@@ -413,7 +423,7 @@ def main():
             if 'features_stable' in meta:
                 meta['features_complete'] = meta['features_stable']
 
-            num_feats = len(document['features'])
+            num_feats = sum(1 for f in document['features'].values() if f.get('status') != 'deferred')
             meta['overall_progress_pct'] = round(progress_sum / num_feats, 1) if num_feats else 0.0
             if evidence.get('verified_at'):
                 meta['last_verified'] = evidence['verified_at'][:10]
