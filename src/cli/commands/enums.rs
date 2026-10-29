@@ -2153,6 +2153,16 @@ pub mod memory {
             online: bool,
         },
 
+        /// Check the memory_fts index for corruption
+        FtsCheck {
+            /// Path to the memory SQLite database (defaults to the resolved data directory)
+            #[arg(long)]
+            db: Option<PathBuf>,
+            /// Output result in JSON format
+            #[arg(long)]
+            json: bool,
+        },
+
         /// Prune low-utility or stale memories
         Prune {
             /// Filter memories by path prefix

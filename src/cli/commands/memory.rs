@@ -37,6 +37,9 @@ pub async fn handle_memory_command(
         crate::cli::commands::enums::memory::MemoryCommand::ExportMarkdown { dir, public_only } => {
             run_export_markdown(&dir, public_only.unwrap_or(false)).await
         }
+        crate::cli::commands::enums::memory::MemoryCommand::FtsCheck { db, json } => {
+            run_fts_check(db, json).await
+        }
         crate::cli::commands::enums::memory::MemoryCommand::EncryptPrivate {
             dry_run,
             apply,
@@ -111,6 +114,67 @@ async fn run_import_markdown(dir: &std::path::Path) -> Result<()> {
             .await
     } else {
         anyhow::bail!("Memory store backend unavailable")
+    }
+}
+
+async fn run_fts_check(db: Option<std::path::PathBuf>, json: bool) -> Result<()> {
+    let db_path = db.unwrap_or_else(|| {
+        crate::settings::XavierSettings::resolve_data_dir()
+            .join(crate::memory::repo_memory_store_path::REPO_MEMORY_DB_FILENAME)
+    });
+
+    if !db_path.exists() {
+        if json {
+            println!(
+                "{{\"status\":\"error\",\"error\":\"Database file not found\",\"db\":\"{}\"}}",
+                db_path.display()
+            );
+        } else {
+            eprintln!("Error: Database file not found at {}", db_path.display());
+        }
+        std::process::exit(2);
+    }
+
+    match rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ) {
+        Ok(conn) => {
+            if let Err(e) = conn.execute(
+                "INSERT INTO memory_fts(memory_fts) VALUES('integrity-check')",
+                [],
+            ) {
+                if json {
+                    println!(
+                        "{{\"status\":\"corrupt\",\"error\":\"{}\",\"db\":\"{}\"}}",
+                        e,
+                        db_path.display()
+                    );
+                } else {
+                    println!("corrupt (error: {})", e);
+                }
+                std::process::exit(1);
+            } else {
+                if json {
+                    println!("{{\"status\":\"ok\",\"db\":\"{}\"}}", db_path.display());
+                } else {
+                    println!("ok");
+                }
+                std::process::exit(0);
+            }
+        }
+        Err(e) => {
+            if json {
+                println!(
+                    "{{\"status\":\"error\",\"error\":\"Failed to open database: {}\",\"db\":\"{}\"}}",
+                    e,
+                    db_path.display()
+                );
+            } else {
+                eprintln!("Error: Failed to open database: {}", e);
+            }
+            std::process::exit(2);
+        }
     }
 }
 
