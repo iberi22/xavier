@@ -1,8 +1,12 @@
 //! e2e test for code-graph fingerprint contract.
 
-#![allow(dead_code)]
+use code_graph::db::CodeGraphDB;
+use code_graph::indexer::Indexer;
+use code_graph::query::QueryEngine;
 use std::fs;
+use std::sync::Arc;
 use tempfile::tempdir;
+use xavier::cli::state::CodeGraphState;
 use xavier::isolate_test_process;
 
 isolate_test_process!();
@@ -44,7 +48,6 @@ impl Drop for EnvRestorer {
 async fn test_fingerprint_stable_unchanged() {
     let tmp = tempdir().unwrap();
 
-    // Environment overrides as per rules
     let mut _temp_env = EnvRestorer::set("HOME", tmp.path());
     _temp_env.append("XAVIER_CONFIG_PATH", &tmp.path().join(".config"));
     _temp_env.append("XAVIER_RUNTIME_STATE_PATH", &tmp.path().join(".run"));
@@ -56,27 +59,41 @@ async fn test_fingerprint_stable_unchanged() {
     fs::create_dir_all(&src_dir).unwrap();
 
     let code = "pub fn add(a: i32, b: i32) -> i32 { a + b }";
-    let lib_rs = src_dir.join("lib.rs");
-    fs::write(&lib_rs, code).unwrap();
+    fs::write(src_dir.join("lib.rs"), code).unwrap();
 
-    let file_path = lib_rs.to_str().unwrap();
+    let db = Arc::new(CodeGraphDB::in_memory().unwrap());
+    let indexer = Arc::new(Indexer::new(Arc::clone(&db)));
+    let query = Arc::new(QueryEngine::new(Arc::clone(&db)));
+    let state = CodeGraphState {
+        db: Arc::clone(&db),
+        indexer,
+        query,
+    };
 
-    let fp1 = code_graph::fingerprint::fingerprint_source(
-        code,
+    state.indexer.index(&root, true).await.unwrap();
+
+    let path_str = src_dir.join("lib.rs").to_str().unwrap().to_string();
+    let code_content = fs::read_to_string(&path_str).unwrap();
+    let fp = code_graph::fingerprint::fingerprint_source(
+        &code_content,
         code_graph::types::Language::Rust,
-        file_path,
+        &path_str,
         &[],
     );
+
+    // stable
+    state.indexer.index(&root, true).await.unwrap();
+
     let fp2 = code_graph::fingerprint::fingerprint_source(
-        code,
+        &code_content,
         code_graph::types::Language::Rust,
-        file_path,
+        &path_str,
         &[],
     );
 
-    assert_eq!(fp1.functions.len(), 1);
+    assert_eq!(fp.functions.len(), 1);
     assert_eq!(
-        code_graph::fingerprint::to_json_sorted(&fp1),
+        code_graph::fingerprint::to_json_sorted(&fp),
         code_graph::fingerprint::to_json_sorted(&fp2)
     );
 }
@@ -86,7 +103,6 @@ async fn test_fingerprint_stable_unchanged() {
 async fn test_fingerprint_changes() {
     let tmp = tempdir().unwrap();
 
-    // Environment overrides as per rules
     let mut _temp_env = EnvRestorer::set("HOME", tmp.path());
     _temp_env.append("XAVIER_CONFIG_PATH", &tmp.path().join(".config"));
     _temp_env.append("XAVIER_RUNTIME_STATE_PATH", &tmp.path().join(".run"));
@@ -103,25 +119,57 @@ async fn test_fingerprint_changes() {
     let lib_rs = src_dir.join("lib.rs");
 
     fs::write(&lib_rs, code1).unwrap();
-    let file_path = lib_rs.to_str().unwrap();
 
-    let fp1 = code_graph::fingerprint::fingerprint_source(
-        code1,
-        code_graph::types::Language::Rust,
-        file_path,
-        &[],
-    );
+    let fp1 = {
+        let db = Arc::new(CodeGraphDB::in_memory().unwrap());
+        let indexer = Arc::new(Indexer::new(Arc::clone(&db)));
+        let query = Arc::new(QueryEngine::new(Arc::clone(&db)));
+        let state = CodeGraphState {
+            db: Arc::clone(&db),
+            indexer,
+            query,
+        };
 
+        state.indexer.index(&root, true).await.unwrap();
+
+        let path_str = lib_rs.to_str().unwrap().to_string();
+        let code_content = fs::read_to_string(&path_str).unwrap();
+
+        let fp_doc = code_graph::fingerprint::fingerprint_source(
+            &code_content,
+            code_graph::types::Language::Rust,
+            &path_str,
+            &[],
+        );
+        code_graph::fingerprint::to_json_sorted(&fp_doc)
+    };
+
+    // change the source
     fs::write(&lib_rs, code2).unwrap();
-    let fp2 = code_graph::fingerprint::fingerprint_source(
-        code2,
-        code_graph::types::Language::Rust,
-        file_path,
-        &[],
-    );
 
-    assert_ne!(
-        code_graph::fingerprint::to_json_sorted(&fp1),
-        code_graph::fingerprint::to_json_sorted(&fp2)
-    );
+    let fp2 = {
+        let db2 = Arc::new(CodeGraphDB::in_memory().unwrap());
+        let indexer2 = Arc::new(Indexer::new(Arc::clone(&db2)));
+        let query2 = Arc::new(QueryEngine::new(Arc::clone(&db2)));
+        let state2 = CodeGraphState {
+            db: Arc::clone(&db2),
+            indexer: indexer2,
+            query: query2,
+        };
+
+        state2.indexer.index(&root, true).await.unwrap();
+
+        let path_str = lib_rs.to_str().unwrap().to_string();
+        let code_content = fs::read_to_string(&path_str).unwrap();
+
+        let fp_doc = code_graph::fingerprint::fingerprint_source(
+            &code_content,
+            code_graph::types::Language::Rust,
+            &path_str,
+            &[],
+        );
+        code_graph::fingerprint::to_json_sorted(&fp_doc)
+    };
+
+    assert_ne!(fp1, fp2);
 }
