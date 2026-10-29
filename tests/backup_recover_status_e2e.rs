@@ -77,14 +77,51 @@ fn text(output: &Output) -> String {
 }
 
 #[test]
-fn recovery_status_returns_success_and_valid_output() {
+fn recovery_status_reports_unrecoverable_fresh_node_honestly() {
     let h = Harness::new();
-    let output = h.run(&["recovery", "status"]);
+    let output = h.run(&["recovery", "status", "--json"]);
     let out_text = text(&output);
     assert!(output.status.success(), "{}", out_text);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json_line = stdout
+        .lines()
+        .find(|l| l.trim_start().starts_with('{'))
+        .unwrap_or_else(|| panic!("no JSON object in output: {out_text}"));
+    let v: serde_json::Value = serde_json::from_str(json_line).unwrap();
+
+    // No record key exists on a fresh node, and status must not invent one.
+    assert_eq!(v["key_source"]["kind"], "missing", "{v}");
+    assert!(v["key_fingerprint"].is_null(), "{v}");
+    // No recovery artifacts exist, so recovery must be reported as impossible.
+    assert_eq!(v["manifest"]["present"], false, "{v}");
+    assert_eq!(v["kcv"]["present"], false, "{v}");
+    assert_eq!(v["mnemonic_seal"]["present"], false, "{v}");
+    assert_eq!(v["passphrase_seal"]["present"], false, "{v}");
+    assert_eq!(v["recoverable"], false, "{v}");
+    let warnings: Vec<String> = v["warnings"]
+        .as_array()
+        .expect("warnings array")
+        .iter()
+        .filter_map(|w| w.as_str().map(str::to_owned))
+        .collect();
     assert!(
-        out_text.contains("recovery status"),
-        "Output should contain 'recovery status'"
+        warnings
+            .iter()
+            .any(|w| w.contains("no recovery seal exists")),
+        "{warnings:?}"
+    );
+    assert!(
+        warnings.iter().any(|w| w.contains("no KCV")),
+        "{warnings:?}"
+    );
+
+    // A read-only status call must not generate keys or recovery material.
+    let recovery_entries: Vec<_> = fs::read_dir(h.path("recovery")).unwrap().collect();
+    assert!(recovery_entries.is_empty(), "status wrote recovery files");
+    let key_path = v["key_source"]["path"].as_str().expect("key path");
+    assert!(
+        !std::path::Path::new(key_path).exists(),
+        "status generated a record key at {key_path}"
     );
 }
 
@@ -108,12 +145,13 @@ fn cloud_verify_without_cloud_config_fails_clearly() {
 #[test]
 fn cloud_backup_deep_verify_requires_passphrase() {
     let h = Harness::new();
-    // Configured but unreachable Worker (discard port); --deep must refuse
-    // before any network fetch when no passphrase is available.
+    // Configured Worker on an unroutable port (port 0 fails immediately, so
+    // the health probe cannot hang); --deep must then refuse with the precise
+    // missing-passphrase diagnostic.
     let output = h.run_env(
         &["cloud", "verify", "--deep"],
         &[
-            ("PGHEART_URL", "http://127.0.0.1:9"),
+            ("PGHEART_URL", "http://127.0.0.1:0"),
             ("PGHEART_TOKEN", "test-token"),
             ("PGHEART_INSTANCE_ID", "e2e-instance"),
         ],
@@ -125,8 +163,8 @@ fn cloud_backup_deep_verify_requires_passphrase() {
         out_text
     );
     assert!(
-        out_text.to_lowercase().contains("passphrase"),
-        "Output should complain about passphrase: {}",
+        out_text.contains("no cloud backup passphrase"),
+        "Output should name the missing cloud backup passphrase: {}",
         out_text
     );
 }
