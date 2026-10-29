@@ -14,14 +14,11 @@ xavier::isolate_test_process!();
 #[serial]
 #[allow(clippy::await_holding_lock)]
 async fn audit_endpoint_returns_json_report() {
-    let _lock = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _lock = crate::SUITE_ENV_LOCK.lock().await;
     let temp_dir = tempfile::tempdir().unwrap();
     let sources_dir = temp_dir.path().join("sources");
     let targets_dir = temp_dir.path().join("targets");
     let package_dir = sources_dir.join("demo");
-    let journal_dir = temp_dir.path().join("journal");
     fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&targets_dir).unwrap();
 
@@ -59,8 +56,11 @@ name = \"demo\"
     );
     fs::write(&manifest_path, &manifest_content).unwrap();
 
+    let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_MANIFEST", manifest_path.to_str().unwrap())]);
+    let app = test_app().await;
+
     // Journal baseline hash
-    let journal = xavier::context::skill_controller::state::Journal::new(journal_dir).unwrap();
+    let journal = xavier::context::skill_controller::state::Journal::from_settings().unwrap();
 
     use xavier::context::skill_controller::plan::hash_package;
     let manifest = xavier::context::SkillManifest::from_toml(&manifest_content).unwrap();
@@ -79,9 +79,6 @@ name = \"demo\"
         .begin_transaction("projection", vec![entry], false)
         .unwrap();
     journal.commit_transaction("projection", false).unwrap();
-
-    let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_MANIFEST", manifest_path.to_str().unwrap())]);
-    let app = test_app().await;
 
     // Induce drift and seed a synthetic secret
     let secret = format!("AKIA{}EXAMPLE", "IOSFODNN7");
@@ -131,11 +128,10 @@ name = \"demo\"
 #[serial]
 #[allow(clippy::await_holding_lock)]
 async fn audit_endpoint_returns_not_found_when_manifest_missing() {
-    let _lock = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _lock = crate::SUITE_ENV_LOCK.lock().await;
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_MANIFEST", "missing")]);
     let app = test_app().await;
+
     let st = status(&app.app, Method::GET, "/api/skill/audit", Some(ROOT_TOKEN)).await;
     assert_eq!(st, axum::http::StatusCode::UNPROCESSABLE_ENTITY); // 422
 }

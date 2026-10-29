@@ -13,7 +13,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -349,9 +349,7 @@ fn mem_record(
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn encrypted_space_writes_no_plaintext_and_reads_back() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let canary_text = format!("note {CANARY} for the owner");
     let (st, id1) = add(&f, &f.admin_a, "/memory/add", "notes/one", &canary_text).await;
@@ -425,9 +423,7 @@ async fn encrypted_space_writes_no_plaintext_and_reads_back() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn revisions_checkpoints_and_snapshots_are_sealed() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let ring = f.manager.key_ring().expect("ring");
     let dir = space_dir(&f, "esp_a").await;
@@ -504,9 +500,7 @@ async fn revisions_checkpoints_and_snapshots_are_sealed() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn other_keys_cannot_open_a_spaces_rows_even_if_the_file_is_copied() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let (st, id) = add(
         &f,
@@ -580,9 +574,7 @@ async fn other_keys_cannot_open_a_spaces_rows_even_if_the_file_is_copied() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn locked_space_is_423_and_leaks_nothing() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let (st, id) = add(
         &f,
@@ -669,9 +661,7 @@ async fn add_raw(f: &Fx, route: &str, path: &str, text: &str) -> (StatusCode, se
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn unencrypted_space_is_unchanged() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let (st, id) = add(&f, &f.admin_p, "/memory/add", "n/p", "plain okapi record").await;
     assert_eq!(st, StatusCode::OK);
@@ -698,9 +688,7 @@ async fn unencrypted_space_is_unchanged() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn linked_search_decrypts_server_side_and_skips_locked() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let (st, _) = add(
         &f,
@@ -779,9 +767,7 @@ async fn side_store(f: &Fx, name: &str, space: &str) -> (VecSqliteMemoryStore, s
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn symbols_path_never_writes_sealed_words() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let (store, db) = side_store(&f, "sym.sqlite", "esp_a").await;
     store
@@ -833,9 +819,7 @@ async fn symbols_path_never_writes_sealed_words() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn beliefs_and_session_tokens_are_not_stored_in_clear() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let (store, db) = side_store(&f, "bel.sqlite", "esp_a").await;
     let mut edge = xavier::domain::memory::belief::BeliefEdge::new(
@@ -888,9 +872,7 @@ async fn beliefs_and_session_tokens_are_not_stored_in_clear() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn unmarked_and_foreign_rows_are_never_served() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let (store, db) = side_store(&f, "inj.sqlite", "esp_a").await;
     store
@@ -970,9 +952,7 @@ async fn disabled_conversations_refuse_everything_and_create_no_file() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn private_text_is_not_embedded_by_a_remote_provider() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let saved: Vec<(&str, Option<String>)> = [
         "XAVIER_EMBEDDING_PROVIDER_MODE",

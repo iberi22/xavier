@@ -16,9 +16,7 @@ xavier::isolate_test_process!();
 #[serial]
 #[allow(clippy::await_holding_lock)]
 async fn list_skills_returns_unified_registry_results() {
-    let _lock = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _lock = crate::SUITE_ENV_LOCK.lock().await;
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("store");
 
@@ -67,9 +65,7 @@ async fn list_skills_returns_unified_registry_results() {
 #[serial]
 #[allow(clippy::await_holding_lock)]
 async fn list_skills_returns_unauthorized_without_token() {
-    let _lock = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _lock = crate::SUITE_ENV_LOCK.lock().await;
     let app = test_app().await;
 
     let req = Request::builder()

@@ -12,7 +12,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -324,9 +324,7 @@ async fn seed(f: &Fx) {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn a_reads_b_through_link_and_results_are_tagged() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     seed(&f).await;
 
@@ -358,9 +356,7 @@ async fn a_reads_b_through_link_and_results_are_tagged() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn link_is_one_way_b_cannot_read_a() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     seed(&f).await;
     grant(&f, serde_json::json!({})).await;
@@ -372,9 +368,7 @@ async fn link_is_one_way_b_cannot_read_a() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn revoked_and_expired_links_are_excluded() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     seed(&f).await;
     let id = grant(&f, serde_json::json!({})).await;
@@ -412,9 +406,7 @@ async fn revoked_and_expired_links_are_excluded() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn non_member_search_returns_zero() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     seed(&f).await;
     // B links to A only; a third space C has no link and no membership.
@@ -440,9 +432,7 @@ async fn non_member_search_returns_zero() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn link_never_lets_a_write_into_b() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     seed(&f).await;
     grant(&f, serde_json::json!({})).await;
@@ -507,9 +497,7 @@ async fn link_never_lets_a_write_into_b() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn only_admin_or_root_can_manage_links() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let member = issue(&f, "esp_b", "mia", SpaceRole::Member);
     let moderator = issue(&f, "esp_b", "mo", SpaceRole::Moderator);
@@ -544,9 +532,7 @@ async fn only_admin_or_root_can_manage_links() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn link_filters_limit_what_is_visible() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     seed(&f).await;
     grant(&f, serde_json::json!({"path_prefix": "pub/"})).await;
@@ -559,9 +545,7 @@ async fn link_filters_limit_what_is_visible() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn encrypted_linked_space_is_searched_server_side() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     seed(&f).await;
     let tok = create_space(&f.manager, "esp_enc", "erin", true).await;
@@ -591,9 +575,7 @@ async fn encrypted_linked_space_is_searched_server_side() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn mcp_mem_search_include_linked() {
-    let _g = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     seed(&f).await;
     let call = |tok: String, linked: bool| {

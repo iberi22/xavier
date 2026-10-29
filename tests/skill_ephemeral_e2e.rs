@@ -11,9 +11,7 @@ xavier::isolate_test_process!();
 #[serial]
 #[allow(clippy::await_holding_lock)]
 async fn publish_task_skill_lifecycle_e2e() {
-    let _lock = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _lock = crate::SUITE_ENV_LOCK.lock().await;
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("store");
     let test_skill_dir = skill_store.join("test-skill");
@@ -46,7 +44,7 @@ async fn publish_task_skill_lifecycle_e2e() {
     assert_eq!(journal.committed_transactions().unwrap().len(), 1);
 
     // Release/Cleanup
-    let report =
+    let _report =
         xavier::context::skill_controller::lease::release_task(&journal, &worktree, "e2e-task")
             .unwrap();
     assert!(!out.skill_path.exists());

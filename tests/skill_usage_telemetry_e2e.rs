@@ -16,9 +16,7 @@ xavier::isolate_test_process!();
 #[serial]
 #[allow(clippy::await_holding_lock)]
 async fn telemetry_dispatch_ack_and_usage_e2e() {
-    let _lock = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _lock = crate::SUITE_ENV_LOCK.lock().await;
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("store");
 
@@ -143,9 +141,7 @@ body",
 #[serial]
 #[allow(clippy::await_holding_lock)]
 async fn usage_endpoint_unauthorized() {
-    let _lock = crate::SUITE_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _lock = crate::SUITE_ENV_LOCK.lock().await;
     let app = test_app().await;
     let req = Request::builder()
         .method(Method::GET)
