@@ -58,7 +58,7 @@ fn system_unit_runs_headless_as_dedicated_user() {
 }
 
 /// Builds `xavier-server-test-x86_64-unknown-linux-gnu.tar.gz` and its `.sha256` in `dir`.
-fn fake_release(dir: &Path) -> (PathBuf, PathBuf) {
+pub fn fake_release(dir: &Path) -> (PathBuf, PathBuf) {
     let make = packaging_dir().join("make-tarball.sh");
     let bin = dir.join("xavier-fake");
     fs::write(&bin, "#!/bin/sh\necho xavier-fake\n").unwrap();
@@ -78,7 +78,7 @@ fn fake_release(dir: &Path) -> (PathBuf, PathBuf) {
     (archive, sha)
 }
 
-fn run_user_install(home: &Path, archive: &Path, sha: &Path) -> std::process::Output {
+pub fn run_user_install(home: &Path, archive: &Path, sha: &Path) -> std::process::Output {
     Command::new("sh")
         .arg(packaging_dir().join("install.sh"))
         .args(["--user", "--no-start", "--archive"])
@@ -97,13 +97,13 @@ fn run_user_install(home: &Path, archive: &Path, sha: &Path) -> std::process::Ou
 fn installer_rejects_tampered_archive() {
     let tmp = tempfile::tempdir().unwrap();
     let (archive, sha) = fake_release(tmp.path());
-    fs::write(
+    std::fs::write(
         &sha,
         "0000000000000000000000000000000000000000000000000000000000000000  x.tar.gz\n",
     )
     .unwrap();
     let home = tmp.path().join("home");
-    fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
 
     let out = run_user_install(&home, &archive, &sha);
 
@@ -119,7 +119,7 @@ fn installer_user_mode_installs_binary_and_private_token() {
     let tmp = tempfile::tempdir().unwrap();
     let (archive, sha) = fake_release(tmp.path());
     let home = tmp.path().join("home");
-    fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
 
     let out = run_user_install(&home, &archive, &sha);
     assert!(
@@ -133,9 +133,9 @@ fn installer_user_mode_installs_binary_and_private_token() {
     assert_eq!(String::from_utf8_lossy(&ran.stdout).trim(), "xavier-fake");
 
     let env_file = home.join(".config/xavier/xavier.env");
-    let mode = fs::metadata(&env_file).unwrap().permissions().mode() & 0o777;
+    let mode = std::fs::metadata(&env_file).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600, "env file must be private");
-    let env = fs::read_to_string(&env_file).unwrap();
+    let env = std::fs::read_to_string(&env_file).unwrap();
     let token = env
         .lines()
         .find_map(|l| l.strip_prefix("XAVIER_TOKEN="))
@@ -145,7 +145,7 @@ fn installer_user_mode_installs_binary_and_private_token() {
     // A second run keeps the existing token.
     let again = run_user_install(&home, &archive, &sha);
     assert!(again.status.success());
-    assert_eq!(fs::read_to_string(&env_file).unwrap(), env);
+    assert_eq!(std::fs::read_to_string(&env_file).unwrap(), env);
 
     assert!(home.join(".config/systemd/user/xavier.service").exists());
 }

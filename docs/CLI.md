@@ -48,6 +48,31 @@ xavier http 8006
 xavier http --mcp-port 8100 --host 127.0.0.1
 ```
 
+### `xavier service` / `xavier logs`
+
+Manage the systemd user unit `xavier.service` with `service status`, `start`,
+`stop`, `reload`, or `restart`. Reload falls back to restart if reload is
+unavailable or fails. Restart polls `/ready` using the CLI URL configuration
+(`XAVIER_URL`, otherwise `XAVIER_HOST` / `XAVIER_PORT` and settings).
+`--timeout <seconds>` bounds the readiness wait, including each HTTP request
+(default: 120 seconds).
+
+Each service subcommand accepts `--json` and emits one JSON object. Failures
+return exit code 1; status also returns 1 when the unit is inactive. Reload's
+JSON status is `restarted` when the fallback was used.
+
+Logs support `--since`, `--grep`, `-n` / `--lines`, `-f` / `--follow`, and
+`--json` (newline-delimited journal JSON records). Both commands disable pagers.
+`XAVIER_SYSTEMCTL_CMD` and `XAVIER_JOURNALCTL_CMD` can override the executables.
+
+```bash
+xavier service status --json
+xavier service restart --timeout 30 --json
+xavier service reload
+xavier logs --since "1 hour ago" --grep "error" -n 100 --json
+xavier logs --follow
+```
+
 ### `xavier mcp`
 
 Start the stdio MCP server.
@@ -201,9 +226,9 @@ of showing defaults.
 
 | Variable | Used by | Default |
 |---|---|---|
-| `XAVIER_BILLING_URL` | `plans`, `checkout` | `http://127.0.0.1:8787` (`pnpm dev` in swal-billing; there is no public deployment yet) |
-| `PGHEART_URL` (alias `XAVIER_PGHEART_URL`) | `status`, `checkout` | `https://xavier-cloud.swal.network` |
-| `PGHEART_TOKEN` (alias `XAVIER_PGHEART_TOKEN`) | `status`, `checkout` | none: your xavier-cloud tenant API key, sent as `Authorization: Bearer` |
+| `XAVIER_BILLING_URL` | `plans`, `checkout`, `status` | `http://127.0.0.1:8787` (`pnpm dev` in swal-billing; there is no public deployment yet) |
+| `PGHEART_URL` (alias `XAVIER_PGHEART_URL`) | `checkout` | `https://xavier-cloud.swal.network` |
+| `PGHEART_TOKEN` (alias `XAVIER_PGHEART_TOKEN`) | `checkout` | none: your xavier-cloud tenant API key, sent as `Authorization: Bearer` |
 
 The `PGHEART_*` names win over the `XAVIER_PGHEART_*` aliases when both are set.
 
@@ -228,9 +253,9 @@ loopback hosts. Checkout error response bodies are withheld.
 
 ### `xavier billing status [--json]` (default for `xavier billing`)
 
-Shows your tenant, plan, storage used against your quota, chunks and AI tokens
-per day from xavier-cloud (`GET /v1/cloud/usage`). An xavier-cloud deployment
-without per-plan quotas does not report a plan; the CLI says so instead of guessing.
+Prints the resolved billing URL, whether it came from the environment or the built-in
+default, and performs a reachability probe against the public plan catalog endpoint
+(`GET /v1/xavier/plans`) with a 5s timeout. Exits with 0 when reachable, or 2 when unreachable.
 
 ```bash
 export PGHEART_TOKEN=...            # your tenant API key

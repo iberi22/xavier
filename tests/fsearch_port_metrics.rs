@@ -8,25 +8,6 @@ xavier::isolate_test_process!();
 
 use chrono::Utc;
 use tempfile::tempdir;
-struct EnvGuard {
-    prev: Option<std::ffi::OsString>,
-}
-impl EnvGuard {
-    fn set(val: &std::path::Path) -> Self {
-        let prev = std::env::var_os("XAVIER_DATA_DIR");
-        std::env::set_var("XAVIER_DATA_DIR", val);
-        Self { prev }
-    }
-}
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        if let Some(v) = &self.prev {
-            std::env::set_var("XAVIER_DATA_DIR", v);
-        } else {
-            std::env::remove_var("XAVIER_DATA_DIR");
-        }
-    }
-}
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 use xavier::memory::store::{HybridSearchMode, MemoryRecord, MemoryStore};
 
@@ -306,14 +287,25 @@ async fn measure(
 }
 
 #[tokio::test]
-#[allow(clippy::await_holding_lock)]
 async fn fsearch_port_metrics_report() {
-    let _lock = crate::SUITE_ENV_LOCK.lock().await;
     // Keep key material out of the real data dir, as in tests/unified_storage_validation.rs.
     let tmp = tempdir().unwrap();
     let key_blocker = tmp.path().join("no-key-blocker");
     std::fs::write(&key_blocker, b"not a directory").unwrap();
-    let _env = EnvGuard::set(&key_blocker.join("data"));
+    // suite_04 shares one process: hold the suite env lock and restore XAVIER_DATA_DIR on drop
+    // so parallel `cargo test` runs of other suite_04 tests never see the blocker path.
+    let _env_lock = crate::SUITE_ENV_LOCK.lock().await;
+    struct RestoreDataDir(Option<std::ffi::OsString>);
+    impl Drop for RestoreDataDir {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(v) => std::env::set_var("XAVIER_DATA_DIR", v),
+                None => std::env::remove_var("XAVIER_DATA_DIR"),
+            }
+        }
+    }
+    let _restore = RestoreDataDir(std::env::var_os("XAVIER_DATA_DIR"));
+    std::env::set_var("XAVIER_DATA_DIR", key_blocker.join("data"));
 
     let store = VecSqliteMemoryStore::new(VecSqliteStoreConfig {
         path: tmp.path().join("fsearch-port.db"),
