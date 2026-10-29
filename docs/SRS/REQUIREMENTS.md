@@ -617,9 +617,9 @@ Register a VPS as a private SWAL node over SSH. Xavier **genera un keypair SSH d
 
 - **Category:** Mesh
 - **Priority:** High
-- **SRS Status:** `implemented`
+- **SRS Status:** `planned`
 - **Features:** `feat-mesh-network`
-- **Files:** `src/mesh/libp2p_transport.rs`, `src/mesh/fallback_transport.rs`, `src/mesh/iroh_transport.rs`
+- **Files:** `src/mesh/maturity.rs` (stub)
 - **Docs:** Wave-3 Docs — enterprise mesh hardening
 
 ### Description
