@@ -137,8 +137,21 @@ async fn start_server() -> (u16, ServerInstance) {
                 server.log_tail()
             );
         }
+        // Since the ready gate (src/server/http/ready_gate.rs) the listener answers
+        // `/health` with 200 `{"status":"starting"}` before the app router is
+        // installed, so a 200 alone does not mean "booted": wait until the real
+        // health handler answers (status is no longer "starting").
         match client.get(format!("{url}/health")).send().await {
-            Ok(resp) if resp.status().is_success() => return (port, server),
+            Ok(resp) if resp.status().is_success() => {
+                let body: serde_json::Value = resp.json().await.unwrap_or_default();
+                if body.get("status").and_then(|s| s.as_str()) == Some("starting") {
+                    last_error =
+                        "GET /health -> 200 {\"status\":\"starting\"} (ready gate still closed)"
+                            .to_string();
+                } else {
+                    return (port, server);
+                }
+            }
             Ok(resp) => last_error = format!("GET /health -> HTTP {}", resp.status()),
             Err(err) => last_error = err.to_string(),
         }
