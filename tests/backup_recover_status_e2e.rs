@@ -11,7 +11,9 @@ struct Harness {
 impl Harness {
     fn new() -> Self {
         let tmp = tempfile::tempdir().unwrap();
-        for dir in ["home", "data", "config", "run", "share", "cache", "recovery"] {
+        for dir in [
+            "home", "data", "config", "run", "share", "cache", "recovery",
+        ] {
             fs::create_dir_all(tmp.path().join(dir)).unwrap();
         }
         Self { tmp }
@@ -22,6 +24,10 @@ impl Harness {
     }
 
     fn run(&self, args: &[&str]) -> Output {
+        self.run_env(args, &[])
+    }
+
+    fn run_env(&self, args: &[&str], extra_env: &[(&str, &str)]) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_xavier"));
         command
             .env_clear()
@@ -45,6 +51,9 @@ impl Harness {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .args(args);
+        for (k, v) in extra_env {
+            command.env(k, v);
+        }
 
         #[cfg(unix)]
         {
@@ -64,7 +73,8 @@ impl Harness {
 }
 
 fn text(output: &Output) -> String {
-    String::from_utf8_lossy(&output.stdout).into_owned() + &String::from_utf8_lossy(&output.stderr).into_owned()
+    String::from_utf8_lossy(&output.stdout).into_owned()
+        + &String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
 #[test]
@@ -73,14 +83,51 @@ fn recovery_status_returns_success_and_valid_output() {
     let output = h.run(&["recovery", "status"]);
     let out_text = text(&output);
     assert!(output.status.success(), "{}", out_text);
-    assert!(out_text.contains("recovery status"), "Output should contain 'recovery status'");
+    assert!(
+        out_text.contains("recovery status"),
+        "Output should contain 'recovery status'"
+    );
 }
 
 #[test]
-fn cloud_backup_verify_requires_passphrase() {
+fn cloud_verify_without_cloud_config_fails_clearly() {
     let h = Harness::new();
     let output = h.run(&["cloud", "verify"]);
     let out_text = text(&output);
-    assert!(!output.status.success(), "Should fail without passphrase: {}", out_text);
-    assert!(out_text.to_lowercase().contains("passphrase"), "Output should complain about passphrase");
+    assert!(
+        !output.status.success(),
+        "Should fail without cloud config: {}",
+        out_text
+    );
+    assert!(
+        out_text.contains("Xavier Cloud is not configured"),
+        "Output should say cloud is not configured: {}",
+        out_text
+    );
+}
+
+#[test]
+fn cloud_backup_deep_verify_requires_passphrase() {
+    let h = Harness::new();
+    // Configured but unreachable Worker (discard port); --deep must refuse
+    // before any network fetch when no passphrase is available.
+    let output = h.run_env(
+        &["cloud", "verify", "--deep"],
+        &[
+            ("PGHEART_URL", "http://127.0.0.1:9"),
+            ("PGHEART_TOKEN", "test-token"),
+            ("PGHEART_INSTANCE_ID", "e2e-instance"),
+        ],
+    );
+    let out_text = text(&output);
+    assert!(
+        !output.status.success(),
+        "Should fail without passphrase: {}",
+        out_text
+    );
+    assert!(
+        out_text.to_lowercase().contains("passphrase"),
+        "Output should complain about passphrase: {}",
+        out_text
+    );
 }
