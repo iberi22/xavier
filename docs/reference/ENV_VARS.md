@@ -193,6 +193,7 @@
 | `XAVIER_CLOUD_BACKUP_PASSPHRASE_FILE` | `string` |  | Internal | ✅ |
 | `XAVIER_CODEGRAPH_BIN` | `string` |  | Internal | ❌ |
 | `XAVIER_CODEGRAPH_INSTALL_ACTIVE` | `string` |  | Internal | ❌ |
+| `XAVIER_CODEGRAPH_PROBE_DEPTH` | `string` | (unset) | Recursion guard for sidecar probing | ❌ |
 | `XAVIER_CODEGRAPH_REPROMPT` | `string` |  | Internal | ❌ |
 | `XAVIER_CODEGRAPH_UDS_PATH` | `string` |  | Internal | ❌ |
 | `XAVIER_CODE_EXTRA_ROOTS` | `string` |  | Internal | ❌ |
