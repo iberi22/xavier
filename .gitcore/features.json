@@ -1998,7 +1998,9 @@
         "explain::history::tests::explained_file_uses_commits_of_its_own_repo_only",
         "explain::history::tests::locate_repo_names_the_innermost_repo",
         "explain::codegraph::tests::lookup_uses_path_relative_to_the_containing_repo",
-        "server::explain_route::tests::explain_reports_the_repo_that_contains_the_file"
+        "server::explain_route::tests::explain_reports_the_repo_that_contains_the_file",
+        "tests/explain_repo_resolution_e2e.rs::repo_resolution_finds_nested_repo",
+        "tests/explain_repo_resolution_e2e.rs::repo_resolution_fails_for_missing_file_in_nested_repo"
       ],
       "user_stories": []
     },
@@ -3868,7 +3870,9 @@
         "server::explain_route::tests::explain_rejects_parent_and_absolute_paths",
         "server::explain_route::tests::explain_rejects_inverted_and_oversized_ranges",
         "server::explain_route::tests::explain_rejects_symlink_escaping_the_repo",
-        "server::explain_route::tests::explain_maps_model_failure_to_502"
+        "server::explain_route::tests::explain_maps_model_failure_to_502",
+        "tests/explain_render_route_e2e.rs::render_route_returns_502_when_provider_disabled",
+        "tests/explain_render_route_e2e.rs::render_route_rejects_invalid_file_paths"
       ],
       "user_stories": []
     },

@@ -49,3 +49,9 @@ mod telecom_concurrency_stress_test;
 
 #[path = "telecom_file_transfer_e2e_test.rs"]
 mod telecom_file_transfer_e2e_test;
+
+#[path = "explain_render_route_e2e.rs"]
+mod explain_render_route_e2e;
+
+#[path = "explain_repo_resolution_e2e.rs"]
+mod explain_repo_resolution_e2e;
