@@ -30,12 +30,13 @@ impl FromStr for ProtocolVersion {
         }
 
         let ver_parts: Vec<&str> = parts[1].split('.').collect();
-        let major = ver_parts
-            .first()
-            .and_then(|m| m.parse().ok())
-            .ok_or(ProtocolError::Malformed)?;
+        if ver_parts.is_empty() || ver_parts.len() > 2 {
+            return Err(ProtocolError::Malformed);
+        }
 
-        let minor = if ver_parts.len() > 1 {
+        let major = ver_parts[0].parse().map_err(|_| ProtocolError::Malformed)?;
+
+        let minor = if ver_parts.len() == 2 {
             ver_parts[1].parse().map_err(|_| ProtocolError::Malformed)?
         } else {
             0
@@ -227,6 +228,50 @@ mod tests {
         );
         assert_eq!(
             negotiate("xavier-core/1", "xavier-core/abc"),
+            Err(ProtocolError::Malformed)
+        );
+    }
+
+    #[test]
+    fn test_negotiate_malformed_components() {
+        assert_eq!(
+            negotiate("xavier-core/1.2.garbage", "xavier-core/1"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            negotiate("xavier-core/1", "xavier-core/1.2.garbage"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            negotiate("xavier-core/1.2.3", "xavier-core/1"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            negotiate("xavier-core/1", "xavier-core/1.2.3"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            negotiate("xavier-core/1.", "xavier-core/1"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            negotiate("xavier-core/1", "xavier-core/1."),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            negotiate("xavier-core/.1", "xavier-core/1"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            negotiate("xavier-core/1", "xavier-core/.1"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            negotiate("xavier-core/", "xavier-core/1"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            negotiate("xavier-core/1", "xavier-core/"),
             Err(ProtocolError::Malformed)
         );
     }
