@@ -5,41 +5,38 @@ use axum::{
 };
 use serde_json::Value;
 use serial_test::serial;
-use std::env;
+use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
+
+use xavier::app::security_service::SecurityService;
+use xavier::workspace::{WorkspaceConfig, WorkspaceRegistry, WorkspaceState};
+use xavier::AppState;
 
 xavier::isolate_test_process!();
 
 struct EnvGuard {
-    vars: Vec<(String, Option<String>)>,
-    prev_dir: std::path::PathBuf,
+    vars: Vec<(&'static str, Option<String>)>,
 }
 
 impl EnvGuard {
-    fn new(dir: &std::path::Path, vars: &[(&str, &str)]) -> Self {
-        let prev_dir = env::current_dir().unwrap();
-        let mut saved = Vec::new();
-        for &(k, v) in vars {
-            saved.push((k.to_string(), env::var(k).ok()));
-            env::set_var(k, v);
-        }
-        env::set_current_dir(dir).unwrap();
-        Self {
-            vars: saved,
-            prev_dir,
-        }
+    fn new(keys: &[&'static str]) -> Self {
+        let vars = keys.iter().map(|&k| (k, std::env::var(k).ok())).collect();
+        Self { vars }
+    }
+
+    fn set(&self, key: &'static str, value: &str) {
+        std::env::set_var(key, value);
     }
 }
 
 impl Drop for EnvGuard {
     fn drop(&mut self) {
-        let _ = env::set_current_dir(&self.prev_dir);
         for (k, v) in &self.vars {
             if let Some(v) = v {
-                env::set_var(k, v);
+                std::env::set_var(k, v);
             } else {
-                env::remove_var(k);
+                std::env::remove_var(k);
             }
         }
     }
@@ -49,32 +46,79 @@ impl Drop for EnvGuard {
 #[serial]
 async fn mcp_endpoints_expose_same_tool_list() {
     let temp = TempDir::new().expect("tempdir");
-    let temp_str = temp.path().to_str().unwrap();
+
     let vec_path = temp.path().join("vec.sqlite3");
-    let vec_path_str = vec_path.to_str().unwrap();
     let cg_path = temp.path().join("code_graph.db");
-    let cg_path_str = cg_path.to_str().unwrap();
 
-    let _guard = EnvGuard::new(
-        temp.path(),
-        &[
-            ("TMPDIR", temp_str),
-            ("XAVIER_DATA_DIR", temp_str),
-            ("XAVIER_CONFIG_PATH", temp_str),
-            ("XAVIER_RUNTIME_STATE_PATH", temp_str),
-            ("HOME", temp_str),
-            ("XAVIER_TOKEN", "test-token"),
-            ("XAVIER_JWT_SECRET", "test-secret"),
-            ("XAVIER_MEMORY_VEC_PATH", vec_path_str),
-            ("XAVIER_CODE_GRAPH_DB_PATH", cg_path_str),
-            ("XAVIER_EMBEDDER", "disabled"),
-        ],
-    );
+    let _guard = EnvGuard::new(&[
+        "XAVIER_TOKEN",
+        "XAVIER_JWT_SECRET",
+        "XAVIER_MEMORY_VEC_PATH",
+        "XAVIER_CODE_GRAPH_DB_PATH",
+        "XAVIER_EMBEDDER",
+    ]);
 
-    // Build state
-    let (state, workspace) = xavier::cli::mcp::build_mcp_state()
+    _guard.set("XAVIER_TOKEN", "test-token");
+    _guard.set("XAVIER_JWT_SECRET", "test-secret");
+    _guard.set("XAVIER_MEMORY_VEC_PATH", vec_path.to_str().unwrap());
+    _guard.set("XAVIER_CODE_GRAPH_DB_PATH", cg_path.to_str().unwrap());
+    _guard.set("XAVIER_EMBEDDER", "disabled");
+
+    // Explicitly construct the stores to avoid env var overrides and cwd mutation.
+    let security_service = Arc::new(SecurityService::new());
+    let workspace_registry = Arc::new(WorkspaceRegistry::new());
+
+    let cg_db = Arc::new(code_graph::db::CodeGraphDB::in_memory().unwrap());
+    let code_indexer = Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&cg_db)));
+    let code_query = Arc::new(code_graph::query::QueryEngine::new(Arc::clone(&cg_db)));
+
+    let state = AppState {
+        workspace_registry: Arc::clone(&workspace_registry),
+        code_indexer: Arc::clone(&code_indexer),
+        code_query,
+        code_db: cg_db,
+        indexer: xavier::memory::file_indexer::FileIndexer::new(
+            xavier::memory::file_indexer::FileIndexerConfig::default(),
+            Some(code_indexer.clone()),
+        ),
+        agent_indexer: xavier::memory::agent_indexer::AgentIndexer::new(
+            xavier::memory::file_indexer::FileIndexer::new(
+                xavier::memory::file_indexer::FileIndexerConfig::default(),
+                Some(code_indexer.clone()),
+            ),
+        ),
+        security_service,
+        code_graph_dump_path: None,
+        telecom: None,
+    };
+
+    // Disable embedder inside WorkspaceState::new to avoid HTTP network calls
+    let workspace = WorkspaceState::new(
+        WorkspaceConfig {
+            id: "default".to_string(),
+            token: "mcp-token".to_string(),
+            plan: xavier::workspace::PlanTier::Personal,
+            memory_backend: xavier::memory::store::MemoryBackend::Vec,
+            storage_limit_bytes: None,
+            request_limit: None,
+            request_unit_limit: None,
+            embedding_provider_mode: xavier::workspace::EmbeddingProviderMode::BringYourOwn,
+            managed_google_embeddings: false,
+            sync_policy: xavier::workspace::SyncPolicy::CloudMirror,
+            protocol: Default::default(),
+            dedup: xavier::settings::types::DedupSettings::default(),
+        },
+        xavier::agents::RuntimeConfig::default(),
+        temp.path().join("xavier-mcp"),
+    )
+    .await
+    .expect("WorkspaceState::new failed");
+
+    workspace_registry.insert(workspace).await.unwrap();
+    let workspace = workspace_registry
+        .authenticate("mcp-token")
         .await
-        .expect("build_mcp_state failed");
+        .expect("authenticate workspace");
 
     let payload = serde_json::json!({
         "jsonrpc": "2.0",
@@ -103,15 +147,18 @@ async fn mcp_endpoints_expose_same_tool_list() {
         .expect("request");
 
     let response = app.oneshot(req).await.expect("response");
-    assert!(
-        response.status().is_success(),
-        "HTTP request failed: {:?}",
-        response.status()
-    );
-
+    let status = response.status();
     let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("body");
+
+    assert!(
+        status.is_success(),
+        "HTTP request failed: {:?} - body: {:?}",
+        status,
+        String::from_utf8_lossy(&bytes)
+    );
+
     let json_rpc_response: Value = serde_json::from_slice(&bytes).expect("json");
 
     // 2. Simulate the stdio / xavier mcp tools/list path
@@ -175,20 +222,23 @@ async fn mcp_endpoints_expose_same_tool_list() {
     let mut error_msg = String::new();
     if !missing_in_rpc.is_empty() {
         error_msg.push_str(&format!(
-            "Tools missing from JSON-RPC MCP endpoint: {:?}\n",
+            "Tools missing from JSON-RPC MCP endpoint: {:?}
+",
             missing_in_rpc
         ));
     }
     if !missing_in_stdio.is_empty() {
         error_msg.push_str(&format!(
-            "Tools missing from stdio MCP endpoint: {:?}\n",
+            "Tools missing from stdio MCP endpoint: {:?}
+",
             missing_in_stdio
         ));
     }
 
     assert!(
         error_msg.is_empty(),
-        "Tool lists differ between endpoints!\n{}",
+        "Tool lists differ between endpoints!
+{}",
         error_msg
     );
 }
