@@ -30,6 +30,9 @@ fn files_under(root: &Path) -> Vec<PathBuf> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn space_workspace_files_stay_inside_the_space_dir_and_follow_it_to_trash() {
+    let _g = crate::SUITE_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let scratch = tempfile::tempdir().unwrap();
     let home = scratch.path().join("home");
     let cwd = scratch.path().join("cwd");

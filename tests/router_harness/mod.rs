@@ -218,6 +218,3 @@ pub async fn status(app: &Router, method: Method, uri: &str, bearer: Option<&str
         .expect("response")
         .status()
 }
-
-use tokio::sync::Mutex;
-pub static ENV_LOCK: Mutex<()> = Mutex::const_new(());

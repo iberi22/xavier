@@ -10,7 +10,11 @@ use tower::ServiceExt;
 
 #[tokio::test]
 #[serial]
+#[allow(clippy::await_holding_lock)]
 async fn audit_endpoint_returns_json_report() {
+    let _lock = crate::SUITE_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let temp_dir = tempfile::tempdir().unwrap();
     let sources_dir = temp_dir.path().join("sources");
     let targets_dir = temp_dir.path().join("targets");
@@ -59,18 +63,17 @@ name = \"demo\"
         .begin_transaction("projection", vec![], false)
         .unwrap();
     use xavier::context::skill_controller::plan::hash_package;
-    let manifest =
-        xavier::context::skill_controller::manifest::SkillManifest::from_toml(&manifest_content)
-            .unwrap();
+    let manifest = xavier::context::SkillManifest::from_toml(&manifest_content).unwrap();
     let hash = hash_package(&package_dir, &manifest.placements[0])
         .unwrap()
         .hash;
     let entry = xavier::context::skill_controller::state::JournalEntry {
-        action: xavier::context::skill_controller::state::Action::Symlink,
-        source: package_dir.clone(),
-        target: targets_dir.join("demo"),
-        recorded_hash: Some(hash),
-        placement: Some(manifest.placements[0].clone()),
+        target_path: targets_dir.join("demo"),
+        action: xavier::context::skill_controller::state::JournalAction::LinkSymlink {
+            source: package_dir.clone(),
+        },
+        prior_state: xavier::context::skill_controller::backup::BackupKind::None,
+        owned_hash: Some(hash),
     };
     journal.commit(&[entry]).unwrap();
 
@@ -123,7 +126,11 @@ name = \"demo\"
 
 #[tokio::test]
 #[serial]
+#[allow(clippy::await_holding_lock)]
 async fn audit_endpoint_returns_not_found_when_manifest_missing() {
+    let _lock = crate::SUITE_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_MANIFEST", "missing")]);
     let app = test_app().await;
     let st = status(&app.app, Method::GET, "/api/skill/audit", Some(ROOT_TOKEN)).await;

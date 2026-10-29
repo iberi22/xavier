@@ -67,3 +67,5 @@ mod skill_store_config_e2e;
 
 #[path = "skill_usage_telemetry_e2e.rs"]
 mod skill_usage_telemetry_e2e;
+
+pub static SUITE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

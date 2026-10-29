@@ -1,18 +1,17 @@
 //! feat-skill-ephemeral: e2e test via HTTP router
 #[path = "router_harness/mod.rs"]
 mod router_harness;
-use axum::{
-    body::Body,
-    http::{Method, Request, StatusCode},
-};
-use router_harness::{test_app, RestoreEnv, ROOT_TOKEN};
+use router_harness::{test_app, RestoreEnv};
 use serial_test::serial;
 use std::fs;
-use tower::ServiceExt;
 
 #[tokio::test]
 #[serial]
+#[allow(clippy::await_holding_lock)]
 async fn publish_task_skill_lifecycle_e2e() {
+    let _lock = crate::SUITE_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("store");
     let test_skill_dir = skill_store.join("test-skill");
@@ -26,7 +25,7 @@ async fn publish_task_skill_lifecycle_e2e() {
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_STORE", skill_store.to_str().unwrap())]);
 
     // Use the test app to build the real WorkspaceContext and AppState
-    let app_struct = test_app().await;
+    let _app_struct = test_app().await;
     let worktree = temp_dir.path().join("worktree");
     let state = temp_dir.path().join("state");
     let journal =

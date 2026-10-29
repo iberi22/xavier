@@ -12,7 +12,11 @@ use tower::ServiceExt;
 
 #[tokio::test]
 #[serial]
+#[allow(clippy::await_holding_lock)]
 async fn custom_skill_store_env_is_respected() {
+    let _lock = crate::SUITE_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("my-custom-store");
 
@@ -55,7 +59,11 @@ async fn custom_skill_store_env_is_respected() {
 
 #[tokio::test]
 #[serial]
+#[allow(clippy::await_holding_lock)]
 async fn custom_skill_store_env_invalid_path() {
+    let _lock = crate::SUITE_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("does-not-exist");
 

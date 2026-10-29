@@ -12,7 +12,11 @@ use tower::ServiceExt;
 
 #[tokio::test]
 #[serial]
+#[allow(clippy::await_holding_lock)]
 async fn list_skills_returns_unified_registry_results() {
+    let _lock = crate::SUITE_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("store");
 
@@ -59,7 +63,11 @@ async fn list_skills_returns_unified_registry_results() {
 
 #[tokio::test]
 #[serial]
+#[allow(clippy::await_holding_lock)]
 async fn list_skills_returns_unauthorized_without_token() {
+    let _lock = crate::SUITE_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let app = test_app().await;
 
     let req = Request::builder()
