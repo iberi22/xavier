@@ -56,6 +56,9 @@ async fn mcp_endpoints_expose_same_tool_list() {
         "XAVIER_MEMORY_VEC_PATH",
         "XAVIER_CODE_GRAPH_DB_PATH",
         "XAVIER_EMBEDDER",
+        "XAVIER_MEMORY_FILE_PATH",
+        "XAVIER_FILE_STORE_PATH",
+        "XAVIER_MEMORY_SQLITE_PATH",
     ]);
 
     _guard.set("XAVIER_TOKEN", "test-token");
@@ -63,6 +66,21 @@ async fn mcp_endpoints_expose_same_tool_list() {
     _guard.set("XAVIER_MEMORY_VEC_PATH", vec_path.to_str().unwrap());
     _guard.set("XAVIER_CODE_GRAPH_DB_PATH", cg_path.to_str().unwrap());
     _guard.set("XAVIER_EMBEDDER", "disabled");
+    // Pin every file-backed store the workspace may resolve from settings to
+    // this test's tempdir, so initialization can never read, import, or write
+    // a migration marker next to an inherited (real) store.
+    _guard.set(
+        "XAVIER_MEMORY_FILE_PATH",
+        temp.path().join("memory.json").to_str().unwrap(),
+    );
+    _guard.set(
+        "XAVIER_FILE_STORE_PATH",
+        temp.path().join("file_store").to_str().unwrap(),
+    );
+    _guard.set(
+        "XAVIER_MEMORY_SQLITE_PATH",
+        temp.path().join("memory.sqlite3").to_str().unwrap(),
+    );
 
     // Explicitly construct the stores to avoid env var overrides and cwd mutation.
     let security_service = Arc::new(SecurityService::new());

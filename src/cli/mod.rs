@@ -8,7 +8,7 @@ pub mod commands;
 pub(crate) mod config;
 pub mod handlers;
 pub mod http_setup;
-pub mod mcp;
+pub(crate) mod mcp;
 pub mod onboarding;
 pub mod proxy;
 pub(crate) mod security;
