@@ -1,21 +1,26 @@
 //! feat-ticket-dedup-while-open: Self-manage ticket deduplication holds only while the earlier ticket is still open.
-#![allow(unused_imports)]
-
+use serial_test::serial;
 use std::fs;
 use xavier::self_manage::{ticket_create, TicketCreateArgs};
+
+#[path = "router_harness/mod.rs"]
+mod router_harness;
 
 xavier::isolate_test_process!();
 
 #[test]
+#[serial]
 fn ticket_dedup_creates_new_ticket_when_previous_is_resolved() {
     let tmp = tempfile::tempdir().unwrap();
     let data_dir = tmp.path().join("data");
     fs::create_dir_all(&data_dir).unwrap();
-    std::env::set_var("HOME", &data_dir);
-    std::env::set_var("XAVIER_CONFIG_PATH", &data_dir);
-    std::env::set_var("XAVIER_RUNTIME_STATE_PATH", &data_dir);
-    std::env::set_var("XAVIER_STATE_DIR", &data_dir);
-    std::env::set_var("XAVIER_DATA_DIR", &data_dir);
+    let _env = router_harness::RestoreEnv::set(&[
+        ("HOME", data_dir.as_path()),
+        ("XAVIER_CONFIG_PATH", data_dir.as_path()),
+        ("XAVIER_RUNTIME_STATE_PATH", data_dir.as_path()),
+        ("XAVIER_STATE_DIR", data_dir.as_path()),
+        ("XAVIER_DATA_DIR", data_dir.as_path()),
+    ]);
 
     let args = TicketCreateArgs {
         title: "Test recurrence ticket".to_string(),
@@ -31,7 +36,10 @@ fn ticket_dedup_creates_new_ticket_when_previous_is_resolved() {
 
     let store = xavier::maloca::MalocaStore::open_default();
     store
-        .update_support_status(&res1.id, xavier::maloca::SupportStatus::Resolved)
+        .update_support_status(
+            &res1.id,
+            xavier::maloca::support_flow::SupportStatus::Resolved,
+        )
         .expect("update status to resolved");
 
     let res2 = ticket_create(args).expect("create second ticket after resolution");
@@ -43,15 +51,18 @@ fn ticket_dedup_creates_new_ticket_when_previous_is_resolved() {
 }
 
 #[test]
+#[serial]
 fn ticket_dedup_deduplicates_when_open() {
     let tmp = tempfile::tempdir().unwrap();
     let data_dir = tmp.path().join("data");
     fs::create_dir_all(&data_dir).unwrap();
-    std::env::set_var("HOME", &data_dir);
-    std::env::set_var("XAVIER_CONFIG_PATH", &data_dir);
-    std::env::set_var("XAVIER_RUNTIME_STATE_PATH", &data_dir);
-    std::env::set_var("XAVIER_STATE_DIR", &data_dir);
-    std::env::set_var("XAVIER_DATA_DIR", &data_dir);
+    let _env = router_harness::RestoreEnv::set(&[
+        ("HOME", data_dir.as_path()),
+        ("XAVIER_CONFIG_PATH", data_dir.as_path()),
+        ("XAVIER_RUNTIME_STATE_PATH", data_dir.as_path()),
+        ("XAVIER_STATE_DIR", data_dir.as_path()),
+        ("XAVIER_DATA_DIR", data_dir.as_path()),
+    ]);
 
     let args = TicketCreateArgs {
         title: "Test recurrence ticket".to_string(),
