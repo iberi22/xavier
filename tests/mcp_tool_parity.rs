@@ -1,11 +1,14 @@
-use axum::{body::Body, http::{Request, Method}};
+use axum::body::to_bytes;
+use axum::{
+    body::Body,
+    http::{Method, Request},
+};
+use serde_json::Value;
 use serial_test::serial;
 use std::collections::HashSet;
-use serde_json::Value;
-use tower::ServiceExt;
-use axum::body::to_bytes;
 use std::env;
 use tempfile::TempDir;
+use tower::ServiceExt;
 
 xavier::isolate_test_process!();
 
@@ -23,7 +26,10 @@ impl EnvGuard {
             env::set_var(k, v);
         }
         env::set_current_dir(dir).unwrap();
-        Self { vars: saved, prev_dir }
+        Self {
+            vars: saved,
+            prev_dir,
+        }
     }
 }
 
@@ -45,15 +51,18 @@ impl Drop for EnvGuard {
 async fn mcp_endpoints_expose_same_tool_list() {
     let temp = TempDir::new().expect("tempdir");
     let temp_str = temp.path().to_str().unwrap();
-    let _guard = EnvGuard::new(temp.path(), &[
-        ("TMPDIR", temp_str),
-        ("XAVIER_DATA_DIR", temp_str),
-        ("XAVIER_CONFIG_PATH", temp_str),
-        ("XAVIER_RUNTIME_STATE_PATH", temp_str),
-        ("HOME", temp_str),
-        ("XAVIER_TOKEN", "test-token"),
-        ("XAVIER_JWT_SECRET", "test-secret"),
-    ]);
+    let _guard = EnvGuard::new(
+        temp.path(),
+        &[
+            ("TMPDIR", temp_str),
+            ("XAVIER_DATA_DIR", temp_str),
+            ("XAVIER_CONFIG_PATH", temp_str),
+            ("XAVIER_RUNTIME_STATE_PATH", temp_str),
+            ("HOME", temp_str),
+            ("XAVIER_TOKEN", "test-token"),
+            ("XAVIER_JWT_SECRET", "test-secret"),
+        ],
+    );
 
     // Build state
     let (state, workspace) = xavier::cli::mcp::build_mcp_state()
@@ -67,7 +76,8 @@ async fn mcp_endpoints_expose_same_tool_list() {
     });
 
     // 1. Simulate the HTTP /mcp tools/list handler
-    let app = xavier::server::mcp::transport::build_mcp_http_router(state.clone(), workspace.clone());
+    let app =
+        xavier::server::mcp::transport::build_mcp_http_router(state.clone(), workspace.clone());
 
     let user = xavier::security::auth::User::new(
         "test-sub".to_string(),
@@ -86,9 +96,15 @@ async fn mcp_endpoints_expose_same_tool_list() {
         .expect("request");
 
     let response = app.oneshot(req).await.expect("response");
-    assert!(response.status().is_success(), "HTTP request failed: {:?}", response.status());
+    assert!(
+        response.status().is_success(),
+        "HTTP request failed: {:?}",
+        response.status()
+    );
 
-    let bytes = to_bytes(response.into_body(), usize::MAX).await.expect("body");
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
     let http_response: Value = serde_json::from_slice(&bytes).expect("json");
 
     // 2. Simulate the stdio / xavier mcp tools/list path
@@ -111,9 +127,16 @@ async fn mcp_endpoints_expose_same_tool_list() {
             .as_array()
             .expect("tools is not an array");
 
-        let mut names: Vec<String> = tools_array.iter().map(|t| {
-            t.get("name").expect("missing name").as_str().expect("name is not string").to_string()
-        }).collect();
+        let mut names: Vec<String> = tools_array
+            .iter()
+            .map(|t| {
+                t.get("name")
+                    .expect("missing name")
+                    .as_str()
+                    .expect("name is not string")
+                    .to_string()
+            })
+            .collect();
         names.sort();
         names.into_iter().collect()
     }
