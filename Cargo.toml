@@ -81,6 +81,7 @@ exclude = [
     "panel-ui/src-tauri",
 ]
 members = [
+    "crates/xavier-plugin-protocol",
     "code-graph",
     "crates/xavier-core-logic",
     "crates/xavier-market",
