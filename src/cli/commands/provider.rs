@@ -45,9 +45,9 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
             }
             std::process::exit(exit_code);
         }
-        ProviderCommand::List => {
+        ProviderCommand::List { json } => {
             let resp_result = client
-                .get(format!("{}/v1/provider/list", base_url))
+                .get(format!("{}/v1/providers", base_url))
                 .header("X-Xavier-Token", &token)
                 .send()
                 .await;
@@ -58,7 +58,11 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let list: serde_json::Value = resp.json().await?;
-                        println!("{}", serde_json::to_string_pretty(&list)?);
+                        if json {
+                            println!("{}", serde_json::to_string(&list)?);
+                        } else {
+                            println!("{}", serde_json::to_string_pretty(&list)?);
+                        }
                     } else {
                         println!(
                             "❌ Failed to list providers: {}",
@@ -74,7 +78,7 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
         }
         ProviderCommand::Set { name } => {
             let resp = client
-                .post(format!("{}/v1/provider/set", base_url))
+                .post(format!("{}/v1/providers/switch", base_url))
                 .header("X-Xavier-Token", &token)
                 .json(&serde_json::json!({ "provider": name }))
                 .send()
@@ -93,26 +97,9 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
                 );
             }
         }
-        ProviderCommand::Auto { strategy } => {
-            let resp = client
-                .post(format!("{}/v1/provider/auto", base_url))
-                .header("X-Xavier-Token", &token)
-                .json(&serde_json::json!({ "strategy": strategy }))
-                .send()
-                .await?;
-
-            if resp.status().is_success() {
-                let res: serde_json::Value = resp.json().await?;
-                println!(
-                    "✅ {}",
-                    res["message"].as_str().unwrap_or("Set auto strategy")
-                );
-            } else {
-                println!(
-                    "❌ Failed to set auto strategy: {}",
-                    resp.text().await.unwrap_or_default()
-                );
-            }
+        ProviderCommand::Auto { strategy: _ } => {
+            println!("❌ Route /v1/providers/auto is not available on this daemon version");
+            std::process::exit(4);
         }
         ProviderCommand::Fallback { providers } => {
             // Implementation of fallback chain set via HTTP if we add a handler for it,

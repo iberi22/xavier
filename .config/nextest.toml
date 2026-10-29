@@ -24,7 +24,7 @@ test-threads = "1"
 serial = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e|cli_provider_exit_codes_e2e)::/)'
+filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e|cli_provider_exit_codes_e2e|cli_provider_live_routes_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -64,7 +64,7 @@ filter = 'binary(=suite_13) & test(/^(tgd_prune_gate_test)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e|cli_provider_exit_codes_e2e)::/)'
+filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e|cli_provider_exit_codes_e2e|cli_provider_live_routes_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]

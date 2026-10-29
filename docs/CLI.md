@@ -602,6 +602,10 @@ Show current provider status.
 
 List providers and strategies.
 
+| Flag | Default | Description |
+|---|---|---|
+| `--json` | off | Emit the provider list as a single JSON object. |
+
 ### `xavier provider set <name>`
 
 Manually switch provider.
