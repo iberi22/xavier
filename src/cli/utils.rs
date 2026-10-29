@@ -71,7 +71,10 @@ mod tests {
 
     // Helper to create a dummy response with a specific status code
     fn mock_response(status: StatusCode) -> Result<reqwest::Response, reqwest::Error> {
-        let resp = axum::http::Response::builder().status(status).body("").unwrap();
+        let resp = axum::http::Response::builder()
+            .status(status)
+            .body("")
+            .unwrap();
         Ok(resp.into())
     }
 
