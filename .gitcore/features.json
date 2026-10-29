@@ -3063,9 +3063,7 @@
         "test_mcp_context_tools_own_no_registry_constructor",
         "test_build_skill_registry_indexes_every_discovery_root",
         "test_fusion_e2e_seeded_thread_injects_skill",
-        "test_confidence_calibration_range",
-        "tests/skill_registry_unify_e2e.rs::list_skills_returns_unified_registry_results",
-        "tests/skill_registry_unify_e2e.rs::list_skills_returns_unauthorized_without_token"
+        "test_confidence_calibration_range"
       ],
       "implemented_in": "src/context/skill_registry.rs, src/api/skills.rs, src/server/mcp/tools_context.rs, src/server/http/context.rs"
     },
@@ -3114,8 +3112,7 @@
         "out_of_scope_memories_and_decisions_are_excluded",
         "test_secret_finding_blocks_publication_without_creating_link",
         "release_removes_unchanged_entries_and_owned_directory",
-        "test_live_composition_hash_matches_composer_without_files",
-        "tests/skill_ephemeral_e2e.rs::publish_task_skill_lifecycle_e2e"
+        "test_live_composition_hash_matches_composer_without_files"
       ],
       "implemented_in": "src/context/skill_controller/composer.rs, src/context/skill_controller/lease.rs, src/context/skill_dispatcher.rs, src/server/mcp/tools_context.rs, src/server/http/context.rs, src/cli/commands/spawn.rs"
     },

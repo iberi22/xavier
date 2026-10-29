@@ -56,12 +56,6 @@ mod skill_ephemeral_lifecycle;
 #[path = "skill_drift_audit_e2e.rs"]
 mod skill_drift_audit_e2e;
 
-#[path = "skill_ephemeral_e2e.rs"]
-mod skill_ephemeral_e2e;
-
-#[path = "skill_registry_unify_e2e.rs"]
-mod skill_registry_unify_e2e;
-
 #[path = "skill_store_config_e2e.rs"]
 mod skill_store_config_e2e;
 
