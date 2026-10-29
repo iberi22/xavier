@@ -50,6 +50,8 @@ mod context_regeneration_test;
 #[path = "e2e/crypto_e2e.rs"]
 mod crypto_e2e;
 
+#[path = "backup_recover_status_e2e.rs"]
+mod backup_recover_status_e2e;
 #[path = "d1_clavis_vault_leak_red.rs"]
 mod d1_clavis_vault_leak_red;
 
