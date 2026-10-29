@@ -75,6 +75,32 @@ async fn test_provider_status_exit_codes() {
 
     assert_eq!(status.code().unwrap(), 3);
 
+    // 2b. 401 with a truncated error body -> still Exit 3 (body read is best-effort)
+    let raw = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let raw_port = raw.local_addr().unwrap().port();
+    let raw_server = std::thread::spawn(move || {
+        use std::io::{Read, Write};
+        if let Ok((mut sock, _)) = raw.accept() {
+            let mut buf = [0u8; 4096];
+            let _ = sock.read(&mut buf);
+            let _ = sock.write_all(
+                b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 1000\r\nconnection: close\r\n\r\npartial",
+            );
+            let _ = sock.flush();
+        }
+    });
+    let url_trunc = format!("http://127.0.0.1:{}", raw_port);
+    let status = Command::new(xavier_bin)
+        .envs(&envs)
+        .env("XAVIER_PORT", raw_port.to_string())
+        .env("XAVIER_URL", &url_trunc)
+        .arg("provider")
+        .arg("status")
+        .status()
+        .unwrap();
+    raw_server.join().unwrap();
+    assert_eq!(status.code().unwrap(), 3);
+
     // 3. Closed port / Connection Refused -> Exit 4
     let dummy_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let dummy_port = dummy_listener.local_addr().unwrap().port();

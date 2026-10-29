@@ -27,7 +27,7 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
                         println!("{}", serde_json::to_string_pretty(&status)?);
                     } else {
                         let status_code = resp.status();
-                        let body = resp.text().await?;
+                        let body = resp.text().await.unwrap_or_default();
                         let body_str = if body.is_empty() {
                             "(empty body)"
                         } else {
@@ -60,7 +60,10 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
                         let list: serde_json::Value = resp.json().await?;
                         println!("{}", serde_json::to_string_pretty(&list)?);
                     } else {
-                        println!("❌ Failed to list providers: {}", resp.text().await?);
+                        println!(
+                            "❌ Failed to list providers: {}",
+                            resp.text().await.unwrap_or_default()
+                        );
                     }
                 }
                 Err(e) => {
@@ -84,7 +87,10 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
                     res["message"].as_str().unwrap_or("Switched provider")
                 );
             } else {
-                println!("❌ Failed to set provider: {}", resp.text().await?);
+                println!(
+                    "❌ Failed to set provider: {}",
+                    resp.text().await.unwrap_or_default()
+                );
             }
         }
         ProviderCommand::Auto { strategy } => {
@@ -102,7 +108,10 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
                     res["message"].as_str().unwrap_or("Set auto strategy")
                 );
             } else {
-                println!("❌ Failed to set auto strategy: {}", resp.text().await?);
+                println!(
+                    "❌ Failed to set auto strategy: {}",
+                    resp.text().await.unwrap_or_default()
+                );
             }
         }
         ProviderCommand::Fallback { providers } => {

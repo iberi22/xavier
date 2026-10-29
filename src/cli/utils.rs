@@ -46,16 +46,10 @@ pub fn exit_code_for(result: &Result<reqwest::Response, reqwest::Error>) -> i32 
                 1
             }
         }
+        // Only transport failures (could not connect / timed out) map to 4.
+        // Other request errors (builder, redirect, decode, ...) are generic.
         Err(e) => {
-            let detail = e.to_string().to_lowercase();
-            if e.is_connect()
-                || e.is_timeout()
-                || e.is_request()
-                || detail.contains("connection refused")
-                || detail.contains("connect")
-                || detail.contains("timed out")
-                || detail.contains("timeout")
-            {
+            if e.is_connect() || e.is_timeout() {
                 4
             } else {
                 1
@@ -92,5 +86,18 @@ mod tests {
         // but we can create a timeout error by actually hitting a blackhole or
         // we can just test the Ok branch. Since creating reqwest errors manually is private,
         // we will rely on the Ok tests here and let e2e tests cover the Err branch.
+    }
+
+    #[tokio::test]
+    async fn non_connect_request_error_is_generic_failure() {
+        // A URL whose host contains "connect" and "timeout" must not be
+        // classified by substring; an invalid scheme is a builder error.
+        let result = reqwest::Client::new()
+            .get("unsupported://connect-timeout.invalid/")
+            .send()
+            .await;
+        let err = result.as_ref().expect_err("unsupported scheme must fail");
+        assert!(!err.is_connect() && !err.is_timeout());
+        assert_eq!(exit_code_for(&result), 1);
     }
 }
