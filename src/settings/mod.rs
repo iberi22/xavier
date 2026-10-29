@@ -164,6 +164,10 @@ impl XavierSettings {
         serialization::resolve_config_path()
     }
 
+    pub fn resolve_state_dir() -> PathBuf {
+        serialization::resolve_state_dir()
+    }
+
     /// Resolve data dir.
     pub fn resolve_data_dir() -> PathBuf {
         serialization::resolve_data_dir()
