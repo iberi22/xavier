@@ -68,11 +68,12 @@ impl BillingEndpoints {
     /// Resolve endpoints from an arbitrary key lookup (env vars in production,
     /// a map in tests).
     pub fn resolve_with(lookup: &dyn Fn(&str) -> Option<String>) -> Self {
-        let (billing_url, billing_url_source) = if let Some(url) = first_non_empty(lookup, &[BILLING_URL_ENV]) {
-            (url, "env")
-        } else {
-            (DEFAULT_BILLING_URL.to_string(), "default")
-        };
+        let (billing_url, billing_url_source) =
+            if let Some(url) = first_non_empty(lookup, &[BILLING_URL_ENV]) {
+                (url, "env")
+            } else {
+                (DEFAULT_BILLING_URL.to_string(), "default")
+            };
         let cloud_url = first_non_empty(lookup, &CLOUD_URL_ENVS)
             .unwrap_or_else(|| DEFAULT_CLOUD_URL.to_string());
         Self {

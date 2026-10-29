@@ -9,12 +9,10 @@ xavier::isolate_test_process!();
 
 /// Create a Command invoking the Xavier CLI.
 fn xavier_cli() -> Command {
-    let cmd = Command::new(
+    Command::new(
         std::env::var("CARGO_BIN_EXE_xavier")
             .unwrap_or_else(|_| env!("CARGO_BIN_EXE_xavier").to_string()),
-    );
-
-    cmd
+    )
 }
 
 #[test]
