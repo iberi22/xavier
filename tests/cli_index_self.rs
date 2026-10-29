@@ -146,3 +146,6 @@ fn test_cli_index_self() {
         assert_eq!(reqs[0].0, "/memory/index-self");
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();
