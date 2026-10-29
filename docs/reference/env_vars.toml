@@ -2735,3 +2735,11 @@ default = "\"journalctl\""
 description = "Override the journalctl binary used by `xavier service`/`xavier logs` (used by tests to inject a mock)"
 category = "CLI / Legacy"
 secret = false
+
+[[variables]]
+name = "XAVIER_CODEGRAPH_PROBE_DEPTH"
+type = "string"
+default = "(unset)"
+description = "Recursion guard for sidecar probing"
+category = "Uncategorized"
+secret = false

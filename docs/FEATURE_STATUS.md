@@ -2,10 +2,10 @@
 
 > **Out of date.** The 52/52 (100%) figure below predates WAVE-6 to WAVE-43. Feature status lives in `.gitcore/features.json` and is promoted only by the verification pipeline. A dated code-evidence audit is in [`docs/plans/IMPLEMENTATION-AUDIT_2026-10-28.md`](plans/IMPLEMENTATION-AUDIT_2026-10-28.md).
 
-Current product label: `0.0.1` — **52/52 stable 100% verified (WAVE-5 2026-09-01, browser-compat)**
+Current product label: `0.0.1` — **Status computed from the ledger: 70 stable, 17 beta, 2 in_progress, 28 planned. See [Implementation Audit](plans/IMPLEMENTATION-AUDIT_2026-10-28.md) for details.**
 
 This matrix is the operational truth for the repository as of v0.0.1 stabilization.
-All features declared in `.gitcore/features.json` are `stable` with automated verification.
+As of v0.0.1 stabilization, features declared in `.gitcore/features.json` were `stable` with automated verification. See the file for current status.
 
 ## Release Status (WAVE-4 verified)
 
