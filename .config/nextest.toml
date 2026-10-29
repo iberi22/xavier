@@ -40,6 +40,10 @@ filter = 'binary(=suite_04) & test(/^(guardian_truth_test)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
+filter = 'binary(=suite_05) & test(/^(http_auth_edge_test|ivn_api|ivn_marketplace_authorization|ivn_storage_persistence|maloca_roadmap_route_e2e)::/)'
+test-group = "serial"
+
+[[profile.default.overrides]]
 filter = 'binary(=suite_07) & test(/^(memory_write_integrity_e2e|mesh_auth_binding_test|mesh_integration|mcp_tool_parity)::/)'
 test-group = "serial"
 
@@ -73,6 +77,10 @@ test-group = "serial"
 
 [[profile.ci.overrides]]
 filter = 'binary(=suite_04) & test(/^(guardian_truth_test)::/)'
+test-group = "serial"
+
+[[profile.ci.overrides]]
+filter = 'binary(=suite_05) & test(/^(http_auth_edge_test|ivn_api|ivn_marketplace_authorization|ivn_storage_persistence|maloca_roadmap_route_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
