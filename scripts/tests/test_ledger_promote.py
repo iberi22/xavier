@@ -716,6 +716,12 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertEqual(60.0, meta.get('overall_progress_pct', 0))
         self.assertEqual('2026-11-10', meta.get('last_verified'))
 
+
+    def test_workflow_branch_identity(self):
+        with open('.github/workflows/ledger-promote.yml') as f:
+            workflow = f.read()
+        self.assertIn('branch="ledger/promote-$sha-demote"', workflow)
+
     def test_metadata_initializes_if_absent(self):
         import json
         if 'metadata' in self.features:

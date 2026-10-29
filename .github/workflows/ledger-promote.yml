@@ -101,7 +101,11 @@ jobs:
           sha=$(git rev-parse HEAD)
           # Refuse a stale snapshot; the next dispatch can use the new main.
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$sha"
-          branch="ledger/promote-$sha"
+          if [ "${{ inputs.apply_demotions }}" == "true" ]; then
+            branch="ledger/promote-$sha-demote"
+          else
+            branch="ledger/promote-$sha"
+          fi
           if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" >/dev/null 2>&1; then
             git switch -c "$branch"
             git config user.name 'github-actions[bot]'
