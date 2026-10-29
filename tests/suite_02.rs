@@ -61,3 +61,5 @@ mod ticket_dedup_while_open_e2e;
 
 #[path = "health_truth_e2e.rs"]
 mod health_truth_e2e;
+#[path = "codegraph_fingerprint_e2e.rs"]
+mod codegraph_fingerprint_e2e;
