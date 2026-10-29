@@ -590,6 +590,15 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
 
 
+
+    def test_stable_incomplete_evidence_collection_skips_review(self):
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.evidence['per_feature_test_results'] = {}
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertTrue(any('review skipped: evidence collection incomplete' in r for r in stable['review_reasons']))
+
     def test_stable_open_gaps_flagged(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
         report, err = self.run_all()

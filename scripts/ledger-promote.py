@@ -172,6 +172,8 @@ def evaluate(document, evidence, history, root, streak):
         common.append('missing full verifier run URL')
     if not chain or chain[0] != sha or len(set(chain)) != len(chain):
         common.append('invalid consecutive main SHA sequence')
+    if not evidence.get('per_feature_test_results'):
+        common.append('evidence collection incomplete')
     indexed = rust_tests(root)
     targets = set(evidence.get('integration_targets_passed', []))
     per_feature = evidence.get('per_feature_test_results', {})
