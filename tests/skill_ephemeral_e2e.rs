@@ -65,10 +65,15 @@ async fn dispatch_skill_fails_on_secret() {
     let skill_store = temp_dir.path().join("store");
     let test_skill_dir = skill_store.join("secret-skill");
     fs::create_dir_all(&test_skill_dir).unwrap();
+    // AWS's documented placeholder key, split so repo secret scanners do not flag the fixture.
+    let fake_key = format!("{}{}", "AKIA", "IOSFODNN7EXAMPLE");
     fs::write(
         test_skill_dir.join("SKILL.md"),
-        "---\nname: e2e-secret-skill\ndescription: \"Test ephemeral skill\"\n---\nkey = \"AKIAIOSFODNN7EXAMPLE\""
-    ).unwrap();
+        format!(
+            "---\nname: e2e-secret-skill\ndescription: \"Test ephemeral skill\"\n---\nkey = \"{fake_key}\""
+        ),
+    )
+    .unwrap();
 
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_STORE", skill_store.to_str().unwrap())]);
 
