@@ -463,29 +463,70 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_show_consolidation_status_failure_returns_err() {
-        let _env = crate::settings::tests::TempEnv::new();
+    async fn spawn_mock_server(status: &str, body: &str) -> (u16, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind");
         let port = listener.local_addr().expect("local_addr").port();
-        let server = tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
-                use tokio::io::AsyncWriteExt;
-                let response = b"HTTP/1.1 500 Internal Server Error
-Content-Length: 5
+        let status = status.to_string();
+        let body = body.to_string();
 
-error";
-                let _ = socket.write_all(response).await;
+        let server = tokio::spawn(async move {
+            let accepted =
+                tokio::time::timeout(std::time::Duration::from_secs(10), listener.accept()).await;
+            if let Ok(Ok((mut socket, _))) = accepted {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+                // Read the full request (headers + Content-Length body) before
+                // responding, so closing never leaves unread bytes (TCP reset).
+                let mut buf = [0; 1024];
+                let mut req = Vec::new();
+                let mut expected: Option<usize> = None;
+                loop {
+                    if expected.is_none() {
+                        if let Some(pos) = req.windows(4).position(|w| w == b"\r\n\r\n") {
+                            let headers = String::from_utf8_lossy(&req[..pos]).to_ascii_lowercase();
+                            let len = headers
+                                .lines()
+                                .find_map(|l| l.strip_prefix("content-length:"))
+                                .and_then(|v| v.trim().parse::<usize>().ok())
+                                .unwrap_or(0);
+                            expected = Some(pos + 4 + len);
+                        }
+                    }
+                    if matches!(expected, Some(total) if req.len() >= total) {
+                        break;
+                    }
+                    let n = socket.read(&mut buf).await.unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    req.extend_from_slice(&buf[..n]);
+                }
+
+                let response = format!(
+                    "HTTP/1.1 {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status,
+                    body.len(),
+                    body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.shutdown().await;
             }
         });
+        (port, server)
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_show_consolidation_status_failure_returns_err() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let (port, server) = spawn_mock_server("500 Internal Server Error", "error").await;
 
         std::env::set_var("XAVIER_URL", format!("http://127.0.0.1:{}", port));
         std::env::set_var("XAVIER_TOKEN", "test-token");
         let result = show_consolidation_status().await;
-        std::env::remove_var("XAVIER_URL");
-        std::env::remove_var("XAVIER_TOKEN");
+
         let _ = server.await;
 
         assert!(result.is_err());
@@ -496,28 +537,15 @@ error";
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_run_index_self_failure_returns_err() {
         let _env = crate::settings::tests::TempEnv::new();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind");
-        let port = listener.local_addr().expect("local_addr").port();
-        let server = tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
-                use tokio::io::AsyncWriteExt;
-                let response = b"HTTP/1.1 500 Internal Server Error
-Content-Length: 5
-
-error";
-                let _ = socket.write_all(response).await;
-            }
-        });
+        let (port, server) = spawn_mock_server("500 Internal Server Error", "error").await;
 
         std::env::set_var("XAVIER_URL", format!("http://127.0.0.1:{}", port));
         std::env::set_var("XAVIER_TOKEN", "test-token");
         let result = run_index_self().await;
-        std::env::remove_var("XAVIER_URL");
-        std::env::remove_var("XAVIER_TOKEN");
+
         let _ = server.await;
 
         assert!(result.is_err());
