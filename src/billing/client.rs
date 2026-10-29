@@ -353,6 +353,21 @@ fn error_field(body: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Redact credentials, query string and fragment from a URL before it is
+/// shown to the user (status output must never echo embedded secrets).
+pub fn redact_url(raw: &str) -> String {
+    match url::Url::parse(raw) {
+        Ok(mut u) => {
+            let _ = u.set_username("");
+            let _ = u.set_password(None);
+            u.set_query(None);
+            u.set_fragment(None);
+            u.to_string().trim_end_matches('/').to_string()
+        }
+        Err(_) => "(unparseable url)".to_string(),
+    }
+}
+
 fn truncate(body: &str) -> String {
     const MAX: usize = 300;
     if body.len() <= MAX {
@@ -409,18 +424,18 @@ impl BillingClient {
         let resp = http.get(&url).send().await;
         match resp {
             Ok(r) => Reachability {
-                url: self.endpoints.billing_url.clone(),
+                url: redact_url(&self.endpoints.billing_url),
                 source,
                 reachable: true,
                 status: Some(r.status().as_u16()),
                 error: None,
             },
             Err(e) => Reachability {
-                url: self.endpoints.billing_url.clone(),
+                url: redact_url(&self.endpoints.billing_url),
                 source,
                 reachable: false,
                 status: e.status().map(|s| s.as_u16()),
-                error: Some(e.to_string()),
+                error: Some(e.without_url().to_string()),
             },
         }
     }
@@ -557,6 +572,14 @@ impl BillingClient {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn redact_url_strips_credentials_query_and_fragment() {
+        let r = super::redact_url("https://user:s3cret@billing.example.com/base?token=abc#frag");
+        assert_eq!(r, "https://billing.example.com/base");
+        assert!(!r.contains("s3cret") && !r.contains("token") && !r.contains("user"));
+        assert_eq!(super::redact_url("not a url"), "(unparseable url)");
+    }
+
     use super::*;
     use std::collections::HashMap;
 

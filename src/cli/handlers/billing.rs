@@ -39,7 +39,10 @@ async fn plans(client: &BillingClient, json: bool) -> Result<()> {
     } else {
         print!(
             "{}",
-            render_plans(&catalog, &client.endpoints().billing_url)
+            render_plans(
+                &catalog,
+                &crate::billing::client::redact_url(&client.endpoints().billing_url)
+            )
         );
     }
     Ok(())
