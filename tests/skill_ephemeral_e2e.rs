@@ -15,8 +15,6 @@ xavier::isolate_test_process!();
 #[tokio::test]
 #[serial]
 async fn dispatch_skill_returns_context_pack() {
-    let app = test_app().await;
-
     // Create a temporary skill store and set XAVIER_SKILL_STORE
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("store");
@@ -29,6 +27,8 @@ async fn dispatch_skill_returns_context_pack() {
     .unwrap();
 
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_STORE", skill_store.to_str().unwrap())]);
+
+    let app = test_app().await;
 
     let payload = serde_json::json!({
         "task": "use the e2e-test-skill please",
@@ -74,8 +74,6 @@ async fn dispatch_skill_returns_context_pack() {
 #[tokio::test]
 #[serial]
 async fn dispatch_skill_fails_on_secret() {
-    let app = test_app().await;
-
     // Create a temporary skill store and set XAVIER_SKILL_STORE
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("store");
@@ -92,6 +90,8 @@ async fn dispatch_skill_fails_on_secret() {
     .unwrap();
 
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_STORE", skill_store.to_str().unwrap())]);
+
+    let app = test_app().await;
 
     let payload = serde_json::json!({
         "task": "use the e2e-secret-skill please",

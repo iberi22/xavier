@@ -15,8 +15,6 @@ xavier::isolate_test_process!();
 #[tokio::test]
 #[serial]
 async fn custom_skill_store_env_is_respected() {
-    let app = test_app().await;
-
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("my-custom-store");
 
@@ -29,6 +27,8 @@ async fn custom_skill_store_env_is_respected() {
     .unwrap();
 
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_STORE", skill_store.to_str().unwrap())]);
+
+    let app = test_app().await;
 
     let req = Request::builder()
         .method(Method::GET)
@@ -58,12 +58,12 @@ async fn custom_skill_store_env_is_respected() {
 #[tokio::test]
 #[serial]
 async fn custom_skill_store_env_invalid_path() {
-    let app = test_app().await;
-
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("does-not-exist");
 
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_STORE", skill_store.to_str().unwrap())]);
+
+    let app = test_app().await;
 
     let req = Request::builder()
         .method(Method::GET)

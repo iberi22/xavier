@@ -15,8 +15,6 @@ xavier::isolate_test_process!();
 #[tokio::test]
 #[serial]
 async fn telemetry_dispatch_ack_and_usage_e2e() {
-    let app = test_app().await;
-
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("store");
 
@@ -29,6 +27,8 @@ async fn telemetry_dispatch_ack_and_usage_e2e() {
     .unwrap();
 
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_STORE", skill_store.to_str().unwrap())]);
+
+    let app = test_app().await;
 
     // 1. Dispatch
     let dispatch_payload = serde_json::json!({

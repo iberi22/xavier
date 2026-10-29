@@ -15,8 +15,6 @@ xavier::isolate_test_process!();
 #[tokio::test]
 #[serial]
 async fn list_skills_returns_unified_registry_results() {
-    let app = test_app().await;
-
     let temp_dir = tempfile::tempdir().unwrap();
     let skill_store = temp_dir.path().join("store");
 
@@ -30,6 +28,8 @@ async fn list_skills_returns_unified_registry_results() {
     .unwrap();
 
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_STORE", skill_store.to_str().unwrap())]);
+
+    let app = test_app().await;
 
     let req = Request::builder()
         .method(Method::GET)

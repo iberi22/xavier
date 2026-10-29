@@ -13,7 +13,6 @@ xavier::isolate_test_process!();
 #[tokio::test]
 #[serial]
 async fn audit_endpoint_returns_json_report() {
-    let app = test_app().await;
     let temp_dir = tempfile::tempdir().unwrap();
     let sources_dir = temp_dir.path().join("sources");
     let targets_dir = temp_dir.path().join("targets");
@@ -33,6 +32,7 @@ async fn audit_endpoint_returns_json_report() {
     fs::write(&manifest_path, &manifest_content).unwrap();
 
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_MANIFEST", manifest_path.to_str().unwrap())]);
+    let app = test_app().await;
 
     // Induce drift
     fs::write(&skill_md_path, "---\nname: demo\n---\nbody updated").unwrap();
@@ -61,8 +61,8 @@ async fn audit_endpoint_returns_json_report() {
 #[tokio::test]
 #[serial]
 async fn audit_endpoint_returns_not_found_when_manifest_missing() {
-    let app = test_app().await;
     let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_MANIFEST", "missing")]);
+    let app = test_app().await;
     let st = status(&app.app, Method::GET, "/api/skill/audit", Some(ROOT_TOKEN)).await;
     assert_eq!(st, axum::http::StatusCode::UNPROCESSABLE_ENTITY); // 422
 }
