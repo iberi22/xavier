@@ -5,7 +5,6 @@ use axum::{
 };
 use serde_json::Value;
 use serial_test::serial;
-use std::collections::HashSet;
 use std::env;
 use tempfile::TempDir;
 use tower::ServiceExt;
@@ -75,7 +74,7 @@ async fn mcp_endpoints_expose_same_tool_list() {
         "id": 1
     });
 
-    // 1. Simulate the HTTP /mcp tools/list handler
+    // 1. Simulate the JSON-RPC POST /mcp tools/list handler
     let app =
         xavier::server::mcp::transport::build_mcp_http_router(state.clone(), workspace.clone());
 
@@ -105,7 +104,7 @@ async fn mcp_endpoints_expose_same_tool_list() {
     let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("body");
-    let http_response: Value = serde_json::from_slice(&bytes).expect("json");
+    let json_rpc_response: Value = serde_json::from_slice(&bytes).expect("json");
 
     // 2. Simulate the stdio / xavier mcp tools/list path
     let stdio_response = xavier::server::mcp_stdio::dispatch_stdio_value(
@@ -118,7 +117,7 @@ async fn mcp_endpoints_expose_same_tool_list() {
     .expect("expected response");
 
     // Extract tool names
-    fn extract_tool_names(response: &Value) -> HashSet<String> {
+    fn extract_tool_names(response: &Value) -> Vec<String> {
         let tools_array = response
             .get("result")
             .expect("missing result")
@@ -137,22 +136,39 @@ async fn mcp_endpoints_expose_same_tool_list() {
                     .to_string()
             })
             .collect();
+        assert!(!names.is_empty(), "Tool list is empty");
+
+        let initial_len = names.len();
         names.sort();
-        names.into_iter().collect()
+        names.dedup();
+        assert_eq!(initial_len, names.len(), "Tool list contains duplicates");
+
+        names
     }
 
-    let http_names = extract_tool_names(&http_response);
+    let json_rpc_names = extract_tool_names(&json_rpc_response);
     let stdio_names = extract_tool_names(&stdio_response);
 
     // 3. Compare the sets
-    let missing_in_http: Vec<_> = stdio_names.difference(&http_names).collect();
-    let missing_in_stdio: Vec<_> = http_names.difference(&stdio_names).collect();
+    let mut missing_in_rpc = Vec::new();
+    for name in &stdio_names {
+        if !json_rpc_names.contains(name) {
+            missing_in_rpc.push(name.clone());
+        }
+    }
+
+    let mut missing_in_stdio = Vec::new();
+    for name in &json_rpc_names {
+        if !stdio_names.contains(name) {
+            missing_in_stdio.push(name.clone());
+        }
+    }
 
     let mut error_msg = String::new();
-    if !missing_in_http.is_empty() {
+    if !missing_in_rpc.is_empty() {
         error_msg.push_str(&format!(
-            "Tools missing from HTTP MCP endpoint: {:?}\n",
-            missing_in_http
+            "Tools missing from JSON-RPC MCP endpoint: {:?}\n",
+            missing_in_rpc
         ));
     }
     if !missing_in_stdio.is_empty() {
