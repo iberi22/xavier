@@ -425,7 +425,10 @@ pub enum Command {
     },
 
     /// Index foundational documentation into the memory store
-    IndexSelf,
+    IndexSelf {
+        #[arg(long)]
+        json: bool,
+    },
 
     /// System & security scanning
     Scan {
@@ -2015,7 +2018,10 @@ pub mod memory {
     #[derive(Subcommand, Debug, Clone)]
     pub enum MemoryCommand {
         /// Index foundational documentation into the memory store
-        IndexSelf,
+        IndexSelf {
+            #[arg(long)]
+            json: bool,
+        },
 
         /// Consolidate memories and run TGD
         Consolidate {
