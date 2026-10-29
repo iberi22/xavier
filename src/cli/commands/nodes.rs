@@ -58,7 +58,7 @@ pub async fn handle_nodes_command(cmd: NodesCommand) -> Result<()> {
             lease_ttl,
         } => cmd_rotate(&node_id, token.as_deref(), lease_ttl).await,
         NodesCommand::Remove { node_id } => cmd_remove(&node_id).await,
-        NodesCommand::Status { node_id } => cmd_status(&node_id).await,
+        NodesCommand::Status { node_id, json } => cmd_status(&node_id, json).await,
     }
 }
 
@@ -340,7 +340,7 @@ async fn cmd_remove(node_id: &str) -> Result<()> {
 }
 
 /// Check status and certificate validity for a node.
-async fn cmd_status(node_id: &str) -> Result<()> {
+async fn cmd_status(node_id: &str, json: bool) -> Result<()> {
     let registry = NodeRegistry::open_default()?;
     let record = registry
         .get(node_id)?
@@ -353,6 +353,20 @@ async fn cmd_status(node_id: &str) -> Result<()> {
         None => "NO_CERTIFICATE",
     };
 
+    if json {
+        let val = serde_json::json!({
+            "node_id": node_id,
+            "lifecycle_status": record.status.to_string(),
+            "provider": record.provider.to_string(),
+            "visibility": record.visibility.to_string(),
+            "certificate_health": cert_status,
+            "vault_lease": if record.lease_id.is_some() { "ACTIVE" } else { "NONE" },
+            "last_heartbeat": record.last_heartbeat,
+            "created_at": record.created_at,
+        });
+        println!("{}", serde_json::to_string_pretty(&val)?);
+        return Ok(());
+    }
     println!("=== NODE STATUS: {} ===", node_id);
     println!("  lifecycle_status:      {}", record.status);
     println!("  provider:              {}", record.provider);

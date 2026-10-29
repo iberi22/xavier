@@ -1153,7 +1153,10 @@ pub enum NavCommand {
 #[derive(Subcommand, Debug, Clone)]
 pub enum UsageCommand {
     /// Show current usage status for all providers
-    Status,
+    Status {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Manually update a provider's used percentage (for providers without API)
     Update { provider: String, percentage: f32 },
     /// Set a manual cooldown for a provider (in minutes)
@@ -1297,7 +1300,10 @@ pub enum CodeCommand {
     /// Show complexity hotspots
     Hotspots,
     /// Show code graph stats
-    Stats,
+    Stats {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Dump portable code graph to .xavier/codegraph.json
     Dump {
         /// Optional path to the codebase (defaults to '.')
@@ -1329,7 +1335,10 @@ pub enum CodeCommand {
 #[derive(Subcommand, Debug, Clone)]
 pub enum ProviderCommand {
     /// Show current provider status
-    Status,
+    Status {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// List all available providers and strategies
     List,
     /// Manually switch to a provider
@@ -1709,6 +1718,8 @@ pub enum NodesCommand {
     Status {
         /// Target node ID
         node_id: String,
+        #[arg(long, default_value_t = false)]
+        json: bool,
     },
 }
 
@@ -1969,7 +1980,10 @@ pub enum TaskCommand {
 #[derive(Subcommand, Debug, Clone)]
 pub enum SyncCommand {
     /// Show sync status
-    Status,
+    Status {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Trigger a full sync now
     Now {
         /// Sync mode: push, pull, bidirectional
@@ -2004,7 +2018,10 @@ pub enum ScanCommand {
 #[derive(Subcommand, Debug, Clone)]
 pub enum LicenseCommand {
     /// Show current license status
-    Status,
+    Status {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Accept the Xavier Mesh License (enables mesh features)
     Accept,
     /// Show license terms

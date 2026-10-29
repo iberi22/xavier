@@ -11,7 +11,7 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
     let client = CLI_HTTP_CLIENT.clone();
 
     match cmd {
-        ProviderCommand::Status => {
+        ProviderCommand::Status { json } => {
             let resp_result = client
                 .get(format!("{}/headless/provider/status", base_url))
                 .header("X-Xavier-Token", &token)
@@ -33,14 +33,22 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
                         } else {
                             &body
                         };
-                        println!(
-                            "❌ Failed to get provider status: {} {}",
-                            status_code, body_str
-                        );
+                        if json {
+                            println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "error": format!("Failed to get provider status: {} {}", status_code, body_str) })).unwrap());
+                        } else {
+                            println!(
+                                "❌ Failed to get provider status: {} {}",
+                                status_code, body_str
+                            );
+                        }
                     }
                 }
                 Err(e) => {
-                    println!("❌ Failed to get provider status: {}", e);
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "error": format!("Failed to get provider status: {}", e) })).unwrap());
+                    } else {
+                        println!("❌ Failed to get provider status: {}", e);
+                    }
                 }
             }
             std::process::exit(exit_code);

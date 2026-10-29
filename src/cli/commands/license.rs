@@ -8,17 +8,34 @@ use anyhow::Result;
 /// Handle license command.
 pub async fn handle_license_command(cmd: LicenseCommand) -> Result<()> {
     match cmd {
-        LicenseCommand::Status => handle_license_status().await,
+        LicenseCommand::Status { json } => handle_license_status(json).await,
         LicenseCommand::Accept => handle_license_accept().await,
         LicenseCommand::Show => handle_license_show().await,
     }
 }
 
-async fn handle_license_status() -> Result<()> {
+async fn handle_license_status(json: bool) -> Result<()> {
+    let settings = xavier::settings::XavierSettings::current();
+    use xavier::security::license::detect_license;
+
     let settings = xavier::settings::XavierSettings::current();
     use xavier::security::license::detect_license;
 
     let license_kind = detect_license(&settings);
+
+    if json {
+        let json_val = serde_json::json!({
+            "core_license": license_kind.to_string(),
+            "license_type": settings.license.license_type,
+            "mesh_accepted": settings.license.mesh_accepted,
+            "mesh_features_enabled": settings.license.mesh_accepted,
+            "governance_available": settings.license.mesh_accepted,
+            "data_commons_enabled": settings.license.mesh_accepted && settings.data_commons.enabled,
+            "commercial_key": settings.license.commercial_key,
+        });
+        println!("{}", serde_json::to_string_pretty(&json_val)?);
+        return Ok(());
+    }
 
     println!("╔══════════════════════════════════════════════╗");
     println!("║           Xavier License Status              ║");

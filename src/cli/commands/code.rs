@@ -225,7 +225,7 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 .send()
                 .await?
         }
-        CodeCommand::Stats => {
+        CodeCommand::Stats { json: _ } => {
             // XAV-01: explicit repo identity as query params (reqwest here
             // has no `.query()` helper — minimal features — so encode manually).
             let url = format!(
@@ -261,12 +261,26 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
         CodeCommand::Sync { .. } => unreachable!("Sync handled above"),
     };
 
+    let is_json = matches!(
+        cmd,
+        CodeCommand::Stats { json: true, .. } | CodeCommand::Install { json: true, .. }
+    );
+
     let status = response.status();
     let body: serde_json::Value = response.json().await.unwrap_or_default();
     if status.is_success() {
         let remote_status = body.get("status").and_then(|v| v.as_str()).unwrap_or("ok");
         if remote_status == "error" {
-            eprintln!("{}", serde_json::to_string_pretty(&body)?);
+            if is_json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "error": body.get("message").and_then(|v| v.as_str()).unwrap_or("unknown")
+                    }))?
+                );
+            } else {
+                eprintln!("{}", serde_json::to_string_pretty(&body)?);
+            }
             bail!(
                 "Code graph request returned status=error: {}",
                 body.get("message")
@@ -282,8 +296,17 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
         }
         Ok(())
     } else {
-        eprintln!("Code graph request failed ({}):", status);
-        eprintln!("{}", serde_json::to_string_pretty(&body)?);
+        if is_json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "error": format!("Code graph request failed ({}): {}", status, body.get("message").and_then(|v| v.as_str()).unwrap_or("unknown"))
+                }))?
+            );
+        } else {
+            eprintln!("Code graph request failed ({}):", status);
+            eprintln!("{}", serde_json::to_string_pretty(&body)?);
+        }
         bail!("Code graph HTTP {} — see response body above", status);
     }
 }
