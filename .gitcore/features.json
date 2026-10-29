@@ -1443,7 +1443,7 @@
         "maloca::governance::tests::majority_of_votes_cast_with_quorum_is_approved",
         "maloca::governance::tests::threshold_is_relative_to_decisive_votes_not_eligible",
         "maloca::governance::tests::yes_below_threshold_of_votes_cast_is_rejected",
-        "maloca::governance::tests::approval_at_exact_threshold_passes",
+        "maloca::governance::tests::majority_at_exact_threshold_passes",
         "maloca::governance::tests::abstentions_do_not_count_toward_approval",
         "maloca::governance::tests::abstain_only_meets_quorum_but_never_approves",
         "maloca::governance::tests::no_votes_with_zero_quorum_is_rejected",
@@ -4037,7 +4037,9 @@
         "packaging_contract::headless_feature_excludes_tui_and_panel",
         "packaging_contract::system_unit_runs_headless_as_dedicated_user",
         "packaging_contract::installer_rejects_tampered_archive",
-        "packaging_contract::installer_user_mode_installs_binary_and_private_token"
+        "packaging_contract::installer_user_mode_installs_binary_and_private_token",
+        "tests/headless_packaging_contract_e2e.rs::installer_rejects_tampered_archive",
+        "tests/headless_packaging_contract_e2e.rs::installer_user_mode_installs_binary_and_private_token"
       ],
       "user_stories": []
     },
