@@ -29,7 +29,10 @@ async fn headless_unsupported_tool_returns_contract() {
         .uri("/headless/tools/unknown_tool")
         .header("Authorization", format!("Bearer {ROOT_TOKEN}"))
         .header("Content-Type", "application/json")
-        .body(axum::body::Body::from(r#"{"args": {}}"#))
+        .body(axum::body::Body::from(format!(
+            r#"{{"args": {{"path": "{}"}}}}"#,
+            temp.path().display()
+        )))
         .unwrap();
 
     let resp = tower::ServiceExt::oneshot(t.app.clone(), req)
@@ -68,7 +71,10 @@ async fn headless_supported_tool_does_not_return_501() {
         .uri("/headless/tools/code_scan")
         .header("Authorization", format!("Bearer {ROOT_TOKEN}"))
         .header("Content-Type", "application/json")
-        .body(axum::body::Body::from(r#"{"args": {}}"#))
+        .body(axum::body::Body::from(format!(
+            r#"{{"args": {{"path": "{}"}}}}"#,
+            temp.path().display()
+        )))
         .unwrap();
 
     let resp = tower::ServiceExt::oneshot(t.app.clone(), req)

@@ -61,3 +61,19 @@ The `Server Packages` workflow (`.github/workflows/server-packages.yml`) checks 
 - **Packages and installer:** installs the `.deb` on Debian, the `.rpm` on Fedora, and runs `install.sh` on Debian and Ubuntu.
 - **Docker:** recreates the container on the same volume and checks that the same master key loads.
 - **Nix:** builds the Nix package and evaluates the NixOS module.
+
+## Headless mode limits
+
+In headless mode, the server supports a limited set of tools and routes.
+
+**Supported Tools:**
+- `code_scan`
+- `code_find`
+- `code_stats`
+- `code_context`
+
+**Unsupported Routes:**
+Agent management routes are not supported in headless mode. These include:
+- `GET /v1/agents`
+- `POST /v1/agents/spawn`
+Calling these routes will return a 501 Not Implemented response with the reason `unsupported_in_headless` and a hint to `run the full daemon (xavier serve)`.

@@ -450,7 +450,7 @@ async fn execute_code_tool(name: &str, args: &serde_json::Value) -> axum::respon
 
 /// Execute tool.
 pub async fn execute_tool(name: String, req: ToolExecuteRequest) -> impl IntoResponse {
-    if name.starts_with("code_") {
+    if SUPPORTED_HEADLESS_TOOLS.contains(&name.as_str()) {
         return execute_code_tool(&name, &req.args).await;
     }
 
