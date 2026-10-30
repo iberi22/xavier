@@ -805,40 +805,46 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertEqual(60.0, meta.get('overall_progress_pct', 0))
         self.assertEqual('2026-11-10', meta.get('last_verified'))
 
-    def test_metadata_all_deferred(self):
-        import json
-        # Since all features are deferred, changed=False, so we must provide
-        # the initial metadata to verify the script doesn't crash or corrupt it.
-        self.features['metadata'] = {
-            'features_stable': 0, 'features_beta': 0, 'features_planned': 0,
-            'features_deferred': 1, 'total_features': 0, 'overall_progress_pct': 0.0
-        }
-        # Clear existing features
-        self.features['features'] = {}
-        # Add only a deferred feature
-        self.features['features']['deferred_feat'] = {'status': 'deferred', 'progress_pct': 50}
-
+    def _run_apply_all_deferred(self, metadata):
+        import json, subprocess, sys
+        if metadata is None:
+            self.features.pop('metadata', None)
+        else:
+            self.features['metadata'] = metadata
+        self.features['features'] = {'deferred_feat': {'status': 'deferred', 'progress_pct': 50}}
         evidence = self.root / 'evidence.json'
         history = self.root / 'history.json'
         self.path.write_text(json.dumps(self.features))
         evidence.write_text(json.dumps(self.evidence))
         history.write_text(json.dumps(self.history))
         args = ['--features', str(self.path), '--evidence', str(evidence),
-                '--history', str(history), '--apply', '--apply-demotions']
-        import subprocess, sys
+                '--history', str(history), '--apply']
         subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, check=True)
-
         with open(self.path) as f:
             data = json.load(f)
+        self.assertEqual('deferred', data['features']['deferred_feat']['status'])
+        return data['metadata']
 
-        meta = data['metadata']
-        self.assertEqual(0, meta.get('features_stable', 0))
-        self.assertEqual(0, meta.get('features_beta', 0))
-        self.assertEqual(0, meta.get('features_planned', 0))
-        self.assertEqual(1, meta.get('features_deferred', 0))
-        self.assertEqual(0, meta.get('total_features', 0))
-        self.assertEqual(0.0, meta.get('overall_progress_pct', 0))
+    def test_metadata_all_deferred_recomputes_stale_metadata(self):
+        # Stale metadata from before a data-only PR marked the feature deferred; no
+        # promotion or demotion happens, yet --apply must fix the counts.
+        meta = self._run_apply_all_deferred({
+            'features_stable': 1, 'features_beta': 0, 'features_planned': 0,
+            'features_deferred': 0, 'features_complete': 1, 'total_features': 1,
+            'overall_progress_pct': 50.0})
+        self.assertEqual(0, meta['features_stable'])
+        self.assertEqual(0, meta['features_complete'])
+        self.assertEqual(1, meta['features_deferred'])
+        self.assertEqual(0, meta['total_features'])
+        self.assertEqual(0.0, meta['overall_progress_pct'])
 
+    def test_metadata_all_deferred_absent_metadata_keys(self):
+        # Metadata block without the count keys (never synced): they are filled in.
+        meta = self._run_apply_all_deferred({'total_features': 1})
+        self.assertEqual(1, meta['features_deferred'])
+        self.assertEqual(0, meta['features_stable'])
+        self.assertEqual(0, meta['total_features'])
+        self.assertEqual(0.0, meta['overall_progress_pct'])
 
     def test_workflow_branch_identity(self):
         with open('.github/workflows/ledger-promote.yml') as f:
