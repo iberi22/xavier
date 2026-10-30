@@ -213,17 +213,12 @@ async fn probe_daemon_config_at(base_url: &str, token: &str) -> ConfigProbe {
 }
 
 /// Check for test pollution left in a real install.
-pub fn check_test_pollution(_settings: &XavierSettings) -> Vec<CheckResult> {
+pub fn check_test_pollution(_settings: &XavierSettings, verbose: bool) -> Vec<CheckResult> {
     let mut results = Vec::new();
     let temp_dir = std::env::temp_dir();
 
     // 1. Check runtime state overlay
-    let runtime_state_path_var = std::env::var_os("XAVIER_RUNTIME_STATE_PATH")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| {
-            let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("~"));
-            home.join(".local/state/xavier/xavier.runtime.json")
-        });
+    let runtime_state_path_var = crate::settings::XavierSettings::resolve_runtime_state_path();
 
     let mut found_pollution = false;
 
@@ -231,9 +226,32 @@ pub fn check_test_pollution(_settings: &XavierSettings) -> Vec<CheckResult> {
         match std::fs::read_to_string(&runtime_state_path_var) {
             Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
                 Ok(json) => {
-                    let keys_to_check = ["data_dir", "db_path", "workspace_dir"];
-                    for key in keys_to_check {
-                        if let Some(path_str) = json.get(key).and_then(|v| v.as_str()) {
+                    let paths_to_check = vec![
+                        (
+                            "memory.data_dir",
+                            json.pointer("/memory/data_dir").and_then(|v| v.as_str()),
+                        ),
+                        (
+                            "memory.workspace_dir",
+                            json.pointer("/memory/workspace_dir")
+                                .and_then(|v| v.as_str()),
+                        ),
+                        (
+                            "memory.sqlite_path",
+                            json.pointer("/memory/sqlite_path").and_then(|v| v.as_str()),
+                        ),
+                        (
+                            "memory.vec_path",
+                            json.pointer("/memory/vec_path").and_then(|v| v.as_str()),
+                        ),
+                        (
+                            "server.code_graph_db_path",
+                            json.pointer("/server/code_graph_db_path")
+                                .and_then(|v| v.as_str()),
+                        ),
+                    ];
+                    for (key, val) in paths_to_check {
+                        if let Some(path_str) = val {
                             let path = std::path::Path::new(path_str);
                             if path.starts_with(&temp_dir) {
                                 results.push(DoctorCheck {
@@ -330,7 +348,7 @@ pub fn check_test_pollution(_settings: &XavierSettings) -> Vec<CheckResult> {
         }
     }
 
-    if !found_pollution {
+    if !found_pollution && verbose {
         results.push(DoctorCheck {
             name: "Test Pollution".to_string(),
             status: CheckStatus::Ok,
@@ -1228,7 +1246,7 @@ pub async fn execute_doctor_checks(
 
     let settings_poll = settings.clone();
     let pollution_probe = run_sync_probe("Test Pollution", DOCTOR_CHECK_TIMEOUT, move || {
-        check_test_pollution(&settings_poll)
+        check_test_pollution(&settings_poll, verbose)
     });
 
     let sidecar_probe = run_sync_probe(

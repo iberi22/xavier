@@ -15,6 +15,7 @@ fn test_doctor_pollution_clean() {
     let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
         .arg("doctor")
         .arg("--json")
+        .arg("--verbose")
         .env("HOME", temp_home.path())
         .env("XAVIER_DATA_DIR", temp_data.path())
         .env("XAVIER_CONFIG_PATH", &temp_config)
@@ -24,8 +25,27 @@ fn test_doctor_pollution_clean() {
         .unwrap();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("no test pollution found"));
-    assert!(stdout.contains("Test Pollution"));
+
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("Failed to parse JSON stdout");
+    let checks = json
+        .get("checks")
+        .and_then(|v| v.as_array())
+        .expect("Expected checks array");
+    let pollution_check = checks.iter().find(|c| {
+        c.get("name").and_then(|n| n.as_str()) == Some("Test Pollution")
+            && c.get("detail")
+                .and_then(|d| d.as_str())
+                .unwrap_or("")
+                .contains("no test pollution found")
+    });
+
+    assert!(pollution_check.is_some(), "Test Pollution check not found");
+    let pollution_check = pollution_check.unwrap();
+    assert_eq!(
+        pollution_check.get("status").and_then(|s| s.as_str()),
+        Some("Ok")
+    );
 }
 
 #[serial_test::serial]
@@ -39,12 +59,15 @@ fn test_doctor_pollution_runtime_overlay() {
     fs::write(&temp_config, "{}").unwrap();
 
     let overlay_path = temp_home.path().join("runtime.json");
-    let non_existent_path = temp_home.path().join("non_existent_data");
+    let non_existent_path = std::path::PathBuf::from("/opt/xavier_non_existent_data_for_test");
 
     let overlay_content = serde_json::json!({
-        "data_dir": non_existent_path.to_str().unwrap()
+        "memory": {
+            "data_dir": non_existent_path.to_str().unwrap()
+        }
     });
-    fs::write(&overlay_path, overlay_content.to_string()).unwrap();
+    let original_bytes = overlay_content.to_string().into_bytes();
+    fs::write(&overlay_path, &original_bytes).unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
         .arg("doctor")
@@ -58,14 +81,39 @@ fn test_doctor_pollution_runtime_overlay() {
         .unwrap();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("points to a non-existent path"));
-    assert!(stdout.contains(non_existent_path.to_str().unwrap()));
+
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("Failed to parse JSON stdout");
+    let checks = json
+        .get("checks")
+        .and_then(|v| v.as_array())
+        .expect("Expected checks array");
+    let pollution_check = checks.iter().find(|c| {
+        c.get("name").and_then(|n| n.as_str()) == Some("Test Pollution")
+            && c.get("detail")
+                .and_then(|d| d.as_str())
+                .unwrap_or("")
+                .contains("points to a non-existent path")
+    });
+
+    assert!(pollution_check.is_some(), "Test Pollution check not found");
+    let pollution_check = pollution_check.unwrap();
+    assert_eq!(
+        pollution_check.get("status").and_then(|s| s.as_str()),
+        Some("Warn")
+    );
+    let detail = pollution_check
+        .get("detail")
+        .and_then(|d| d.as_str())
+        .unwrap();
+    assert!(detail.contains(non_existent_path.to_str().unwrap()));
 
     // Check exit code is not a crash (0 because it's just a WARN)
-    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.status.code(), Some(1));
 
     // Files are unchanged
-    assert!(overlay_path.exists());
+    let current_bytes = fs::read(&overlay_path).unwrap();
+    assert_eq!(original_bytes, current_bytes);
 }
 
 #[serial_test::serial]
@@ -93,9 +141,34 @@ fn test_doctor_pollution_file_should_not_exist() {
         .unwrap();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Found SHOULD-NOT-EXIST file/dir"));
-    assert!(stdout.contains("SHOULD-NOT-EXIST.db"));
-    assert_eq!(output.status.code(), Some(0));
+
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("Failed to parse JSON stdout");
+    let checks = json
+        .get("checks")
+        .and_then(|v| v.as_array())
+        .expect("Expected checks array");
+    let pollution_check = checks.iter().find(|c| {
+        c.get("name").and_then(|n| n.as_str()) == Some("Test Pollution")
+            && c.get("detail")
+                .and_then(|d| d.as_str())
+                .unwrap_or("")
+                .contains("Found SHOULD-NOT-EXIST file/dir")
+    });
+
+    assert!(pollution_check.is_some(), "Test Pollution check not found");
+    let pollution_check = pollution_check.unwrap();
+    assert_eq!(
+        pollution_check.get("status").and_then(|s| s.as_str()),
+        Some("Warn")
+    );
+    let detail = pollution_check
+        .get("detail")
+        .and_then(|d| d.as_str())
+        .unwrap();
+    assert!(detail.contains("SHOULD-NOT-EXIST.db"));
+
+    assert_eq!(output.status.code(), Some(1));
 
     // File unchanged
     assert!(should_not_exist_file.exists());
@@ -112,7 +185,8 @@ fn test_doctor_pollution_invalid_json() {
     fs::write(&temp_config, "{}").unwrap();
 
     let overlay_path = temp_home.path().join("runtime.json");
-    fs::write(&overlay_path, "{ invalid json").unwrap();
+    let original_bytes = b"{ invalid json";
+    fs::write(&overlay_path, original_bytes).unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
         .arg("doctor")
@@ -126,8 +200,32 @@ fn test_doctor_pollution_invalid_json() {
         .unwrap();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Failed to parse runtime state JSON"));
-    assert_eq!(output.status.code(), Some(0));
+
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("Failed to parse JSON stdout");
+    let checks = json
+        .get("checks")
+        .and_then(|v| v.as_array())
+        .expect("Expected checks array");
+    let pollution_check = checks.iter().find(|c| {
+        c.get("name").and_then(|n| n.as_str()) == Some("Test Pollution")
+            && c.get("detail")
+                .and_then(|d| d.as_str())
+                .unwrap_or("")
+                .contains("Failed to parse runtime state JSON")
+    });
+
+    assert!(pollution_check.is_some(), "Test Pollution check not found");
+    let pollution_check = pollution_check.unwrap();
+    assert_eq!(
+        pollution_check.get("status").and_then(|s| s.as_str()),
+        Some("Warn")
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+
+    let current_bytes = fs::read(&overlay_path).unwrap();
+    assert_eq!(original_bytes, current_bytes.as_slice());
 }
 
 #[serial_test::serial]
@@ -152,6 +250,27 @@ fn test_doctor_pollution_temp_dir_without_test_mode() {
         .unwrap();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("XAVIER_DATA_DIR is in temp dir but not in test mode"));
-    assert_eq!(output.status.code(), Some(0));
+
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("Failed to parse JSON stdout");
+    let checks = json
+        .get("checks")
+        .and_then(|v| v.as_array())
+        .expect("Expected checks array");
+    let pollution_check = checks.iter().find(|c| {
+        c.get("name").and_then(|n| n.as_str()) == Some("Test Pollution")
+            && c.get("detail")
+                .and_then(|d| d.as_str())
+                .unwrap_or("")
+                .contains("XAVIER_DATA_DIR is in temp dir but not in test mode")
+    });
+
+    assert!(pollution_check.is_some(), "Test Pollution check not found");
+    let pollution_check = pollution_check.unwrap();
+    assert_eq!(
+        pollution_check.get("status").and_then(|s| s.as_str()),
+        Some("Warn")
+    );
+
+    assert_eq!(output.status.code(), Some(1));
 }
