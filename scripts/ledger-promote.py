@@ -208,7 +208,7 @@ def evaluate(document, evidence, history, root, streak):
             trans = None
             if common:
                 rev_reasons = ['review skipped: ' + r for r in common]
-            elif result.get('evidence_complete') is False:
+            elif result.get('evidence_complete') is not True:
                 rev_reasons = ['review skipped: incomplete evidence']
             else:
                 rev_reasons = []

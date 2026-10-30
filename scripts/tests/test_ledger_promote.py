@@ -398,6 +398,11 @@ class PlannedBetaPromotionTests(unittest.TestCase):
             candidate_passed=['test_roundtrip'], candidate_failed=[],
             candidate_integration_targets_by_test={'test_roundtrip': ['integration']},
             candidate_tests=['test_roundtrip'])
+        # The evidence collector always emits a per-feature evidence_complete
+        # flag; stable review only runs when it is explicitly True.
+        self.evidence['per_feature_test_results']['stable'] = dict(
+            declared=[], passed=[], failed=[], integration_targets_by_test={},
+            evidence_complete=True)
         self.history = json.loads((FIXTURES / 'history.json').read_text())
         self.history['planned'] = ['a', 'b']
         self.path = self.root / '.gitcore' / 'features.json'
@@ -671,6 +676,54 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         # apply without apply-demotions
         report_apply, _ = self.run_all(apply=True)
         self.assertEqual([], report_apply.get('demotions_applied', []))
+        self.assertEqual('stable', json.loads(self.path.read_text())['features']['stable']['status'])
+        # apply with apply-demotions demotes the fully evidenced failing feature
+        report_dem = self.run_apply_demotions()
+        self.assertIn('stable', report_dem['demotions_applied'])
+        self.assertEqual('beta', json.loads(self.path.read_text())['features']['stable']['status'])
+
+    def run_apply_demotions(self):
+        self.path.write_text(json.dumps(self.features))
+        evidence, history = self.root / 'evidence.json', self.root / 'history.json'
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py'),
+                                 '--features', str(self.path), '--evidence', str(evidence),
+                                 '--history', str(history), '--apply', '--apply-demotions'],
+                                capture_output=True, text=True, check=True)
+        return json.loads(result.stdout)
+
+    def assert_incomplete_feature_evidence_never_demotes(self):
+        # Global evidence is complete and the feature has a demotion trigger
+        # (open_gaps + failed declared test), but its own completeness is not
+        # proven: review must be skipped, never flagged or demoted.
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.evidence['evidence_complete'] = True
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertIsNone(stable.get('transition'))
+        self.assertEqual(['review skipped: incomplete evidence'], stable['review_reasons'])
+        report_dem = self.run_apply_demotions()
+        self.assertEqual([], report_dem.get('demotions_applied', []))
+        self.assertEqual('stable', json.loads(self.path.read_text())['features']['stable']['status'])
+
+    def test_missing_per_feature_flag_never_demotes(self):
+        self.evidence['per_feature_test_results']['stable'] = dict(
+            declared=['test_stable'], passed=[], failed=['test_stable'],
+            integration_targets_by_test={})
+        self.assert_incomplete_feature_evidence_never_demotes()
+
+    def test_null_per_feature_flag_never_demotes(self):
+        self.evidence['per_feature_test_results']['stable'] = dict(
+            declared=['test_stable'], passed=[], failed=['test_stable'],
+            integration_targets_by_test={}, evidence_complete=None)
+        self.assert_incomplete_feature_evidence_never_demotes()
+
+    def test_missing_per_feature_result_never_demotes(self):
+        del self.evidence['per_feature_test_results']['stable']
+        self.assert_incomplete_feature_evidence_never_demotes()
 
 
     def test_truncated_final_block_regression(self):
@@ -745,7 +798,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.features['features']['stable']['tests'] = ['test_stable']
         self.evidence['per_feature_test_results']['stable'] = dict(
             declared=['test_stable'], passed=['test_stable'], failed=[],
-            integration_targets_by_test={})
+            integration_targets_by_test={}, evidence_complete=True)
         report, _ = self.run_all()
         stable = report['features']['stable']
         self.assertTrue(stable.get('review_flagged'))
@@ -755,7 +808,8 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.features['features']['stable']['tests'] = ['test_stable']
         self.evidence['per_feature_test_results']['stable'] = dict(
             declared=['test_stable'], passed=['test_stable'], failed=[],
-            integration_targets_by_test={'test_stable': ['integration']})
+            integration_targets_by_test={'test_stable': ['integration']},
+            evidence_complete=True)
         report, err = self.run_all()
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
@@ -812,7 +866,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.evidence['ledger_run_conclusion'] = 'failure'
         self.evidence['per_feature_test_results']['stable'] = dict(
             declared=['test_stable'], passed=[], failed=['test_stable'],
-            integration_targets_by_test={})
+            integration_targets_by_test={}, evidence_complete=True)
         self.evidence['evidence_complete'] = True
 
         report, _ = self.run_all()
