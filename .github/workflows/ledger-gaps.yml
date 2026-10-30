@@ -1,0 +1,60 @@
+name: Ledger Gaps
+
+on:
+  workflow_run:
+    workflows: ["Ledger Promoter"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Ledger Promoter workflow run ID to use'
+        required: true
+
+permissions: {}
+
+jobs:
+  manage-gaps:
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Get run ID
+        id: run-id
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "id=${{ inputs.run_id }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v8
+        with:
+          run-id: ${{ steps.run-id.outputs.id }}
+          github-token: ${{ github.token }}
+          name: ledger-promoter-evidence
+          path: /tmp
+
+      - name: Determine main red status and run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA=$(jq -r '.sha' /tmp/ledger-report.json)
+          # Get latest push run of ci.yml on main for the evaluated SHA
+          CI_STATUS=$(gh run list --workflow=ci.yml --branch=main --commit="$SHA" --event=push --limit=1 --json conclusion -q '.[0].conclusion' || echo "unknown")
+
+          if [ "$CI_STATUS" != "success" ]; then
+            MAIN_RED_FLAG="--main-red"
+            echo "CI on main is red or missing for $SHA ($CI_STATUS)."
+          else
+            MAIN_RED_FLAG=""
+          fi
+
+          python3 scripts/ledger-gap-issues.py --report /tmp/ledger-report.json $MAIN_RED_FLAG >> $GITHUB_STEP_SUMMARY
