@@ -74,6 +74,8 @@ def parse_log(log, document):
     if '(mode: full,' in log:
         all_declared = set()
         for f in document['features'].values():
+            if f.get('status') == 'deferred':
+                continue
             decl = f.get('tests', [])
             if isinstance(decl, list):
                 for t in decl:
