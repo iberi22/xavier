@@ -1,26 +1,16 @@
 {
   "project": "xavier",
-  "path": "~/proyectosSWAL/apps/xavier",
-  "generated_at": "2026-08-31T21:23:05.461114",
   "protocol_version": "3.8.0",
-  "overall_pct": 100.0,
+  "generated_at": "2026-10-30",
+  "overall_pct": null,
+  "grade": null,
+  "superseded_by": [
+    ".gitcore/features.json",
+    "docs/plans/IMPLEMENTATION-AUDIT_2026-10-28.md"
+  ],
   "breakdown": {
-    "protocol_pct": 100,
-    "src_pct": 100,
-    "srs_pct": 100,
-    "features_pct": 100.0,
-    "features_count": 52,
-    "features_source": "WAVE-4: 9 PRs 1753-1767 + 1758 (52/52 stable 100%), 2009 lib + 4 wasm + 81 code-graph + 24 core-logic, clippy 0, fmt 0, panel build 0",
-    "swal_compliance": 100
+    "features_count": 118,
+    "features_stable": 70
   },
-  "weights": {
-    "protocol": 0.2,
-    "src": 0.15,
-    "srs": 0.2,
-    "features": 0.35,
-    "swal": 0.1
-  },
-  "gaps": [],
-  "grade": "A+",
-  "notes": "WAVE-4 cerrada 2026-08-31: 52/52 stable 100% verified. WAVE-3 10/10 + WAVE-4 10/10 (training, mini-experts, mesh service, private wallet, curation, issue-context, store hierarchy, IVN karma, wasm+rag, mesh+clearance). SRS REQ-012..030 verified, FEATURE_STATUS 52/52, ARCH_WAVE4. v1.0.0 tag."
+  "notes": "The ledger .gitcore/features.json is the source of truth and this file is no longer a score."
 }

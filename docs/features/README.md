@@ -55,6 +55,4 @@ scripts/verify-pipeline.sh
 
 ## `implementation-score.json`
 
-`docs/features/implementation-score.json` is a **release snapshot** of the
-aggregate score, regenerated at release time by the pipeline. It is an output
-artifact, never hand-edited. See `docs/protocol/SDLC_WORKFLOW.md` §5.
+`docs/features/implementation-score.json` points to the ledger (`.gitcore/features.json`), which is the source of truth for the score.
