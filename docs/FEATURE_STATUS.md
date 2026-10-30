@@ -95,9 +95,19 @@ See `tests/xtsp/` for the complete integration test suite.
 | Ecosystem App Registry | Stable | `GET /v1/maloca/registry[/{app_id}]`, ETag-cached. |
 | Alignment audit | Stable | `GET /v1/maloca/alignment[/goals]` — GOAL.md compliance. |
 | Unified backlog | Stable | `GET /v1/maloca/backlog/unified|summary` — multi-repo aggregation, TTL cache. |
-| Model Router | Stable | `POST /v1/maloca/models/infer`, `GET list|health` — Ollama/cloud providers. |
+| <a name="maloca-model-router"></a>Model Router | Unsupported | `/v1/maloca/models/*` return 501. Use `/v1/providers` instead. |
 | HumanChallenge engine | Stable | `POST challenges/generate|answer`, `GET list|stats`. |
 | Panel UI tabs | Stable | Registry / Goals / Backlog / Challenges / Models in `panel-ui/src/maloca/MalocaView.tsx`. |
+
+**Model Router unsupported contract.** `POST /v1/maloca/models/infer`, `GET /v1/maloca/models/list` and `GET /v1/maloca/models/health` all answer `501 Not Implemented`. `POST /v1/maloca/models/infer` needs `Authorization: Bearer <token>` like the other authenticated API routes (without it the auth middleware answers `401` first). The JSON body has five fields:
+
+| Field | Value |
+|---|---|
+| `status` | `"unsupported"` |
+| `feature` | `"maloca-model-router"` |
+| `route` | the requested path, e.g. `"/v1/maloca/models/infer"` |
+| `use_instead` | `"/v1/providers"` |
+| `docs` | `"docs/FEATURE_STATUS.md#maloca-model-router"` |
 
 Verified by `test_maloca_http_e2e` (5/5), `test_hc_e2e` (1/1), `maloca-core` unit suite (59/59) and the backoffice E2E `e2e_maloca_flow.spec.ts` (4/4).
 
