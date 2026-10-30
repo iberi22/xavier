@@ -4122,7 +4122,7 @@
       "name": "Mesh Replay Store",
       "category": "mesh",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "A reusable SQLite storage primitive to ensure replay requests are rejected and new ones recorded durably.",
       "steps": [
         "Implement Claim enum and ReplayStore trait",
@@ -4154,7 +4154,7 @@
         "REQ-012"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-31 by tests tests::replay_same_second_after_reopen_rejected, tests::replay_sender_ahead_ts_plus_200_after_reopen_rejected, tests::floor_only_rises_and_pruned_rows_stay_rejected, tests::sender_nonce_namespace_is_isolated, tests::repeated_nonce_with_new_timestamp_is_rejected_while_retained, tests::per_sender_cap_returns_full_without_claiming, tests::invalid_empty_or_oversized_identity_and_nonce_rejected, tests::sqlite_open_or_transaction_error_is_not_fresh, tests::timestamp_extremes_are_rejected_without_overflow, tests::concurrent_cap_and_duplicate_claims, tests/mesh_replay_store_e2e.rs::fresh_then_replayed_across_reopen, tests/mesh_replay_store_e2e.rs::senders_are_isolated_across_reopen, tests/mesh_replay_store_e2e.rs::stale_timestamp_rejected, tests/mesh_replay_store_e2e.rs::two_handles_same_file"
     },
     "feat-headless-server-packaging": {
       "category": "packaging",
@@ -4222,9 +4222,11 @@
       "name": "Enterprise Multi-Tenant",
       "category": "enterprise",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 20,
       "description": "Enterprise core (tenants, RBAC, audit, rate limits, API keys).",
-      "steps": [],
+      "steps": [
+        "pending: missing E2E test coverage for RBAC, audit, rate limits, API keys"
+      ],
       "tests": [
         "tests/cli_tenants_e2e.rs::test_cli_tenants_list_text",
         "tests/cli_tenants_e2e.rs::test_cli_tenants_list_json",
