@@ -1,22 +1,10 @@
-1. **Identify the opportunity:**
-   - In `panel-ui/src/components/QuotaTable.tsx`, the `QuotaTable` component renders a list of `Quota` items using `.map()`.
-   - The list items `<tr>` and its contents are re-created on every render of `QuotaTable`, even if the items haven't changed.
-   - If the parent component (`ProvidersPage`) re-renders, it recreates `mappedQuotas` (via `useMemo` when `quotas` changes), and passes it to `QuotaTable`. `QuotaTable` maps over the whole list again, creating new DOM elements.
-   - By extracting the row rendering into a memoized component `QuotaTableRow`, we can prevent unnecessary reconciliation and re-rendering of individual row items if their data hasn't changed.
+1. **Raise timeout of `ledger-verification` in `.github/workflows/ci.yml`**:
+   - Locate the `ledger-verification:` job.
+   - Update `timeout-minutes: 45` to `timeout-minutes: 90`.
+   - Update the step `Run Full Ledger` to have `timeout-minutes: 80` so that the `Upload Logs` artifact step can always execute on timeout.
+2. **Add elapsed seconds output to `scripts/verify-pipeline.sh`**:
+   - In `scripts/verify-pipeline.sh`, when it logs the start of each stage `==> [X/5] ...`, we need to change it to include the elapsed time. Since bash sets `$SECONDS` from the start of the script, we can include it at the start or end of each step. The requirements state: "print elapsed seconds at the end of each stage ([1/5] ... [4b/5]) so future slowdowns are visible in ledger.log. No behaviour change otherwise."
+   - We will print at the end of each section: `echo "==> [1/5] Validating ledger schema... (done in $SECONDS s)"` is probably not what it means by "at the end of each stage", wait, the requirement: `print elapsed seconds at the end of each stage ([1/5] ... [4b/5])`. It's better to add an echo at the end of the block.
+   - Wait, `echo "==> [1/5] ... complete (${SECONDS}s)"` at the end of the block? Or just `echo "  ... stage 1 complete (${SECONDS}s)"`? Let's check how the script is structured.
 
-2. **Refactor `QuotaTable.tsx`:**
-   - Extract the `<tr>` block inside the `quotas.map(...)` into a new component `QuotaTableRow`.
-   - Wrap `QuotaTableRow` with `React.memo()`.
-   - Add the Bolt Performance Optimization comment block above the new component to explain the optimization.
-   - Update `QuotaTable` to map over `quotas` and render `QuotaTableRow` for each item.
-
-3. **Verify:**
-   - Run `cd panel-ui && pnpm run biome:check`
-   - Run `pnpm test` in the `panel-ui` directory.
-   - Ensure the application still works correctly.
-
-4. **Complete pre-commit steps:**
-   - Call `pre_commit_instructions` and follow testing and verification steps.
-
-5. **Submit:**
-   - Commit and submit the code with an appropriate message and description.
+Let's modify `verify-pipeline.sh` first to see where these can be placed.

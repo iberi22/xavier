@@ -74,6 +74,7 @@ for f in feats:
     assert isinstance(norm_list(f.get("implemented_in")), list), f"{fid}: implemented_in must be a list or string"
 print(f"  ✅ ledger OK: {len(feats)} features")
 PY
+echo "==> [1/5] finished, elapsed: ${SECONDS}s"
 
 # ---------------------------------------------------------------- existence
 echo "==> [2/5] Checking implemented_in[] paths..."
@@ -100,6 +101,7 @@ if bad:
     sys.exit(1)
 print("  ✅ all paths exist")
 PY
+echo "==> [2/5] finished, elapsed: ${SECONDS}s"
 
 # ---------------------------------------------------------------- score
 echo "==> [3/5] Computing implementation score..."
@@ -116,6 +118,7 @@ beta = sum(1 for f in feats if f.get("status") in ("beta", "implemented", "activ
 pct = round(sum(f.get("progress_pct", 0) for f in feats if f.get("status") != "deferred") / den, 1) if den > 0 else 0
 print(f"  stable={stable} beta={beta} planned={n-stable-beta-deferred} deferred={deferred} total={n} real%={pct}")
 PY
+echo "==> [3/5] finished, elapsed: ${SECONDS}s"
 
 # ---------------------------------------------------------------- tests
 if [ "$MODE" = "full" ] && command -v cargo >/dev/null 2>&1; then
@@ -385,6 +388,7 @@ PY
   # remaining names report "skipped (budget)".
   if [ "$FAILED" -ne 0 ]; then
     echo "==> [4b/5] Skipping candidate lane (gating failed)..."
+    echo "==> [4b/5] finished, elapsed: ${SECONDS}s"
   else
   echo "==> [4b/5] Executing candidate tests (planned, non-gating)..."
   CAND_TIMEOUT="${CANDIDATE_TEST_TIMEOUT:-300}"
@@ -479,8 +483,10 @@ PY
   rm -f "$CAND_LIST"
   if [ "$CAND_FAILED" -ne 0 ]; then
     echo "  ⚠ candidate lane had failures (non-gating — pipeline result unchanged)"
+    echo "==> [4b/5] finished, elapsed: ${SECONDS}s"
   else
     echo "  ✅ candidate lane complete"
+    echo "==> [4b/5] finished, elapsed: ${SECONDS}s"
   fi
   fi
   rm -f "$TEST_LIST"
@@ -491,6 +497,7 @@ PY
     exit 1
   fi
   echo "  ✅ all declared tests passed"
+  echo "==> [4/5] finished, elapsed: ${SECONDS}s"
 fi
 
 # ---------------------------------------------------------------- strict

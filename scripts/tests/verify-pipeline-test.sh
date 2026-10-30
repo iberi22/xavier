@@ -425,4 +425,35 @@ chmod +x "$TEST_DIR/bin12/cargo"
   echo "PASS: Test Case 12"
 )
 
+
+echo "=========================================================="
+echo "Test Case 13: Elapsed time is logged at the end of each stage"
+cat << 'JSON_EOF' > "$MOCK_ROOT/.gitcore/features.json"
+{
+  "features": {
+    "feat-gate": {"id": "feat-gate", "status": "stable", "implemented_in": [], "tests": ["gate_ok"]}
+  }
+}
+JSON_EOF
+mkdir -p "$TEST_DIR/bin13"
+cat << 'BIN_EOF' > "$TEST_DIR/bin13/cargo"
+#!/usr/bin/env bash
+if [[ "\$*" == *"--no-run"* ]]; then return 0 2>/dev/null || true; fi
+echo "test result: ok. 1 passed; 0 failed"
+return 0 2>/dev/null || true
+BIN_EOF
+chmod +x "$TEST_DIR/bin13/cargo"
+(
+  export PATH="$TEST_DIR/bin13:$PATH"
+  export XAVIER_VERIFY_PER_ATTEMPT_SECS=1
+  OUT="$(bash "$TEST_DIR/verify-pipeline.sh" 2>&1)" || RC=$?
+  if [ "${RC:-0}" -ne 0 ]; then echo "FAIL: expected exit 0, got ${RC:-0}"; echo "$OUT"; return 1 2>/dev/null || false; fi
+  if ! echo "$OUT" | grep -q '==> \[1/5\] finished, elapsed:'; then echo "FAIL: missing [1/5] elapsed"; echo "$OUT"; return 1 2>/dev/null || false; fi
+  if ! echo "$OUT" | grep -q '==> \[2/5\] finished, elapsed:'; then echo "FAIL: missing [2/5] elapsed"; echo "$OUT"; return 1 2>/dev/null || false; fi
+  if ! echo "$OUT" | grep -q '==> \[3/5\] finished, elapsed:'; then echo "FAIL: missing [3/5] elapsed"; echo "$OUT"; return 1 2>/dev/null || false; fi
+  if ! echo "$OUT" | grep -q '==> \[4/5\] finished, elapsed:'; then echo "FAIL: missing [4/5] elapsed"; echo "$OUT"; return 1 2>/dev/null || false; fi
+  if ! echo "$OUT" | grep -q '==> \[4b/5\] finished, elapsed:'; then echo "FAIL: missing [4b/5] elapsed"; echo "$OUT"; return 1 2>/dev/null || false; fi
+  echo "PASS: Test Case 13"
+)
+
 echo "All verify-pipeline tests passed"

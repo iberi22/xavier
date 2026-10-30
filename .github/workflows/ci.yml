@@ -697,7 +697,7 @@ jobs:
     name: Full Ledger Verification
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -725,6 +725,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run Full Ledger
+        timeout-minutes: 80
         run: bash scripts/verify-pipeline.sh > ledger.log 2>&1 || (cat ledger.log && exit 1)
       - name: Upload Logs
         if: always()
