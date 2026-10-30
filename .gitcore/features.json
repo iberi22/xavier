@@ -3029,12 +3029,13 @@
       "name": "Configurable Skill Store and Roots",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 66,
       "description": "Replace hardcoded $HOME/.hermes/skills and config paths with XAVIER_SKILL_STORE/MANIFEST/SOURCE_ROOTS/TARGET_ROOTS env vars; defaults reproduce the current scan set exactly (D5, D7a)",
       "steps": [
         "Add the four D5 environment variables and document them in .env.example",
         "Preserve the current scan roots and Hermes disabled-list defaults when variables are unset",
-        "Enforce host-owned root allowlists and workspace-only fallback when HOME is unset"
+        "Enforce host-owned root allowlists and workspace-only fallback when HOME is unset",
+        "pending: missing XAVIER_SKILL_SOURCE_ROOTS and XAVIER_SKILL_TARGET_ROOTS implementation and .env.example documentation"
       ],
       "passes": false,
       "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-store-config.md (Configurable Skill Store and Scan Paths). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D5, D7a). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
@@ -3180,7 +3181,7 @@
       "name": "Skill Usage Telemetry",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Local SQLite events (selected/delivered/invoked/completed) with opaque IDs and 30-day retention to inform pruning; never auto-deletes (D12)",
       "steps": [
         "Record selected, delivered, invoked and completed events with opaque IDs in local SQLite",
@@ -3188,7 +3189,7 @@
         "Report observation coverage and prune only event records after 30 days"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-usage-telemetry.md (Local Skill Usage Telemetry). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D12). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-usage-telemetry.md (Local Skill Usage Telemetry). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D12). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests every_stage_round_trips_through_the_schema, record_ack_is_idempotent_for_invoked_and_completed, emit_selected_delivered_has_unknown_ack_coverage_and_no_task_text, prune_removes_expired_events_only, dispatch_telemetry_failure_leaves_result_unchanged, tests/skill_usage_telemetry_e2e.rs::telemetry_dispatch_ack_and_usage_e2e, tests/skill_usage_telemetry_e2e.rs::usage_endpoint_unauthorized",
       "tests": [
         "every_stage_round_trips_through_the_schema",
         "record_ack_is_idempotent_for_invoked_and_completed",
