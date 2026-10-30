@@ -10,6 +10,8 @@ xavier::isolate_test_process!();
 
 #[path = "memory_fts_check_e2e.rs"]
 mod memory_fts_check_e2e;
+#[path = "memory_fts_rebuild_e2e.rs"]
+mod memory_fts_rebuild_e2e;
 
 #[path = "espacio_isolation_e2e.rs"]
 mod espacio_isolation_e2e;
