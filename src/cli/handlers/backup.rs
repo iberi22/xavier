@@ -122,7 +122,20 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
 
     let mut files_copied = Vec::new();
 
-    let walker = WalkDir::new(&data_dir).into_iter();
+    let walker = WalkDir::new(&data_dir).into_iter().filter_entry(|e| {
+        let p = e.path();
+        if p == dest_dir {
+            return false;
+        }
+        if let Ok(rel) = p.strip_prefix(&data_dir) {
+            if rel.components().next().map(|c| c.as_os_str())
+                == Some(std::ffi::OsStr::new("backups"))
+            {
+                return false;
+            }
+        }
+        true
+    });
 
     for entry in walker {
         let entry = match entry {
@@ -147,13 +160,6 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
             Err(_) => continue,
         };
 
-        // skip the root `backups/` directory
-        if rel_path.components().next().map(|c| c.as_os_str())
-            == Some(std::ffi::OsStr::new("backups"))
-        {
-            continue;
-        }
-
         let metadata = match fs::metadata(&path) {
             Ok(m) => m,
             Err(e) => {
@@ -174,8 +180,16 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
         }
 
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.ends_with("-wal") || name.ends_with("-shm") || name.ends_with("-journal") {
-                continue;
+            if let Some(parent) = path.parent() {
+                if let Some(base) = name
+                    .strip_suffix("-wal")
+                    .or_else(|| name.strip_suffix("-shm"))
+                    .or_else(|| name.strip_suffix("-journal"))
+                {
+                    if parent.join(base).exists() {
+                        continue;
+                    }
+                }
             }
         }
 
@@ -199,31 +213,26 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
             || path.extension().and_then(|e| e.to_str()) == Some("sqlite3");
 
         if is_sqlite {
-            match rusqlite::Connection::open(&path) {
-                Ok(conn) => {
-                    let dest_str = dest_path.to_string_lossy().to_string();
-                    if let Err(e) = conn.execute("VACUUM INTO ?", rusqlite::params![dest_str]) {
-                        if json_output {
-                            println!(
-                                "{}",
-                                json!({"ok": false, "error": format!("failed to vacuum {:?}: {}", path, e)})
-                            );
-                            std::process::exit(1);
-                        } else {
-                            anyhow::bail!("Failed to vacuum {:?}: {}", path, e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    if json_output {
-                        println!(
-                            "{}",
-                            json!({"ok": false, "error": format!("failed to open {:?}: {}", path, e)})
-                        );
-                        std::process::exit(1);
-                    } else {
-                        anyhow::bail!("Failed to open {:?}: {}", path, e);
-                    }
+            let res: anyhow::Result<()> = (|| {
+                let src_conn = rusqlite::Connection::open_with_flags(
+                    &path,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                        | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+                )?;
+                let mut dest_conn = rusqlite::Connection::open(&dest_path)?;
+                let backup = rusqlite::backup::Backup::new(&src_conn, &mut dest_conn)?;
+                backup.step(-1)?;
+                Ok(())
+            })();
+            if let Err(e) = res {
+                if json_output {
+                    println!(
+                        "{}",
+                        json!({"ok": false, "error": format!("failed to backup sqlite {:?}: {}", path, e)})
+                    );
+                    std::process::exit(1);
+                } else {
+                    anyhow::bail!("Failed to backup sqlite {:?}: {}", path, e);
                 }
             }
         } else {
@@ -291,7 +300,7 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
         "files": files_copied
     });
 
-    let manifest_path = dest_dir.join("manifest.json");
+    let manifest_path = dest_dir.join(".xavier-backup-manifest.json");
     if let Err(e) = fs::write(
         &manifest_path,
         serde_json::to_string_pretty(&manifest).unwrap(),

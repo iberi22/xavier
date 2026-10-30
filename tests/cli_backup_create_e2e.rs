@@ -32,6 +32,15 @@ fn test_backup_create_success() {
     let txt_path = data_dir.join("hello.txt");
     fs::write(&txt_path, "world").unwrap();
 
+    let manifest_path_orig = data_dir.join("manifest.json");
+    fs::write(&manifest_path_orig, "fake manifest").unwrap();
+
+    let personal_journal_path = data_dir.join("personal-journal");
+    fs::write(&personal_journal_path, "personal stuff").unwrap();
+
+    let notes_wal_path = data_dir.join("notes-wal.txt");
+    fs::write(&notes_wal_path, "notes wal").unwrap();
+
     // Nested path test
     let nested_dir = data_dir.join("sub").join("dir");
     fs::create_dir_all(&nested_dir).unwrap();
@@ -56,18 +65,28 @@ fn test_backup_create_success() {
 
     let parsed: Value = serde_json::from_str(&stdout).expect("Failed to parse JSON output");
     assert_eq!(parsed["ok"], true);
-    assert_eq!(parsed["files"], 3);
+    assert_eq!(parsed["files"], 6);
 
     let out_dir = std::path::PathBuf::from(parsed["path"].as_str().unwrap());
     assert!(out_dir.exists());
 
-    let manifest_path = out_dir.join("manifest.json");
+    let manifest_path = out_dir.join(".xavier-backup-manifest.json");
     assert!(manifest_path.exists());
     let manifest_content = fs::read_to_string(&manifest_path).unwrap();
     let manifest: Value = serde_json::from_str(&manifest_content).unwrap();
 
     let files = manifest["files"].as_array().unwrap();
-    assert_eq!(files.len(), 3);
+    assert_eq!(files.len(), 6);
+
+    let orig_manifest = out_dir.join("manifest.json");
+    assert!(orig_manifest.exists());
+    assert_eq!(fs::read_to_string(&orig_manifest).unwrap(), "fake manifest");
+
+    let personal_journal_backup = out_dir.join("personal-journal");
+    assert!(personal_journal_backup.exists());
+
+    let notes_wal_backup = out_dir.join("notes-wal.txt");
+    assert!(notes_wal_backup.exists());
 
     for f in files {
         let f_path = f["path"].as_str().unwrap();
@@ -249,6 +268,15 @@ fn test_backup_create_refuses_non_empty_dest() {
     let txt_path = data_dir.join("hello.txt");
     fs::write(&txt_path, "world").unwrap();
 
+    let manifest_path_orig = data_dir.join("manifest.json");
+    fs::write(&manifest_path_orig, "fake manifest").unwrap();
+
+    let personal_journal_path = data_dir.join("personal-journal");
+    fs::write(&personal_journal_path, "personal stuff").unwrap();
+
+    let notes_wal_path = data_dir.join("notes-wal.txt");
+    fs::write(&notes_wal_path, "notes wal").unwrap();
+
     let out_dir = tmp.path().join("backup_out");
 
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"));
@@ -298,4 +326,57 @@ fn test_backup_create_refuses_non_empty_dest() {
 
     let bytes_after = fs::read(&backed_up_file).unwrap();
     assert_eq!(bytes_before, bytes_after);
+}
+
+#[test]
+#[serial_test::serial]
+fn test_backup_create_skips_unreadable_backups_dir() {
+    let tmp = TempDir::new().unwrap();
+    let data_dir = tmp.path().join("data");
+    fs::create_dir_all(&data_dir).unwrap();
+    let runtime_state_path = tmp.path().join("runtime.json");
+    fs::write(&runtime_state_path, "{}").unwrap();
+
+    let txt_path = data_dir.join("hello.txt");
+    fs::write(&txt_path, "world").unwrap();
+
+    let backups_dir = data_dir.join("backups");
+    fs::create_dir_all(&backups_dir).unwrap();
+
+    let old_backup = backups_dir.join("old");
+    fs::create_dir_all(&old_backup).unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&old_backup).unwrap().permissions();
+        perms.set_mode(0o000);
+        fs::set_permissions(&old_backup, perms).unwrap();
+    }
+
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd.env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config"))
+        .env("XAVIER_RUNTIME_STATE_PATH", &runtime_state_path)
+        .env("XAVIER_DATA_DIR", &data_dir)
+        .arg("backup")
+        .arg("create")
+        .arg("--json");
+
+    let output = cmd.output().unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&old_backup).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&old_backup, perms).unwrap();
+    }
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Value = serde_json::from_str(&stdout).expect("Failed to parse JSON output");
+    assert_eq!(parsed["ok"], true);
 }
