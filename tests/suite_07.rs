@@ -61,3 +61,6 @@ mod repo_store_isolation_e2e;
 
 #[path = "mcp_tool_parity.rs"]
 mod mcp_tool_parity;
+
+#[path = "mesh_replay_store_e2e.rs"]
+mod mesh_replay_store_e2e;

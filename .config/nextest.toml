@@ -24,7 +24,7 @@ test-threads = "1"
 serial = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e|cli_provider_exit_codes_e2e|cli_provider_live_routes_e2e)::/)'
+filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e|cli_provider_exit_codes_e2e|cli_provider_live_routes_e2e|cli_json_sweep2_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -36,7 +36,7 @@ filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard)::
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_04) & test(/^(guardian_truth_test|skill_drift_audit_e2e|skill_store_config_e2e|skill_usage_telemetry_e2e|skill_registry_unify_parity_e2e|skill_dispatch_ephemeral_e2e)::/)'
+filter = 'binary(=suite_04) & test(/^(guardian_truth_test|headless_unsupported_contract_e2e|skill_drift_audit_e2e|skill_store_config_e2e|skill_usage_telemetry_e2e|skill_registry_unify_parity_e2e|skill_dispatch_ephemeral_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -56,7 +56,7 @@ filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_11) & test(/^(skill_route_clearance|code_explain_context_e2e|explain_isolated_llm_e2e)::/)'
+filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|test_backup_create_manifest_collision|test_backup_create_contention|code_explain_context_e2e|explain_isolated_llm_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -64,7 +64,7 @@ filter = 'binary(=suite_13) & test(/^(tgd_prune_gate_test)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e|cli_provider_exit_codes_e2e|cli_provider_live_routes_e2e)::/)'
+filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e|cli_provider_exit_codes_e2e|cli_provider_live_routes_e2e|cli_json_sweep2_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
@@ -76,7 +76,7 @@ filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard)::
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_04) & test(/^(guardian_truth_test|skill_drift_audit_e2e|skill_store_config_e2e|skill_usage_telemetry_e2e|skill_registry_unify_parity_e2e|skill_dispatch_ephemeral_e2e)::/)'
+filter = 'binary(=suite_04) & test(/^(guardian_truth_test|headless_unsupported_contract_e2e|skill_drift_audit_e2e|skill_store_config_e2e|skill_usage_telemetry_e2e|skill_registry_unify_parity_e2e|skill_dispatch_ephemeral_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
@@ -96,10 +96,18 @@ filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_11) & test(/^(skill_route_clearance|code_explain_context_e2e|explain_isolated_llm_e2e)::/)'
+filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|test_backup_create_manifest_collision|test_backup_create_contention|code_explain_context_e2e|explain_isolated_llm_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
 filter = 'binary(=suite_13) & test(/^(tgd_prune_gate_test)::/)'
 test-group = "serial"
 
+
+[[profile.default.overrides]]
+filter = 'test(resolve_state_dir_matches_maloca_and_default)'
+test-group = "serial"
+
+[[profile.ci.overrides]]
+filter = 'test(resolve_state_dir_matches_maloca_and_default)'
+test-group = "serial"

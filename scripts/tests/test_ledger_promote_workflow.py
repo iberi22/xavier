@@ -107,5 +107,20 @@ class TestLedgerPromoteWorkflow(unittest.TestCase):
     def test_gap_issue_lookup_not_truncated(self):
         self.assertIn("gh issue list --label ledger-gap --state open --limit 1000", self.workflow_content)
 
+    def test_completed_run_need_not_be_main_head(self):
+        self.assertNotIn('[ "$WR_SHA" = "$HEAD_SHA" ] || skip', self.workflow_content)
+        self.assertNotIn('WR_SHA', self.workflow_content)
+        self.assertIn('[ "$WR_REPO" = "$GITHUB_REPOSITORY" ] || skip', self.workflow_content)
+        self.assertIn('[ "$WR_EVENT" = "push" ] || [ "$WR_EVENT" = "workflow_dispatch" ] || skip', self.workflow_content)
+        self.assertIn('group: ledger-promoter', self.workflow_content)
+        self.assertIn('cancel-in-progress: false', self.workflow_content)
+
+    def test_proposal_uses_main_snapshot_instead_of_evaluated_sha(self):
+        self.assertIn('sha: ${{ steps.evidence.outputs.sha }}', self.workflow_content)
+        self.assertIn('main_head: ${{ steps.snapshot.outputs.main_head }}', self.workflow_content)
+        self.assertIn('ref: ${{ needs.evaluate.outputs.main_head }}', self.workflow_content)
+        self.assertNotIn('ref: ${{ needs.evaluate.outputs.sha }}', self.workflow_content)
+        self.assertIn('test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$sha"', self.workflow_content)
+
 if __name__ == '__main__':
     unittest.main()

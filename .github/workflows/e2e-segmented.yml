@@ -16,7 +16,11 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  # PRs into integration/** skip E2E (fast lane only); the integration -> main
+  # PR and the main push run it in full.
   pull_request:
+    branches-ignore:
+      - 'integration/**'
     paths:
       - 'src/**'
       - 'tests/**'
