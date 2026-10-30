@@ -79,7 +79,7 @@ async fn test_cli_tenants_list_text() {
     let temp_dir = tempfile::tempdir().unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
-        .args(&["tenants", "list"])
+        .args(["tenants", "list"])
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "fake-token")
         .env("XAVIER_DATA_DIR", temp_dir.path())
@@ -109,7 +109,7 @@ async fn test_cli_tenants_list_json() {
     let temp_dir = tempfile::tempdir().unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
-        .args(&["tenants", "list", "--json"])
+        .args(["tenants", "list", "--json"])
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "fake-token")
         .env("XAVIER_DATA_DIR", temp_dir.path())
@@ -142,7 +142,7 @@ async fn test_cli_tenants_show_text() {
 
     let id = uuid::Uuid::nil().to_string();
     let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
-        .args(&["tenants", "show", &id])
+        .args(["tenants", "show", &id])
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "fake-token")
         .env("XAVIER_DATA_DIR", temp_dir.path())
@@ -171,7 +171,7 @@ async fn test_cli_tenants_show_json() {
 
     let id = uuid::Uuid::nil().to_string();
     let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
-        .args(&["tenants", "show", &id, "--json"])
+        .args(["tenants", "show", &id, "--json"])
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "fake-token")
         .env("XAVIER_DATA_DIR", temp_dir.path())
@@ -203,7 +203,7 @@ async fn test_cli_tenants_show_not_found() {
 
     let fake_id = uuid::Uuid::new_v4().to_string();
     let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
-        .args(&["tenants", "show", &fake_id])
+        .args(["tenants", "show", &fake_id])
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "fake-token")
         .env("XAVIER_DATA_DIR", temp_dir.path())
@@ -241,7 +241,7 @@ async fn test_cli_tenants_unauthorized_exit_code() {
     let temp_dir = tempfile::tempdir().unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
-        .args(&["tenants", "list"])
+        .args(["tenants", "list"])
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "fake-token")
         .env("XAVIER_DATA_DIR", temp_dir.path())
