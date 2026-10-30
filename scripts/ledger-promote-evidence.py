@@ -83,7 +83,9 @@ def parse_log(log, document):
     for fid, f in document['features'].items():
         declared = f.get('tests', [])
         declared = declared if isinstance(declared, list) else []
+        feat_evidence_complete = bool(declared) and all(t in parsed_tests for t in declared)
         results[fid] = dict(declared=f.get('tests', []),
+                            evidence_complete=feat_evidence_complete,
                             passed=sorted(set(declared) & (passed - failed)),
                             integration_targets_by_test={test: targets_by_test.get(test, [])
                                                          for test in declared

@@ -609,6 +609,69 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
 
 
+
+    def test_unrecognized_log_empty_tests_list_no_demotion(self):
+        # (a) unrecognized log + feature with empty tests list => no demotion
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = []
+        self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': False, 'declared': [], 'passed': [], 'failed': [], 'integration_targets_by_test': {}}}
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertIn('review skipped: evidence collection incomplete', stable['review_reasons'])
+
+    def test_global_incomplete_per_feature_complete_no_demotion(self):
+        # (b) global incomplete + per-feature complete => no demotion
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': True, 'declared': ['test_stable'], 'passed': ['test_stable'], 'failed': [], 'integration_targets_by_test': {'test_stable': ['int']}}}
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertTrue(any('review skipped: evidence collection incomplete' in r for r in stable['review_reasons']))
+
+    def test_partial_coverage_skipped_with_reason(self):
+        # (c) partial coverage => skipped with reason, no demotion
+        # Actually for stable, partial coverage (incomplete evidence) means review skipped.
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = ['test_1', 'test_2']
+        self.evidence['evidence_complete'] = True
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': False, 'declared': ['test_1', 'test_2'], 'passed': ['test_1'], 'failed': [], 'integration_targets_by_test': {'test_1': ['int']}}}
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertIn('review skipped: incomplete evidence', stable['review_reasons'])
+
+    def test_full_coverage_healthy_stable_no_skip_reason(self):
+        # (d) full coverage with per-feature evidence_complete=True on a healthy stable feature => reviewed, stays stable, no skip reason asserted
+        self.features['features']['stable']['tests'] = ['test_stable']
+        if 'open_gaps' in self.features['features']['stable']:
+            del self.features['features']['stable']['open_gaps']
+        self.evidence['evidence_complete'] = True
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': True, 'declared': ['test_stable'], 'passed': ['test_stable'], 'failed': [], 'integration_targets_by_test': {'test_stable': ['int']}}}
+        self.evidence['integration_targets_passed'] = ['int']
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertEqual([], stable['review_reasons'])
+
+    def test_full_coverage_failed_test_demotion_only_with_flag(self):
+        # (e) full coverage with a failed declared test => demotion proposed only with --apply-demotions
+        self.features['features']['stable']['tests'] = ['test_stable']
+        if 'open_gaps' in self.features['features']['stable']:
+            del self.features['features']['stable']['open_gaps']
+        self.evidence['evidence_complete'] = True
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': True, 'declared': ['test_stable'], 'passed': [], 'failed': ['test_stable'], 'integration_targets_by_test': {}}}
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertIn('declared tests failed: test_stable', stable['review_reasons'])
+        # apply without apply-demotions
+        report_apply, _ = self.run_all(apply=True)
+        self.assertEqual([], report_apply.get('demotions_applied', []))
+
     def test_stable_incomplete_evidence_collection_skips_review(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
         self.evidence['per_feature_test_results'] = {}

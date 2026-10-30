@@ -208,6 +208,8 @@ def evaluate(document, evidence, history, root, streak):
             trans = None
             if common:
                 rev_reasons = ['review skipped: ' + r for r in common]
+            elif result.get('evidence_complete') is False:
+                rev_reasons = ['review skipped: incomplete evidence']
             else:
                 rev_reasons = []
                 gaps = feature.get('open_gaps')
@@ -259,6 +261,8 @@ def evaluate(document, evidence, history, root, streak):
             declared = []
         if status == 'beta':
             reasons = list(lane_common)
+            if result.get('evidence_complete') is False:
+                reasons.append('incomplete evidence')
             reasons.extend(completeness_reasons(feature))
             reasons.extend(missing_list)
             evaluated_passed, evaluated_failed = gating_passed, gating_failed
@@ -267,6 +271,8 @@ def evaluate(document, evidence, history, root, streak):
         else:
             blocking, informational = beta_completeness_split(feature)
             reasons = list(lane_common) + blocking + missing_list
+            if result.get('evidence_complete') is False:
+                reasons.append('incomplete evidence')
             informational = list(informational)
             # Planned/in_progress lane: candidate sets, plus gating sets for
             # names shared with gating features (those names are skipped by
