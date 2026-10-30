@@ -3871,7 +3871,9 @@
         "codegraph_repo_isolation_a_b_evict_reopen",
         "truncated_and_malformed_containers_are_rejected",
         "empty_file_roundtrips",
-        "tests/repo_memory_instance_cli_e2e.rs::offline_cli_add_search_uses_global_store_fallback"
+        "tests/repo_memory_instance_cli_e2e.rs::offline_cli_add_search_uses_global_store_fallback",
+        "tests/core_smoke_cli_e2e.rs::offline_add_then_search_finds_unique_token",
+        "tests/core_smoke_cli_e2e.rs::offline_memory_survives_process_restart"
       ],
       "req_ids": [],
       "user_stories": []
