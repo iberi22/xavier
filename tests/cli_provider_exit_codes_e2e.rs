@@ -176,6 +176,7 @@ async fn provider_fallback_exits_unsupported_without_side_effects() {
         .envs(&envs)
         .arg("provider")
         .arg("auto")
+        .arg("cheapest")
         .output()
         .unwrap();
 
