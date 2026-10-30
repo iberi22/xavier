@@ -7,6 +7,7 @@ pub struct TenantResponse {
     pub id: TenantId,
     pub name: String,
     pub plan: Plan,
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 use reqwest::StatusCode;
 
