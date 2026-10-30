@@ -1,16 +1,38 @@
 //! feat-cli-health-stats-parity: Verify that /memory/stats and /v1/stats
 //! route to the live stats implementation correctly and are not unmounted or stubs.
 
-use axum::http::{Method, StatusCode};
+use axum::http::StatusCode;
 use serde_json::Value;
+use serial_test::serial;
 
 xavier::isolate_test_process!();
 
+#[path = "router_harness/mod.rs"]
 mod router_harness;
-use router_harness::{jwt, status, test_app, ROOT_TOKEN};
+use router_harness::{jwt, test_app, RestoreEnv};
 
 #[tokio::test]
+#[serial]
 async fn memory_stats_routes_match_cli_mcp() {
+    // Hermetic env: temp config/runtime state and no real embedding provider
+    // (memory POSTs spawn an embedding backfill). Guards restore on drop.
+    let tmp = tempfile::tempdir().unwrap();
+    let data_dir = tmp.path().join("data");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let _env_paths = RestoreEnv::set(&[
+        ("XAVIER_CONFIG_PATH", data_dir.join("config.toml").as_path()),
+        ("XAVIER_RUNTIME_STATE_PATH", data_dir.as_path()),
+    ]);
+    let _env_embed = RestoreEnv::set_str(&[
+        ("XAVIER_EMBEDDER", "disabled"),
+        ("XAVIER_EMBEDDING_PROVIDER_MODE", "disabled"),
+    ]);
+    let _env_clear = RestoreEnv::clear(&[
+        "XAVIER_EMBEDDING_URL",
+        "XAVIER_EMBEDDING_LOCAL_URL",
+        "OPENAI_API_KEY",
+    ]);
+
     let t = test_app().await;
 
     // Add two memories
@@ -70,10 +92,15 @@ async fn memory_stats_routes_match_cli_mcp() {
     let json2: Value = serde_json::from_slice(&body2).unwrap();
 
     // Check count and shape
-    let count1 = json1["memory_count"]
-        .as_u64()
-        .expect("Expected memory_count field");
-    assert!(count1 >= 2, "Expected at least 2 memories, got {}", count1);
+    for (route, json) in [("/memory/stats", &json1), ("/v1/stats", &json2)] {
+        let total = json["total_memories"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("{route}: expected total_memories field, got {json}"));
+        assert!(
+            total >= 2,
+            "{route}: expected at least 2 memories, got {total}"
+        );
+    }
 
     assert_eq!(
         json1, json2,
