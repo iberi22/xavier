@@ -3857,7 +3857,11 @@
         "test_invite_expiry_and_space_listing",
         "test_membership_permissions_end_to_end",
         "tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_stderr",
-        "tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_json"
+        "tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_json",
+        "tests/space_cli_e2e.rs::test_space_create_success",
+        "tests/space_cli_e2e.rs::test_space_create_conflict",
+        "tests/space_cli_e2e.rs::test_space_list_json_success",
+        "tests/space_cli_e2e.rs::test_space_list_json_invalid"
       ],
       "req_ids": [],
       "user_stories": [],

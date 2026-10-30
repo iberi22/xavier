@@ -614,7 +614,11 @@ pub enum SpaceCommand {
         label: Vec<String>,
     },
     /// List all spaces
-    List,
+    List {
+        /// Output in JSON format
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Unlock a space
     Unlock {
         /// The space ID
