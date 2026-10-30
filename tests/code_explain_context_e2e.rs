@@ -2,7 +2,7 @@
 
 xavier::isolate_test_process!();
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 use xavier::explain::{assemble, EvidenceKind, EvidenceSource, ExplainTarget, GitHistorySource};

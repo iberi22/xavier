@@ -35,11 +35,18 @@ async fn isolated_explain_app(
     temp: &TempDir,
     provider: Option<&str>,
     key_file: Option<&std::path::Path>,
+    config_path: Option<&std::path::Path>,
 ) -> (Router, Vec<RestoreEnv>) {
     std::fs::create_dir_all(temp.path().join("src")).unwrap();
     std::fs::write(temp.path().join("src/lib.rs"), "fn one() {}\nfn two() {}\n").unwrap();
 
     let mut envs = vec![
+        RestoreEnv::clear(&[
+            "XAVIER_EXPLAIN_PROVIDER",
+            "XAVIER_EXPLAIN_API_KEY_FILE",
+            "XAVIER_EXPLAIN_MODEL",
+            "XAVIER_EXPLAIN_API_ENDPOINT",
+        ]),
         RestoreEnv::set(&[("HOME", temp.path()), ("XAVIER_DATA_DIR", temp.path())]),
         RestoreEnv::set_str(&[
             ("XAVIER_TOKEN", ROOT_TOKEN),
@@ -54,6 +61,15 @@ async fn isolated_explain_app(
     if let Some(kf) = key_file {
         envs.push(RestoreEnv::set(&[("XAVIER_EXPLAIN_API_KEY_FILE", kf)]));
     }
+    // Always pin config/runtime-state paths into the temp dir so inherited
+    // explicit paths from the developer environment can never leak in.
+    let default_config = temp.path().join("config.json");
+    let runtime_state = temp.path().join("runtime.json");
+    let cp = config_path.unwrap_or(default_config.as_path());
+    envs.push(RestoreEnv::set(&[
+        ("XAVIER_CONFIG_PATH", cp),
+        ("XAVIER_RUNTIME_STATE_PATH", runtime_state.as_path()),
+    ]));
 
     let state = create_test_cli_state(temp).await;
     let workspace_state = Arc::new(
@@ -133,14 +149,22 @@ async fn explain_uses_isolated_llm_settings_and_fails_on_network() {
         axum::serve(listener, mock_app).await.unwrap();
     });
 
-    let (app, mut envs) = isolated_explain_app(&temp, Some("anthropic"), Some(&key_file)).await;
-    envs.push(RestoreEnv::set_str(&[
-        ("XAVIER_EXPLAIN_MODEL", "claude-3-sonnet-20240229"),
-        (
-            "XAVIER_EXPLAIN_API_ENDPOINT",
-            &format!("http://{addr}/v1/messages"),
-        ),
-    ]));
+    let config_path = temp.path().join("config.json");
+    let config_json = serde_json::json!({
+        "models": {
+            "explain_url": format!("http://{addr}/v1/messages"),
+            "explain_model": "claude-3-sonnet-20240229"
+        }
+    });
+    std::fs::write(&config_path, serde_json::to_string(&config_json).unwrap()).unwrap();
+
+    let (app, _envs) = isolated_explain_app(
+        &temp,
+        Some("anthropic"),
+        Some(&key_file),
+        Some(&config_path),
+    )
+    .await;
 
     let (status, json) = post_explain(&app).await;
 
@@ -149,18 +173,14 @@ async fn explain_uses_isolated_llm_settings_and_fails_on_network() {
         mock_called.load(Ordering::SeqCst),
         "Mock server was not called"
     );
-    assert_eq!(json["explanation"], "mock explanation");
+    assert_eq!(json["plain_text"], "mock explanation");
 }
 
 #[tokio::test]
 #[serial_test::serial]
 async fn explain_falls_back_to_global_when_isolated_not_configured() {
     let temp = tempfile::tempdir().expect("tempdir");
-    let (app, mut envs) = isolated_explain_app(&temp, None, None).await;
-    envs.push(RestoreEnv::clear(&[
-        "XAVIER_EXPLAIN_PROVIDER",
-        "XAVIER_EXPLAIN_API_KEY_FILE",
-    ]));
+    let (app, _envs) = isolated_explain_app(&temp, None, None, None).await;
 
     let (status, json) = post_explain(&app).await;
 
