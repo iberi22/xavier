@@ -205,8 +205,8 @@
       "tests": [
         "test_fts5_symbols_search_and_sync",
         "test_extract_call_names",
-        "code-graph/src/db/mod.rs::test_find_by_file_propagates_row_errors",
-        "code-graph/src/db/mod.rs::test_find_edges_to_propagates_row_errors"
+        "test_find_by_file_propagates_row_errors",
+        "test_find_edges_to_propagates_row_errors"
       ],
       "req_ids": [
         "REQ-011"
