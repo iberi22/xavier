@@ -36,6 +36,23 @@ fn test_code_repos_list_cli_e2e() {
     cmd.env("XAVIER_CODE_EXTRA_ROOTS", &extra_root);
     // we will set envs on cmd
 
+    // Missing DB and no extra roots: empty success, nothing created.
+    let mut cmd0 = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd0.current_dir(&workspace)
+        .args(["code", "repos", "list", "--json"]);
+    cmd0.env("HOME", &home);
+    cmd0.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
+    cmd0.env("XAVIER_RUNTIME_STATE_PATH", &state);
+    cmd0.env("XAVIER_DATA_DIR", &data);
+    cmd0.env_remove("XAVIER_CODE_GRAPH_DB_PATH");
+    cmd0.env_remove("XAVIER_CODE_EXTRA_ROOTS");
+    let out0 = cmd0.output().unwrap();
+    assert!(out0.status.success(), "Command failed: {:?}", out0);
+    let j0: serde_json::Value = serde_json::from_slice(&out0.stdout).unwrap();
+    assert_eq!(j0["count"].as_u64(), Some(0), "{j0}");
+    assert!(!data.join("code_graph.db").exists());
+    assert!(!workspace.join(".xavier").join("code_graph.db").exists());
+
     // Initial state: No DB
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
     cmd.current_dir(&workspace)
@@ -197,6 +214,32 @@ fn test_code_repos_list_cli_e2e() {
     std::fs::remove_file(data.join("code_graph.db")).unwrap();
     let _ = std::fs::remove_file(data.join("code_graph.db-wal"));
     let _ = std::fs::remove_file(data.join("code_graph.db-shm"));
+
+    // 3c. An explicit XAVIER_CODE_GRAPH_DB_PATH that does not exist is honored:
+    // no fallback to the (still present) repo-local DB.
+    let missing_override = tmp.path().join("nope").join("code_graph.db");
+    let mut cmd_ovr = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd_ovr
+        .current_dir(&src_dir)
+        .args(["code", "repos", "list", "--json"]);
+    cmd_ovr.env("HOME", &home);
+    cmd_ovr.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
+    cmd_ovr.env("XAVIER_RUNTIME_STATE_PATH", &state);
+    cmd_ovr.env("XAVIER_DATA_DIR", &data);
+    cmd_ovr.env("XAVIER_CODE_GRAPH_DB_PATH", &missing_override);
+    cmd_ovr.env_remove("XAVIER_CODE_EXTRA_ROOTS");
+    let out_ovr = cmd_ovr.output().unwrap();
+    assert!(out_ovr.status.success(), "Command failed: {:?}", out_ovr);
+    let jo: serde_json::Value = serde_json::from_slice(&out_ovr.stdout).unwrap();
+    assert_eq!(
+        jo["count"].as_u64(),
+        Some(0),
+        "override must not fall back: {jo}"
+    );
+    assert!(
+        !missing_override.exists(),
+        "read-only list must not create the override DB"
+    );
 
     // 4. Test error propagation when DB is corrupt
     std::fs::write(

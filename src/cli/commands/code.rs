@@ -392,7 +392,12 @@ async fn handle_code_repos_command(cmd: CodeReposCommand) -> Result<()> {
                 std::path::Path::new("."),
             );
             let repo_local_db = code_graph_db_path_for_root(&resolved_workspace);
-            let db_path = if !canonical_db.exists() && repo_local_db.exists() {
+            let explicit_override = std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            // An explicit override is the operator's choice: never fall back from it.
+            let db_path = if !explicit_override && !canonical_db.exists() && repo_local_db.exists()
+            {
                 repo_local_db
             } else {
                 canonical_db
