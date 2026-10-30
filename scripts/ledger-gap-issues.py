@@ -70,9 +70,13 @@ def find_gaps(features_json, report_json):
             security_needs_owner.append(fid)
             continue
 
+        impl_in = feat.get("implemented_in", [])
+        if isinstance(impl_in, str):
+            impl_in = [impl_in]
+
         gaps[fid] = {
             "name": feat.get("name", ""),
-            "implemented_in": feat.get("implemented_in", []),
+            "implemented_in": impl_in,
             "tests": feat.get("tests", []),
             "reasons": reasons,
             "first_gap_reason": gap_reasons[0][:60],
@@ -110,7 +114,7 @@ def manage_issues(runner, gaps, security_fids, evidence_complete, sha, max_jules
     runner.create_label_if_missing("ledger-gap", "Ledger feature gap", "ff0000")
 
     issues_out = runner.gh("issue", "list", "--repo", runner.repo, "--label", "ledger-gap",
-                           "--state", "all", "--limit", "500", "--json", "number,state,body,labels", check=True)
+                           "--state", "all", "--limit", "10000", "--json", "number,state,body,labels", check=True)
     existing_issues = json.loads(issues_out) if issues_out else []
 
     jules_applied = 0
@@ -151,16 +155,17 @@ def manage_issues(runner, gaps, security_fids, evidence_complete, sha, max_jules
                     runner.gh("issue", "edit", str(issue["number"]), "--add-label", "jules", "--repo", runner.repo)
                     jules_applied += 1
             else:
-                # Closed but now a gap again
-                runner.gh("issue", "reopen", str(issue["number"]), "--repo", runner.repo)
-                runner.gh("issue", "edit", str(issue["number"]), "--body", new_body, "--repo", runner.repo)
-                if jules_applied < max_jules:
-                    runner.gh("issue", "edit", str(issue["number"]), "--add-label", "jules", "--repo", runner.repo)
-                    jules_applied += 1
-                elif has_jules:
-                    runner.gh("issue", "edit", str(issue["number"]), "--remove-label", "jules", "--repo", runner.repo)
+                if evidence_complete and not main_red:
+                    # Closed but now a gap again, reopen and update
+                    runner.gh("issue", "reopen", str(issue["number"]), "--repo", runner.repo)
+                    runner.gh("issue", "edit", str(issue["number"]), "--body", new_body, "--repo", runner.repo)
+                    if jules_applied < max_jules:
+                        runner.gh("issue", "edit", str(issue["number"]), "--add-label", "jules", "--repo", runner.repo)
+                        jules_applied += 1
+                    elif has_jules:
+                        runner.gh("issue", "edit", str(issue["number"]), "--remove-label", "jules", "--repo", runner.repo)
         else:
-            if is_open:
+            if is_open and evidence_complete:
                 runner.gh("issue", "close", str(issue["number"]), "--comment",
                           f"Feature is now stable or no longer has gaps on SHA {sha}.", "--repo", runner.repo)
 
@@ -172,16 +177,18 @@ def manage_issues(runner, gaps, security_fids, evidence_complete, sha, max_jules
         if fid in handled_fids:
             continue
 
-        if jules_applied >= max_jules:
-            break
-
         gap = gaps[fid]
         title = f"ledger gap: {fid} — {gap['first_gap_reason']}"
         body = format_issue_body(fid, gap)
 
-        runner.gh("issue", "create", "--repo", runner.repo, "--title", title,
-                  "--body", body, "--label", "ledger-gap,jules")
-        jules_applied += 1
+        if jules_applied < max_jules:
+            runner.gh("issue", "create", "--repo", runner.repo, "--title", title,
+                      "--body", body, "--label", "ledger-gap,jules")
+            jules_applied += 1
+        else:
+            runner.gh("issue", "create", "--repo", runner.repo, "--title", title,
+                      "--body", body, "--label", "ledger-gap")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

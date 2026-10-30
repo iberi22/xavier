@@ -75,19 +75,17 @@ class TestLedgerGapIssues(unittest.TestCase):
             }
         })
 
-        # Test 1: Body is exactly the same -> no edit call
         gaps, sec, ev, sha = lgi.find_gaps(self.features_path, self.report_path)
         body = lgi.format_issue_body("feat-1", gaps["feat-1"])
+
         runner1 = FakeRunner("test/repo", [{"number": 42, "state": "OPEN", "body": body, "labels": []}])
         lgi.manage_issues(runner1, gaps, sec, ev, sha, 5, False)
         edits1 = [c for c in runner1.calls if c[0] == "issue" and c[1] == "edit"]
         self.assertEqual(len(edits1), 1) # one edit to add jules label
 
-        # Verify it added jules
         adds = [c for c in edits1 if "--add-label" in c and "jules" in c]
         self.assertEqual(len(adds), 1)
 
-        # Test 2: Body differs -> one edit call + one jules add
         runner2 = FakeRunner("test/repo", [{"number": 42, "state": "OPEN", "body": body + "diff", "labels": []}])
         lgi.manage_issues(runner2, gaps, sec, ev, sha, 5, False)
         edits2 = [c for c in runner2.calls if c[0] == "issue" and c[1] == "edit"]
@@ -111,7 +109,6 @@ class TestLedgerGapIssues(unittest.TestCase):
 
         closes = [c for c in runner.calls if c[0] == "issue" and c[1] == "close"]
         self.assertEqual(len(closes), 1)
-        # Verify comment includes SHA
         comment_idx = list(closes[0]).index("--comment")
         self.assertIn("123", closes[0][comment_idx+1])
 
@@ -137,7 +134,6 @@ class TestLedgerGapIssues(unittest.TestCase):
         runner = FakeRunner("test/repo", issues)
         gaps, sec, ev, sha = lgi.find_gaps(self.features_path, self.report_path)
 
-        # Call with max-jules=1
         lgi.manage_issues(runner, gaps, sec, ev, sha, 1, False)
 
         reopens = [c for c in runner.calls if c[0] == "issue" and c[1] == "reopen"]
@@ -191,6 +187,67 @@ class TestLedgerGapIssues(unittest.TestCase):
 
         creates = [c for c in runner.calls if c[0] == "issue" and c[1] == "create"]
         self.assertEqual(len(creates), 0)
+
+    def test_missing_evidence_leaves_issues_untouched(self):
+        self.write_features({
+            "feat-1": {"status": "stable", "name": "F1"} # Should be closed normally
+        })
+        self.write_report({
+            "evidence_complete": False,
+            "sha": "123",
+            "features": {}
+        })
+
+        runner = FakeRunner("test/repo", [{"number": 42, "state": "OPEN", "body": "<!-- ledger-gap:feat-1 -->"}])
+        gaps, sec, ev, sha = lgi.find_gaps(self.features_path, self.report_path)
+        lgi.manage_issues(runner, gaps, sec, ev, sha, 5, False)
+
+        closes = [c for c in runner.calls if c[0] == "issue" and c[1] == "close"]
+        self.assertEqual(len(closes), 0)
+
+    def test_jules_budget_on_creation(self):
+        self.write_features({
+            "feat-1": {"status": "beta", "name": "F1"},
+            "feat-2": {"status": "beta", "name": "F2"}
+        })
+        self.write_report({
+            "evidence_complete": True,
+            "sha": "123",
+            "features": {
+                "feat-1": {"reasons": ["declared tests failed: A"]},
+                "feat-2": {"reasons": ["declared tests failed: B"]}
+            }
+        })
+
+        runner = FakeRunner("test/repo")
+        gaps, sec, ev, sha = lgi.find_gaps(self.features_path, self.report_path)
+        lgi.manage_issues(runner, gaps, sec, ev, sha, 1, False)
+
+        creates = [c for c in runner.calls if c[0] == "issue" and c[1] == "create"]
+        self.assertEqual(len(creates), 2)
+
+        labels_applied = 0
+        for c in creates:
+            label_idx = list(c).index("--label")
+            if "jules" in c[label_idx + 1]:
+                labels_applied += 1
+
+        self.assertEqual(labels_applied, 1)
+
+    def test_implemented_in_normalization(self):
+        self.write_features({
+            "feat-1": {"status": "beta", "name": "F1", "implemented_in": "src/only.rs"}
+        })
+        self.write_report({
+            "evidence_complete": True,
+            "sha": "123",
+            "features": {
+                "feat-1": {"reasons": ["declared tests failed: A"]}
+            }
+        })
+
+        gaps, sec, ev, sha = lgi.find_gaps(self.features_path, self.report_path)
+        self.assertEqual(gaps["feat-1"]["implemented_in"], ["src/only.rs"])
 
 
 if __name__ == '__main__':

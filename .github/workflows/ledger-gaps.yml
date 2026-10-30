@@ -12,6 +12,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ledger-gaps
+  cancel-in-progress: false
+
 jobs:
   manage-gaps:
     if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
@@ -22,10 +26,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
       - name: Get run ID
         id: run-id
         run: |
@@ -42,11 +42,29 @@ jobs:
           name: ledger-promoter-evidence
           path: /tmp
 
+      - name: Extract SHA
+        id: extract-sha
+        run: |
+          SHA=$(jq -r '.sha' /tmp/ledger-report.json)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.extract-sha.outputs.sha }}
+          persist-credentials: false
+
       - name: Determine main red status and run
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          SHA=$(jq -r '.sha' /tmp/ledger-report.json)
+          SHA=${{ steps.extract-sha.outputs.sha }}
+
+          # Fetch repository for checkout validation matching SHA
+          if [ -z "$SHA" ] || [ "$SHA" == "null" ]; then
+            echo "Failed to extract SHA from ledger report."
+            # exit gracefully or error
+          fi
+
           # Get latest push run of ci.yml on main for the evaluated SHA
           CI_STATUS=$(gh run list --workflow=ci.yml --branch=main --commit="$SHA" --event=push --limit=1 --json conclusion -q '.[0].conclusion' || echo "unknown")
 
