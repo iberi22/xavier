@@ -15,6 +15,24 @@ spec.loader.exec_module(collector)
 
 
 class PromoterTests(unittest.TestCase):
+    def test_evidence_complete_excludes_deferred(self):
+        log = "==> Xavier verify pipeline (mode: full, root: /repo)\n  ▶ test_stable\n    ❌ FAILED: test_stable\n  ❌ declared tests failed (zero-match=0) — failing pipeline\n"
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+        self.features['features'] = {}
+        self.features['features']['stable'] = {'status': 'stable', 'tests': ['test_stable']}
+        self.features['features']['stable']['open_gaps'] = ['pending']
+
+        self.features['features']['deferred_feat'] = {'status': 'deferred', 'progress_pct': 50, 'tests': ['test_deferred']}
+
+        results, _, evc = evidence_mod.parse_log(log, self.features)
+
+        self.assertTrue(evc)
+        self.assertTrue(results['stable']['evidence_complete'])
+        self.assertFalse(results['deferred_feat']['evidence_complete'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
