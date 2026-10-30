@@ -2281,7 +2281,8 @@
         "walk_skips_nul_masquerading_as_source",
         "walk_skips_oversize_files_without_reading_them",
         "walk_reports_zero_skips_for_clean_tree",
-        "parse_file_rejects_oversize_explicit_paths"
+        "parse_file_rejects_oversize_explicit_paths",
+        "tests/codegraph_walk_hardening_e2e.rs::test_codegraph_walk_hardening_e2e"
       ],
       "req_ids": [
         "REQ-005",
