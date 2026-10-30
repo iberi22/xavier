@@ -53,5 +53,7 @@ mod env_guard;
 #[path = "error_test.rs"]
 mod error_test;
 
+#[path = "doctor_test_pollution_e2e.rs"]
+mod doctor_test_pollution_e2e;
 #[path = "skill_usage_telemetry.rs"]
 mod skill_usage_telemetry;
