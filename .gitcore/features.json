@@ -3847,7 +3847,9 @@
         "test_space_manager_directory_and_namespace_isolation",
         "test_invite_lifecycle_roundtrip",
         "test_invite_expiry_and_space_listing",
-        "test_membership_permissions_end_to_end"
+        "test_membership_permissions_end_to_end",
+        "tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_stderr",
+        "tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_json"
       ],
       "req_ids": [],
       "user_stories": [],
