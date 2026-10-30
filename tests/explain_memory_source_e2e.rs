@@ -121,3 +121,53 @@ fn e2e_memory_source_duplicate_ids_across_queries_appear_once() {
     assert_eq!(evidence.len(), 2);
     assert!(evidence.iter().any(|e| e.source_ref == "memory:other"));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial_test::serial]
+async fn e2e_memory_source_real_qmd_search() {
+    use tokio::sync::RwLock;
+    use xavier::explain::QmdMemorySearch;
+    use xavier::memory::qmd::types::MemoryDocument;
+    use xavier::memory::qmd_memory::QmdMemory;
+
+    let rt = runtime();
+
+    let docs = Arc::new(RwLock::new(vec![
+        MemoryDocument {
+            id: Some("doc-match".to_string()),
+            path: "src/lib.rs".to_string(),
+            content: "decision text match".to_string(),
+            metadata: serde_json::json!({
+                "kind": "decision",
+                "symbol": "demo"
+            }),
+            embedding: vec![],
+            ..Default::default()
+        },
+        MemoryDocument {
+            id: Some("doc-exclude".to_string()),
+            path: "src/other.rs".to_string(),
+            content: "decision text exclude".to_string(),
+            metadata: serde_json::json!({
+                "kind": "decision",
+                "symbol": "other"
+            }),
+            embedding: vec![],
+            ..Default::default()
+        },
+    ]));
+
+    let qmd = Arc::new(QmdMemory::new_with_workspace(docs, "explain-test"));
+    let search = Arc::new(QmdMemorySearch::new(qmd));
+
+    let source = MemorySource::new(search, rt.handle().clone());
+
+    let evidence = tokio::task::spawn_blocking(move || source.collect(&target(), 5))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(evidence.len(), 1);
+    assert_eq!(evidence[0].source_ref, "memory:doc-match");
+    assert_eq!(evidence[0].kind, EvidenceKind::Decision);
+}
