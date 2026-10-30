@@ -356,6 +356,11 @@ are separate from server tokens and are not included in the server listing.
 
 These commands never prompt. Exit codes are `0` for success, `1` for operation
 failure, `2` for invalid usage, `3` for authentication/authorization failure
-(HTTP 401/403), and `4` for an unreachable server. JSON operation errors use
+(HTTP 401/403), `4` for an unreachable server, and `5` for a command that is
+not supported on this version. JSON operation errors use
 `schema_version: 1` and `error` (`code`, `message`). Parser errors remain on
 stderr. HTTP response bodies are not echoed in error messages.
+
+## Spaces
+
+`xavier space lock` is currently not supported on this version. It exits with code `5` (unsupported, distinct from `1` for a failed operation) and prints an error message to stderr. When the `--json` flag is provided, it outputs a JSON object with `ok: false` to stdout.

@@ -4,6 +4,51 @@
 
 Current product label: `0.0.1` — **Status computed from the ledger: 70 stable, 17 beta, 2 in_progress, 28 planned. See [Implementation Audit](plans/IMPLEMENTATION-AUDIT_2026-10-28.md) for details.**
 
+<!-- ledger:summary:start -->
+Ledger: 80 stable, 32 beta, 0 in_progress, 6 planned (118 total, 67.8% stable). Generated from .gitcore/features.json by scripts/ledger-docs-sync.py; do not edit by hand.
+
+| category | stable | beta | in_progress | planned | total |
+|---|---|---|---|---|---|
+| ai | 2 | 0 | 0 | 0 | 2 |
+| auto-improvement | 1 | 0 | 0 | 0 | 1 |
+| cli | 2 | 0 | 0 | 0 | 2 |
+| code-graph | 5 | 2 | 0 | 0 | 7 |
+| cognitive | 4 | 0 | 0 | 0 | 4 |
+| context | 5 | 0 | 0 | 0 | 5 |
+| core | 6 | 0 | 0 | 0 | 6 |
+| cost | 1 | 0 | 0 | 0 | 1 |
+| data | 1 | 0 | 0 | 0 | 1 |
+| docs | 1 | 0 | 0 | 0 | 1 |
+| documentation | 2 | 0 | 0 | 0 | 2 |
+| enterprise | 3 | 2 | 0 | 0 | 5 |
+| explain | 0 | 4 | 0 | 3 | 7 |
+| governance | 3 | 0 | 0 | 0 | 3 |
+| identity | 1 | 0 | 0 | 3 | 4 |
+| infra | 1 | 0 | 0 | 0 | 1 |
+| integration | 7 | 0 | 0 | 0 | 7 |
+| local-first | 1 | 0 | 0 | 0 | 1 |
+| maloca | 1 | 4 | 0 | 0 | 5 |
+| marketplace | 1 | 0 | 0 | 0 | 1 |
+| mcp | 1 | 0 | 0 | 0 | 1 |
+| memory | 2 | 2 | 0 | 0 | 4 |
+| mesh | 1 | 3 | 0 | 0 | 4 |
+| observability | 2 | 0 | 0 | 0 | 2 |
+| packaging | 0 | 1 | 0 | 0 | 1 |
+| platform | 1 | 0 | 0 | 0 | 1 |
+| process | 0 | 2 | 0 | 0 | 2 |
+| retrieval | 3 | 0 | 0 | 0 | 3 |
+| runtime | 1 | 0 | 0 | 0 | 1 |
+| search | 5 | 0 | 0 | 0 | 5 |
+| security | 9 | 2 | 0 | 0 | 11 |
+| self-manage | 0 | 2 | 0 | 0 | 2 |
+| self-management | 1 | 0 | 0 | 0 | 1 |
+| server | 0 | 1 | 0 | 0 | 1 |
+| skills | 0 | 6 | 0 | 0 | 6 |
+| testing | 2 | 0 | 0 | 0 | 2 |
+| ui | 1 | 1 | 0 | 0 | 2 |
+| uncategorized | 3 | 0 | 0 | 0 | 3 |
+<!-- ledger:summary:end -->
+
 This matrix is the operational truth for the repository as of v0.0.1 stabilization.
 As of v0.0.1 stabilization, features declared in `.gitcore/features.json` were `stable` with automated verification. See the file for current status.
 
@@ -34,7 +79,6 @@ As of v0.0.1 stabilization, features declared in `.gitcore/features.json` were `
 | Soft-delete prune with audit | Stable | Tombstone-based pruning. `memory_prune` tool removes soft-deleted records with audit trail. |
 | MCP Streamable HTTP (port 8100) | Stable | Native MCP server with Streamable HTTP transport. Tools: `create_memory`, `search_memory`, `memory_prune`. |
 | Clavis key masking | Stable | API keys masked in logs. Auto-rotation support. |
-| GPU sidecar (`xavier gpud`) | Experimental | 3 endpoints (health, detect, serve). No mesh, no discovery, no plugin system. |
 | Provider router local URIs | Stable | Local model URIs resolved correctly in provider router. |
 
 ## XTSP Integration Tests
@@ -51,9 +95,19 @@ See `tests/xtsp/` for the complete integration test suite.
 | Ecosystem App Registry | Stable | `GET /v1/maloca/registry[/{app_id}]`, ETag-cached. |
 | Alignment audit | Stable | `GET /v1/maloca/alignment[/goals]` — GOAL.md compliance. |
 | Unified backlog | Stable | `GET /v1/maloca/backlog/unified|summary` — multi-repo aggregation, TTL cache. |
-| Model Router | Stable | `POST /v1/maloca/models/infer`, `GET list|health` — Ollama/cloud providers. |
+| <a name="maloca-model-router"></a>Model Router | Unsupported | `/v1/maloca/models/*` return 501. Use `/v1/providers` instead. |
 | HumanChallenge engine | Stable | `POST challenges/generate|answer`, `GET list|stats`. |
 | Panel UI tabs | Stable | Registry / Goals / Backlog / Challenges / Models in `panel-ui/src/maloca/MalocaView.tsx`. |
+
+**Model Router unsupported contract.** `POST /v1/maloca/models/infer`, `GET /v1/maloca/models/list` and `GET /v1/maloca/models/health` all answer `501 Not Implemented`. `POST /v1/maloca/models/infer` needs `Authorization: Bearer <token>` like the other authenticated API routes (without it the auth middleware answers `401` first). The JSON body has five fields:
+
+| Field | Value |
+|---|---|
+| `status` | `"unsupported"` |
+| `feature` | `"maloca-model-router"` |
+| `route` | the requested path, e.g. `"/v1/maloca/models/infer"` |
+| `use_instead` | `"/v1/providers"` |
+| `docs` | `"docs/FEATURE_STATUS.md#maloca-model-router"` |
 
 Verified by `test_maloca_http_e2e` (5/5), `test_hc_e2e` (1/1), `maloca-core` unit suite (59/59) and the backoffice E2E `e2e_maloca_flow.spec.ts` (4/4).
 
@@ -89,7 +143,7 @@ See `docs/ARCH_WAVE3.md`.
 | 4.07 | #1767 | feat-store-path-hierarchy — preserve full store path hierarchy | stable 100% | `src/memory/store.rs` |
 | 4.08 | #1759 | feat-ivn-karma — Karma rewards, sanctions, reputation | stable 100% | `src/data_commons/ivn.rs`, `src/adapters/.../ivn.rs` |
 | 4.09 | #1755 | feat-wasm+rag — IndexedDB real web-sys + RAG RRF | stable 100% | `crates/xavier-wasm/` + `src/search/rerank.rs` |
-| 4.10 | #1757 | feat-mesh+clearance — libp2p gossipsub wire + E2E | stable 100% | `src/mesh/libp2p_transport.rs` + `src/security/clearance.rs` |
+| 4.10 | #1757 | feat-mesh+clearance — libp2p gossipsub wire + E2E | planned | `src/mesh/maturity.rs` (reports libp2p unavailable) + `src/security/clearance.rs` |
 
 Verification WAVE-4 (2026-08-31):
 - `CARGO_TARGET_DIR=target cargo check --all-targets` 0 (incl. fix `IvnEngineStore::derive(Default)` clippy)
@@ -112,7 +166,7 @@ See `docs/ARCH_WAVE4.md`.
 ### Confirmed working
 - `xavier http` + `POST /memory/add` + `POST /memory/search` + `GET /memory/stats` + `GET /health` + auth gate
 - `xavier mcp` + MCP `tools/list` + `tools/call` for `add` and `search`
-- Mesh P2P: Ed25519 identity + pairing codes + libp2p gossipsub stub + Iroh QUIC NAT + fallback chain + heartbeat
+- Mesh P2P: Ed25519 identity + pairing codes + libp2p gossipsub (planned) + Iroh QUIC NAT + fallback chain + heartbeat
 - Clearance 6 levels + redaction middleware + groups ACL + audit trail
 - Training datasets REST + mini-experts registry + service network INTERNAL + private mesh wallet isolation
 - Human curation approve/classify/history + issue-context packager + store path hierarchy

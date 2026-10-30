@@ -11,6 +11,9 @@ xavier::isolate_test_process!();
 #[path = "memory_write_integrity_e2e.rs"]
 mod memory_write_integrity_e2e;
 
+#[path = "memory_stats_route_e2e.rs"]
+mod memory_stats_route_e2e;
+
 #[path = "mesh_auth_binding_test.rs"]
 mod mesh_auth_binding_test;
 
@@ -61,3 +64,6 @@ mod mcp_tool_parity;
 
 #[path = "memory_put_index_atomic_e2e.rs"]
 mod memory_put_index_atomic_e2e;
+
+#[path = "mesh_replay_store_e2e.rs"]
+mod mesh_replay_store_e2e;

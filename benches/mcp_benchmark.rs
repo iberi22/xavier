@@ -90,7 +90,7 @@ fn bench_mcp_ops(c: &mut Criterion) {
     // 1. Benchmark list_tools payload generation
     c.bench_function("mcp_list_tools_payload_generation", |b| {
         b.iter(|| {
-            let tools = xavier::server::mcp::get_xavier_tools();
+            let tools = xavier::server::mcp::get_xavier_tools(false);
             assert!(tools.len() >= 16);
         });
     });
