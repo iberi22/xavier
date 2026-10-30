@@ -1339,6 +1339,22 @@ pub enum CodeCommand {
         #[arg(long, default_value_t = false)]
         memory: bool,
     },
+    /// Repository management (list, add, remove)
+    Repos {
+        #[command(subcommand)]
+        cmd: CodeReposCommand,
+    },
+}
+
+/// Subcommands for `xavier code repos`
+#[derive(Subcommand, Debug, Clone)]
+pub enum CodeReposCommand {
+    /// List code graph projects
+    List {
+        /// Output result in JSON format
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Provider management subcommands
