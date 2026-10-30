@@ -41,44 +41,51 @@ jobs:
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
+          # Event fields go through env, never interpolated into the script body
+          # (a branch name like `$(...)` must not execute).
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          WR_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WR_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          WR_EVENT: ${{ github.event.workflow_run.event }}
+          WR_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WR_SHA: ${{ github.event.workflow_run.head_sha }}
+          PROMOTER_AUTO: ${{ vars.LEDGER_PROMOTER_AUTO }}
+        shell: bash
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            if [ "${{ inputs.dry_run }}" == "false" ]; then
-              echo "mode=apply" >> "$GITHUB_OUTPUT"
-            else
-              echo "mode=dry" >> "$GITHUB_OUTPUT"
-            fi
-          elif [ "${{ github.event_name }}" == "workflow_run" ]; then
-            if [ "${{ github.event.workflow_run.head_branch }}" != "main" ] || \
-               [ "${{ github.event.workflow_run.head_repository.full_name }}" != "${{ github.repository }}" ] || \
-               ( [ "${{ github.event.workflow_run.event }}" != "push" ] && [ "${{ github.event.workflow_run.event }}" != "workflow_dispatch" ] ) || \
-               [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
-              echo "mode=dry" >> "$GITHUB_OUTPUT"
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            else
-              HEAD_SHA=$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)
-              if [ "${{ github.event.workflow_run.head_sha }}" != "$HEAD_SHA" ]; then
-                echo "mode=dry" >> "$GITHUB_OUTPUT"
-                echo "skip=true" >> "$GITHUB_OUTPUT"
-                exit 0
-              else
-                if [ "${{ vars.LEDGER_PROMOTER_AUTO }}" == "true" ]; then
-                  echo "mode=apply" >> "$GITHUB_OUTPUT"
-                else
-                  echo "mode=dry" >> "$GITHUB_OUTPUT"
-                fi
-              fi
-            fi
-          elif [ "${{ github.event_name }}" == "schedule" ]; then
-            if [ "${{ vars.LEDGER_PROMOTER_AUTO }}" == "true" ]; then
-              echo "mode=apply" >> "$GITHUB_OUTPUT"
-            else
-              echo "mode=dry" >> "$GITHUB_OUTPUT"
-            fi
-          else
+          set -euo pipefail
+          auto_mode() {
+            if [ "$PROMOTER_AUTO" = "true" ]; then echo "mode=apply"; else echo "mode=dry"; fi
+          }
+          skip() {
             echo "mode=dry" >> "$GITHUB_OUTPUT"
-          fi
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              if [ "$DRY_RUN" = "false" ]; then
+                echo "mode=apply" >> "$GITHUB_OUTPUT"
+              else
+                echo "mode=dry" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            workflow_run)
+              [ "$WR_BRANCH" = "main" ] || skip
+              [ "$WR_REPO" = "$GITHUB_REPOSITORY" ] || skip
+              [ "$WR_EVENT" = "push" ] || [ "$WR_EVENT" = "workflow_dispatch" ] || skip
+              [ "$WR_CONCLUSION" = "success" ] || skip
+              HEAD_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+              [ "$WR_SHA" = "$HEAD_SHA" ] || skip
+              auto_mode >> "$GITHUB_OUTPUT"
+              ;;
+            schedule)
+              auto_mode >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "mode=dry" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
       - uses: actions/checkout@v7
         if: steps.resolve.outputs.skip != 'true'
         with:
@@ -127,6 +134,9 @@ jobs:
       issues: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Demotions are manual-only: true only for an explicit workflow_dispatch with apply_demotions.
+      MANUAL_DEMOTIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_demotions == true }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -139,7 +149,7 @@ jobs:
           path: /tmp
       - name: Apply evaluated promotions
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ inputs.apply_demotions }}" == "true" ]; then
+          if [ "$MANUAL_DEMOTIONS" = "true" ]; then
             python3 scripts/ledger-promote.py --features .gitcore/features.json \
               --evidence /tmp/ledger-evidence.json --history /tmp/ledger-history.json \
               --apply --apply-demotions > /tmp/ledger-report.json 2> /tmp/ledger-report.md
@@ -169,7 +179,7 @@ jobs:
 
           sha=$(git rev-parse HEAD)
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$sha"
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ inputs.apply_demotions }}" == "true" ]; then
+          if [ "$MANUAL_DEMOTIONS" = "true" ]; then
             branch="ledger/promote-$sha-demote"
           else
             branch="ledger/promote-$sha"
@@ -191,7 +201,7 @@ jobs:
           echo "" >> pr_body.md
           PROMOTED_FEATURES=$(jq -r '.promotions["beta->stable"][]?' /tmp/ledger-report.json || true)
           for f in $PROMOTED_FEATURES; do
-            ISSUES=$(gh issue list --label ledger-gap --state open --json number,body | jq -r --arg f "$f" '.[] | select(.body | contains("<!-- ledger-gap:" + $f + " -->")) | .number')
+            ISSUES=$(gh issue list --label ledger-gap --state open --limit 1000 --json number,body | jq -r --arg f "$f" '.[] | select(.body | contains("<!-- ledger-gap:" + $f + " -->")) | .number')
             for i in $ISSUES; do
               echo "Closes #$i" >> pr_body.md
             done
