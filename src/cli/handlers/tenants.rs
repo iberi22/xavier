@@ -155,7 +155,7 @@ fn print_tenants_table(tenants: &[TenantResponse]) {
     for t in tenants {
         println!(
             "{:<36} | {:<20} | {:<15}",
-            t.id.to_string(),
+            t.id,
             t.name,
             format!("{:?}", t.plan)
         );
@@ -163,7 +163,7 @@ fn print_tenants_table(tenants: &[TenantResponse]) {
 }
 
 fn print_tenant_table(t: &TenantResponse) {
-    println!("{:<15}: {}", "ID", t.id.to_string());
+    println!("{:<15}: {}", "ID", t.id);
     println!("{:<15}: {}", "Name", t.name);
     println!("{:<15}: {:?}", "Plan", t.plan);
 }

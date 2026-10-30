@@ -24,13 +24,17 @@ async fn mock_server() -> SocketAddr {
                         id: uuid::Uuid::nil(),
                         name: "tenant-a".to_string(),
                         plan: Plan::Free,
-                        created_at: chrono::Utc::now(),
+                        created_at: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                            .unwrap()
+                            .with_timezone(&chrono::Utc),
                     },
                     TenantResponse {
                         id: uuid::Uuid::new_v4(),
                         name: "tenant-b".to_string(),
                         plan: Plan::Pro,
-                        created_at: chrono::Utc::now(),
+                        created_at: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                            .unwrap()
+                            .with_timezone(&chrono::Utc),
                     },
                 ];
                 Json(tenants)
@@ -45,7 +49,11 @@ async fn mock_server() -> SocketAddr {
                             id: uuid::Uuid::nil(),
                             name: "tenant-a".to_string(),
                             plan: Plan::Free,
-                            created_at: chrono::Utc::now(),
+                            created_at: chrono::DateTime::parse_from_rfc3339(
+                                "2024-01-01T00:00:00Z",
+                            )
+                            .unwrap()
+                            .with_timezone(&chrono::Utc),
                         };
                         Ok(Json(tenant))
                     } else {
@@ -75,8 +83,11 @@ async fn test_cli_tenants_list_text() {
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "fake-token")
         .env("XAVIER_DATA_DIR", temp_dir.path())
-        .env("XAVIER_CONFIG_PATH", temp_dir.path())
-        .env("XAVIER_RUNTIME_STATE_PATH", temp_dir.path())
+        .env("XAVIER_CONFIG_PATH", temp_dir.path().join("config.json"))
+        .env(
+            "XAVIER_RUNTIME_STATE_PATH",
+            temp_dir.path().join("runtime.json"),
+        )
         .env("HOME", temp_dir.path())
         .output()
         .await
@@ -102,8 +113,11 @@ async fn test_cli_tenants_list_json() {
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "fake-token")
         .env("XAVIER_DATA_DIR", temp_dir.path())
-        .env("XAVIER_CONFIG_PATH", temp_dir.path())
-        .env("XAVIER_RUNTIME_STATE_PATH", temp_dir.path())
+        .env("XAVIER_CONFIG_PATH", temp_dir.path().join("config.json"))
+        .env(
+            "XAVIER_RUNTIME_STATE_PATH",
+            temp_dir.path().join("runtime.json"),
+        )
         .env("HOME", temp_dir.path())
         .output()
         .await
@@ -116,7 +130,7 @@ async fn test_cli_tenants_list_json() {
     let array = parsed.as_array().unwrap();
     assert_eq!(array.len(), 2);
     assert_eq!(array[0]["name"], "tenant-a");
-    assert!(array[0].get("created_at").is_some());
+    assert_eq!(array[0]["created_at"], "2024-01-01T00:00:00Z");
 }
 
 #[tokio::test]
@@ -132,8 +146,11 @@ async fn test_cli_tenants_show_text() {
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "fake-token")
         .env("XAVIER_DATA_DIR", temp_dir.path())
-        .env("XAVIER_CONFIG_PATH", temp_dir.path())
-        .env("XAVIER_RUNTIME_STATE_PATH", temp_dir.path())
+        .env("XAVIER_CONFIG_PATH", temp_dir.path().join("config.json"))
+        .env(
+            "XAVIER_RUNTIME_STATE_PATH",
+            temp_dir.path().join("runtime.json"),
+        )
         .env("HOME", temp_dir.path())
         .output()
         .await
@@ -158,8 +175,11 @@ async fn test_cli_tenants_show_json() {
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "fake-token")
         .env("XAVIER_DATA_DIR", temp_dir.path())
-        .env("XAVIER_CONFIG_PATH", temp_dir.path())
-        .env("XAVIER_RUNTIME_STATE_PATH", temp_dir.path())
+        .env("XAVIER_CONFIG_PATH", temp_dir.path().join("config.json"))
+        .env(
+            "XAVIER_RUNTIME_STATE_PATH",
+            temp_dir.path().join("runtime.json"),
+        )
         .env("HOME", temp_dir.path())
         .output()
         .await
@@ -171,7 +191,7 @@ async fn test_cli_tenants_show_json() {
     assert!(parsed.is_object());
     assert_eq!(parsed["name"], "tenant-a");
     assert_eq!(parsed["id"], id);
-    assert!(parsed.get("created_at").is_some());
+    assert_eq!(parsed["created_at"], "2024-01-01T00:00:00Z");
 }
 
 #[tokio::test]
@@ -187,8 +207,11 @@ async fn test_cli_tenants_show_not_found() {
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "fake-token")
         .env("XAVIER_DATA_DIR", temp_dir.path())
-        .env("XAVIER_CONFIG_PATH", temp_dir.path())
-        .env("XAVIER_RUNTIME_STATE_PATH", temp_dir.path())
+        .env("XAVIER_CONFIG_PATH", temp_dir.path().join("config.json"))
+        .env(
+            "XAVIER_RUNTIME_STATE_PATH",
+            temp_dir.path().join("runtime.json"),
+        )
         .env("HOME", temp_dir.path())
         .output()
         .await
@@ -222,8 +245,11 @@ async fn test_cli_tenants_unauthorized_exit_code() {
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "fake-token")
         .env("XAVIER_DATA_DIR", temp_dir.path())
-        .env("XAVIER_CONFIG_PATH", temp_dir.path())
-        .env("XAVIER_RUNTIME_STATE_PATH", temp_dir.path())
+        .env("XAVIER_CONFIG_PATH", temp_dir.path().join("config.json"))
+        .env(
+            "XAVIER_RUNTIME_STATE_PATH",
+            temp_dir.path().join("runtime.json"),
+        )
         .env("HOME", temp_dir.path())
         .output()
         .await
