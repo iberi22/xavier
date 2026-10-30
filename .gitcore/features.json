@@ -1417,6 +1417,7 @@
       "req_ids": [],
       "user_stories": [],
       "tests": [
+        "tests/maloca_models_unsupported_e2e.rs::maloca_models_unsupported_e2e",
         "test_classify_operation",
         "test_default_query_functions",
         "test_event_to_dto",

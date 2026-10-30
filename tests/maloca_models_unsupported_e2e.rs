@@ -98,6 +98,10 @@ async fn maloca_models_unsupported_e2e() {
         let req = Request::builder()
             .method(method)
             .uri(path)
+            .header(
+                "Authorization",
+                format!("Bearer {}", router_harness::ROOT_TOKEN),
+            )
             .body(Body::empty())
             .unwrap();
 
