@@ -627,6 +627,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_sanction_exclusion_days_max() {
         use crate::data_commons::reputation::ReputationConfig;
         let mut engine = EigenTrustEngine::new(ReputationConfig::default(), Vec::new());
@@ -664,6 +665,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_exclusion_persistence_across_restarts() {
         let tmp_dir = tempfile::tempdir().expect("tempdir");
         let prev_data_dir = std::env::var_os("XAVIER_DATA_DIR");
@@ -695,7 +697,7 @@ mod tests {
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
+#[cfg(feature = "test-utils")]
 #[doc(hidden)]
 pub fn reset_exclusion_store_for_tests() {
     let mut store = EXCLUSION_STORE.write().unwrap();
