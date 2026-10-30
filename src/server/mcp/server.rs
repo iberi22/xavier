@@ -206,3 +206,21 @@ pub fn mcp_text_result(text: impl Into<String>, is_error: bool) -> anyhow::Resul
         is_error: Some(is_error),
     })?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_xavier_tools_telecom_visibility() {
+        let tools_with_telecom = get_xavier_tools(true);
+        assert!(tools_with_telecom
+            .iter()
+            .any(|t| t.name.starts_with("telecom_")));
+
+        let tools_without_telecom = get_xavier_tools(false);
+        assert!(!tools_without_telecom
+            .iter()
+            .any(|t| t.name.starts_with("telecom_")));
+    }
+}

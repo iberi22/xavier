@@ -14,9 +14,58 @@ use xavier::AppState;
 
 xavier::isolate_test_process!();
 
+struct EnvGuard {
+    xavier_token: Option<std::ffi::OsString>,
+    xavier_jwt_secret: Option<std::ffi::OsString>,
+    xavier_memory_vec_path: Option<std::ffi::OsString>,
+    xavier_code_graph_db_path: Option<std::ffi::OsString>,
+    xavier_embedder: Option<std::ffi::OsString>,
+    xavier_memory_file_path: Option<std::ffi::OsString>,
+    xavier_file_store_path: Option<std::ffi::OsString>,
+    xavier_memory_sqlite_path: Option<std::ffi::OsString>,
+}
+
+impl EnvGuard {
+    fn new() -> Self {
+        Self {
+            xavier_token: std::env::var_os("XAVIER_TOKEN"),
+            xavier_jwt_secret: std::env::var_os("XAVIER_JWT_SECRET"),
+            xavier_memory_vec_path: std::env::var_os("XAVIER_MEMORY_VEC_PATH"),
+            xavier_code_graph_db_path: std::env::var_os("XAVIER_CODE_GRAPH_DB_PATH"),
+            xavier_embedder: std::env::var_os("XAVIER_EMBEDDER"),
+            xavier_memory_file_path: std::env::var_os("XAVIER_MEMORY_FILE_PATH"),
+            xavier_file_store_path: std::env::var_os("XAVIER_FILE_STORE_PATH"),
+            xavier_memory_sqlite_path: std::env::var_os("XAVIER_MEMORY_SQLITE_PATH"),
+        }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        let vars = [
+            ("XAVIER_TOKEN", &self.xavier_token),
+            ("XAVIER_JWT_SECRET", &self.xavier_jwt_secret),
+            ("XAVIER_MEMORY_VEC_PATH", &self.xavier_memory_vec_path),
+            ("XAVIER_CODE_GRAPH_DB_PATH", &self.xavier_code_graph_db_path),
+            ("XAVIER_EMBEDDER", &self.xavier_embedder),
+            ("XAVIER_MEMORY_FILE_PATH", &self.xavier_memory_file_path),
+            ("XAVIER_FILE_STORE_PATH", &self.xavier_file_store_path),
+            ("XAVIER_MEMORY_SQLITE_PATH", &self.xavier_memory_sqlite_path),
+        ];
+        for (key, val) in vars {
+            if let Some(v) = val {
+                std::env::set_var(key, v);
+            } else {
+                std::env::remove_var(key);
+            }
+        }
+    }
+}
+
 #[tokio::test]
 #[serial]
 async fn default_server_hides_telecom_tools() {
+    let _env_guard = EnvGuard::new();
     let temp = TempDir::new().expect("tempdir");
 
     let vec_path = temp.path().join("vec.sqlite3");
