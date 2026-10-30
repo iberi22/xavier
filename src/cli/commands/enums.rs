@@ -2216,6 +2216,17 @@ pub mod memory {
             json: bool,
         },
 
+        /// Rebuild the memory_fts index. Exits 0 on ok, 2 on missing DB or operational errors.
+        #[command(name = "fts-rebuild")]
+        FtsRebuild {
+            /// Path to the memory SQLite database (defaults to the resolved data directory)
+            #[arg(long)]
+            db: Option<PathBuf>,
+            /// Output result in JSON format
+            #[arg(long)]
+            json: bool,
+        },
+
         /// Prune low-utility or stale memories
         Prune {
             /// Filter memories by path prefix
