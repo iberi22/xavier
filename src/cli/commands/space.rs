@@ -231,10 +231,10 @@ Retention: {}",
                         "reason": "spaces runtime lock not available in this version"
                     })
                 );
-                std::process::exit(1);
+                std::process::exit(crate::cli::utils::EXIT_UNSUPPORTED);
             } else {
                 eprintln!("Error: lock is not implemented on this version.");
-                std::process::exit(1);
+                std::process::exit(crate::cli::utils::EXIT_UNSUPPORTED);
             }
         }
     }

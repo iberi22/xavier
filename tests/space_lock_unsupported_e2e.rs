@@ -18,7 +18,11 @@ fn test_space_lock_unsupported_stderr() {
     );
 
     assert!(!run.status.success());
-    assert_eq!(run.status.code(), Some(1));
+    assert_eq!(
+        run.status.code(),
+        Some(5),
+        "unsupported must exit 5, not the generic failure code 1"
+    );
     assert!(run
         .stderr
         .contains("Error: lock is not implemented on this version."));
@@ -40,7 +44,11 @@ fn test_space_lock_unsupported_json() {
     );
 
     assert!(!run.status.success());
-    assert_eq!(run.status.code(), Some(1));
+    assert_eq!(
+        run.status.code(),
+        Some(5),
+        "unsupported must exit 5, not the generic failure code 1"
+    );
 
     let parsed: serde_json::Value =
         serde_json::from_str(&run.stdout).expect("stdout must be valid JSON");
