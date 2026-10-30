@@ -48,6 +48,9 @@ mod ci_version_gate;
 #[path = "clavis_auth_pipeline_e2e.rs"]
 mod clavis_auth_pipeline_e2e;
 
+#[path = "cli_tenants_e2e.rs"]
+mod cli_tenants_e2e;
+
 #[path = "clavis_http_e2e.rs"]
 mod clavis_http_e2e;
 
@@ -66,3 +69,6 @@ mod cli_index_self;
 mod cli_provider_exit_codes_e2e;
 #[path = "skill_store_config.rs"]
 mod skill_store_config;
+
+#[path = "cli_provider_live_routes_e2e.rs"]
+mod cli_provider_live_routes_e2e;

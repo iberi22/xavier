@@ -39,6 +39,7 @@ pub mod system;
 pub mod system_scan;
 pub mod system_scan_cli;
 pub mod tasks;
+pub mod tenants;
 pub mod tokens;
 pub mod usage;
 pub mod verify;
@@ -65,6 +66,7 @@ pub use secrets::*;
 pub use security::*;
 pub use system::*;
 pub use tasks::*;
+pub use tenants::*;
 pub use tokens::*;
 pub use workspace_db::*;
 
