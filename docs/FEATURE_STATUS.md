@@ -88,7 +88,7 @@ See `docs/ARCH_WAVE3.md`.
 | 4.07 | #1767 | feat-store-path-hierarchy — preserve full store path hierarchy | stable 100% | `src/memory/store.rs` |
 | 4.08 | #1759 | feat-ivn-karma — Karma rewards, sanctions, reputation | stable 100% | `src/data_commons/ivn.rs`, `src/adapters/.../ivn.rs` |
 | 4.09 | #1755 | feat-wasm+rag — IndexedDB real web-sys + RAG RRF | stable 100% | `crates/xavier-wasm/` + `src/search/rerank.rs` |
-| 4.10 | #1757 | feat-mesh+clearance — libp2p gossipsub wire + E2E | planned | `src/mesh/maturity.rs` (stub) + `src/security/clearance.rs` |
+| 4.10 | #1757 | feat-mesh+clearance — libp2p gossipsub wire + E2E | planned | `src/mesh/maturity.rs` (reports libp2p unavailable) + `src/security/clearance.rs` |
 
 Verification WAVE-4 (2026-08-31):
 - `CARGO_TARGET_DIR=target cargo check --all-targets` 0 (incl. fix `IvnEngineStore::derive(Default)` clippy)
