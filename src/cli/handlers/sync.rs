@@ -12,7 +12,8 @@ use anyhow::Result;
 pub async fn handle_sync_command(cmd: SyncCommand) -> Result<()> {
     match cmd {
         SyncCommand::Now { mode } => handle_sync_now(&mode).await,
-        SyncCommand::Status | SyncCommand::Check => handle_session_sync_status().await,
+        SyncCommand::Status { json } => handle_session_sync_status(json).await,
+        SyncCommand::Check => handle_session_sync_status(false).await,
     }
 }
 
@@ -35,7 +36,7 @@ async fn handle_sync_now(mode: &str) -> Result<()> {
 }
 
 /// Show the agent session-sync status (not a cloud backup).
-async fn handle_session_sync_status() -> Result<()> {
+async fn handle_session_sync_status(json: bool) -> Result<()> {
     let base_url = resolve_base_url();
     let token = require_xavier_token()?;
     let client = crate::cli::commands::enums::CLI_HTTP_CLIENT.clone();
@@ -46,24 +47,51 @@ async fn handle_session_sync_status() -> Result<()> {
         .send()
         .await?;
 
+    let cloud_configured = crate::sync::xavier_cloud::CloudBackupConfig::from_env().is_some();
     if resp.status().is_success() {
-        let data: serde_json::Value = resp.json().await?;
-        print_sync_status_table(&data);
+        let mut data: serde_json::Value = resp.json().await?;
+        if json {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert(
+                    "cloud_backup_configured".to_string(),
+                    serde_json::json!(cloud_configured),
+                );
+            }
+            println!("{}", serde_json::to_string_pretty(&data)?);
+        } else {
+            print_sync_status_table(&data);
+            let cloud = if cloud_configured {
+                "configured (check it with `xavier cloud verify`)"
+            } else {
+                "not configured"
+            };
+            println!("  Cloud backup: {}", cloud);
+        }
     } else {
-        println!();
-        println!("═══════════════════════════════════════════");
-        println!("  Agent Session Sync Status");
-        println!("═══════════════════════════════════════════");
-        println!("  Status:      ⚠️  Unknown (API unavailable)");
-        println!("  Sync:        Offline mode");
-        println!("═══════════════════════════════════════════");
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "error": "Unknown (API unavailable)",
+                    "cloud_backup_configured": cloud_configured
+                }))?
+            );
+        } else {
+            println!();
+            println!("═══════════════════════════════════════════");
+            println!("  Agent Session Sync Status");
+            println!("═══════════════════════════════════════════");
+            println!("  Status:      ⚠️  Unknown (API unavailable)");
+            println!("  Sync:        Offline mode");
+            println!("═══════════════════════════════════════════");
+            let cloud = if cloud_configured {
+                "configured (check it with `xavier cloud verify`)"
+            } else {
+                "not configured"
+            };
+            println!("  Cloud backup: {}", cloud);
+        }
     }
-    let cloud = if crate::sync::xavier_cloud::CloudBackupConfig::from_env().is_some() {
-        "configured (check it with `xavier cloud verify`)"
-    } else {
-        "not configured"
-    };
-    println!("  Cloud backup: {}", cloud);
 
     Ok(())
 }

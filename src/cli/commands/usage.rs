@@ -11,10 +11,30 @@ use anyhow::Result;
 pub async fn handle_usage_command(cmd: UsageCommand) -> Result<()> {
     let base_url = resolve_base_url();
     match cmd {
-        UsageCommand::Status => {
+        UsageCommand::Status { json } => {
             let token = require_xavier_token()?;
             let client = CLI_HTTP_CLIENT.clone();
             let providers = ["opencode-go", "deepseek", "groq", "openai", "anthropic"];
+
+            if json {
+                let mut results = Vec::new();
+                for p in providers {
+                    let resp = client
+                        .get(format!("{}/v1/usage/status/{}", base_url, p))
+                        .header("X-Xavier-Token", &token)
+                        .send()
+                        .await?;
+                    if resp.status().is_success() {
+                        let status: serde_json::Value = resp.json().await?;
+                        results.push(status);
+                    } else {
+                        results.push(serde_json::json!({"provider": p, "error": resp.text().await.unwrap_or_default()}));
+                    }
+                }
+                println!("{}", serde_json::to_string_pretty(&results)?);
+                return Ok(());
+            }
+
             println!(
                 "{:<15} | {:<10} | {:<10} | {:<10} | {:<10} | {:<20}",
                 "Provider", "Today", "Weekly", "Monthly", "Cache Hits", "Limited Until"
@@ -54,32 +74,114 @@ pub async fn handle_usage_command(cmd: UsageCommand) -> Result<()> {
         } => {
             let token = require_xavier_token()?;
             let client = CLI_HTTP_CLIENT.clone();
-            let resp = client
-                .post(format!("{}/v1/usage/update", base_url))
-                .header("X-Xavier-Token", &token)
-                .json(&serde_json::json!({ "provider": provider, "percentage": percentage }))
-                .send()
-                .await?;
-            if resp.status().is_success() {
-                println!("✅ Manual usage percentage updated for {}", provider);
-            } else {
-                println!("❌ Failed to update usage: {}", resp.text().await?);
+            let providers = ["opencode-go", "deepseek", "groq", "openai", "anthropic"];
+
+            if json {
+                let mut results = Vec::new();
+                for p in providers {
+                    let resp = client
+                        .get(format!("{}/v1/usage/status/{}", base_url, p))
+                        .header("X-Xavier-Token", &token)
+                        .send()
+                        .await?;
+                    if resp.status().is_success() {
+                        let status: serde_json::Value = resp.json().await?;
+                        results.push(status);
+                    } else {
+                        results.push(serde_json::json!({"provider": p, "error": resp.text().await.unwrap_or_default()}));
+                    }
+                }
+                println!("{}", serde_json::to_string_pretty(&results)?);
+                return Ok(());
+            }
+
+            println!(
+                "{:<15} | {:<10} | {:<10} | {:<10} | {:<10} | {:<20}",
+                "Provider", "Today", "Weekly", "Monthly", "Cache Hits", "Limited Until"
+            );
+            println!(
+                "{:-<15}-+-{:-<10}-+-{:-<10}-+-{:-<10}-+-{:-<10}-+-{:-<20}",
+                "", "", "", "", "", ""
+            );
+            for p in providers {
+                let resp = client
+                    .get(format!("{}/v1/usage/status/{}", base_url, p))
+                    .header("X-Xavier-Token", &token)
+                    .send()
+                    .await?;
+                if resp.status().is_success() {
+                    let status: xavier::agents::rate_limit::QuotaStatus = resp.json().await?;
+                    let limited = status
+                        .rate_limited_until
+                        .map(|u| u.to_rfc3339())
+                        .unwrap_or_else(|| "No".to_string());
+                    println!(
+                        "{:<15} | {:<10} | {:<10} | {:<10} | {:<10} | {:<20}",
+                        status.provider,
+                        status.used_today,
+                        status.used_weekly,
+                        status.used_monthly,
+                        status.cache_hits,
+                        limited
+                    );
+                }
             }
             Ok(())
         }
         UsageCommand::Cooldown { provider, minutes } => {
             let token = require_xavier_token()?;
             let client = CLI_HTTP_CLIENT.clone();
-            let resp = client
-                .post(format!("{}/v1/usage/cooldown", base_url))
-                .header("X-Xavier-Token", &token)
-                .json(&serde_json::json!({ "provider": provider, "minutes": minutes }))
-                .send()
-                .await?;
-            if resp.status().is_success() {
-                println!("✅ Cooldown set for {} ({} minutes)", provider, minutes);
-            } else {
-                println!("❌ Failed to set cooldown: {}", resp.text().await?);
+            let providers = ["opencode-go", "deepseek", "groq", "openai", "anthropic"];
+
+            if json {
+                let mut results = Vec::new();
+                for p in providers {
+                    let resp = client
+                        .get(format!("{}/v1/usage/status/{}", base_url, p))
+                        .header("X-Xavier-Token", &token)
+                        .send()
+                        .await?;
+                    if resp.status().is_success() {
+                        let status: serde_json::Value = resp.json().await?;
+                        results.push(status);
+                    } else {
+                        results.push(serde_json::json!({"provider": p, "error": resp.text().await.unwrap_or_default()}));
+                    }
+                }
+                println!("{}", serde_json::to_string_pretty(&results)?);
+                return Ok(());
+            }
+
+            println!(
+                "{:<15} | {:<10} | {:<10} | {:<10} | {:<10} | {:<20}",
+                "Provider", "Today", "Weekly", "Monthly", "Cache Hits", "Limited Until"
+            );
+            println!(
+                "{:-<15}-+-{:-<10}-+-{:-<10}-+-{:-<10}-+-{:-<10}-+-{:-<20}",
+                "", "", "", "", "", ""
+            );
+            for p in providers {
+                let resp = client
+                    .get(format!("{}/v1/usage/status/{}", base_url, p))
+                    .header("X-Xavier-Token", &token)
+                    .send()
+                    .await?;
+                if resp.status().is_success() {
+                    let status: xavier::agents::rate_limit::QuotaStatus = resp.json().await?;
+                    let limited = status
+                        .rate_limited_until
+                        .map(|u| u.to_rfc3339())
+                        .unwrap_or_else(|| "No".to_string());
+                    println!(
+                        "{:<15} | {:<10} | {:<10} | {:<10} | {:<10} | {:<20}",
+                        status.provider,
+                        status.used_today,
+                        status.used_weekly,
+                        status.used_monthly,
+                        status.cache_hits,
+                        limited
+                    );
+                }
             }
             Ok(())
         }
