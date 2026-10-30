@@ -267,17 +267,48 @@ class PromoterTests(unittest.TestCase):
 
     def test_deferred_is_frozen(self):
         self.features['features']['planned']['status'] = 'deferred'
+
+        # provide passing evidence for the feature so it would otherwise promote
+        planned_tests = self.features['features']['planned'].get('tests', [])
+        self.evidence['per_feature_test_results']['planned'] = dict(
+            declared=planned_tests,
+            passed=planned_tests,
+            failed=[],
+            integration_targets_by_test={},
+            candidate_passed=[],
+            candidate_failed=[],
+            candidate_integration_targets_by_test={},
+            candidate_tests=[]
+        )
+
         evidence, history = self.root / 'evidence.json', self.root / 'history.json'
         self.path.write_text(json.dumps(self.features))
         evidence.write_text(json.dumps(self.evidence))
         history.write_text(json.dumps(self.history))
         result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py'),
                                  '--features', str(self.path), '--evidence', str(evidence),
-                                 '--history', str(history)],
+                                 '--history', str(history), '--apply'],
                                 capture_output=True, text=True, check=True)
         report = json.loads(result.stdout)
         self.assertFalse(report['features']['planned']['eligible'])
         self.assertIn('deferred features are frozen', report['features']['planned']['reasons'])
+        # check apply mode didn't change the deferred feature
+        with open(self.path) as f:
+            data = json.load(f)
+        self.assertEqual('deferred', data['features']['planned']['status'])
+
+    def test_evidence_complete_excludes_deferred(self):
+        self.features['features']['deferred_feat'] = {
+            'status': 'deferred',
+            'tests': ['some_test']
+        }
+        # A log that doesn't mention 'some_test', but mode is full
+        log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
+               '  ▶ test_roundtrip\n    ✅ --test integration (passed=1)\n')
+        # Parse it with evidence collector
+        results, targets, evidence_complete = collector.parse_log(log, self.features)
+        # Even without 'some_test', evidence should be complete because deferred feature is skipped
+        self.assertTrue(evidence_complete)
 
     def test_unit_only_name_collision_is_rejected(self):
         (self.root / 'src').mkdir()
@@ -748,6 +779,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.features['metadata'] = {'features_stable': 1, 'features_beta': 0, 'features_in_progress': 0, 'features_planned': 0, 'features_complete': 1, 'total_features': 1, 'overall_progress_pct': 100.0, 'last_verified': '2000-01-01'}
         self.features['features']['stable']['open_gaps'] = ['pending']
         self.features['features']['stable']['progress_pct'] = 100
+        self.features['features']['deferred_feat'] = {'status': 'deferred', 'progress_pct': 50}
 
         evidence = self.root / 'evidence.json'
         history = self.root / 'history.json'
@@ -767,11 +799,45 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertEqual(1, meta.get('features_stable', 0))
         self.assertEqual(2, meta.get('features_beta', 0))
         self.assertEqual(0, meta.get('features_planned', 0))
-        self.assertEqual(0, meta.get('features_deferred', 0))
+        self.assertEqual(1, meta.get('features_deferred', 0))
         self.assertEqual(4, meta.get('total_features', 0))
         self.assertEqual(1, meta.get('features_complete', 0))
         self.assertEqual(60.0, meta.get('overall_progress_pct', 0))
         self.assertEqual('2026-11-10', meta.get('last_verified'))
+
+    def test_metadata_all_deferred(self):
+        import json
+        # Since all features are deferred, changed=False, so we must provide
+        # the initial metadata to verify the script doesn't crash or corrupt it.
+        self.features['metadata'] = {
+            'features_stable': 0, 'features_beta': 0, 'features_planned': 0,
+            'features_deferred': 1, 'total_features': 0, 'overall_progress_pct': 0.0
+        }
+        # Clear existing features
+        self.features['features'] = {}
+        # Add only a deferred feature
+        self.features['features']['deferred_feat'] = {'status': 'deferred', 'progress_pct': 50}
+
+        evidence = self.root / 'evidence.json'
+        history = self.root / 'history.json'
+        self.path.write_text(json.dumps(self.features))
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        args = ['--features', str(self.path), '--evidence', str(evidence),
+                '--history', str(history), '--apply', '--apply-demotions']
+        import subprocess, sys
+        subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, check=True)
+
+        with open(self.path) as f:
+            data = json.load(f)
+
+        meta = data['metadata']
+        self.assertEqual(0, meta.get('features_stable', 0))
+        self.assertEqual(0, meta.get('features_beta', 0))
+        self.assertEqual(0, meta.get('features_planned', 0))
+        self.assertEqual(1, meta.get('features_deferred', 0))
+        self.assertEqual(0, meta.get('total_features', 0))
+        self.assertEqual(0.0, meta.get('overall_progress_pct', 0))
 
 
     def test_workflow_branch_identity(self):

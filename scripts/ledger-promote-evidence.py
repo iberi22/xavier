@@ -74,6 +74,8 @@ def parse_log(log, document):
     if '(mode: full,' in log:
         all_declared = set()
         for f in document['features'].values():
+            if f.get('status') == 'deferred':
+                continue
             decl = f.get('tests', [])
             all_declared.update(decl if isinstance(decl, list) else [])
         # Also, the original script checked '✅ all declared tests passed'
