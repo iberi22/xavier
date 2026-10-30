@@ -1,11 +1,32 @@
 name: Mesh Features
 
 on:
+  # PRs skip Mesh only when nothing that can reach the build changed
+  # (docs, Markdown, UI, ledger/agent metadata, other CI workflows), to save
+  # runner budget (unblock-1030). Everything else, including all of src/,
+  # crates/, tests/, scripts/, packaging/ and .cargo/, still runs it.
+  # Push to main stays unfiltered. Not a required check.
   pull_request:
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!**/*.md'
+      - '!panel-ui/**'
+      - '!public/**'
+      - '!.gitcore/**'
+      - '!.jules/**'
+      - '!.xavier/**'
+      - '!skills/**'
+      - '!.github/**'
+      - '.github/workflows/mesh-features.yml'
   push:
     branches:
       - main
   workflow_dispatch:
+
+concurrency:
+  group: mesh-features-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
