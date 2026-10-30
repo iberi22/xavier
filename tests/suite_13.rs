@@ -57,9 +57,9 @@ mod xtsp;
 #[path = "ready_gate_startup.rs"]
 mod ready_gate_startup;
 
+#[path = "billing_cloud_usage_e2e.rs"]
+mod billing_cloud_usage_e2e;
 #[path = "billing_status_test.rs"]
 mod billing_status_test;
 #[path = "config_cli.rs"]
 mod config_cli;
-#[path = "billing_cloud_usage_e2e.rs"]
-mod billing_cloud_usage_e2e;
