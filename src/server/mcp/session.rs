@@ -650,7 +650,11 @@ enum ArgError {
     Tool(MCPError),
 }
 
-fn validate_tool_call_args(name: &str, arguments: &Value) -> Result<(), ArgError> {
+fn validate_tool_call_args(
+    name: &str,
+    arguments: &Value,
+    has_telecom: bool,
+) -> Result<(), ArgError> {
     if !arguments.is_object() {
         return Err(ArgError::Protocol(MCPError {
             code: XAVIER_ERROR_VALIDATION,
@@ -659,7 +663,7 @@ fn validate_tool_call_args(name: &str, arguments: &Value) -> Result<(), ArgError
         }));
     }
 
-    let tools = super::server::get_xavier_tools();
+    let tools = super::server::get_xavier_tools(has_telecom);
     let tool = tools.iter().find(|t| t.name == name);
 
     if let Some(tool) = tool {
@@ -793,11 +797,13 @@ async fn handle_mcp_request(
         "tools/list" => Some(MCPResponse {
             jsonrpc: "2.0".to_string(),
             id: request.id.unwrap_or(Value::Null),
-            result: Some(serde_json::json!({ "tools": super::server::get_xavier_tools() })),
+            result: Some(
+                serde_json::json!({ "tools": super::server::get_xavier_tools(state.telecom.is_some()) }),
+            ),
             error: None,
         }),
         "server/discover" => {
-            let tools = super::server::get_xavier_tools();
+            let tools = super::server::get_xavier_tools(state.telecom.is_some());
             let resources = super::server::get_xavier_resources();
             Some(MCPResponse {
                 jsonrpc: "2.0".to_string(),
@@ -864,7 +870,7 @@ async fn handle_mcp_request(
                 .unwrap_or_else(|| serde_json::json!({}));
             let id = request_id.clone().unwrap_or(Value::Null);
 
-            match validate_tool_call_args(name, &arguments) {
+            match validate_tool_call_args(name, &arguments, state.telecom.is_some()) {
                 Err(ArgError::Protocol(error)) => Some(MCPResponse {
                     jsonrpc: "2.0".to_string(),
                     id,
