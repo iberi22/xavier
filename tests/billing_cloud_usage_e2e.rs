@@ -40,9 +40,52 @@ fn xavier_cli(home: &std::path::Path) -> Command {
 
 fn bind_mock_server() -> (TcpListener, String) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
     let url = format!("http://127.0.0.1:{}", port);
     (listener, url)
+}
+
+fn wait_with_timeout(mut cmd: Command) -> (Option<i32>, String, String) {
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+
+    let timeout = Duration::from_secs(30);
+    let start = std::time::Instant::now();
+
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            let mut stdout = String::new();
+            if let Some(mut out) = child.stdout.take() {
+                let _ = out.read_to_string(&mut stdout);
+            }
+            let mut stderr = String::new();
+            if let Some(mut err) = child.stderr.take() {
+                let _ = err.read_to_string(&mut stderr);
+            }
+            return (status.code(), stdout, stderr);
+        }
+        if start.elapsed() > timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("Test command timed out after {:?}", timeout);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn accept_with_timeout(listener: &TcpListener, timeout: Duration) -> Option<std::net::TcpStream> {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        match listener.accept() {
+            Ok((stream, _)) => return Some(stream),
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(_) => return None,
+        }
+    }
+    None
 }
 
 fn handle_mock_request(
@@ -114,34 +157,6 @@ fn handle_mock_request(
     (request_str, json_body)
 }
 
-fn wait_with_timeout(mut cmd: Command) -> (Option<i32>, String, String) {
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = cmd.spawn().unwrap();
-
-    let timeout = Duration::from_secs(30);
-    let start = std::time::Instant::now();
-
-    loop {
-        if let Ok(Some(status)) = child.try_wait() {
-            let mut stdout = String::new();
-            if let Some(mut out) = child.stdout.take() {
-                let _ = out.read_to_string(&mut stdout);
-            }
-            let mut stderr = String::new();
-            if let Some(mut err) = child.stderr.take() {
-                let _ = err.read_to_string(&mut stderr);
-            }
-            return (status.code(), stdout, stderr);
-        }
-        if start.elapsed() > timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            panic!("Test command timed out after {:?}", timeout);
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-}
-
 #[test]
 fn billing_usage_success_resolves_tenant() {
     let home_dir = tempdir().unwrap();
@@ -155,7 +170,7 @@ fn billing_usage_success_resolves_tenant() {
 
     let mock_thread = std::thread::spawn(move || {
         for _ in 0..2 {
-            if let Ok((mut stream, _)) = listener.accept() {
+            if let Some(mut stream) = accept_with_timeout(&listener, Duration::from_secs(5)) {
                 let mut buf = Vec::new();
                 let mut chunk = [0; 1024];
                 let timeout = Duration::from_secs(2);
@@ -242,6 +257,7 @@ fn billing_usage_success_resolves_tenant() {
     });
 
     let mut cmd = xavier_cli(home_dir.path());
+    // Use checkout because it's the one calling cloud_usage to resolve the tenant.
     cmd.args(["billing", "checkout", "pro", "--json"]);
     cmd.env("XAVIER_PGHEART_URL", &url);
     cmd.env("XAVIER_PGHEART_TOKEN", "test-tenant-key");
@@ -277,7 +293,7 @@ fn billing_usage_500_fails_checkout() {
     let (listener, url) = bind_mock_server();
 
     let mock_thread = std::thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
+        if let Some(mut stream) = accept_with_timeout(&listener, Duration::from_secs(5)) {
             handle_mock_request(
                 &mut stream,
                 "500 Internal Server Error",
@@ -306,7 +322,7 @@ fn billing_usage_401_unauthorized() {
     let (listener, url) = bind_mock_server();
 
     let mock_thread = std::thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
+        if let Some(mut stream) = accept_with_timeout(&listener, Duration::from_secs(5)) {
             handle_mock_request(
                 &mut stream,
                 "401 Unauthorized",
@@ -338,7 +354,7 @@ fn billing_usage_missing_token_pins_permissive_checkout() {
     let assert_called_clone = Arc::clone(&assert_called);
 
     let mock_thread = std::thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
+        if let Some(mut stream) = accept_with_timeout(&listener, Duration::from_secs(5)) {
             let (req_str, json) = handle_mock_request(
                 &mut stream,
                 "409 Conflict",
@@ -372,6 +388,7 @@ fn billing_usage_missing_token_pins_permissive_checkout() {
 
     // Current checkout deliberately permits missing tokens, so this tests that behavior
     // rather than failing with a configuration error. A non-zero config error for a missing token is out of scope for now.
+    // If the real subcommand currently exits 0 without credentials, we assert it does and say so in PR body.
     assert_eq!(status, Some(0));
 
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
