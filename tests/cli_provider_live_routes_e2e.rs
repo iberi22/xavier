@@ -28,7 +28,15 @@ async fn test_provider_live_routes() {
     let log_clone = request_log.clone();
 
     // Mock only the /v1/providers and /v1/providers/switch routes per requirements
+    let log_middleware = request_log.clone();
     let router = Router::new()
+        .layer(axum::middleware::from_fn(move |req: axum::extract::Request, next: axum::middleware::Next| {
+            let log = log_middleware.clone();
+            async move {
+                *log.all_requests.lock().unwrap() += 1;
+                next.run(req).await
+            }
+        }))
         .route(
             "/v1/providers",
             get(|| async {
@@ -50,6 +58,10 @@ async fn test_provider_live_routes() {
                 }))
             }),
         )
+        .route("/401/v1/providers/switch", post(|| async { axum::http::StatusCode::UNAUTHORIZED }))
+        .route("/403/v1/providers/switch", post(|| async { axum::http::StatusCode::FORBIDDEN }))
+        .route("/404/v1/providers/switch", post(|| async { axum::http::StatusCode::NOT_FOUND }))
+        .route("/500/v1/providers/switch", post(|| async { axum::http::StatusCode::INTERNAL_SERVER_ERROR }))
         .fallback(
             axum::routing::any(|_req: axum::extract::Request| async move {
                 // Return 404 for unhandled paths but test should assert we never reach here for 'auto'
@@ -153,6 +165,82 @@ async fn test_provider_live_routes() {
             "test-openai"
         );
     }
+
+
+
+    // 3b. Set provider errors
+    // HTTP 401
+    let url_401 = format!("http://127.0.0.1:{}/401", addr.port());
+    let output_set_401 = Command::new(xavier_bin)
+        .envs(&envs)
+        .env("XAVIER_URL", &url_401)
+        .env("XAVIER_CONFIG_PATH", &config_path)
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp_data.path())
+        .arg("provider")
+        .arg("set")
+        .arg("test-openai")
+        .output()
+        .unwrap();
+    assert_eq!(output_set_401.status.code().unwrap(), 3);
+
+    // HTTP 403
+    let url_403 = format!("http://127.0.0.1:{}/403", addr.port());
+    let output_set_403 = Command::new(xavier_bin)
+        .envs(&envs)
+        .env("XAVIER_URL", &url_403)
+        .env("XAVIER_CONFIG_PATH", &config_path)
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp_data.path())
+        .arg("provider")
+        .arg("set")
+        .arg("test-openai")
+        .output()
+        .unwrap();
+    assert_eq!(output_set_403.status.code().unwrap(), 3);
+
+    // HTTP 404
+    let url_404 = format!("http://127.0.0.1:{}/404", addr.port());
+    let output_set_404 = Command::new(xavier_bin)
+        .envs(&envs)
+        .env("XAVIER_URL", &url_404)
+        .env("XAVIER_CONFIG_PATH", &config_path)
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp_data.path())
+        .arg("provider")
+        .arg("set")
+        .arg("test-openai")
+        .output()
+        .unwrap();
+    assert_eq!(output_set_404.status.code().unwrap(), 1);
+
+    // HTTP 500
+    let url_500 = format!("http://127.0.0.1:{}/500", addr.port());
+    let output_set_500 = Command::new(xavier_bin)
+        .envs(&envs)
+        .env("XAVIER_URL", &url_500)
+        .env("XAVIER_CONFIG_PATH", &config_path)
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp_data.path())
+        .arg("provider")
+        .arg("set")
+        .arg("test-openai")
+        .output()
+        .unwrap();
+    assert_eq!(output_set_500.status.code().unwrap(), 1);
+
+    // Connection refused
+    let dummy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let dummy_port = dummy_listener.local_addr().unwrap().port();
+    drop(dummy_listener);
+    let url_closed = format!("http://127.0.0.1:{}", dummy_port);
+    let output_set_closed = Command::new(xavier_bin)
+        .envs(&envs)
+        .env("XAVIER_URL", &url_closed)
+        .env("XAVIER_CONFIG_PATH", &config_path)
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp_data.path())
+        .arg("provider")
+        .arg("set")
+        .arg("test-openai")
+        .output()
+        .unwrap();
+    assert_eq!(output_set_closed.status.code().unwrap(), 4);
 
     // 4. Auto strategy should fail non-zero
     let _auto_requests_before = *request_log.all_requests.lock().unwrap();

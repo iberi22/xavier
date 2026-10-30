@@ -81,6 +81,7 @@ exclude = [
     "panel-ui/src-tauri",
 ]
 members = [
+    "crates/xavier-plugin-protocol",
     "code-graph",
     "crates/xavier-core-logic",
     "crates/xavier-market",
@@ -126,11 +127,9 @@ tauri = ["dep:tauri"]
 telegram = ["teloxide/macros", "teloxide/webhooks-axum", "teloxide/ctrlc_handler"]
 local-gllm = ["dep:gllm", "gllm/wgpu"]
 local-gllm-cuda = ["dep:gllm", "gllm/cuda"]
-dev-mode = []
 # Enterprise features: Cortex Enterprise Cloud integration
 enterprise = []
 mesh = ["dep:iroh"]
-libp2p = []
 dao-evm = ["dep:alloy"]
 espacio-mesh = []
 
