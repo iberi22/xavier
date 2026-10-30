@@ -1,6 +1,6 @@
 # Ledger auto-loop plan (2026-10-29)
 
-Status: proposed. Owner decision pending on the items in section 8.
+Status: approved 2026-10-29 (owner decisions in section 8). Repository variable `LEDGER_PROMOTER_AUTO=true` is set; it takes effect when L1 lands.
 
 Goal: the Ledger Promoter runs by itself. Nobody decides "run it for real" by hand. GitHub Actions evaluates the ledger after every main CI run and on a schedule, opens and merges a promotion PR when features have earned it, keeps one GitHub issue per feature gap, hands those issues to Jules, closes them when the feature is promoted, and tags stable milestones with a non-release tag. Only the promoter changes `status` and `progress_pct` in `.gitcore/features.json`; this plan does not change that rule.
 
@@ -34,12 +34,12 @@ Ledger Promoter: evaluate (always dry) ---- report.json artifact
         |                       \
         | eligible > 0 and       \--> Ledger Gaps workflow (workflow_run on Ledger Promoter)
         | LEDGER_PROMOTER_AUTO        create/update/close issues `ledger-gap:<feature-id>`
-        v                             label `jules-queue` (non-security only)
+        v                             labels `ledger-gap` + `jules` (non-security only, max 5/run)
 propose: --apply, docs sync,                |
 branch ledger/promote-<sha>, PR,            v
-dispatch CI Gate + Shadow, auto-merge   jules-wave.py triage --go (PC, both accounts)
-        |                               pulls `jules-queue` issues into the priority queue
-        v                               -> Jules PR -> Codex judge -> merge -> next CI run
+dispatch CI Gate + Shadow, auto-merge   Jules GitHub app starts a task from the `jules` label
+        |                               -> Jules PR -> Codex judge -> merge -> next CI run
+        v
 main gets the ledger commit
         |
         v
@@ -80,17 +80,17 @@ New workflow `ledger-gaps.yml` (`workflow_run` on "Ledger Promoter" completed, p
 - Candidates: features with status `beta`, `in_progress` or `planned` whose report reasons are about tests: `declared tests failed`, `declared test missing from index`, `no linked integration/E2E evidence`, `linked test is BUG-ignored`, `declared test evidence differs from ledger`. A reason that is only `green streak N < 3` is not a gap (it is time, not work).
 - One issue per feature, found by the body marker `<!-- ledger-gap:<feature-id> -->` and label `ledger-gap`. Create when missing, update the body (reasons, failing tests, last evaluated SHA, run link) when present, close with a comment when the feature is `stable` on main or no longer has a test gap.
 - Title: `ledger gap: <feature-id> — <short reason>`. Body: feature name, `implemented_in`, declared `tests`, reasons, and the task rules Jules needs (test registration in `tests/suite_NN.rs`, `isolate_test_process!`, append-only ledger `tests`, never edit status/progress).
-- Labels: `ledger-gap` always; `jules-queue` only for non-security features. Security features (`category == "security"`, 11 today, or the issue carries `security`/`security-report`) get NO public issue: the script only lists them in the job summary as "needs owner". Security work never goes to Jules.
-- Rate limit: at most 5 new issues per run (`--max-new`), oldest-first by feature id, so a red main does not flood the tracker. Updates and closes are not limited.
+- Labels: `ledger-gap` plus `jules` (Jules' native GitHub integration starts a task when the label is applied). Security features (`category == "security"`, 11 today) get NO public issue and no label: the script only lists them in the job summary as "needs owner". An existing issue labeled `security` or `security-report` is never edited, relabeled or closed by the script. Security work never goes to Jules.
+- Rate limit: at most 5 `jules` label applications per run (`--max-jules`, default 5), counting new issues and reopened issues that get the label again, oldest-first by feature id. The Jules app runs on one account and ignores our 15-session limit, so this cap is what protects it. Gaps beyond the cap wait for the next run. Body updates and closes are not limited and never re-apply the label to an issue that already has it.
 - Red main: if the evaluated run is red, the script updates existing issues but creates none (the `tbd-incident` issue already covers the red run).
 
 ## 6. Jules pickup
 
-Three options, from least to most automated:
+Decision (2026-10-29): the GitHub `jules` label, i.e. Jules' native GitHub integration (already used for #2997-#2999, answered by `google-labs-jules`). No Jules secret in the repo.
 
-1. **`jules-queue` label pulled by `jules-wave.py triage` on the PC (implemented 2026-10-29).** `triage --go` lists open issues labeled `jules-queue` in `iberi22/xavier` (env `JULES_ISSUE_REPOS` to change), skips any issue labeled `security`, `security-report`, `needs-human` or `no-jules`, writes a task body to `~/.cache/swal/jules/issue-bodies/`, and adds it to the priority queue at p3 under wave `issues-<repo>`. Each issue is pulled once (state in `triage-state.json`; `jules-requeue` label pulls it again). Dispatch uses both accounts and the normal capacity rules. Needs no secret; needs the PC on.
-2. **`jules` label (Jules GitHub app).** Works today with no secret, but runs on one account, skips our capacity limits and task rules, and would start immediately on every gap issue. Not used by default.
-3. **Jules API from Actions.** A job calls `POST https://jules.googleapis.com/v1alpha/sessions` with `automationMode: AUTO_CREATE_PR`. Needs repo secrets `JULES_API_KEY` (and optionally `JULES_API_KEY_2`). Fully cloud, but the capacity logic in `jules-wave.py` would need to move into the workflow. Deferred until the owner decides.
+- The Ledger Gaps workflow applies `jules` when it creates (or reopens) a gap issue, within the per-run cap of section 5. Jules comments on the issue and opens a PR.
+- `jules-wave.py triage` on the PC does NOT pull `jules`-labeled issues (it skips any issue carrying `jules`), so a gap is never dispatched twice. Its `jules-queue` pull stays as an optional manual path (both accounts, capacity-aware) for issues a human labels `jules-queue` without `jules`.
+- A Jules API path from Actions (`JULES_API_KEY` repo secret) is not used.
 
 Jules PRs go through the normal lane: Codex judges, merge on PASS plus green CI Gate and Shadow Fast Gate.
 
@@ -103,13 +103,12 @@ New workflow `ledger-tag.yml` on `push` to `main` with `paths: [.gitcore/feature
 - Hard guard in the script: refuse any tag name matching `^v`. The loop never creates release tags or GitHub releases. When all core features (core 1.0 definition in `CORE-REFACTOR-2026-10-29.md`) are stable, it opens one issue "Release candidate: core 1.0 ready" for the owner; any `v*` tag stays manual.
 - Same workflow dispatches `ci.yml` and `e2e-segmented.yml` on `main` after a bot merge, and `scripts/ledger-promote-evidence.py` accepts `workflow_dispatch` runs on `main` with the same `head_sha` as evidence (today it reads `event=push` only). Without this, every bot-merged ledger commit breaks the 3-run streak.
 
-## 8. Owner decisions
+## 8. Owner decisions (2026-10-29)
 
-1. Set repository variable `LEDGER_PROMOTER_AUTO=true` to let automatic runs apply promotions. Until then the loop runs dry and only manages gap issues.
-2. Auto-merge of promotion PRs with `GITHUB_TOKEN` (ruleset unchanged, CI Gate and Shadow still required). Alternative: a GitHub App token as secret, so bot pushes trigger CI normally and L4's dispatch workaround is not needed.
-3. Jules pickup: option 1 (PC triage, default), option 2 (`jules` label on gap issues), or option 3 (repo secret `JULES_API_KEY`).
-4. Tag names: `ledger-stable-<n>` and `ledger-milestone-<pct>`, or another non-`v` prefix.
-5. `apply_demotions` stays OFF in automatic runs; only a manual dispatch can turn it on.
+1. Auto mode: yes. Repository variable `LEDGER_PROMOTER_AUTO=true` is set. Demotions stay manual-only (`workflow_dispatch` with `apply_demotions`).
+2. Auto-merge: yes, with the default `GITHUB_TOKEN`; ruleset `r1` unchanged (CI Gate and Shadow Fast Gate still required). L4's dispatch on main keeps the streak after bot merges.
+3. Jules intake: the `jules` label (section 6), max 5 labeled issues per run, strict security exclusion.
+4. Tags: `ledger-stable-<n>` and `ledger-milestone-<pct>` (no `v` prefix).
 
 ## 9. Tasks (small PRs)
 
