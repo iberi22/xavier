@@ -33,6 +33,8 @@ fn run_cli_command(dir: &Path, global_env: &TempDir, args: &[&str]) -> String {
     cmd.env("XAVIER_MASTER_KEY_PASSPHRASE", "test-passphrase-not-used");
     // Explicitly add repo root to allowlist for XAVIER_REPO_STORE_ROOTS
     cmd.env("XAVIER_REPO_STORE_ROOTS", dir);
+    // Isolate from running daemons
+    cmd.env("XAVIER_URL", "http://127.0.0.1:0");
     cmd.args(args);
 
     let output = cmd.output().expect("failed to execute cli command");
@@ -107,13 +109,50 @@ fn test_repo_memory_instance_cli_e2e() {
         &["search", unique_marker, "--offline-ok"],
     );
 
+    // Parse the JSON to ensure the marker is actually in the results, not just echoed in the header
+    fn extract_json_and_check(output: &str, marker: &str) -> bool {
+        let start_idx = output.find('{').expect("Output missing JSON block");
+
+        // Find matching closing brace to avoid trailing stderr logs that might be captured
+        let mut brace_count = 0;
+        let mut end_idx = start_idx;
+        for (i, c) in output[start_idx..].char_indices() {
+            if c == '{' {
+                brace_count += 1;
+            } else if c == '}' {
+                brace_count -= 1;
+                if brace_count == 0 {
+                    end_idx = start_idx + i;
+                    break;
+                }
+            }
+        }
+
+        let json_str = &output[start_idx..=end_idx];
+        let data: serde_json::Value = serde_json::from_str(json_str).unwrap_or_else(|e| {
+            panic!("Valid JSON error: {e}. Output was: {json_str}");
+        });
+
+        let results = data
+            .get("results")
+            .and_then(|r| r.as_array())
+            .expect("results array");
+
+        results.iter().any(|res| {
+            res.get("content")
+                .and_then(|c| c.as_str())
+                .map(|c| c.contains(marker))
+                .unwrap_or(false)
+        })
+    }
+
     // Since they both read from global via offline search fallback, they BOTH find it!
     assert!(
-        search_a_output.contains(unique_marker),
-        "Search in repo A should find the marker in the global fallback store."
+        extract_json_and_check(&search_a_output, unique_marker),
+        "Search in repo A should actually find the marker in the global fallback store results."
     );
     assert!(
-        search_b_output.contains(unique_marker),
-        "Search in repo B should find the marker because offline fallback lacks repo isolation!"
+        extract_json_and_check(&search_b_output, unique_marker),
+        "Search in repo B should actually find the marker because offline fallback lacks repo isolation!"
     );
 }
