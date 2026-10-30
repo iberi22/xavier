@@ -56,7 +56,7 @@ fn test_backup_create_success() {
 
     let parsed: Value = serde_json::from_str(&stdout).expect("Failed to parse JSON output");
     assert_eq!(parsed["ok"], true);
-    assert_eq!(parsed["files"], 2);
+    assert_eq!(parsed["files"], 3);
 
     let out_dir = std::path::PathBuf::from(parsed["path"].as_str().unwrap());
     assert!(out_dir.exists());
@@ -101,11 +101,19 @@ fn test_backup_create_success() {
     assert!(nested_backup_path.exists());
     assert_eq!(fs::read_to_string(&nested_backup_path).unwrap(), "nested");
 
-    let backup_conn = rusqlite::Connection::open(&db_backup_path).unwrap();
+    let backup_conn = rusqlite::Connection::open_with_flags(
+        &db_backup_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let count: i64 = backup_conn
         .query_row("SELECT COUNT(*) FROM test_table", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 1);
+    let row_value: String = backup_conn
+        .query_row("SELECT name FROM test_table", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(row_value, "test_row");
 
     // Ensure the original connection was open until now
     let count_orig: i64 = conn
@@ -227,4 +235,67 @@ fn test_backup_create_out_rejection() {
             serde_json::from_str(&String::from_utf8_lossy(&output3.stdout)).unwrap();
         assert_eq!(parsed3["ok"], false);
     }
+}
+
+#[test]
+#[serial_test::serial]
+fn test_backup_create_refuses_non_empty_dest() {
+    let tmp = TempDir::new().unwrap();
+    let data_dir = tmp.path().join("data");
+    fs::create_dir_all(&data_dir).unwrap();
+    let runtime_state_path = tmp.path().join("runtime.json");
+    fs::write(&runtime_state_path, "{}").unwrap();
+
+    let txt_path = data_dir.join("hello.txt");
+    fs::write(&txt_path, "world").unwrap();
+
+    let out_dir = tmp.path().join("backup_out");
+
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd.env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config"))
+        .env("XAVIER_RUNTIME_STATE_PATH", &runtime_state_path)
+        .env("XAVIER_DATA_DIR", &data_dir)
+        .arg("backup")
+        .arg("create")
+        .arg("--out")
+        .arg(&out_dir)
+        .arg("--json");
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let parsed: Value = serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).unwrap();
+    assert_eq!(parsed["ok"], true);
+
+    // capture bytes of backed up file
+    let backed_up_file = out_dir.join("hello.txt");
+    let bytes_before = fs::read(&backed_up_file).unwrap();
+
+    // second backup
+    let mut cmd2 = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd2.env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config"))
+        .env("XAVIER_RUNTIME_STATE_PATH", &runtime_state_path)
+        .env("XAVIER_DATA_DIR", &data_dir)
+        .arg("backup")
+        .arg("create")
+        .arg("--out")
+        .arg(&out_dir)
+        .arg("--json");
+
+    let output2 = cmd2.output().unwrap();
+    assert!(!output2.status.success());
+
+    let parsed2: Value = serde_json::from_str(&String::from_utf8_lossy(&output2.stdout)).unwrap();
+    assert_eq!(parsed2["ok"], false);
+
+    let err_msg = parsed2["error"].as_str().unwrap();
+    assert!(err_msg.contains("not empty"));
+
+    let bytes_after = fs::read(&backed_up_file).unwrap();
+    assert_eq!(bytes_before, bytes_after);
 }

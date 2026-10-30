@@ -4128,7 +4128,8 @@
       "tests": [
         "tests/cli_backup_create_e2e.rs::test_backup_create_success",
         "tests/cli_backup_create_e2e.rs::test_backup_create_unwritable_path",
-        "tests/cli_backup_create_e2e.rs::test_backup_create_out_rejection"
+        "tests/cli_backup_create_e2e.rs::test_backup_create_out_rejection",
+        "tests/cli_backup_create_e2e.rs::test_backup_create_refuses_non_empty_dest"
       ]
     },
     "feat-multi-tenant": {

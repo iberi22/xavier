@@ -36,6 +36,23 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
         }
     }
 
+    if dest_dir.exists() {
+        let is_empty = fs::read_dir(&dest_dir)
+            .map(|mut d| d.next().is_none())
+            .unwrap_or(true);
+        if !is_empty {
+            if json_output {
+                println!(
+                    "{}",
+                    json!({"ok": false, "error": "destination directory is not empty"})
+                );
+                std::process::exit(1);
+            } else {
+                anyhow::bail!("Destination directory is not empty");
+            }
+        }
+    }
+
     if let Err(e) = fs::create_dir_all(&dest_dir) {
         if json_output {
             println!(
