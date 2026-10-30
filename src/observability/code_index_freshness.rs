@@ -138,7 +138,7 @@ pub fn probe(db_path: &Path, stale_after: Duration) -> CodeIndexFreshness {
 mod tests {
     use super::*;
     use code_graph::db::CodeGraphDB;
-    use code_graph::schema::{Language, Symbol, SymbolKind};
+    use code_graph::types::{Language, Symbol, SymbolKind};
     use std::fs;
 
     #[test]
@@ -146,8 +146,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("missing.db");
         let freshness = probe(&db_path, Duration::from_secs(10));
-        assert_eq!(freshness.present, false);
-        assert_eq!(freshness.stale, false);
+        assert!(!freshness.present);
+        assert!(!freshness.stale);
         assert_eq!(freshness.files, 0);
         assert_eq!(freshness.symbols, 0);
         assert!(!db_path.exists());
@@ -218,12 +218,12 @@ mod tests {
         drop(db);
 
         let freshness = probe(&db_path, Duration::from_secs(86400));
-        assert_eq!(freshness.present, true);
+        assert!(freshness.present);
         assert_eq!(freshness.files, 3);
         assert_eq!(freshness.symbols, 3);
-        assert_eq!(freshness.languages.get("\"Rust\""), Some(&2)); // or get("Rust") depending on serialization
-                                                                   // Note: CodeGraphDB serializes Language enum via serde, which results in "\"Rust\"" or similar strings in the DB.
-                                                                   // Let's just check the length of languages map.
+        // code-graph stores `lang` as the Debug name of `Language` (e.g. "Rust").
+        assert_eq!(freshness.languages.get("Rust"), Some(&2));
+        assert_eq!(freshness.languages.get("Python"), Some(&1));
         assert_eq!(freshness.languages.len(), 2);
     }
 
@@ -237,13 +237,13 @@ mod tests {
 
         // if stale_after = 0s -> stale should be true
         let freshness_0 = probe(&db_path, Duration::from_secs(0));
-        assert_eq!(freshness_0.present, true);
-        assert_eq!(freshness_0.stale, true);
+        assert!(freshness_0.present);
+        assert!(freshness_0.stale);
 
         // if stale_after = 1 day -> stale should be false
         let freshness_1day = probe(&db_path, Duration::from_secs(86400));
-        assert_eq!(freshness_1day.present, true);
-        assert_eq!(freshness_1day.stale, false);
+        assert!(freshness_1day.present);
+        assert!(!freshness_1day.stale);
     }
 
     #[test]
@@ -252,8 +252,8 @@ mod tests {
         let path = dir.path().join("invalid.db");
         fs::write(&path, "not a sqlite db").unwrap();
         let freshness = probe(&path, Duration::from_secs(10));
-        assert_eq!(freshness.present, true);
-        assert_eq!(freshness.stale, true);
+        assert!(freshness.present);
+        assert!(freshness.stale);
         assert_eq!(freshness.files, 0);
         assert_eq!(freshness.symbols, 0);
     }
