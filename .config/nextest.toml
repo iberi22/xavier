@@ -36,7 +36,7 @@ filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard)::
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_04) & test(/^(guardian_truth_test|skill_drift_audit_e2e|skill_store_config_e2e|skill_usage_telemetry_e2e|skill_registry_unify_parity_e2e|skill_dispatch_ephemeral_e2e)::/)'
+filter = 'binary(=suite_04) & test(/^(guardian_truth_test|headless_unsupported_contract_e2e|skill_drift_audit_e2e|skill_store_config_e2e|skill_usage_telemetry_e2e|skill_registry_unify_parity_e2e|skill_dispatch_ephemeral_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -76,7 +76,7 @@ filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard)::
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_04) & test(/^(guardian_truth_test|skill_drift_audit_e2e|skill_store_config_e2e|skill_usage_telemetry_e2e|skill_registry_unify_parity_e2e|skill_dispatch_ephemeral_e2e)::/)'
+filter = 'binary(=suite_04) & test(/^(guardian_truth_test|headless_unsupported_contract_e2e|skill_drift_audit_e2e|skill_store_config_e2e|skill_usage_telemetry_e2e|skill_registry_unify_parity_e2e|skill_dispatch_ephemeral_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
