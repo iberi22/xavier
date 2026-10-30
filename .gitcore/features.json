@@ -3348,6 +3348,8 @@
         "tests/cli_health_stats_parity.rs::unhealthy_health_exits_nonzero",
         "tests/memory_stats_route_e2e.rs::memory_stats_routes_match_cli_mcp",
         "tests/cli_json_sweep2_e2e.rs::test_tasks_list_json",
+        "tests/cli_json_sweep2_e2e.rs::test_tasks_list_json_request_errors",
+        "tests/cli_json_sweep2_e2e.rs::test_tasks_list_json_http_error",
         "tests/cli_json_sweep2_e2e.rs::test_plugin_list_json",
         "tests/cli_json_sweep2_e2e.rs::test_governance_list_json",
         "tests/cli_json_sweep2_e2e.rs::test_governance_status_json",

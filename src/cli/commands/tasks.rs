@@ -6,48 +6,56 @@ use anyhow::Result;
 
 /// Handle tasks command.
 pub async fn handle_tasks_command(cmd: TasksCommand) -> Result<()> {
-    let token = require_xavier_token()?;
-    let base_url = resolve_base_url();
-    let client = CLI_HTTP_CLIENT.clone();
+    let is_json_requested = matches!(&cmd, TasksCommand::List { json: true, .. });
+    let response: Result<reqwest::Response> = async {
+        let token = require_xavier_token()?;
+        let base_url = resolve_base_url();
+        let client = CLI_HTTP_CLIENT.clone();
 
-    let response = match &cmd {
-        TasksCommand::List {
-            project,
-            status,
-            search,
-            json: _,
-        } => {
-            let mut url = reqwest::Url::parse(&format!("{}/v1/tasks", base_url))?;
-            {
-                let mut pairs = url.query_pairs_mut();
-                if let Some(project) = project {
-                    pairs.append_pair("project", project);
+        Ok(match &cmd {
+            TasksCommand::List {
+                project,
+                status,
+                search,
+                json: _,
+            } => {
+                let mut url = reqwest::Url::parse(&format!("{}/v1/tasks", base_url))?;
+                {
+                    let mut pairs = url.query_pairs_mut();
+                    if let Some(project) = project {
+                        pairs.append_pair("project", project);
+                    }
+                    if let Some(status) = status {
+                        pairs.append_pair("status", status);
+                    }
+                    if let Some(search) = search {
+                        pairs.append_pair("search", search);
+                    }
                 }
-                if let Some(status) = status {
-                    pairs.append_pair("status", status);
-                }
-                if let Some(search) = search {
-                    pairs.append_pair("search", search);
-                }
+                client
+                    .get(url)
+                    .header("X-Xavier-Token", &token)
+                    .send()
+                    .await?
             }
-            client
-                .get(url)
-                .header("X-Xavier-Token", &token)
-                .send()
-                .await?
+            TasksCommand::Sync => {
+                client
+                    .post(format!("{}/v1/tasks/sync", base_url))
+                    .header("X-Xavier-Token", &token)
+                    .send()
+                    .await?
+            }
+        })
+    }
+    .await;
+    let response = match response {
+        Ok(response) => response,
+        Err(error) => {
+            if is_json_requested {
+                println!("{}", serde_json::json!({ "error": error.to_string() }));
+            }
+            return Err(error);
         }
-        TasksCommand::Sync => {
-            client
-                .post(format!("{}/v1/tasks/sync", base_url))
-                .header("X-Xavier-Token", &token)
-                .send()
-                .await?
-        }
-    };
-
-    let is_json_requested = match cmd {
-        TasksCommand::List { json, .. } => json,
-        _ => false,
     };
 
     let status = response.status();
@@ -65,7 +73,6 @@ pub async fn handle_tasks_command(cmd: TasksCommand) -> Result<()> {
                 "{}",
                 serde_json::to_string(&serde_json::json!({ "error": error_msg })).unwrap()
             );
-            std::process::exit(3); // Error exit code.
         }
         return Ok(());
     }
