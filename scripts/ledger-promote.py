@@ -240,6 +240,8 @@ def evaluate(document, evidence, history, root, streak):
         lane_common = list(common)
         if run_failed:
             lane_common.append('ledger and E2E must both succeed')
+        if evidence.get('evidence_complete') is not True:
+            lane_common.append('evidence collection incomplete')
 
         transition = PROMOTABLE_TRANSITIONS.get(status)
         if transition is None:

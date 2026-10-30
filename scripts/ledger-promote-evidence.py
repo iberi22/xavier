@@ -96,7 +96,7 @@ def parse_log(log, document):
                                 for test in declared
                                 if test in candidate_passed},
                             candidate_tests=sorted(set(declared) & candidate),
-                            evidence_complete=(set(declared) <= parsed_tests))
+                            evidence_complete=(set(declared) <= parsed_tests if '(mode: full,' in log else False))
     return results, sorted(targets), evidence_complete
 
 
