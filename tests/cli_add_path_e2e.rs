@@ -9,6 +9,7 @@ mod router_harness;
 xavier::isolate_test_process!();
 
 use std::process::Command;
+use xavier::memory::MemoryStore;
 use xavier::security::auth::UserRole;
 
 #[tokio::test]
