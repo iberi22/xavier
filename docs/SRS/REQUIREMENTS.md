@@ -617,13 +617,13 @@ Register a VPS as a private SWAL node over SSH. Xavier **genera un keypair SSH d
 
 - **Category:** Mesh
 - **Priority:** High
-- **SRS Status:** `implemented`
+- **SRS Status:** `planned`
 - **Features:** `feat-mesh-network`
-- **Files:** `src/mesh/libp2p_transport.rs`, `src/mesh/fallback_transport.rs`, `src/mesh/iroh_transport.rs`
+- **Files:** `src/mesh/maturity.rs` (stub)
 - **Docs:** Wave-3 Docs — enterprise mesh hardening
 
 ### Description
-Mesh libp2p transport with gossipsub pubsub and NAT traversal (relay + direct). Fallback chain libp2p→http→supabase remains. Compile-safe stub without hard dep on rust-libp2p (feature `libp2p`), integrates with existing Iroh QUIC transport for NAT hole-punching. Single-peer mesh helper for tests.
+Mesh libp2p gossipsub is not implemented. Evidence of its absence is tracked in `src/mesh/maturity.rs` (`libp2p: false`, `0%`).
 
 ### Acceptance criteria
 

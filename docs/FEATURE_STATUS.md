@@ -88,7 +88,7 @@ See `docs/ARCH_WAVE3.md`.
 | 4.07 | #1767 | feat-store-path-hierarchy — preserve full store path hierarchy | stable 100% | `src/memory/store.rs` |
 | 4.08 | #1759 | feat-ivn-karma — Karma rewards, sanctions, reputation | stable 100% | `src/data_commons/ivn.rs`, `src/adapters/.../ivn.rs` |
 | 4.09 | #1755 | feat-wasm+rag — IndexedDB real web-sys + RAG RRF | stable 100% | `crates/xavier-wasm/` + `src/search/rerank.rs` |
-| 4.10 | #1757 | feat-mesh+clearance — libp2p gossipsub wire + E2E | stable 100% | `src/mesh/libp2p_transport.rs` + `src/security/clearance.rs` |
+| 4.10 | #1757 | feat-mesh+clearance — libp2p gossipsub wire + E2E | planned | `src/mesh/maturity.rs` (stub) + `src/security/clearance.rs` |
 
 Verification WAVE-4 (2026-08-31):
 - `CARGO_TARGET_DIR=target cargo check --all-targets` 0 (incl. fix `IvnEngineStore::derive(Default)` clippy)
@@ -111,7 +111,7 @@ See `docs/ARCH_WAVE4.md`.
 ### Confirmed working
 - `xavier http` + `POST /memory/add` + `POST /memory/search` + `GET /memory/stats` + `GET /health` + auth gate
 - `xavier mcp` + MCP `tools/list` + `tools/call` for `add` and `search`
-- Mesh P2P: Ed25519 identity + pairing codes + libp2p gossipsub stub + Iroh QUIC NAT + fallback chain + heartbeat
+- Mesh P2P: Ed25519 identity + pairing codes + libp2p gossipsub (planned) + Iroh QUIC NAT + fallback chain + heartbeat
 - Clearance 6 levels + redaction middleware + groups ACL + audit trail
 - Training datasets REST + mini-experts registry + service network INTERNAL + private mesh wallet isolation
 - Human curation approve/classify/history + issue-context packager + store path hierarchy
