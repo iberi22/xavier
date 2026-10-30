@@ -2643,7 +2643,8 @@
         "maloca::governance::tests::majority_at_exact_threshold_passes",
         "maloca::tests::support_patch_maps_moves_to_200_409_and_404",
         "tests/maloca_governance_wiring_e2e.rs::proposal_lifecycle_e2e",
-        "tests/maloca_governance_wiring_e2e.rs::governance_proposal_rejection_e2e"
+        "tests/maloca_governance_wiring_e2e.rs::governance_proposal_rejection_e2e",
+        "tests/maloca_wiring_routes_e2e.rs::maloca_wiring_e2e"
       ],
       "user_stories": []
     },
