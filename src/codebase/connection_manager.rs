@@ -483,7 +483,7 @@ fn test_store_dir(project_root: &str) -> PathBuf {
 /// `vec_store` / `metrics` / `security` before both prefixes.
 fn resolve_db_path(project_id: &str, project_root: &str) -> Result<PathBuf> {
     let db_path = if project_id == "memory" {
-        PathBuf::from(project_root).join("xavier_memory.db")
+        crate::settings::XavierSettings::resolve_data_dir().join("xavier_memory.db")
     } else if project_id == "vec_store" {
         PathBuf::from(project_root).join("vec-store.sqlite3")
     } else if project_id == "metrics" {
@@ -2295,5 +2295,24 @@ mod tests {
             ),
             MAX_POOLS_CEILING
         );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn memory_project_id_respects_data_dir() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::env::set_var("XAVIER_DATA_DIR", dir.path());
+
+        let path = resolve_db_path("memory", "/irrelevant/project/root").unwrap();
+
+        // Assert it resolves to the data dir, not the project root
+        assert!(
+            path.starts_with(dir.path()),
+            "path {} should start with data dir {}",
+            path.display(),
+            dir.path().display()
+        );
+        assert!(path.ends_with("xavier_memory.db"));
     }
 }

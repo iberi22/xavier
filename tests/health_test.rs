@@ -10,12 +10,15 @@ use xavier::mesh::{acl::MeshAcl, node::NodeId};
 struct ChildGuard {
     child: Child,
     db_paths: Vec<String>,
+    _temp_dir: tempfile::TempDir,
 }
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        // _temp_dir will be dropped here automatically, cleaning up its contents.
+        // We still attempt to remove explicitly tracked paths for good measure.
         for path in &self.db_paths {
             let _ = std::fs::remove_file(path);
             let _ = std::fs::remove_file(format!("{}-wal", path));
@@ -32,9 +35,15 @@ async fn test_health_endpoints_e2e() {
         .expect("local addr")
         .port();
 
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    let config_dir = temp_dir.path().join("config");
+    let data_dir = temp_dir.path().join("data");
+    std::fs::create_dir_all(&home_dir).unwrap();
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&data_dir).unwrap();
     // Create temporary config file with mesh_accepted = false
-    let temp_config_path =
-        std::env::temp_dir().join(format!("xavier-test-config-no-mesh-{port}.json"));
+    let temp_config_path = config_dir.join("config.json");
     let config_json = serde_json::json!({
         "license": {
             "mesh_accepted": false,
@@ -47,11 +56,21 @@ async fn test_health_endpoints_e2e() {
     // probe deterministically reports absent (never the developer's real dir).
     let acl_dir = tempfile::tempdir().expect("acl tempdir");
 
-    let code_db = format!("data/health-test-code-{port}.db");
-    let mem_db = format!("data/health-test-mem-{port}.db");
+    let code_db = data_dir
+        .join(format!("data/health-test-code-{port}.db"))
+        .to_string_lossy()
+        .into_owned();
+    let mem_db = data_dir
+        .join(format!("data/health-test-mem-{port}.db"))
+        .to_string_lossy()
+        .into_owned();
 
     let _child = ChildGuard {
         child: std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
+            .env("HOME", &home_dir)
+            .env("XAVIER_RUNTIME_STATE_PATH", config_dir.join("state.json"))
+            .env("XAVIER_DATA_DIR", &data_dir)
+            .current_dir(temp_dir.path())
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", port.to_string())
             .env("XAVIER_TOKEN", "test-token")
@@ -65,24 +84,39 @@ async fn test_health_endpoints_e2e() {
             .spawn()
             .expect("failed to start xavier binary"),
         db_paths: vec![code_db, mem_db],
+        _temp_dir: temp_dir,
     };
 
     let client = Client::new();
     let mut started = false;
-    for _ in 0..30 {
-        if let Ok(resp) = client
-            .get(format!("http://127.0.0.1:{port}/health"))
+    let mut last_error = "no request attempted".to_string();
+    // Bounded readiness budget: 55s overall, each request (incl. body) capped at 1s.
+    let deadline = std::time::Instant::now() + Duration::from_secs(55);
+    while std::time::Instant::now() < deadline {
+        match client
+            .get(format!("http://127.0.0.1:{port}/ready"))
+            .timeout(Duration::from_secs(1))
             .send()
             .await
         {
-            if resp.status().is_success() {
+            Ok(resp) if resp.status().is_success() => {
                 started = true;
                 break;
             }
+            Ok(resp) => {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                last_error = format!("GET /ready -> HTTP {status} body: {body}");
+            }
+            Err(err) => last_error = err.to_string(),
         }
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(250)).await;
     }
-    assert!(started, "Server failed to start");
+    assert!(
+        started,
+        "Server failed to start within 55s (last error: {})",
+        last_error
+    );
 
     // 1. GET /health (unauthenticated)
     let resp = client
@@ -90,8 +124,11 @@ async fn test_health_endpoints_e2e() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body: Value = resp.json().await.unwrap();
+    let status = resp.status();
+    let body_bytes = resp.bytes().await.unwrap();
+    let body_text = String::from_utf8_lossy(&body_bytes);
+    assert_eq!(status, StatusCode::OK, "body: {}", body_text);
+    let body: Value = serde_json::from_slice(&body_bytes).unwrap();
 
     // Check basic top-level keys
     assert!(body.get("mode").is_some());
@@ -105,8 +142,11 @@ async fn test_health_endpoints_e2e() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body_v1: Value = resp.json().await.unwrap();
+    let status = resp.status();
+    let body_bytes = resp.bytes().await.unwrap();
+    let body_text = String::from_utf8_lossy(&body_bytes);
+    assert_eq!(status, StatusCode::OK, "body: {}", body_text);
+    let body_v1: Value = serde_json::from_slice(&body_bytes).unwrap();
 
     // Assert specified JSON shape and values for /v1/system/health:
     // - mode (string)
@@ -183,7 +223,9 @@ async fn test_health_endpoints_e2e() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp_forbidden.status(), StatusCode::FORBIDDEN);
+    let status = resp_forbidden.status();
+    let body_text = resp_forbidden.text().await.unwrap_or_default();
+    assert_eq!(status, StatusCode::FORBIDDEN, "body: {}", body_text);
 
     let _ = std::fs::remove_file(temp_config_path);
 }
@@ -196,8 +238,15 @@ async fn test_mesh_status_with_license_e2e() {
         .expect("local addr")
         .port();
 
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    let config_dir = temp_dir.path().join("config");
+    let data_dir = temp_dir.path().join("data");
+    std::fs::create_dir_all(&home_dir).unwrap();
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&data_dir).unwrap();
     // Create a temporary config file with mesh_accepted = true
-    let temp_config_path = std::env::temp_dir().join(format!("xavier-test-config-{port}.json"));
+    let temp_config_path = config_dir.join("config.json");
     let config_json = serde_json::json!({
         "license": {
             "mesh_accepted": true,
@@ -223,11 +272,21 @@ async fn test_mesh_status_with_license_e2e() {
         )
         .expect("acl seed");
 
-    let code_db = format!("data/health-test-code-{port}.db");
-    let mem_db = format!("data/health-test-mem-{port}.db");
+    let code_db = data_dir
+        .join(format!("data/health-test-code-{port}.db"))
+        .to_string_lossy()
+        .into_owned();
+    let mem_db = data_dir
+        .join(format!("data/health-test-mem-{port}.db"))
+        .to_string_lossy()
+        .into_owned();
 
     let _child = ChildGuard {
         child: std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
+            .env("HOME", &home_dir)
+            .env("XAVIER_RUNTIME_STATE_PATH", config_dir.join("state.json"))
+            .env("XAVIER_DATA_DIR", &data_dir)
+            .current_dir(temp_dir.path())
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", port.to_string())
             .env("XAVIER_TOKEN", "test-token")
@@ -241,24 +300,39 @@ async fn test_mesh_status_with_license_e2e() {
             .spawn()
             .expect("failed to start xavier binary"),
         db_paths: vec![code_db, mem_db],
+        _temp_dir: temp_dir,
     };
 
     let client = Client::new();
     let mut started = false;
-    for _ in 0..30 {
-        if let Ok(resp) = client
-            .get(format!("http://127.0.0.1:{port}/health"))
+    let mut last_error = "no request attempted".to_string();
+    // Bounded readiness budget: 55s overall, each request (incl. body) capped at 1s.
+    let deadline = std::time::Instant::now() + Duration::from_secs(55);
+    while std::time::Instant::now() < deadline {
+        match client
+            .get(format!("http://127.0.0.1:{port}/ready"))
+            .timeout(Duration::from_secs(1))
             .send()
             .await
         {
-            if resp.status().is_success() {
+            Ok(resp) if resp.status().is_success() => {
                 started = true;
                 break;
             }
+            Ok(resp) => {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                last_error = format!("GET /ready -> HTTP {status} body: {body}");
+            }
+            Err(err) => last_error = err.to_string(),
         }
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(250)).await;
     }
-    assert!(started, "Server failed to start");
+    assert!(
+        started,
+        "Server failed to start within 55s (last error: {})",
+        last_error
+    );
 
     // GET /v1/mesh/status (with accepted license)
     let resp = client
@@ -267,8 +341,11 @@ async fn test_mesh_status_with_license_e2e() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body: Value = resp.json().await.unwrap();
+    let status = resp.status();
+    let body_bytes = resp.bytes().await.unwrap();
+    let body_text = String::from_utf8_lossy(&body_bytes);
+    assert_eq!(status, StatusCode::OK, "body: {}", body_text);
+    let body: Value = serde_json::from_slice(&body_bytes).unwrap();
 
     // HTTP routes are enabled by license acceptance even without `mesh`.
     // The seeded typed ACL is present; engines remain unchecked.

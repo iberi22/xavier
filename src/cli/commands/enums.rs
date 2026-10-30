@@ -32,6 +32,16 @@ pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 /// Each variant maps to a distinct subcommand exposed to the user.
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
+    /// Local snapshot backup of the Xavier data dir
+    Backup {
+        #[command(subcommand)]
+        cmd: BackupCommand,
+    },
+    /// Manage XAVIER projects
+    Projects {
+        #[command(subcommand)]
+        cmd: ProjectsCommand,
+    },
     /// Inspect effective settings and edit runtime overrides
     Config(super::config::ConfigArgs),
     /// Initialize Xavier onboarding and interactive RAG installer wizard
@@ -284,6 +294,11 @@ pub enum Command {
     Users {
         #[command(subcommand)]
         cmd: UsersCommand,
+    },
+    /// Manage multi-tenant configurations
+    Tenants {
+        #[command(subcommand)]
+        cmd: TenantsCommand,
     },
     /// Show API quotas and limits for providers
     Quota,
@@ -611,7 +626,11 @@ pub enum SpaceCommand {
         label: Vec<String>,
     },
     /// List all spaces
-    List,
+    List {
+        /// Output in JSON format
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Unlock a space
     Unlock {
         /// The space ID
@@ -649,8 +668,10 @@ pub enum SpaceCommand {
         /// Display name for the peer
         display: String,
     },
-    /// Lock a space
+    /// Lock a space (Not available yet)
     Lock {
+        #[arg(long)]
+        json: bool,
         /// The space ID
         id: String,
     },
@@ -1173,6 +1194,8 @@ pub enum TasksCommand {
         status: Option<String>,
         #[arg(short = 'q', long)]
         search: Option<String>,
+        #[arg(long, default_value_t = false)]
+        json: bool,
     },
     /// Synchronize tasks with configured backends
     Sync,
@@ -1325,6 +1348,22 @@ pub enum CodeCommand {
         #[arg(long, default_value_t = false)]
         memory: bool,
     },
+    /// Repository management (list, add, remove)
+    Repos {
+        #[command(subcommand)]
+        cmd: CodeReposCommand,
+    },
+}
+
+/// Subcommands for `xavier code repos`
+#[derive(Subcommand, Debug, Clone)]
+pub enum CodeReposCommand {
+    /// List code graph projects
+    List {
+        /// Output result in JSON format
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Provider management subcommands
@@ -1333,7 +1372,10 @@ pub enum ProviderCommand {
     /// Show current provider status
     Status,
     /// List all available providers and strategies
-    List,
+    List {
+        #[arg(long)]
+        json: bool,
+    },
     /// Manually switch to a provider
     Set { name: String },
     /// Set an automatic selection strategy
@@ -1403,6 +1445,24 @@ pub enum OnboardClient {
 pub enum TokenScope {
     Read,
     Write,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum TenantsCommand {
+    /// List all tenants
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a specific tenant
+    Show {
+        /// Tenant ID
+        id: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Local user account administration subcommands (operador con acceso al nodo).
@@ -1847,7 +1907,10 @@ pub enum SecretsCommand {
 #[derive(Subcommand, Debug, Clone)]
 pub enum GovernanceCommand {
     /// List active proposals
-    List,
+    List {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Create a new proposal
     Create {
         /// Proposal title
@@ -1859,6 +1922,8 @@ pub enum GovernanceCommand {
     Status {
         /// Proposal ID
         proposal_id: String,
+        #[arg(long, default_value_t = false)]
+        json: bool,
     },
     /// Cast a vote on a proposal
     Vote {
@@ -2155,6 +2220,27 @@ pub mod memory {
             online: bool,
         },
 
+        /// Check the memory_fts index for corruption. Exits 0 on ok, 1 on corruption, 2 on operational errors.
+        FtsCheck {
+            /// Path to the memory SQLite database (defaults to the resolved data directory)
+            #[arg(long)]
+            db: Option<PathBuf>,
+            /// Output result in JSON format
+            #[arg(long)]
+            json: bool,
+        },
+
+        /// Rebuild the memory_fts index. Exits 0 on ok, 2 on missing DB or operational errors.
+        #[command(name = "fts-rebuild")]
+        FtsRebuild {
+            /// Path to the memory SQLite database (defaults to the resolved data directory)
+            #[arg(long)]
+            db: Option<PathBuf>,
+            /// Output result in JSON format
+            #[arg(long)]
+            json: bool,
+        },
+
         /// Prune low-utility or stale memories
         Prune {
             /// Filter memories by path prefix
@@ -2219,7 +2305,10 @@ pub enum PluginCommand {
     /// Install a plugin
     Install { name: String },
     /// List plugins
-    List,
+    List {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 /// Mini-expert subcommands
@@ -2257,7 +2346,10 @@ pub enum MiniExpertCommand {
         candidate: bool,
     },
     /// List registered mini-experts (all versions)
-    List,
+    List {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Make a version the single active one (rollback = activate an older version)
     Activate { name: String, version: String },
     /// Retire a version (the active one when --version is omitted)
@@ -2368,4 +2460,31 @@ pub enum RecoveryCommand {
     },
     /// Disconnect the local Google Drive credential.
     Disconnect,
+}
+
+/// Local backup operations
+#[derive(Subcommand, Debug, Clone)]
+pub enum BackupCommand {
+    /// Create a local snapshot backup of the Xavier data directory
+    Create {
+        /// Output directory (defaults to <data_dir>/backups/<UTC timestamp YYYYmmddTHHMMSSZ>)
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ProjectsCommand {
+    /// List all projects (workspaces)
+    List {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+        /// Show all projects, including scratch/temp workspaces
+        #[arg(long)]
+        all: bool,
+    },
 }

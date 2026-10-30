@@ -25,14 +25,25 @@ pub async fn run_space_command(cmd: SpaceCommand, base_url: &str, token: &str) -
                 bail!("Failed to create space {}: {}", id, resp.text().await?);
             }
         }
-        SpaceCommand::List => {
+        SpaceCommand::List { json } => {
             let resp = client
                 .get(format!("{}/api/v1/espacio/spaces", base_url))
                 .header("X-Xavier-Token", token)
                 .send()
                 .await?;
             if resp.status().is_success() {
-                println!("{}", resp.text().await?);
+                let text = resp.text().await?;
+                if json {
+                    match serde_json::from_str::<serde_json::Value>(&text) {
+                        Ok(val) => {
+                            let compact = serde_json::to_string(&val)?;
+                            println!("{}", compact);
+                        }
+                        Err(_) => bail!("Failed to parse response as JSON: {}", text),
+                    }
+                } else {
+                    println!("{}", text);
+                }
             } else {
                 bail!("Failed to list spaces: {}", resp.text().await?);
             }
@@ -220,10 +231,22 @@ Retention: {}",
                 bail!("Failed to accept invite: {}", resp.text().await?);
             }
         }
-        SpaceCommand::Lock { id: _ } => {
-            // Documented error: lock is not implemented
-            println!("Error: lock is not implemented on this version.");
-            bail!("not implemented");
+        SpaceCommand::Lock { id: _, json } => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "ok": false,
+                        "error": "unsupported",
+                        "command": "space lock",
+                        "reason": "spaces runtime lock not available in this version"
+                    })
+                );
+                std::process::exit(crate::cli::utils::EXIT_UNSUPPORTED);
+            } else {
+                eprintln!("Error: lock is not implemented on this version.");
+                std::process::exit(crate::cli::utils::EXIT_UNSUPPORTED);
+            }
         }
     }
 
@@ -239,6 +262,7 @@ mod tests {
     fn test_lock_not_implemented() {
         let cmd = SpaceCommand::Lock {
             id: "test".to_string(),
+            json: false,
         };
         assert!(matches!(cmd, SpaceCommand::Lock { .. }));
     }

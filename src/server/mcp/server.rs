@@ -26,12 +26,14 @@ pub(crate) fn root_credential_present() -> bool {
 }
 
 /// Get xavier tools.
-pub fn get_xavier_tools() -> Vec<MCPTool> {
+pub fn get_xavier_tools(has_telecom: bool) -> Vec<MCPTool> {
     let mut tools = super::tools_core::get_xavier_core_tools();
     tools.extend(super::tools_secrets::get_xavier_secrets_tools());
     tools.extend(super::tools_memory::get_xavier_memory_tools());
     tools.extend(super::tools_context::get_xavier_context_tools());
-    tools.extend(super::telecom_tools::register_telecom_mcp_tools());
+    if has_telecom {
+        tools.extend(super::telecom_tools::register_telecom_mcp_tools());
+    }
     tools.extend(super::tools_expert::get_expert_tools());
     #[cfg(feature = "pageindex")]
     tools.extend(super::tools_pageindex::get_pageindex_tools());
@@ -203,4 +205,22 @@ pub fn mcp_text_result(text: impl Into<String>, is_error: bool) -> anyhow::Resul
         structured_content: None,
         is_error: Some(is_error),
     })?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_xavier_tools_telecom_visibility() {
+        let tools_with_telecom = get_xavier_tools(true);
+        assert!(tools_with_telecom
+            .iter()
+            .any(|t| t.name.starts_with("telecom_")));
+
+        let tools_without_telecom = get_xavier_tools(false);
+        assert!(!tools_without_telecom
+            .iter()
+            .any(|t| t.name.starts_with("telecom_")));
+    }
 }

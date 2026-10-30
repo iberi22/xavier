@@ -388,8 +388,8 @@ fn sqlite_integrity(health: &crate::health::HealthResponse) -> Option<bool> {
 }
 
 /// Tool count from the same registry `tools/list` serves.
-fn served_tools_count() -> usize {
-    super::server::get_xavier_tools().len()
+fn served_tools_count(has_telecom: bool) -> usize {
+    super::server::get_xavier_tools(has_telecom).len()
 }
 
 /// Run the blocking health collection off the async workers.
@@ -592,7 +592,7 @@ fn resolve_gitcore_project_path(
 
 /// Handle core tool.
 pub async fn handle_core_tool(
-    _state: AppState,
+    state: AppState,
     workspace: WorkspaceContext,
     claims: Option<&crate::security::auth::Claims>,
     name: &str,
@@ -1052,7 +1052,7 @@ pub async fn handle_core_tool(
         }
         "health_check" => {
             let health = collect_health_blocking().await;
-            let tools_count = served_tools_count();
+            let tools_count = served_tools_count(state.telecom.is_some());
 
             // The store is OK when it actually answers a query; a measured SQLite
             // integrity failure overrides that.
@@ -1260,7 +1260,7 @@ pub async fn handle_core_tool(
             Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
         }
         "get_code_graph" => {
-            let dump_path = _state.code_graph_dump_path.clone().unwrap_or_else(|| {
+            let dump_path = state.code_graph_dump_path.clone().unwrap_or_else(|| {
                 let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
                 crate::codebase::codegraph_paths::codegraph_dump_path_for(&cwd)
             });
@@ -1279,8 +1279,8 @@ pub async fn handle_core_tool(
             }
 
             // Live fallback when dump is missing/stale — avoid false "not found".
-            let code_db = _state.code_db.clone();
-            let code_query = _state.code_query.clone();
+            let code_db = state.code_db.clone();
+            let code_query = state.code_query.clone();
             let (stats, hubs) = match tokio::time::timeout(
                 std::time::Duration::from_secs(20),
                 tokio::task::spawn_blocking(move || {
@@ -1382,7 +1382,7 @@ pub async fn handle_core_tool(
                 return Ok(serde_json::to_value(MCPToolResult::structured(val, false))?);
             }
 
-            let code_query = _state.code_query.clone();
+            let code_query = state.code_query.clone();
             let query_owned = query.to_string();
             let result = match tokio::time::timeout(
                 std::time::Duration::from_secs(20),
@@ -1464,8 +1464,8 @@ pub async fn handle_core_tool(
                 None => None,
             };
 
-            let code_query = _state.code_query.clone();
-            let code_db = _state.code_db.clone();
+            let code_query = state.code_query.clone();
+            let code_db = state.code_db.clone();
             let symbol_owned = symbol.to_string();
             let structural_filter = reverse && edge_type_filter.is_none();
             let (edges, names, found, truncated) = match tokio::time::timeout(
@@ -1615,7 +1615,7 @@ pub async fn handle_core_tool(
                 return Ok(serde_json::to_value(MCPToolResult::structured(val, false))?);
             }
 
-            let code_query = _state.code_query.clone();
+            let code_query = state.code_query.clone();
             let query_owned = query.to_string();
             let routed = match tokio::time::timeout(
                 std::time::Duration::from_secs(20),
@@ -1688,7 +1688,7 @@ pub async fn handle_core_tool(
                 return Ok(serde_json::to_value(MCPToolResult::structured(val, false))?);
             }
 
-            let code_query = _state.code_query.clone();
+            let code_query = state.code_query.clone();
             let fetch_limit = limit.saturating_mul(10).clamp(50, 200);
             let raw_hubs = match tokio::time::timeout(
                 std::time::Duration::from_secs(20),
@@ -2013,13 +2013,13 @@ pub(crate) mod tests {
     #[test]
     fn health_check_tools_count_matches_tools_list() {
         assert_eq!(
-            served_tools_count(),
-            super::super::server::get_xavier_tools().len()
+            served_tools_count(false),
+            super::super::server::get_xavier_tools(false).len()
         );
         let partial = get_xavier_core_tools().len()
             + crate::server::mcp::tools_memory::get_xavier_memory_tools().len()
             + super::super::tools_context::get_xavier_context_tools().len();
-        assert!(served_tools_count() > partial);
+        assert!(served_tools_count(false) > partial);
     }
 
     #[test]
@@ -2787,7 +2787,7 @@ pub(crate) mod tests {
         assert_eq!(output["structuredContent"]["kcvPresent"], true);
         assert_eq!(output["structuredContent"]["cryptPassphraseBackedUp"], true);
 
-        let schema = crate::server::mcp::server::get_xavier_tools()
+        let schema = crate::server::mcp::server::get_xavier_tools(false)
             .into_iter()
             .find(|t| t.name == "recovery_status")
             .expect("recovery_status advertised")

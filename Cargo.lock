@@ -15677,6 +15677,7 @@ dependencies = [
  "dialoguer",
  "dirs 6.0.0",
  "ed25519-dalek 2.2.0",
+ "filetime",
  "flate2",
  "futures-util",
  "git2",
@@ -15786,6 +15787,16 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "xavier-plugin-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "uuid",
 ]
 
 [[package]]

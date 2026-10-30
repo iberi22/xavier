@@ -1,0 +1,5 @@
+{
+  "visibility": "public",
+  "warn_only": ["docs/plans/**"],
+  "_comment": "docs/plans/ is public by owner decision (2026-10-27): Jules and other agents need the execution plans as context. warn_only downgrades the internal-plans path block to a warning; secret rules still fail the commit."
+}

@@ -8,6 +8,11 @@
 
 xavier::isolate_test_process!();
 
+#[path = "memory_fts_check_e2e.rs"]
+mod memory_fts_check_e2e;
+#[path = "memory_fts_rebuild_e2e.rs"]
+mod memory_fts_rebuild_e2e;
+
 #[path = "espacio_isolation_e2e.rs"]
 mod espacio_isolation_e2e;
 
@@ -41,6 +46,9 @@ mod headless_api_test;
 #[path = "headless_chat_test.rs"]
 mod headless_chat_test;
 
+#[path = "headless_unsupported_contract_e2e.rs"]
+mod headless_unsupported_contract_e2e;
+
 #[path = "health_test.rs"]
 mod health_test;
 
@@ -69,3 +77,6 @@ pub static SUITE_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_ne
 
 #[path = "cli_add_path_e2e.rs"]
 mod cli_add_path_e2e;
+
+#[path = "skill_dispatch_ephemeral_e2e.rs"]
+mod skill_dispatch_ephemeral_e2e;
