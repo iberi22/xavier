@@ -68,11 +68,13 @@ fn test_find_edges_to_row_errors() {
 
     let raw_conn = rusqlite::Connection::open(&db_path).unwrap();
     // Insert malformed column values to trigger row decoding error
-    raw_conn.execute(
-        "INSERT INTO edges (from_symbol, to_symbol, edge_type, file_path, line, confidence)
+    raw_conn
+        .execute(
+            "INSERT INTO edges (from_symbol, to_symbol, edge_type, file_path, line, confidence)
          VALUES ('bad_src', 'dst_sym', 'Calls', 'src/test.rs', 'not_an_int', 1.0)",
-        []
-    ).unwrap();
+            [],
+        )
+        .unwrap();
 
     let result = db.find_edges_to("dst_sym", None, 10);
     assert!(result.is_err());
