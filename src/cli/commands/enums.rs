@@ -120,6 +120,8 @@ pub enum Command {
         level: Option<String>,
         #[arg(long)]
         relation: Option<String>,
+        #[arg(long)]
+        path: Option<String>,
     },
     /// Recall memories with score-based display
     Recall {

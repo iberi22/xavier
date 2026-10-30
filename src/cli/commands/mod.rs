@@ -163,6 +163,7 @@ impl Cli {
                 cluster,
                 level,
                 relation,
+                path,
             } => {
                 println!("Adding memory...");
                 add_memory_hierarchical(
@@ -172,6 +173,7 @@ impl Cli {
                     cluster.as_deref(),
                     level.as_deref(),
                     relation.as_deref(),
+                    path.as_deref(),
                 )
                 .await
             }

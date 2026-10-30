@@ -66,3 +66,6 @@ mod skill_usage_telemetry_e2e;
 mod skill_registry_unify_parity_e2e;
 
 pub static SUITE_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[path = "cli_add_path_e2e.rs"]
+mod cli_add_path_e2e;

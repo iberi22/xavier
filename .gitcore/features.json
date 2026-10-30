@@ -3757,7 +3757,9 @@
         "declared_project_id_wins_over_directory_name",
         "codegraph_repo_isolation_a_b_evict_reopen",
         "truncated_and_malformed_containers_are_rejected",
-        "empty_file_roundtrips"
+        "empty_file_roundtrips",
+        "tests/cli_add_path_e2e.rs::test_add_path_valid",
+        "tests/cli_add_path_e2e.rs::test_add_path_invalid"
       ],
       "req_ids": [],
       "user_stories": []
