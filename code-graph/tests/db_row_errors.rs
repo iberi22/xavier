@@ -30,11 +30,13 @@ fn test_find_by_file_row_errors() {
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].name, "test_sym");
 
-    // Open raw connection and drop table
     let raw_conn = rusqlite::Connection::open(&db_path).unwrap();
-    // To trigger a row error instead of a prepare error, maybe we alter the table to have missing columns?
-    // Wait, the instruction explicitly says: "DROP TABLE symbols"
-    raw_conn.execute("DROP TABLE symbols", []).unwrap();
+    // Insert malformed column values to trigger row decoding error
+    raw_conn.execute(
+        "INSERT INTO symbols (name, kind, lang, file_path, start_line, end_line, start_col, end_col)
+         VALUES ('bad_sym', 'Function', 'Rust', 'src/test.rs', 'not_an_int', 'not_an_int', 0, 0)",
+        []
+    ).unwrap();
 
     // Assert find_by_file returns Err
     let result = db.find_by_file("src/test.rs");
@@ -65,8 +67,12 @@ fn test_find_edges_to_row_errors() {
     assert_eq!(found[0].from_symbol, "src_sym");
 
     let raw_conn = rusqlite::Connection::open(&db_path).unwrap();
-    // The instruction says: "a second test does the same with DROP TABLE edges and find_edges_to"
-    raw_conn.execute("DROP TABLE edges", []).unwrap();
+    // Insert malformed column values to trigger row decoding error
+    raw_conn.execute(
+        "INSERT INTO edges (from_symbol, to_symbol, edge_type, file_path, line, confidence)
+         VALUES ('bad_src', 'dst_sym', 'Calls', 'src/test.rs', 'not_an_int', 1.0)",
+        []
+    ).unwrap();
 
     let result = db.find_edges_to("dst_sym", None, 10);
     assert!(result.is_err());
