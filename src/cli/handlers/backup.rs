@@ -5,7 +5,9 @@ use chrono::Utc;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::PathBuf;
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 pub async fn handle_backup_command(cmd: BackupCommand) -> Result<()> {
@@ -36,51 +38,20 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
         }
     }
 
-    if dest_dir.exists() {
-        // An unreadable destination must not be treated as empty: we would
-        // overwrite existing backup files and the manifest without knowing.
-        let is_empty = match fs::read_dir(&dest_dir) {
-            Ok(mut d) => d.next().is_none(),
-            Err(e) => {
-                if json_output {
-                    println!(
-                        "{}",
-                        json!({"ok": false, "error": format!("cannot inspect destination directory: {}", e)})
-                    );
-                    std::process::exit(1);
-                } else {
-                    anyhow::bail!(
-                        "Cannot inspect destination directory {}: {}",
-                        dest_dir.display(),
-                        e
-                    );
-                }
-            }
-        };
-        if !is_empty {
+    let dest_dir = match reserve_destination(&dest_dir, out_explicit) {
+        Ok(path) => path,
+        Err(e) => {
             if json_output {
                 println!(
                     "{}",
-                    json!({"ok": false, "error": "destination directory is not empty"})
+                    json!({"ok": false, "error": format!("cannot create output dir: {}", e)})
                 );
                 std::process::exit(1);
             } else {
-                anyhow::bail!("Destination directory is not empty");
+                anyhow::bail!("Cannot create output dir: {}", e);
             }
         }
-    }
-
-    if let Err(e) = fs::create_dir_all(&dest_dir) {
-        if json_output {
-            println!(
-                "{}",
-                json!({"ok": false, "error": format!("cannot create output dir: {}", e)})
-            );
-            std::process::exit(1);
-        } else {
-            anyhow::bail!("Cannot create output dir: {}", e);
-        }
-    }
+    };
 
     let data_dir_canon = match fs::canonicalize(&data_dir) {
         Ok(c) => c,
@@ -235,7 +206,19 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
                     rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
                         | rusqlite::OpenFlags::SQLITE_OPEN_URI,
                 )?;
+                // Reserve a private file before SQLite opens it. Apply stricter
+                // source permissions after opening so read-only sources work too.
+                let mut options = fs::OpenOptions::new();
+                options.write(true).create_new(true);
+                #[cfg(unix)]
+                options.mode(0o600);
+                options.open(&dest_path)?;
                 let mut dest_conn = rusqlite::Connection::open(&dest_path)?;
+                #[cfg(unix)]
+                fs::set_permissions(
+                    &dest_path,
+                    fs::Permissions::from_mode(metadata.permissions().mode() & 0o600),
+                )?;
                 let backup = rusqlite::backup::Backup::new(&src_conn, &mut dest_conn)?;
                 let mut retries = 0;
                 let mut success = false;
@@ -262,6 +245,13 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
                 if !success {
                     anyhow::bail!("Database is locked or busy");
                 }
+                drop(backup);
+                drop(dest_conn);
+                #[cfg(unix)]
+                fs::set_permissions(
+                    &dest_path,
+                    fs::Permissions::from_mode(metadata.permissions().mode() & 0o600),
+                )?;
                 Ok(())
             })();
             if let Err(e) = res {
@@ -276,7 +266,17 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
                 }
             }
         } else {
-            if let Err(e) = fs::copy(path, &dest_path) {
+            let res: std::io::Result<()> = (|| {
+                let mut source = fs::File::open(path)?;
+                let mut options = fs::OpenOptions::new();
+                options.write(true).create_new(true);
+                #[cfg(unix)]
+                options.mode(metadata.permissions().mode() & 0o600);
+                let mut destination = options.open(&dest_path)?;
+                std::io::copy(&mut source, &mut destination)?;
+                Ok(())
+            })();
+            if let Err(e) = res {
                 if json_output {
                     println!(
                         "{}",
@@ -374,4 +374,64 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
     }
 
     Ok(())
+}
+
+// Only the invocation that creates the leaf directory may write into it.
+fn reserve_destination(base: &Path, explicit: bool) -> std::io::Result<PathBuf> {
+    if let Some(parent) = base.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+    let mut candidate = base.to_path_buf();
+    let mut suffix = 0u64;
+    loop {
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        builder.mode(0o700);
+        match builder.create(&candidate) {
+            Ok(()) => return Ok(candidate),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                if explicit {
+                    return Err(std::io::Error::new(
+                        e.kind(),
+                        "Destination directory already exists (not empty or not created by this invocation)",
+                    ));
+                }
+                suffix += 1;
+                let mut name = base.as_os_str().to_os_string();
+                name.push(format!("-{suffix}"));
+                candidate = PathBuf::from(name);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_destinations_are_exclusive() {
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path().join("backups").join("20261030T120000Z");
+        let first = reserve_destination(&base, false).unwrap();
+        fs::write(first.join("sentinel"), "original").unwrap();
+        let second = reserve_destination(&base, false).unwrap();
+        assert_ne!(first, second);
+        assert!(second.is_dir());
+        assert_eq!(
+            fs::read_to_string(first.join("sentinel")).unwrap(),
+            "original"
+        );
+    }
+
+    #[test]
+    fn explicit_destination_rejects_existing_empty_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path().join("output");
+        reserve_destination(&base, true).unwrap();
+        let error = reserve_destination(&base, true).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read_dir(base).unwrap().count(), 0);
+    }
 }

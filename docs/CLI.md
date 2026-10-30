@@ -1301,7 +1301,7 @@ xavier users totp-enroll --email admin@example.com
 
 Creates a local snapshot of the Xavier data directory. 
 
-* The backup process vacuums all `*.db` and `*.sqlite3` SQLite files to the output directory to ensure consistent backups.
+* The backup process uses SQLite's backup API to snapshot all `*.db` and `*.sqlite3` SQLite files to the output directory to ensure consistent backups.
 * Regular files are copied as-is. 
 * A `manifest.json` file is written out that records file hashes, sizes, the creation time and Xavier version. 
-* If `--out` is not specified, it defaults to `<data_dir>/backups/<UTC timestamp>`.
+* If `--out` is not specified, it defaults to `<data_dir>/backups/<UTC timestamp>` (with a numeric suffix if already taken). An explicit `--out` must not already exist.

@@ -513,3 +513,74 @@ fn test_backup_create_directory_sidecar_regression() {
         "journal content"
     );
 }
+
+#[cfg(unix)]
+#[test]
+#[serial_test::serial]
+fn test_backup_create_restrictive_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = TempDir::new().unwrap();
+    let data_dir = tmp.path().join("data");
+    fs::create_dir(&data_dir).unwrap();
+    let runtime_state_path = tmp.path().join("runtime.json");
+    fs::write(&runtime_state_path, "{}").unwrap();
+
+    for (name, mode) in [
+        ("private.db", 0o600),
+        ("readonly.sqlite3", 0o400),
+        ("public.db", 0o644),
+    ] {
+        let path = data_dir.join(name);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute("CREATE TABLE secrets (value TEXT)", [])
+            .unwrap();
+        conn.execute("INSERT INTO secrets VALUES ('private')", [])
+            .unwrap();
+        drop(conn);
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+    }
+    let sidecar = data_dir.join("orphan.db-wal");
+    fs::write(&sidecar, "private sidecar").unwrap();
+    fs::set_permissions(sidecar, fs::Permissions::from_mode(0o400)).unwrap();
+
+    let out_dir = tmp.path().join("output");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config"))
+        .env("XAVIER_RUNTIME_STATE_PATH", &runtime_state_path)
+        .env("XAVIER_DATA_DIR", &data_dir)
+        .args(["backup", "create", "--json", "--out"])
+        .arg(&out_dir)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    assert_eq!(
+        fs::metadata(&out_dir).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    for (name, mode) in [
+        ("private.db", 0o600),
+        ("readonly.sqlite3", 0o400),
+        ("public.db", 0o600),
+        ("orphan.db-wal", 0o400),
+    ] {
+        let path = out_dir.join(name);
+        let actual = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(actual, mode, "permissions for {name}");
+        assert_eq!(actual & 0o077, 0, "group/other permissions for {name}");
+        if name.ends_with(".db") || name.ends_with(".sqlite3") {
+            let conn = rusqlite::Connection::open_with_flags(
+                path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .unwrap();
+            let value: String = conn
+                .query_row("SELECT value FROM secrets", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(value, "private");
+        }
+    }
+}
