@@ -362,13 +362,12 @@ async fn handle_code_repos_command(cmd: CodeReposCommand) -> Result<()> {
     match cmd {
         CodeReposCommand::List { json } => {
             use rusqlite::{Connection, OpenFlags};
-            use xavier::codebase::repo_identity::{all_code_roots, code_graph_db_path_for_root};
+            use xavier::codebase::repo_identity::all_code_roots;
 
             let workspace =
                 std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             let mut roots = all_code_roots(&workspace);
 
-            let resolved_workspace = roots.first().cloned().unwrap_or_else(|| workspace.clone());
             // Replicate extra_roots_json logic inline to separate source: env vs source: index
             let mut extra_roots = Vec::new();
             if !roots.is_empty() {
@@ -384,24 +383,11 @@ async fn handle_code_repos_command(cmd: CodeReposCommand) -> Result<()> {
             }
 
             // Same resolution as `code sync`/`code index`: the canonical helper
-            // (XAVIER_CODE_GRAPH_DB_PATH override, else XAVIER_DATA_DIR/code_graph.db).
-            // Fall back to the legacy per-repo `<repo root>/.xavier/code_graph.db`
-            // (resolved from the repo root, not the raw cwd) only when the canonical
-            // DB does not exist.
-            let canonical_db = xavier::codebase::codegraph_paths::code_graph_db_path_for(
+            // (XAVIER_CODE_GRAPH_DB_PATH, which settings always export, else
+            // XAVIER_DATA_DIR/code_graph.db). No fallback to another index.
+            let db_path = xavier::codebase::codegraph_paths::code_graph_db_path_for(
                 std::path::Path::new("."),
             );
-            let repo_local_db = code_graph_db_path_for_root(&resolved_workspace);
-            let explicit_override = std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
-                .map(|v| !v.trim().is_empty())
-                .unwrap_or(false);
-            // An explicit override is the operator's choice: never fall back from it.
-            let db_path = if !explicit_override && !canonical_db.exists() && repo_local_db.exists()
-            {
-                repo_local_db
-            } else {
-                canonical_db
-            };
             let mut repos = Vec::new();
 
             if db_path.exists() {

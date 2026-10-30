@@ -96,14 +96,14 @@ fn test_code_repos_list_cli_e2e() {
     assert!(stdout.contains("extra_root"));
 
     // Ensure it didn't accidentally create the DB
-    let db_path = workspace.join(".xavier").join("code_graph.db");
+    // Canonical location used by `code sync` / `code index`.
+    let db_path = data.join("code_graph.db");
     assert!(
         !db_path.exists(),
         "Read-only command should not create the DB"
     );
 
     // Populate a DB
-    std::fs::create_dir_all(workspace.join(".xavier")).unwrap();
     let db = CodeGraphDB::create_new(&db_path).unwrap();
     db.register_project("/app/service-a", "Service A").unwrap();
     db.register_project("/app/service-b", "Service B").unwrap();
@@ -174,49 +174,39 @@ fn test_code_repos_list_cli_e2e() {
     db.checkpoint_wal().unwrap();
     drop(db); // Drop the DB so we can corrupt the file
 
-    // 3b. A DB under the configured data dir (what `code sync` writes) wins over
-    // the legacy repo-local one.
-    let canonical = CodeGraphDB::create_new(&data.join("code_graph.db")).unwrap();
-    canonical
-        .register_project("/app/canonical-svc", "Canonical Svc")
+    // 3b. A legacy repo-local DB is never consulted instead of the canonical one.
+    let legacy = workspace.join(".xavier").join("code_graph.db");
+    std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    let ldb = CodeGraphDB::create_new(&legacy).unwrap();
+    ldb.register_project("/app/legacy-svc", "Legacy Svc")
         .unwrap();
-    canonical.checkpoint_wal().unwrap();
-    drop(canonical);
-    let mut cmd_canon = Command::new(env!("CARGO_BIN_EXE_xavier"));
-    cmd_canon
+    ldb.checkpoint_wal().unwrap();
+    drop(ldb);
+    let mut cmd_legacy = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd_legacy
         .current_dir(&src_dir)
         .args(["code", "repos", "list", "--json"]);
-    cmd_canon.env("HOME", &home);
-    cmd_canon.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
-    cmd_canon.env("XAVIER_RUNTIME_STATE_PATH", &state);
-    cmd_canon.env("XAVIER_DATA_DIR", &data);
-    cmd_canon.env_remove("XAVIER_CODE_GRAPH_DB_PATH");
-    cmd_canon.env("XAVIER_CODE_EXTRA_ROOTS", &extra_root);
-    let out_canon = cmd_canon.output().unwrap();
+    cmd_legacy.env("HOME", &home);
+    cmd_legacy.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
+    cmd_legacy.env("XAVIER_RUNTIME_STATE_PATH", &state);
+    cmd_legacy.env("XAVIER_DATA_DIR", &data);
+    cmd_legacy.env_remove("XAVIER_CODE_GRAPH_DB_PATH");
+    cmd_legacy.env("XAVIER_CODE_EXTRA_ROOTS", &extra_root);
+    let out_legacy = cmd_legacy.output().unwrap();
     assert!(
-        out_canon.status.success(),
+        out_legacy.status.success(),
         "Command failed: {:?}",
-        out_canon
+        out_legacy
     );
-    let jc: serde_json::Value = serde_json::from_slice(&out_canon.stdout).unwrap();
-    let idx: Vec<&str> = jc["repos"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|r| r["source"] == "index")
-        .map(|r| r["root"].as_str().unwrap())
-        .collect();
-    assert_eq!(
-        idx,
-        vec!["/app/canonical-svc"],
-        "data-dir DB must be used: {jc}"
+    let jl: serde_json::Value = serde_json::from_slice(&out_legacy.stdout).unwrap();
+    assert_eq!(jl["count"].as_u64(), Some(3), "canonical DB only: {jl}");
+    assert!(
+        !jl.to_string().contains("legacy-svc"),
+        "legacy repo-local DB must not be read: {jl}"
     );
-    std::fs::remove_file(data.join("code_graph.db")).unwrap();
-    let _ = std::fs::remove_file(data.join("code_graph.db-wal"));
-    let _ = std::fs::remove_file(data.join("code_graph.db-shm"));
 
     // 3c. An explicit XAVIER_CODE_GRAPH_DB_PATH that does not exist is honored:
-    // no fallback to the (still present) repo-local DB.
+    // no fallback to the (still present) data-dir or repo-local DB.
     let missing_override = tmp.path().join("nope").join("code_graph.db");
     let mut cmd_ovr = Command::new(env!("CARGO_BIN_EXE_xavier"));
     cmd_ovr
