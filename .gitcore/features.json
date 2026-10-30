@@ -3315,7 +3315,9 @@
         "stats_reports_semantic_layer_state",
         "tests/cli_health_stats_parity.rs::degraded_health_prints_server_reason_and_version",
         "tests/cli_health_stats_parity.rs::degraded_health_exits_zero_per_documented_contract",
-        "tests/cli_health_stats_parity.rs::unhealthy_health_exits_nonzero"
+        "tests/cli_health_stats_parity.rs::unhealthy_health_exits_nonzero",
+        "tests/projects_list_cli_e2e.rs::projects_list_canonical_test",
+        "tests/projects_list_cli_e2e.rs::projects_list_canonical_test"
       ],
       "req_ids": [
         "REQ-072"
