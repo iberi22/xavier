@@ -121,5 +121,4 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
             }
         }
     }
-
 }
