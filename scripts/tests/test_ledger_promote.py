@@ -987,5 +987,60 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertEqual(4, meta.get('total_features', 0))
         self.assertEqual(1, meta.get('features_complete', 0))
 
+
+
+class TestLedgerPromoteEvidence(unittest.TestCase):
+    def test_collect_workflow_dispatch_on_main(self):
+        import importlib.util
+        from unittest.mock import patch, MagicMock
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        self.evidence = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.evidence)
+
+        document = {'features': {}}
+        repo = 'test/repo'
+        sha = 'abc'
+
+        with patch.object(self.evidence, 'gh') as mock_gh:
+            def side_effect(endpoint, binary=False):
+                if 'runs?' in endpoint:
+                    if 'ci.yml' in endpoint:
+                        return {'workflow_runs': [{'head_sha': sha, 'head_branch': 'main', 'event': 'workflow_dispatch', 'run_number': 1, 'run_attempt': 1, 'status': 'completed', 'id': 123, 'html_url': '', 'updated_at': ''}]}
+                    return {'workflow_runs': []}
+                if '/jobs' in endpoint:
+                    return {'jobs': [{'name': 'Full Ledger Verification', 'conclusion': 'success'}]}
+                if '/artifacts' in endpoint:
+                    return {'artifacts': []}
+                return {}
+
+            mock_gh.side_effect = side_effect
+            res = self.evidence.collect(sha, document, repo)
+            self.assertEqual(res['ledger_sha'], sha)
+
+        with patch.object(self.evidence, 'gh') as mock_gh:
+            def side_effect(endpoint, binary=False):
+                if 'runs?' in endpoint:
+                    if 'ci.yml' in endpoint:
+                        return {'workflow_runs': [{'head_sha': sha, 'head_branch': 'other', 'event': 'workflow_dispatch', 'run_number': 1, 'run_attempt': 1, 'status': 'completed', 'id': 123, 'html_url': '', 'updated_at': ''}]}
+                    return {'workflow_runs': []}
+                return {}
+
+            mock_gh.side_effect = side_effect
+            res = self.evidence.collect(sha, document, repo)
+            self.assertNotIn('ledger_sha', res)
+
+        with patch.object(self.evidence, 'gh') as mock_gh:
+            def side_effect(endpoint, binary=False):
+                if 'runs?' in endpoint:
+                    if 'ci.yml' in endpoint:
+                        return {'workflow_runs': [{'head_sha': sha, 'head_branch': 'main', 'event': 'pull_request', 'run_number': 1, 'run_attempt': 1, 'status': 'completed', 'id': 123, 'html_url': '', 'updated_at': ''}]}
+                    return {'workflow_runs': []}
+                return {}
+
+            mock_gh.side_effect = side_effect
+            res = self.evidence.collect(sha, document, repo)
+            self.assertNotIn('ledger_sha', res)
+
+
 if __name__ == '__main__':
     unittest.main()

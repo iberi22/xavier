@@ -171,7 +171,8 @@
       "tests": [
         "test_get_code_graph_success",
         "test_mcp_compact_outputs",
-        "tests/mcp_telecom_tools_visibility_e2e.rs::default_server_hides_telecom_tools"
+        "tests/mcp_telecom_tools_visibility_e2e.rs::default_server_hides_telecom_tools",
+        "tests/mcp_surface_split_doc.rs::mcp_surface_split_drift_test"
       ],
       "req_ids": [
         "REQ-005",
@@ -3327,7 +3328,8 @@
         "stats_reports_semantic_layer_state",
         "tests/cli_health_stats_parity.rs::degraded_health_prints_server_reason_and_version",
         "tests/cli_health_stats_parity.rs::degraded_health_exits_zero_per_documented_contract",
-        "tests/cli_health_stats_parity.rs::unhealthy_health_exits_nonzero"
+        "tests/cli_health_stats_parity.rs::unhealthy_health_exits_nonzero",
+        "tests/memory_stats_route_e2e.rs::memory_stats_routes_match_cli_mcp"
       ],
       "req_ids": [
         "REQ-072"
@@ -3405,7 +3407,12 @@
         "test_observability_degraded_status_logic",
         "test_observability_embedding_coverage_anomaly",
         "test_observability_version_match",
-        "test_observability_mcp_stats_surface"
+        "test_observability_mcp_stats_surface",
+        "tests/observability_contract.rs::test_observability_embedding_consistency",
+        "tests/observability_contract.rs::test_observability_degraded_status_logic",
+        "tests/observability_contract.rs::test_observability_embedding_coverage_anomaly",
+        "tests/observability_contract.rs::test_observability_version_match",
+        "tests/observability_contract.rs::test_observability_mcp_stats_surface"
       ],
       "req_ids": [
         "REQ-075"
@@ -4075,7 +4082,10 @@
         "packaging_contract::installer_rejects_tampered_archive",
         "packaging_contract::installer_user_mode_installs_binary_and_private_token",
         "tests/headless_packaging_contract_e2e.rs::installer_rejects_tampered_archive",
-        "tests/headless_packaging_contract_e2e.rs::installer_user_mode_installs_binary_and_private_token"
+        "tests/headless_packaging_contract_e2e.rs::installer_user_mode_installs_binary_and_private_token",
+        "tests/headless_unsupported_contract_e2e.rs::headless_unsupported_tool_returns_contract",
+        "tests/headless_unsupported_contract_e2e.rs::headless_supported_tool_does_not_return_501",
+        "tests/headless_unsupported_contract_e2e.rs::headless_agent_endpoints_return_contract"
       ],
       "user_stories": []
     },
