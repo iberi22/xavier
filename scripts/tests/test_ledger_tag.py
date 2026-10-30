@@ -77,7 +77,7 @@ class TestLedgerTag(unittest.TestCase):
                 "f2": {"status": "beta"}
             }
         })
-        runner = FakeRunner(existing_tags=['ledger-stable-1'])
+        runner = FakeRunner(existing_tags=['ledger-stable-1', 'ledger-milestone-50'])
         self.run_tagger(runner)
         self.assertEqual(len(runner.created_tags), 0)
 

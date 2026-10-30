@@ -16,7 +16,7 @@ class TestLedgerTagWorkflowDecision(unittest.TestCase):
         # mock git log
         git() {
             if [[ "$1" == "log" ]]; then echo "$AUTHOR";
-            elif [[ "$1" == "show" ]]; then echo -e "$FILES_TOUCHED";
+            elif [[ "$1" == "diff" ]]; then echo -e "$FILES_TOUCHED";
             elif [[ "$1" == "rev-parse" ]]; then echo "abc";
             fi
         }
@@ -37,7 +37,7 @@ class TestLedgerTagWorkflowDecision(unittest.TestCase):
                 NON_LEDGER=1
                 break
               fi
-            done <<< "$(git show)"
+            done <<< "$(git diff HEAD^ HEAD)"
 
             if [[ $NON_LEDGER -eq 0 ]]; then
               SHA=$(git rev-parse HEAD)

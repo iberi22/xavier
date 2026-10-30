@@ -827,8 +827,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertEqual(4, meta.get('total_features', 0))
         self.assertEqual(1, meta.get('features_complete', 0))
 
-if __name__ == '__main__':
-    unittest.main()
+
 
 class TestLedgerPromoteEvidence(unittest.TestCase):
     def test_collect_workflow_dispatch_on_main(self):
@@ -881,3 +880,7 @@ class TestLedgerPromoteEvidence(unittest.TestCase):
             mock_gh.side_effect = side_effect
             res = self.evidence.collect(sha, document, repo)
             self.assertNotIn('ledger_sha', res)
+
+
+if __name__ == '__main__':
+    unittest.main()

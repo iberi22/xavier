@@ -111,7 +111,7 @@ def run(args, runner=None):
         tags_to_create.append((new_tag, msg))
 
     milestone = math.floor(pct / 10) * 10
-    if milestone > highest_milestone and stable_count > highest_stable:
+    if milestone > highest_milestone and pct >= 10:
         new_tag = f"ledger-milestone-{milestone}"
         check_tag_name(new_tag)
         tags_to_create.append((new_tag, f"Crossed {milestone}% stable"))

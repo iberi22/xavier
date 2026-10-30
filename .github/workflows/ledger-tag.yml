@@ -17,13 +17,12 @@ concurrency:
   group: ledger-tag
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  actions: write
-
 jobs:
   tag_milestones:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
     steps:
       - name: Checkout main
         uses: actions/checkout@v7
@@ -33,14 +32,17 @@ jobs:
           persist-credentials: true
 
       - name: Run tag script
-        run: python3 scripts/ledger-tag.py --features .gitcore/features.json --sha $(git rev-parse HEAD)
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          python3 scripts/ledger-tag.py --features .gitcore/features.json --sha $(git rev-parse HEAD)
 
       - name: Dispatch CI on main for bot commits
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           AUTHOR=$(git log -1 --format='%an')
-          FILES_TOUCHED=$(git show --name-only --format="" HEAD | grep -v '^$' || true)
+          FILES_TOUCHED=$(git diff --name-only HEAD^ HEAD | grep -v '^$' || true)
           # Check if authored by github-actions[bot]
           if [[ "$AUTHOR" == *"github-actions[bot]"* ]]; then
             # Check if only ledger files were touched
