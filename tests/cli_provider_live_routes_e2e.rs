@@ -30,13 +30,6 @@ async fn test_provider_live_routes() {
     // Mock only the /v1/providers and /v1/providers/switch routes per requirements
     let log_middleware = request_log.clone();
     let router = Router::new()
-        .layer(axum::middleware::from_fn(move |req: axum::extract::Request, next: axum::middleware::Next| {
-            let log = log_middleware.clone();
-            async move {
-                *log.all_requests.lock().unwrap() += 1;
-                next.run(req).await
-            }
-        }))
         .route(
             "/v1/providers",
             get(|| async {
@@ -67,8 +60,16 @@ async fn test_provider_live_routes() {
                 // Return 404 for unhandled paths but test should assert we never reach here for 'auto'
                 axum::http::StatusCode::NOT_FOUND
             })
-        );
-
+        )
+        // Layer last so it wraps every route and the fallback (axum only
+        // layers routes that already exist when `.layer` is called).
+        .layer(axum::middleware::from_fn(move |req: axum::extract::Request, next: axum::middleware::Next| {
+            let log = log_middleware.clone();
+            async move {
+                *log.all_requests.lock().unwrap() += 1;
+                next.run(req).await
+            }
+        }));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -143,6 +144,12 @@ async fn test_provider_live_routes() {
         "mock-provider"
     );
 
+    let requests_after_list = *request_log.all_requests.lock().unwrap();
+    assert!(
+        requests_after_list >= 2,
+        "provider list (plain + --json) must hit the mock, saw {requests_after_list} requests"
+    );
+
     // 3. Set provider
     let output_set = Command::new(xavier_bin)
         .envs(&envs)
@@ -165,8 +172,11 @@ async fn test_provider_live_routes() {
             "test-openai"
         );
     }
-
-
+    let requests_after_set = *request_log.all_requests.lock().unwrap();
+    assert!(
+        requests_after_set > requests_after_list,
+        "provider set must hit the mock"
+    );
 
     // 3b. Set provider errors
     // HTTP 401
