@@ -45,10 +45,17 @@ async fn headless_unsupported_tool_returns_contract() {
     assert_eq!(body["code"], 501);
     assert_eq!(body["reason"], "unsupported_in_headless");
     assert!(body["supported_tools"].is_array());
-    assert!(body["supported_tools"]
+    let supported_tools: Vec<String> = body["supported_tools"]
         .as_array()
         .unwrap()
-        .contains(&serde_json::json!("code_scan")));
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    let expected_tools: Vec<String> = xavier::server::headless::routes::SUPPORTED_HEADLESS_TOOLS
+        .iter()
+        .map(|&s| s.to_string())
+        .collect();
+    assert_eq!(supported_tools, expected_tools);
 }
 
 #[tokio::test]
@@ -56,13 +63,19 @@ async fn headless_unsupported_tool_returns_contract() {
 async fn headless_supported_tool_does_not_return_501() {
     let _guard = crate::SUITE_ENV_LOCK.lock().await;
     let temp = tempfile::tempdir().expect("tempdir");
+
+    let db_path = temp.path().join("test_code_graph.db");
+
     let _env_dirs = RestoreEnv::set(&[
         ("HOME", temp.path()),
         ("XAVIER_DATA_DIR", temp.path()),
         ("XAVIER_CONFIG_PATH", temp.path()),
         ("XAVIER_RUNTIME_STATE_PATH", temp.path()),
     ]);
-    let _env_flags = RestoreEnv::set_str(&[("XAVIER_HEADLESS", "true")]);
+    let _env_flags = RestoreEnv::set_str(&[
+        ("XAVIER_HEADLESS", "true"),
+        ("XAVIER_CODE_GRAPH_DB_PATH", db_path.to_str().unwrap()),
+    ]);
 
     let t = test_app().await;
 
@@ -80,8 +93,7 @@ async fn headless_supported_tool_does_not_return_501() {
     let resp = tower::ServiceExt::oneshot(t.app.clone(), req)
         .await
         .unwrap();
-    // It might return OK, 400, or 500 depending on DB state, but NOT 501 Not Implemented.
-    assert_ne!(resp.status(), StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
 #[tokio::test]

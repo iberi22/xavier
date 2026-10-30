@@ -72,6 +72,16 @@ In headless mode, the server supports a limited set of tools and routes.
 - `code_stats`
 - `code_context`
 
+Unsupported tools return a JSON 501 contract like:
+```json
+{
+  "error": "Tool 'xyz' is not implemented in headless mode",
+  "code": 501,
+  "reason": "unsupported_in_headless",
+  "supported_tools": ["code_scan", "code_find", "code_stats", "code_context"]
+}
+```
+
 **Unsupported Routes:**
 Agent management routes are not supported in headless mode. These include:
 - `GET /v1/agents`

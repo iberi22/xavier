@@ -134,9 +134,15 @@ async fn test_headless_api_e2e() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["result"]["tool"], "memory_search");
+    assert_eq!(body["code"], 501);
+    assert_eq!(body["reason"], "unsupported_in_headless");
+    assert!(body["supported_tools"].is_array());
+    assert!(body["supported_tools"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("code_scan")));
 
     // 8. GET /v1/providers
     let v1_url = format!("http://127.0.0.1:{port}/v1");

@@ -614,14 +614,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_execute_tool_other_returns_200() {
+    async fn test_execute_tool_other_returns_501() {
         let req = ToolExecuteRequest {
             args: serde_json::json!({ "query": "test" }),
         };
         let response = execute_tool("memory_search".to_string(), req)
             .await
             .into_response();
-        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["code"], 501);
+        assert_eq!(body["reason"], "unsupported_in_headless");
+        assert!(body["supported_tools"].is_array());
+        assert!(body["supported_tools"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("code_scan")));
     }
 
     #[tokio::test(flavor = "current_thread")]
