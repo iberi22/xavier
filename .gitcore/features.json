@@ -1462,7 +1462,12 @@
         "maloca::support_flow::tests::close_only_from_resolved",
         "maloca::support_flow::tests::backward_and_same_state_moves_are_rejected",
         "maloca::support_flow::tests::closed_is_terminal",
-        "maloca::support_flow::tests::error_carries_from_and_to"
+        "maloca::support_flow::tests::error_carries_from_and_to",
+        "tests/maloca_governance_rules_e2e.rs::weighted_majority_with_quorum_is_approved",
+        "tests/maloca_governance_rules_e2e.rs::abstentions_count_for_quorum_not_for_decision",
+        "tests/maloca_governance_rules_e2e.rs::below_quorum_is_no_quorum",
+        "tests/maloca_governance_rules_e2e.rs::zero_eligible_weight_has_zero_participation_and_no_quorum",
+        "tests/maloca_governance_rules_e2e.rs::expiry_boundary"
       ],
       "user_stories": []
     },
