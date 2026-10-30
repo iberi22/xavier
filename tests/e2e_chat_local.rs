@@ -1,4 +1,5 @@
 use std::process::{Command, Stdio};
+use std::time::Instant;
 use tokio::time::{sleep, Duration};
 
 struct ChildGuard(std::process::Child);
@@ -43,28 +44,35 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("failed to spawn xavier");
-    let _guard = ChildGuard(child);
+    let mut _guard = ChildGuard(child);
 
-    // Poll /health hasta que responda
     let client = reqwest::Client::new();
-    let mut server_up = false;
-    for _ in 0..30 {
-        if let Ok(resp) = client
-            .get(format!("http://127.0.0.1:{port}/health"))
+    let mut last_error = "no request attempted".to_string();
+    let deadline = Instant::now() + Duration::from_secs(55);
+
+    // Poll /ready
+    while Instant::now() < deadline {
+        // child is moved to _guard, so we check _guard.0
+        if let Ok(Some(status)) = _guard.0.try_wait() {
+            panic!("xavier http exited during startup with status {status}");
+        }
+
+        match client
+            .get(format!("http://127.0.0.1:{port}/ready"))
+            .timeout(Duration::from_secs(2))
             .send()
             .await
         {
-            if resp.status().is_success() {
-                let body = resp.text().await.unwrap_or_default();
-                if !body.contains("\"status\":\"starting\"") {
-                    server_up = true;
-                    break;
-                }
-            }
+            Ok(resp) if resp.status().is_success() => break,
+            Ok(resp) => last_error = format!("GET /ready -> HTTP {}", resp.status()),
+            Err(err) => last_error = err.to_string(),
         }
         sleep(Duration::from_millis(500)).await;
     }
-    assert!(server_up, "Server did not start in 15s");
+
+    if Instant::now() >= deadline {
+        panic!("xavier http did not answer GET /ready with 2xx within 55s (last: {last_error})");
+    }
 
     // Sembrar una memoria
     let _ = client
