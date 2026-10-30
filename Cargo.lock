@@ -15677,6 +15677,7 @@ dependencies = [
  "dialoguer",
  "dirs 6.0.0",
  "ed25519-dalek 2.2.0",
+ "filetime",
  "flate2",
  "futures-util",
  "git2",
