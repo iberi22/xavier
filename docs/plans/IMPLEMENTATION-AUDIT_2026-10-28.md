@@ -6,14 +6,14 @@ The source of truth for feature status remains `.gitcore/features.json`, promote
 
 ## Summary
 
-- **Overall (weighted, code evidence): 56%**
-- Unweighted feature average: 54%
-- Features inventoried: 100 (29 implemented, 45 partial, 14 stub, 12 missing)
+- **Overall (weighted, code evidence): 57%**
+- Unweighted feature average: 57%
+- Features inventoried: 100 (31 implemented, 44 partial, 13 stub, 12 missing)
 
 | Area | Weight | Features | Implemented | Partial | Stub | Missing | Score |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Memory core | 15 | 9 | 3 | 4 | 1 | 1 | 58% |
-| Code indexing (code-graph) | 10 | 10 | 1 | 8 | 1 | 0 | 52% |
+| Code indexing (code-graph) | 10 | 10 | 2 | 8 | 0 | 0 | 60% |
 | MCP surface | 10 | 7 | 2 | 3 | 2 | 0 | 56% |
 | CLI parity | 10 | 12 | 5 | 5 | 1 | 1 | 64% |
 | LLM and provider configuration | 7 | 6 | 2 | 2 | 1 | 1 | 53% |
@@ -24,8 +24,8 @@ The source of truth for feature status remains `.gitcore/features.json`, promote
 | Cloud, SaaS and billing | 6 | 7 | 2 | 2 | 0 | 3 | 43% |
 | Mesh, P2P, IVN and Maloca | 6 | 12 | 0 | 5 | 5 | 2 | 29% |
 | Panel, desktop and packaging | 4 | 5 | 3 | 1 | 0 | 1 | 70% |
-| Docs, CI and release | 4 | 6 | 2 | 3 | 0 | 1 | 58% |
-| **Overall (weighted)** | 100 | 100 | 29 | 45 | 14 | 12 | **56%** |
+| Docs, CI and release | 4 | 6 | 3 | 2 | 0 | 1 | 67% |
+| **Overall (weighted)** | 100 | 100 | 31 | 44 | 13 | 12 | **57%** |
 
 ### Against the GitCore ledger (`.gitcore/features.json`, 117 entries)
 
@@ -77,7 +77,7 @@ To re-measure, update the status of a row and recompute. No build is needed.
 | FTS index rebuild | missing | `docs/features/specs` fts-index-rebuild = draft-analysis | Design and implement rebuild command |
 | Isolation of test data from live stores | partial | CLI parity audit P2-5 (not started) | Hermetic test fixtures; no test users in live stores |
 
-### Code indexing (code-graph): 52% (weight 10)
+### Code indexing (code-graph): 60% (weight 10)
 
 | Feature | Status | Evidence | Remaining to 100% |
 |---|---|---|---|
@@ -88,9 +88,9 @@ To re-measure, update the status of a row and recompute. No build is needed.
 | Code-graph optimisations O1-O7 | partial | specs cg-*: implemented 2026-09-18, pending verify-pipeline | Run the verify pipeline and record results |
 | Walk hardening | partial | spec codegraph-walk-hardening = planned 0%, ledger = stable (contradiction) | Verify against spec and reconcile status |
 | Structural fingerprints (`ksm-sfp/1`) | partial | ledger `feat-code-graph-fingerprint` = in_progress | Finish and document format |
-| Sidecar reliability | partial | #3590 merged (integrity); issues #3539 (fork loop) and #3540 (swallowed errors) open | Fix #3539 and #3540 |
+| Sidecar reliability | partial | #3590 merged (integrity); issue #3539 closed, #3540 (swallowed errors) open | Fix #3540 |
 | Multi-project isolation in the code index | partial | live index stores symbols without a project root; extra roots capped by env (CLI parity audit, ADR-039) | Populate project root, lift root cap, per-project queries |
-| `xavier index-self` | stub | `src/cli/commands/mod.rs` prints "IndexSelf is not yet implemented." | Implement or remove the command |
+| `xavier index-self` | implemented | `src/cli/commands/memory.rs`, `src/cli/server.rs`, `src/cli/handlers/memory.rs`, `tests/cli_index_self.rs` in `tests/suite_01.rs` | - |
 
 ### MCP surface: 56% (weight 10)
 
@@ -217,7 +217,7 @@ To re-measure, update the status of a row and recompute. No build is needed.
 | Android build | partial | #3572 open | Land NDK build |
 | Generative UI (OpenUI) | missing | ledger planned, spec 0% | Implement |
 
-### Docs, CI and release: 58% (weight 4)
+### Docs, CI and release: 67% (weight 4)
 
 | Feature | Status | Evidence | Remaining to 100% |
 |---|---|---|---|
@@ -225,7 +225,7 @@ To re-measure, update the status of a row and recompute. No build is needed.
 | Env var documentation | implemented | #3589 | - |
 | Release pipeline | partial | #2666, #2665, #2639 open | Close release issues |
 | Status docs accuracy | partial | `docs/FEATURE_STATUS.md` and `implementation-score.json` claim 100% | Use this document as the measured baseline |
-| English API docs | partial | KNOWN_ISSUES #14 (`docs/api/README.md` in Spanish) | Translate |
+| English API docs | implemented | `docs/api/README.md` is English, KNOWN_ISSUES #14 resolved | - |
 | Autonomous delivery pipeline | missing | ledger planned, spec 0% | Implement |
 
 ## Contradictions between sources

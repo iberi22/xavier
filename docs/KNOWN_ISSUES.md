@@ -19,7 +19,7 @@
 | 11 | `panel-ui/build` vs `panel-ui/dist` drift (Dockerfile vs vite vs assets.rs) | 🟡 Docker serves empty | Align to `dist` | Fixed |
 | 12 | `XAVIER_WORKSPACE_DIR=.` vs `workspace_id=default` | 🟢 | Documented | Docs |
 | 13 | `FEATURE_STATUS.md` says `1.0.0` when canon `0.0.1` | 🟢 drift | Align to 0.0.1 | Fixed below |
-| 14 | `docs/api/README.md` Spanish when README EN | 🟢 i18n | Translate | Pending wave6 |
+| 14 | `docs/api/README.md` Spanish when README EN | 🟢 i18n | Translate | Resolved, English translation complete |
 | 15 | `docker-compose` without `XAVIER_DEV_MODE` | 🟡 dev needs token | Add `XAVIER_DEV_MODE` | Fixed |
 | 16 | SQLite WAL size exceeds threshold (`wal_size_bytes` > 50MB / 55175072 bytes) causing `database.status` to report `unhealthy` | 🟡 Database degraded / health check flapping | Execute manual checkpoint with `PRAGMA wal_checkpoint(TRUNCATE); VACUUM;` or run `scripts/checkpoint.sh` | Fixed in `src/storage/pragma.rs` (WAVE 7.03) |
 
