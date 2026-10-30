@@ -409,7 +409,9 @@ pub async fn headless_agents(State(_state): State<CliState>) -> impl IntoRespons
         StatusCode::NOT_IMPLEMENTED,
         AxumJson(json!({
             "error": "Agent management not implemented in headless mode",
-            "code": 501
+            "code": 501,
+            "reason": "unsupported_in_headless",
+            "hint": "run the full daemon (xavier serve)"
         })),
     )
 }
@@ -423,7 +425,9 @@ pub async fn headless_spawn(
         StatusCode::NOT_IMPLEMENTED,
         AxumJson(json!({
             "error": "Agent management not implemented in headless mode",
-            "code": 501
+            "code": 501,
+            "reason": "unsupported_in_headless",
+            "hint": "run the full daemon (xavier serve)"
         })),
     )
 }

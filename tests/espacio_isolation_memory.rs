@@ -14,7 +14,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -48,9 +48,6 @@ use xavier::workspace::{
 
 const ROOT: &str = "wp13m-root-token";
 const JWT_SECRET: &str = "wp13m-jwt-secret-0123456789abcdef";
-
-/// Serializes the process-global env.
-static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn kek() -> Arc<dyn NodeKek> {
     Arc::new(StaticNodeKek::new([5u8; 32]))
@@ -299,7 +296,7 @@ fn ids(rows: &[serde_json::Value]) -> Vec<String> {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn http_memory_is_isolated_per_space() {
-    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
 
     // Distinct and identical content (same text, same path) in both spaces.
@@ -416,7 +413,7 @@ async fn http_memory_is_isolated_per_space() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn global_by_nature_routes_are_refused_for_space_tokens() {
-    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     for tok in [&f.admin_a, &issue(&f, "esp_a", "rita", SpaceRole::Reader)] {
         for (m, p) in [
@@ -439,7 +436,7 @@ async fn global_by_nature_routes_are_refused_for_space_tokens() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn reader_cannot_add_member_can() {
-    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let reader = issue(&f, "esp_a", "rita", SpaceRole::Reader);
     let member = issue(&f, "esp_a", "mia", SpaceRole::Member);
@@ -475,7 +472,7 @@ async fn reader_cannot_add_member_can() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn locked_space_is_refused_until_unlocked() {
-    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     std::env::set_var("XAVIER_TOKEN", ROOT);
     std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "disabled");
     std::env::remove_var("XAVIER_SPACES");
@@ -574,7 +571,7 @@ async fn mcp(
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn mcp_memory_is_isolated_and_limited_for_space_tokens() {
-    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let reader = issue(&f, "esp_a", "rita", SpaceRole::Reader);
 
@@ -686,7 +683,7 @@ async fn mcp_memory_is_isolated_and_limited_for_space_tokens() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn mcp_espacio_tools_need_the_root_credential_not_an_admin_claim() {
-    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let admin = xavier::security::auth::User::new(
         "admin@example.test".into(),
@@ -707,7 +704,7 @@ async fn mcp_espacio_tools_need_the_root_credential_not_an_admin_claim() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn deleted_and_recreated_space_does_not_inherit_the_cached_store() {
-    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let (st, _) = add(
         &f,
@@ -756,7 +753,7 @@ async fn deleted_and_recreated_space_does_not_inherit_the_cached_store() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn encrypted_space_memory_is_served_and_leaves_no_plaintext() {
-    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let tok = create_space(&f.manager, "esp_enc", "erin", true).await;
     let dir = f.tmp.path().join("state/spaces/esp_enc");
@@ -795,7 +792,7 @@ async fn encrypted_space_memory_is_served_and_leaves_no_plaintext() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn trashing_a_space_drops_its_cached_workspace() {
-    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let (st, _) = add(&f, &f.admin_a, "/memory/add", "n/c", "cached tapir").await;
     assert_eq!(st, StatusCode::OK);
@@ -815,7 +812,7 @@ async fn trashing_a_space_drops_its_cached_workspace() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn space_tokens_cannot_update_or_delete_whatever_the_role() {
-    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = crate::SUITE_ENV_LOCK.lock().await;
     let f = fixture().await;
     let tokens = [
         ("admin", f.admin_a.clone()),

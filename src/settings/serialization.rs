@@ -136,6 +136,25 @@ fn home_relative(path: PathBuf) -> PathBuf {
         .join(path)
 }
 
+pub fn resolve_state_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("XAVIER_STATE_DIR") {
+        if !dir.trim().is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
+
+    if cfg!(test) {
+        std::env::temp_dir().join(format!("xavier-test-state-{}", std::process::id()))
+    } else {
+        let data_dir = crate::settings::XavierSettings::current().memory.data_dir;
+        if !data_dir.trim().is_empty() {
+            PathBuf::from(data_dir)
+        } else {
+            PathBuf::from("data")
+        }
+    }
+}
+
 /// Resolve the data root independently of the process working directory.
 pub fn resolve_data_dir() -> PathBuf {
     let path = std::env::var_os("XAVIER_DATA_DIR")

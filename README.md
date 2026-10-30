@@ -205,13 +205,12 @@ These features are experimental or beta: APIs and on-disk formats may change bet
 | Autonomous Delivery Pipeline | planned | Evidence-gated ship/show/ask delivery (ledger: `feat-autonomous-delivery`). |
 | Generative UI (OpenUI) | planned | Structured answers rendered as OpenUI markup (ledger: `feat-generative-ui`). |
 | Skill store / registry / projector / ephemeral / drift-audit / usage-telemetry | planned | Skill subsystem redesign, grouped (ledger: `feat-skill-*`: store-config, registry-unify, projector, ephemeral, drift-audit, usage-telemetry). |
-| `gpud` router (`/v1/gpud/*`) | design only | Defined in `src/server/gpud_sidecar.rs` but never mounted; paths are unreachable. |
 | `telecom_*` MCP tools | preview | Tool names are registered, but dispatch has no backend wired and returns `telecom backend unavailable` (`src/server/mcp/telecom_tools.rs`, `src/server/mcp/server.rs`). |
 | Maloca model router (`/v1/maloca/models/*`) | placeholder | Handlers return `501 Not Implemented` (`src/server/maloca/model_routes.rs`). |
 | Maloca alignment routes (`/v1/maloca/alignment*`) | preview | Returns a static checklist and score (`src/server/maloca/alignment_route.rs`). |
 | Mesh tokenomics / wallet | placeholder | Module header describes a placeholder XP system (`src/mesh/tokenomics/mod.rs`). |
 | Mesh governance / DAO | preview | Off-chain proposal store with fixed example entries; on-chain client is behind the optional `dao-evm` build feature (`src/mesh/governance/`, `Cargo.toml`). |
-| Mesh transports (iroh / libp2p) | preview | `mesh` (iroh) is an optional build feature; `libp2p` is an empty feature and the code notes the transport as a deprecated stub (`Cargo.toml`, `src/mesh/maturity.rs`). |
+| Mesh transports (iroh / libp2p) | preview | `mesh` (iroh) is an optional build feature; `libp2p` transport was removed (`Cargo.toml`, `src/mesh/maturity.rs`). |
 | Mesh maturity in `/health` | preview | Reports 0/100 projections of checked flags and starts unmeasured (`src/mesh/maturity.rs`, `src/mesh/dashboard.rs`). |
 | Master key export/import over HTTP | not implemented | The endpoint returns `501`; key backup and restore go through the `xavier recovery` CLI (`src/cli/handlers/recovery.rs`). |
 
@@ -227,7 +226,7 @@ src/
 ├── codebase/      — Code GraphDB (Tree-sitter AST symbol extraction & call dependency graphs)
 ├── mesh/          — P2P Mesh Network (QUIC/Iroh transport, offline SQLite queue, keychains)
 ├── agents/        — Agent lifecycle, Provider Router (Ollama / Cloud LLM switching), Rate limits
-├── server/        — Axum HTTP REST server, MCP Server (HTTP+SSE & Stdio), GPU sidecar
+├── server/        — Axum HTTP REST server, MCP Server (HTTP+SSE & Stdio)
 ├── maloca/        — Maloca presentation bridge, HumanChallenge engine, Backlog & App Registry
 └── storage/       — Centralized SQLite connection management & PRAGMA configuration
 ```
@@ -263,17 +262,8 @@ All authenticated HTTP routes require the `X-Xavier-Token` or `Authorization: Be
 | `/v1/maloca/challenges/list` | `GET` | List active challenges |
 | `/v1/maloca/challenges/stats` | `GET` | Retrieve challenge engine statistics |
 
-#### Not mounted (design only)
 
-The `gpud` router is never merged into the server, so these paths are unreachable today.
 
-#### GPU Discovery & Sidecar (`/v1/gpud/*`)
-| Endpoint | Method | Description |
-|---|---|---|
-| `/v1/gpud/health` | `GET` | GPU sidecar health check |
-| `/v1/gpud/detect` | `GET` | Hardware acceleration probe (NVIDIA nvcc/nvidia-smi, ROCm, Apple Silicon) |
-| `/v1/gpud/serve` | `POST` | Request GPU compute allocation |
-| `/v1/gpud/status` | `GET` | Monitor current VRAM allocation and fallback CPU state |
 
 #### Maintenance & Memory (`/v1/maintenance/*`, `/memory/*`)
 | Endpoint | Method | Description |

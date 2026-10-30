@@ -602,6 +602,10 @@ Show current provider status.
 
 List providers and strategies.
 
+| Flag | Default | Description |
+|---|---|---|
+| `--json` | off | Emit the provider list as a single JSON object. |
+
 ### `xavier provider set <name>`
 
 Manually switch provider.
@@ -612,7 +616,7 @@ xavier provider set openai
 
 ### `xavier provider auto <strategy>`
 
-Set automatic provider selection strategy.
+(Unsupported) This command is not supported on this daemon version and will exit non-zero.
 
 ```bash
 xavier provider auto balanced
@@ -1202,6 +1206,10 @@ Manages local accounts directly in `<state>/.xavier/auth.db` — the same databa
 
 List local accounts (id, email, role). Never prints password hashes.
 
+### `xavier tenants list` and `xavier tenants show <id>`
+
+Manage multi-tenant configurations. The `list` command retrieves all tenants available on the server. The `show <id>` command retrieves details of a specific tenant by its ID. Both commands support the `--json` flag to return a JSON document representing the data.
+
 | Flag | Default | Description |
 |---|---|---|
 | `--json` | `false` | Emit JSON instead of a table. |
@@ -1280,8 +1288,20 @@ xavier users totp-enroll --email admin@example.com
 | `xavier node <subcommand>` | SWAL node identity: `create`, `recover`, `status`, `anchor`, `anchor-pack`. |
 | `xavier nodes <subcommand>` | Node provisioning: `add`, `list`, `show`, `rotate`, `remove`, `status`. |
 | `xavier governance <subcommand>` | `list`, `create <title> <description>`, `status <id>`, `vote <id>`, `council`. |
+| `xavier tenants <subcommand>` | `list` (`--json`), `show <id>` (`--json`). |
 | `xavier wallet <subcommand>` | `balance`, `transactions` (`-l, --limit`, default `10`). Skeleton. |
 | `xavier maturity <subcommand>` | Feature maturity scan and reporting. |
 | `xavier telecom <subcommand>` | Private node-to-node telecom. |
 | `xavier index-self` | Index foundational documentation into the memory store. |
 | `xavier nav telemetry [kind]` | Navigation telemetry; pass `hotspots` for the top-10 visited nodes. |
+
+## `xavier backup`
+
+`xavier backup create [--out DIR] [--json]`
+
+Creates a local snapshot of the Xavier data directory. 
+
+* The backup process uses SQLite's backup API to snapshot all `*.db` and `*.sqlite3` SQLite files to the output directory to ensure consistent backups.
+* Regular files are copied as-is. 
+* A `manifest.json` file is written out that records file hashes, sizes, the creation time and Xavier version. 
+* If `--out` is not specified, it defaults to `<data_dir>/backups/<UTC timestamp>` (with a numeric suffix if already taken). An explicit `--out` must not already exist.

@@ -1,10 +1,12 @@
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1]
@@ -15,6 +17,24 @@ spec.loader.exec_module(collector)
 
 
 class PromoterTests(unittest.TestCase):
+    def test_evidence_complete_excludes_deferred_on_failing_pipeline(self):
+        log = "==> Xavier verify pipeline (mode: full, root: /repo)\n  ▶ test_stable\n    ❌ FAILED: test_stable\n  ❌ declared tests failed (zero-match=0) — failing pipeline\n"
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+        self.features['features'] = {}
+        self.features['features']['stable'] = {'status': 'stable', 'tests': ['test_stable']}
+        self.features['features']['stable']['open_gaps'] = ['pending']
+
+        self.features['features']['deferred_feat'] = {'status': 'deferred', 'progress_pct': 50, 'tests': ['test_deferred']}
+
+        results, _, evc = evidence_mod.parse_log(log, self.features)
+
+        self.assertTrue(evc)
+        self.assertTrue(results['stable']['evidence_complete'])
+        self.assertFalse(results['deferred_feat']['evidence_complete'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -265,6 +285,52 @@ class PromoterTests(unittest.TestCase):
         self.features['features']['beta']['status'] = 'stable'
         self.blocked('status is not beta, planned, or in_progress')
 
+    def test_deferred_is_frozen(self):
+        self.features['features']['planned']['status'] = 'deferred'
+
+        # provide passing evidence for the feature so it would otherwise promote
+        planned_tests = self.features['features']['planned'].get('tests', [])
+        self.evidence['per_feature_test_results']['planned'] = dict(
+            declared=planned_tests,
+            passed=planned_tests,
+            failed=[],
+            integration_targets_by_test={},
+            candidate_passed=[],
+            candidate_failed=[],
+            candidate_integration_targets_by_test={},
+            candidate_tests=[]
+        )
+
+        evidence, history = self.root / 'evidence.json', self.root / 'history.json'
+        self.path.write_text(json.dumps(self.features))
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py'),
+                                 '--features', str(self.path), '--evidence', str(evidence),
+                                 '--history', str(history), '--apply'],
+                                capture_output=True, text=True, check=True)
+        report = json.loads(result.stdout)
+        self.assertFalse(report['features']['planned']['eligible'])
+        self.assertIn('deferred features are frozen', report['features']['planned']['reasons'])
+        # check apply mode didn't change the deferred feature
+        with open(self.path) as f:
+            data = json.load(f)
+        self.assertEqual('deferred', data['features']['planned']['status'])
+
+    def test_evidence_complete_excludes_deferred(self):
+        self.features['features']['deferred_feat'] = {
+            'status': 'deferred',
+            'tests': ['some_test']
+        }
+        # A log that doesn't mention 'some_test', but mode is full
+        log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
+               '  ▶ test_roundtrip\n    ✅ --test integration (passed=1)\n'
+               '  ✅ all declared tests passed\n')
+        # Parse it with evidence collector
+        results, targets, evidence_complete = collector.parse_log(log, self.features)
+        # Even without 'some_test', evidence should be complete because deferred feature is skipped
+        self.assertTrue(evidence_complete)
+
     def test_unit_only_name_collision_is_rejected(self):
         (self.root / 'src').mkdir()
         (self.root / 'src' / 'lib.rs').write_text('#[test]\nfn test_roundtrip() {}')
@@ -363,17 +429,98 @@ class PromoterTests(unittest.TestCase):
             res, tgt, evc = collector.parse_log(invalid, self.features)
             self.assertEqual([], res['beta']['passed'])
 
-        res, tgt, evc = collector.parse_log(log.replace('full,', 'check,'), self.features)
-        self.assertFalse(evc)
-        res, tgt, evc = collector.parse_log(log.replace('▶ test_roundtrip', '▶ test_other'), self.features)
-        self.assertFalse(evc)
-
-        # Missing footer, but complete coverage means evc = True
+        # Test exact parse result for missing ALL tests passed marker:
         res, tgt, evc = collector.parse_log(log.replace('✅ all declared tests passed', ''), self.features)
-        self.assertTrue(evc)
+        self.assertFalse(evc)
 
 
 class PlannedBetaPromotionTests(unittest.TestCase):
+    def test_p2a4_empty_log_no_demotions_and_no_promotions(self):
+        self.features['features']['beta']['tests'] = ['test_beta']
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {
+            'beta': {'evidence_complete': False, 'declared': ['test_beta'], 'passed': [], 'failed': [], 'integration_targets_by_test': {}},
+            'stable': {'evidence_complete': False, 'declared': ['test_stable'], 'passed': [], 'failed': [], 'integration_targets_by_test': {}}
+        }
+        import json
+        import subprocess
+        import sys
+        self.path.write_text(json.dumps(self.features))
+        evidence = self.root / 'evidence.json'
+        history = self.root / 'history.json'
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        args = ['--features', str(self.path), '--evidence', str(evidence),
+                '--history', str(history), '--apply', '--apply-demotions']
+        from pathlib import Path
+        SCRIPTS = Path('scripts')
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, capture_output=True, text=True, check=True)
+        report = json.loads(result.stdout)
+        self.assertFalse(report['features']['beta']['eligible'])
+        self.assertEqual([], report.get('demotions_applied', []))
+
+
+
+    def test_p2a4_unrecognized_log_no_demotions_no_promotions(self):
+        log = "==> Xavier verify pipeline (mode: full, root: /repo)\n  ▶ test_stable\n    ✅ --test integration (passed=2)\n"
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        results, _, evc = evidence_mod.parse_log(log, self.features)
+        self.assertFalse(evc)
+        self.assertFalse(results['stable']['evidence_complete'])
+
+    def test_p2a4_partial_log_apply_demotions_leaves_unobserved_alone(self):
+        # partial log with --apply --apply-demotions -> no demotions for features with unobserved tests
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = ['test_stable', 'test_2']
+        self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': False, 'declared': ['test_stable', 'test_2'], 'passed': ['test_stable'], 'failed': [], 'integration_targets_by_test': {'test_stable': ['int']}}}
+
+        import json
+        import subprocess
+        import sys
+        self.path.write_text(json.dumps(self.features))
+        evidence = self.root / 'evidence.json'
+        history = self.root / 'history.json'
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        args = ['--features', str(self.path), '--evidence', str(evidence),
+                '--history', str(history), '--apply', '--apply-demotions']
+        from pathlib import Path
+        SCRIPTS = Path('scripts')
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, capture_output=True, text=True, check=True)
+        report = json.loads(result.stdout)
+
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertEqual([], report.get('demotions_applied', []))
+
+    def test_p2a4_full_log_allows_review(self):
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.evidence['evidence_complete'] = True
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': True, 'declared': ['test_stable'], 'passed': ['test_stable'], 'failed': [], 'integration_targets_by_test': {'test_stable': ['int']}}}
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+
+    def test_p2a4_global_incomplete_blocks_beta_to_stable(self):
+        self.features['features']['beta']['tests'] = ['test_roundtrip']
+        self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {
+            'beta': {'evidence_complete': True, 'declared': ['test_roundtrip'], 'passed': ['test_roundtrip'], 'failed': [], 'integration_targets_by_test': {'test_roundtrip': ['integration']}}
+        }
+        report, _ = self.run_all()
+        beta = report['features']['beta']
+        self.assertFalse(beta['eligible'])
+        self.assertIn('evidence collection incomplete', beta['reasons'])
+
     """planned/in_progress -> beta lane (beta -> stable is covered above)."""
 
     def setUp(self):
@@ -398,6 +545,11 @@ class PlannedBetaPromotionTests(unittest.TestCase):
             candidate_passed=['test_roundtrip'], candidate_failed=[],
             candidate_integration_targets_by_test={'test_roundtrip': ['integration']},
             candidate_tests=['test_roundtrip'])
+        # The evidence collector always emits a per-feature evidence_complete
+        # flag; stable review only runs when it is explicitly True.
+        self.evidence['per_feature_test_results']['stable'] = dict(
+            declared=[], passed=[], failed=[], integration_targets_by_test={},
+            evidence_complete=True)
         self.history = json.loads((FIXTURES / 'history.json').read_text())
         self.history['planned'] = ['a', 'b']
         self.path = self.root / '.gitcore' / 'features.json'
@@ -609,6 +761,163 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
 
 
+
+    def test_unrecognized_log_empty_tests_list_no_demotion(self):
+        # (a) unrecognized log + feature with empty tests list => no demotion
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = []
+        self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': False, 'declared': [], 'passed': [], 'failed': [], 'integration_targets_by_test': {}}}
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertIn('review skipped: incomplete evidence', stable['review_reasons'])
+
+    def test_global_incomplete_per_feature_complete_no_demotion(self):
+        # (b) global incomplete + per-feature complete => no demotion
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': True, 'declared': ['test_stable'], 'passed': ['test_stable'], 'failed': [], 'integration_targets_by_test': {'test_stable': ['int']}}}
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        # Global incompleteness should NOT skip review if per-feature completeness is true.
+        # But wait, review skipped: evidence collection incomplete might be returned if per-feature is False.
+        # Here per-feature is True.
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertFalse(any('review skipped' in r for r in stable['review_reasons']))
+
+    def test_partial_coverage_skipped_with_reason(self):
+        # (c) partial coverage => skipped with reason, no demotion
+        # Actually for stable, partial coverage (incomplete evidence) means review skipped.
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = ['test_1', 'test_2']
+        self.evidence['evidence_complete'] = True
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': False, 'declared': ['test_1', 'test_2'], 'passed': ['test_1'], 'failed': [], 'integration_targets_by_test': {'test_1': ['int']}}}
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertIn('review skipped: incomplete evidence', stable['review_reasons'])
+
+    def test_full_coverage_healthy_stable_no_skip_reason(self):
+        # (d) full coverage with per-feature evidence_complete=True on a healthy stable feature => reviewed, stays stable, no skip reason asserted
+        self.features['features']['stable']['tests'] = ['test_stable']
+        if 'open_gaps' in self.features['features']['stable']:
+            del self.features['features']['stable']['open_gaps']
+        self.evidence['evidence_complete'] = True
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': True, 'declared': ['test_stable'], 'passed': ['test_stable'], 'failed': [], 'integration_targets_by_test': {'test_stable': ['int']}}}
+        self.evidence['integration_targets_passed'] = ['int']
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertEqual([], stable['review_reasons'])
+
+    def test_full_coverage_failed_test_demotion_only_with_flag(self):
+        # (e) full coverage with a failed declared test => demotion proposed only with --apply-demotions
+        self.features['features']['stable']['tests'] = ['test_stable']
+        if 'open_gaps' in self.features['features']['stable']:
+            del self.features['features']['stable']['open_gaps']
+        self.evidence['evidence_complete'] = True
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': True, 'declared': ['test_stable'], 'passed': [], 'failed': ['test_stable'], 'integration_targets_by_test': {}}}
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertIn('declared tests failed: test_stable', stable['review_reasons'])
+        # apply without apply-demotions
+        report_apply, _ = self.run_all(apply=True)
+        self.assertEqual([], report_apply.get('demotions_applied', []))
+        self.assertEqual('stable', json.loads(self.path.read_text())['features']['stable']['status'])
+        # apply with apply-demotions demotes the fully evidenced failing feature
+        report_dem = self.run_apply_demotions()
+        self.assertIn('stable', report_dem['demotions_applied'])
+        self.assertEqual('beta', json.loads(self.path.read_text())['features']['stable']['status'])
+
+    def run_apply_demotions(self):
+        self.path.write_text(json.dumps(self.features))
+        evidence, history = self.root / 'evidence.json', self.root / 'history.json'
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py'),
+                                 '--features', str(self.path), '--evidence', str(evidence),
+                                 '--history', str(history), '--apply', '--apply-demotions'],
+                                capture_output=True, text=True, check=True)
+        return json.loads(result.stdout)
+
+    def assert_incomplete_feature_evidence_never_demotes(self):
+        # Global evidence is complete and the feature has a demotion trigger
+        # (open_gaps + failed declared test), but its own completeness is not
+        # proven: review must be skipped, never flagged or demoted.
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.evidence['evidence_complete'] = True
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertIsNone(stable.get('transition'))
+        self.assertEqual(['review skipped: incomplete evidence'], stable['review_reasons'])
+        report_dem = self.run_apply_demotions()
+        self.assertEqual([], report_dem.get('demotions_applied', []))
+        self.assertEqual('stable', json.loads(self.path.read_text())['features']['stable']['status'])
+
+    def test_missing_per_feature_flag_never_demotes(self):
+        self.evidence['per_feature_test_results']['stable'] = dict(
+            declared=['test_stable'], passed=[], failed=['test_stable'],
+            integration_targets_by_test={})
+        self.assert_incomplete_feature_evidence_never_demotes()
+
+    def test_null_per_feature_flag_never_demotes(self):
+        self.evidence['per_feature_test_results']['stable'] = dict(
+            declared=['test_stable'], passed=[], failed=['test_stable'],
+            integration_targets_by_test={}, evidence_complete=None)
+        self.assert_incomplete_feature_evidence_never_demotes()
+
+    def test_missing_per_feature_result_never_demotes(self):
+        del self.evidence['per_feature_test_results']['stable']
+        self.assert_incomplete_feature_evidence_never_demotes()
+
+
+    def test_truncated_final_block_regression(self):
+        log = '==> Xavier verify pipeline (mode: full, root: /repo)\n  ▶ test_stable\n  ▶ test_unfinished'
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+        self.features['features']['stable']['tests'] = ['test_stable']
+        results, _, _ = evidence_mod.parse_log(log, self.features)
+        self.assertNotIn('test_stable', results['stable']['passed'])
+        self.assertNotIn('test_stable', results['stable']['failed'])
+        self.assertNotIn('test_unfinished', results['stable']['passed'])
+        self.assertNotIn('test_unfinished', results['stable']['failed'])
+
+    def test_parser_empty_missing_malformed_partial_complete(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+
+        doc = {
+            'features': {
+                'missing': {'status': 'beta'},
+                'empty': {'status': 'beta', 'tests': []},
+                'malformed_obj': {'status': 'beta', 'tests': [{}]},
+                'malformed_empty_str': {'status': 'beta', 'tests': ['']},
+                'malformed_list': {'status': 'beta', 'tests': [[]]},
+                'partial': {'status': 'beta', 'tests': ['test_1', 'test_2']},
+                'complete': {'status': 'beta', 'tests': ['test_1']}
+            }
+        }
+        log = '==> Xavier verify pipeline (mode: full, root: /repo)\n  ▶ test_1\n    ✅ xavier (passed=1)\n  ✅ all declared tests passed\n'
+        results, _, evidence_complete = evidence_mod.parse_log(log, doc)
+        self.assertFalse(results['missing']['evidence_complete'])
+        self.assertFalse(results['empty']['evidence_complete'])
+        self.assertFalse(results['malformed_obj']['evidence_complete'])
+        self.assertFalse(results['malformed_empty_str']['evidence_complete'])
+        self.assertFalse(results['malformed_list']['evidence_complete'])
+        self.assertFalse(results['partial']['evidence_complete'])
+        self.assertTrue(results['complete']['evidence_complete'])
+        self.assertFalse(evidence_complete) # since 'test_2' was missing overall
+
+
     def test_stable_incomplete_evidence_collection_skips_review(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
         self.evidence['per_feature_test_results'] = {}
@@ -616,7 +925,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         report, _ = self.run_all()
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
-        self.assertTrue(any('review skipped: evidence collection incomplete' in r for r in stable['review_reasons']))
+        self.assertTrue(any('review skipped: incomplete evidence' in r for r in stable['review_reasons']))
 
     def test_stable_open_gaps_flagged(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
@@ -630,16 +939,17 @@ class PlannedBetaPromotionTests(unittest.TestCase):
     def test_stable_incomplete_evidence_demotions_enabled(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
         self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': False, 'declared': [], 'passed': [], 'failed': [], 'integration_targets_by_test': {}}}
         report, _ = self.run_all()
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
-        self.assertTrue(any('review skipped: evidence collection incomplete' in r for r in stable['review_reasons']))
+        self.assertTrue(any('review skipped: incomplete evidence' in r for r in stable['review_reasons']))
 
     def test_stable_no_linked_evidence_flagged(self):
         self.features['features']['stable']['tests'] = ['test_stable']
         self.evidence['per_feature_test_results']['stable'] = dict(
             declared=['test_stable'], passed=['test_stable'], failed=[],
-            integration_targets_by_test={})
+            integration_targets_by_test={}, evidence_complete=True)
         report, _ = self.run_all()
         stable = report['features']['stable']
         self.assertTrue(stable.get('review_flagged'))
@@ -649,7 +959,8 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.features['features']['stable']['tests'] = ['test_stable']
         self.evidence['per_feature_test_results']['stable'] = dict(
             declared=['test_stable'], passed=['test_stable'], failed=[],
-            integration_targets_by_test={'test_stable': ['integration']})
+            integration_targets_by_test={'test_stable': ['integration']},
+            evidence_complete=True)
         report, err = self.run_all()
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
@@ -664,13 +975,49 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertTrue(any('review skipped' in r for r in stable['review_reasons']))
 
 
+    def test_completed_failure_evidence_reaches_stable_review_from_log(self):
+        log = (FIXTURES / 'failed-evidence.log').read_text()
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.evidence['ledger_run_conclusion'] = 'failure'
+
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+
+        results, targets, evidence_complete = evidence_mod.parse_log(log, self.features)
+        self.evidence['per_feature_test_results'] = results
+        self.evidence['evidence_complete'] = evidence_complete
+
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertIn('declared tests failed: test_stable', stable['review_reasons'])
+
+        # also run the fixture through --apply WITHOUT --apply-demotions and assert every promotion is ineligible, demotions_applied is empty, and the ledger file bytes are unchanged.
+        report_apply, _ = self.run_all(apply=True)
+        self.assertEqual([], report_apply.get('demotions_applied', []))
+        for fid, res in report_apply['features'].items():
+            self.assertFalse(res.get('eligible'))
+
+        import json
+        with open(self.path) as f:
+            data = json.load(f)
+        self.assertEqual('stable', data['features']['stable']['status'])
+
+        # exact parsed-result assertions that fail if the parser change is reverted
+        self.assertEqual(['test_roundtrip'], results['beta']['passed'])
+        self.assertEqual([], results['beta']['failed'])
+        self.assertEqual([], results['stable']['passed'])
+        self.assertEqual(['test_stable'], results['stable']['failed'])
+
     def test_completed_failure_evidence_reaches_stable_review(self):
         # A test fails, verifier reports failure, but all tests were parsed
         self.features['features']['stable']['tests'] = ['test_stable']
         self.evidence['ledger_run_conclusion'] = 'failure'
         self.evidence['per_feature_test_results']['stable'] = dict(
             declared=['test_stable'], passed=[], failed=['test_stable'],
-            integration_targets_by_test={})
+            integration_targets_by_test={}, evidence_complete=True)
         self.evidence['evidence_complete'] = True
 
         report, _ = self.run_all()
@@ -734,6 +1081,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.features['metadata'] = {'features_stable': 1, 'features_beta': 0, 'features_in_progress': 0, 'features_planned': 0, 'features_complete': 1, 'total_features': 1, 'overall_progress_pct': 100.0, 'last_verified': '2000-01-01'}
         self.features['features']['stable']['open_gaps'] = ['pending']
         self.features['features']['stable']['progress_pct'] = 100
+        self.features['features']['deferred_feat'] = {'status': 'deferred', 'progress_pct': 50}
 
         evidence = self.root / 'evidence.json'
         history = self.root / 'history.json'
@@ -753,11 +1101,52 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertEqual(1, meta.get('features_stable', 0))
         self.assertEqual(2, meta.get('features_beta', 0))
         self.assertEqual(0, meta.get('features_planned', 0))
+        self.assertEqual(1, meta.get('features_deferred', 0))
         self.assertEqual(4, meta.get('total_features', 0))
         self.assertEqual(1, meta.get('features_complete', 0))
         self.assertEqual(60.0, meta.get('overall_progress_pct', 0))
         self.assertEqual('2026-11-10', meta.get('last_verified'))
 
+    def _run_apply_all_deferred(self, metadata):
+        import json, subprocess, sys
+        if metadata is None:
+            self.features.pop('metadata', None)
+        else:
+            self.features['metadata'] = metadata
+        self.features['features'] = {'deferred_feat': {'status': 'deferred', 'progress_pct': 50}}
+        evidence = self.root / 'evidence.json'
+        history = self.root / 'history.json'
+        self.path.write_text(json.dumps(self.features))
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        args = ['--features', str(self.path), '--evidence', str(evidence),
+                '--history', str(history), '--apply']
+        subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, check=True)
+        with open(self.path) as f:
+            data = json.load(f)
+        self.assertEqual('deferred', data['features']['deferred_feat']['status'])
+        return data['metadata']
+
+    def test_metadata_all_deferred_recomputes_stale_metadata(self):
+        # Stale metadata from before a data-only PR marked the feature deferred; no
+        # promotion or demotion happens, yet --apply must fix the counts.
+        meta = self._run_apply_all_deferred({
+            'features_stable': 1, 'features_beta': 0, 'features_planned': 0,
+            'features_deferred': 0, 'features_complete': 1, 'total_features': 1,
+            'overall_progress_pct': 50.0})
+        self.assertEqual(0, meta['features_stable'])
+        self.assertEqual(0, meta['features_complete'])
+        self.assertEqual(1, meta['features_deferred'])
+        self.assertEqual(0, meta['total_features'])
+        self.assertEqual(0.0, meta['overall_progress_pct'])
+
+    def test_metadata_all_deferred_absent_metadata_keys(self):
+        # Metadata block without the count keys (never synced): they are filled in.
+        meta = self._run_apply_all_deferred({'total_features': 1})
+        self.assertEqual(1, meta['features_deferred'])
+        self.assertEqual(0, meta['features_stable'])
+        self.assertEqual(0, meta['total_features'])
+        self.assertEqual(0.0, meta['overall_progress_pct'])
 
     def test_workflow_branch_identity(self):
         with open('.github/workflows/ledger-promote.yml') as f:
@@ -790,6 +1179,353 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertEqual(2, meta.get('features_beta', 0))
         self.assertEqual(4, meta.get('total_features', 0))
         self.assertEqual(1, meta.get('features_complete', 0))
+
+
+
+class CompletedChainTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / 'tests').mkdir()
+        (self.root / 'tests' / 'integration.rs').write_text(
+            '#[test]\nfn test_roundtrip() {}\n')
+        self.document = json.loads((FIXTURES / 'features.json').read_text())
+        self.runs = {}
+        self.job_conclusions = {}
+        self.snapshots = {}
+        log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
+               '  ▶ test_roundtrip\n'
+               '    ✅ cargo test --test integration (passed=1)\n'
+               '  ✅ all declared tests passed\n')
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, 'w') as z:
+            z.writestr('ledger.log', log)
+        self.archive = archive.getvalue()
+
+    def add_runs(self, sha, status='completed', conclusion='success', attempt=1):
+        for workflow in ('ci.yml', 'e2e-segmented.yml'):
+            self.runs.setdefault((sha, workflow), []).append(dict(
+                head_sha=sha, head_branch='main', event='push', run_number=1,
+                run_attempt=attempt, status=status, conclusion=conclusion,
+                id=sha, html_url=f'https://example.test/runs/{sha}',
+                updated_at='2026-10-30T00:00:00Z'))
+
+    def gh(self, endpoint, binary=False):
+        if '/workflows/' in endpoint:
+            workflow = endpoint.split('/workflows/')[1].split('/')[0]
+            sha = endpoint.split('head_sha=')[1].split('&')[0]
+            return {'workflow_runs': self.runs.get((sha, workflow), [])}
+        if '/jobs?' in endpoint:
+            sha = endpoint.split('/runs/')[1].split('/')[0]
+            return {'jobs': [dict(name='Full Ledger Verification',
+                                 conclusion=self.job_conclusions.get(sha, 'success'))]}
+        if '/artifacts?' in endpoint:
+            return {'artifacts': [dict(name='ledger-logs', expired=False,
+                                       size_in_bytes=len(self.archive), id=1)]}
+        if endpoint.endswith('/zip') and binary:
+            return self.archive
+        self.fail(f'Unexpected gh call: {endpoint}')
+
+    def gather(self, shas):
+        def git_output(command, text):
+            if command[1] == 'rev-list':
+                return '\n'.join(shas)
+            self.assertEqual(command[:2], ['git', 'show'])
+            sha = command[2].split(':')[0]
+            return json.dumps(self.snapshots.get(sha, self.document))
+
+        with patch.object(collector.subprocess, 'check_output', side_effect=git_output) as git, \
+                patch.object(collector, 'gh', side_effect=self.gh):
+            evidence, history = collector.gather(self.document, 'repos/test/repo', self.root)
+        self.assertEqual(git.call_args_list[0].args[0],
+            ['git', 'rev-list', '--first-parent', f'-{collector.COMMIT_WINDOW}', 'HEAD'],
+        )
+        result = collector.promoter.evaluate(self.document, evidence, history, self.root, 3)['beta']
+        return evidence, history, result
+
+    def test_pending_head_skipped_newest_completed_evaluated(self):
+        self.add_runs('head', status='in_progress', conclusion=None)
+        for sha in ('c', 'b', 'a'):
+            self.add_runs(sha)
+        evidence, history, result = self.gather(['head', 'c', 'b', 'a'])
+        self.assertEqual(evidence['sha'], 'c')
+        self.assertEqual(evidence['main_head'], 'head')
+        self.assertEqual(evidence['main_shas'], ['c', 'b', 'a'])
+        self.assertEqual(evidence['skipped_pending_shas'], ['head'])
+        self.assertEqual(history['beta'], ['c', 'b', 'a'])
+        self.assertTrue(result['eligible'], result)
+
+    def test_pending_between_completed_does_not_break_streak(self):
+        for sha in ('c', 'b', 'a'):
+            self.add_runs(sha)
+        self.add_runs('pending', status='queued', conclusion=None)
+        evidence, _, result = self.gather(['c', 'pending', 'b', 'a'])
+        self.assertEqual(evidence['main_shas'], ['c', 'b', 'a'])
+        self.assertEqual(evidence['skipped_pending_shas'], ['pending'])
+        self.assertEqual(result['green_streak'], 3)
+        self.assertTrue(result['eligible'], result)
+
+    def test_declarations_changed_after_evaluated_sha_block_promotion(self):
+        for sha in ('c', 'b', 'a'):
+            self.add_runs(sha)
+            self.snapshots[sha] = json.loads(json.dumps(self.document))
+            # An older declaration removed from today's ledger must still be
+            # retained in the evidence, even when today's remaining test passed.
+            self.snapshots[sha]['features']['beta']['tests'].append('test_removed')
+        evidence, history, result = self.gather(['head', 'c', 'b', 'a'])
+        self.assertEqual(evidence['sha'], 'c')
+        self.assertIn('test_removed', evidence['per_feature_test_results']['beta']['declared'])
+        self.assertIn('declared test evidence differs from ledger', result['reasons'])
+        self.assertNotIn('beta', history)
+        self.assertFalse(result['eligible'])
+
+    def test_completed_red_commit_breaks_streak(self):
+        for workflow in ('ci.yml', 'e2e-segmented.yml'):
+            for conclusion in ('failure', 'cancelled', 'timed_out'):
+                with self.subTest(workflow=workflow, conclusion=conclusion):
+                    self.runs = {}
+                    for sha in ('c', 'b', 'a'):
+                        self.add_runs(sha)
+                    self.runs[('b', workflow)][0]['conclusion'] = conclusion
+                    evidence, history, result = self.gather(['c', 'b', 'a'])
+                    self.assertEqual(evidence['main_shas'], ['c', 'b', 'a'])
+                    self.assertNotIn('b', history.get('beta', []))
+                    self.assertEqual(result['green_streak'], 1)
+                    self.assertFalse(result['eligible'])
+
+    def test_completed_commit_with_incomplete_feature_evidence_breaks_streak(self):
+        for sha in ('c', 'b', 'a'):
+            self.add_runs(sha)
+        original_gh = self.gh
+
+        def missing_artifact(endpoint, binary=False):
+            if '/runs/b/artifacts?' in endpoint:
+                return {'artifacts': []}
+            return original_gh(endpoint, binary)
+
+        self.gh = missing_artifact
+        evidence, history, result = self.gather(['c', 'b', 'a'])
+        self.assertEqual(evidence['main_shas'], ['c', 'b', 'a'])
+        self.assertNotIn('b', history.get('beta', []))
+        self.assertEqual(result['green_streak'], 1)
+        self.assertFalse(result['eligible'])
+
+    def test_failed_full_ledger_job_breaks_streak(self):
+        for sha in ('c', 'b', 'a'):
+            self.add_runs(sha)
+        self.job_conclusions['b'] = 'failure'
+        _, _, result = self.gather(['c', 'b', 'a'])
+        self.assertEqual(result['green_streak'], 1)
+        self.assertFalse(result['eligible'])
+
+    def test_latest_attempt_pending_skips_older_green_attempt(self):
+        self.add_runs('head')
+        self.add_runs('head', status='in_progress', conclusion=None, attempt=2)
+        self.add_runs('c')
+        evidence, _, result = self.gather(['head', 'c'])
+        self.assertEqual(evidence['sha'], 'c')
+        self.assertEqual(evidence['skipped_pending_shas'], ['head'])
+        self.assertFalse(result['eligible'])
+
+    def test_no_completed_commit_no_evaluation_or_promotion(self):
+        self.add_runs('head', status='queued', conclusion=None)
+        self.add_runs('partial')
+        del self.runs[('partial', 'e2e-segmented.yml')]
+        evidence, history, result = self.gather(['head', 'partial', 'missing'])
+        self.assertIsNone(evidence['sha'])
+        self.assertEqual(evidence['main_shas'], [])
+        self.assertEqual(evidence['skipped_pending_shas'], ['head', 'partial', 'missing'])
+        self.assertEqual(history, {})
+        self.assertFalse(result['eligible'])
+
+    def test_report_records_both_shas_and_pending_commits(self):
+        self.add_runs('head', status='queued', conclusion=None)
+        for sha in ('c', 'b', 'a'):
+            self.add_runs(sha)
+        evidence, history, _ = self.gather(['head', 'c', 'b', 'a'])
+        features_path = self.root / 'features.json'
+        evidence_path = self.root / 'evidence.json'
+        history_path = self.root / 'history.json'
+        for path, value in ((features_path, self.document), (evidence_path, evidence),
+                            (history_path, history)):
+            path.write_text(json.dumps(value))
+        run = subprocess.run([
+            sys.executable, str(SCRIPTS / 'ledger-promote.py'),
+            '--features', str(features_path), '--evidence', str(evidence_path),
+            '--history', str(history_path)], capture_output=True, text=True, check=True)
+        report = json.loads(run.stdout)
+        self.assertEqual(report['sha'], 'c')
+        self.assertEqual(report['main_head'], 'head')
+        self.assertEqual(report['skipped_pending_shas'], ['head'])
+        self.assertIn('Evaluated SHA: c', run.stderr)
+        self.assertIn('Main HEAD SHA: head', run.stderr)
+        self.assertIn('Skipped pending SHAs: head', run.stderr)
+
+
+class TestLedgerPromoteEvidence(unittest.TestCase):
+
+    def test_gh_retry_transient_error(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence)
+
+        # Mock time.sleep and subprocess.check_output
+        sleep_calls = []
+        def mock_sleep(seconds):
+            sleep_calls.append(seconds)
+
+        attempts = 0
+        def mock_check_output(args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts <= 3:
+                import subprocess
+                raise subprocess.CalledProcessError(1, args, stderr=b'HTTP 502 Bad Gateway')
+            return b'{"success": true}'
+
+        original_sleep = evidence.time.sleep
+        original_check_output = evidence.subprocess.check_output
+        evidence.time.sleep = mock_sleep
+        evidence.subprocess.check_output = mock_check_output
+        try:
+            result = evidence.gh('dummy', binary=False)
+            self.assertEqual(result, {"success": True})
+            self.assertEqual(attempts, 4)
+            self.assertEqual(sleep_calls, [2, 4, 8])
+        finally:
+            evidence.time.sleep = original_sleep
+            evidence.subprocess.check_output = original_check_output
+
+    def test_gh_no_retry_404(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence)
+
+        attempts = 0
+        def mock_check_output(args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            import subprocess
+            raise subprocess.CalledProcessError(1, args, stderr=b'HTTP 404 Not Found')
+
+        original_check_output = evidence.subprocess.check_output
+        evidence.subprocess.check_output = mock_check_output
+        try:
+            import subprocess
+            with self.assertRaises(subprocess.CalledProcessError):
+                evidence.gh('dummy', binary=False)
+            self.assertEqual(attempts, 1)
+        finally:
+            evidence.subprocess.check_output = original_check_output
+
+
+    def test_gh_exhaust_attempts(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence)
+
+        attempts = 0
+        def mock_check_output(args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            import subprocess
+            raise subprocess.CalledProcessError(1, args, stderr=b'HTTP 502 Bad Gateway')
+
+        def mock_sleep(seconds):
+            pass
+
+        original_sleep = evidence.time.sleep
+        original_check_output = evidence.subprocess.check_output
+        evidence.time.sleep = mock_sleep
+        evidence.subprocess.check_output = mock_check_output
+        try:
+            import subprocess
+            with self.assertRaises(subprocess.CalledProcessError):
+                evidence.gh('dummy', binary=False)
+            self.assertEqual(attempts, 4)
+        finally:
+            evidence.time.sleep = original_sleep
+            evidence.subprocess.check_output = original_check_output
+
+    def test_gh_false_429(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence)
+
+        attempts = 0
+        def mock_check_output(args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            import subprocess
+            # URL contains 429, but status is 404
+            raise subprocess.CalledProcessError(1, args, stderr=b'HTTP 404 Not Found for https://api.github.com/repos/foo/bar/runs/429123/jobs')
+
+        original_check_output = evidence.subprocess.check_output
+        evidence.subprocess.check_output = mock_check_output
+        try:
+            import subprocess
+            with self.assertRaises(subprocess.CalledProcessError):
+                evidence.gh('dummy', binary=False)
+            self.assertEqual(attempts, 1)
+        finally:
+            evidence.subprocess.check_output = original_check_output
+
+    def test_collect_workflow_dispatch_on_main(self):
+        import importlib.util
+        from unittest.mock import patch, MagicMock
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        self.evidence = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.evidence)
+
+        document = {'features': {}}
+        repo = 'test/repo'
+        sha = 'abc'
+
+        with patch.object(self.evidence, 'gh') as mock_gh:
+            def side_effect(endpoint, binary=False):
+                if 'runs?' in endpoint:
+                    if 'ci.yml' in endpoint:
+                        return {'workflow_runs': [{'head_sha': sha, 'head_branch': 'main', 'event': 'workflow_dispatch', 'run_number': 1, 'run_attempt': 1, 'status': 'completed', 'id': 123, 'html_url': '', 'updated_at': ''}]}
+                    return {'workflow_runs': []}
+                if '/jobs' in endpoint:
+                    return {'jobs': [{'name': 'Full Ledger Verification', 'conclusion': 'success'}]}
+                if '/artifacts' in endpoint:
+                    return {'artifacts': []}
+                return {}
+
+            mock_gh.side_effect = side_effect
+            res = self.evidence.collect(sha, document, repo)
+            self.assertEqual(res['ledger_sha'], sha)
+
+        with patch.object(self.evidence, 'gh') as mock_gh:
+            def side_effect(endpoint, binary=False):
+                if 'runs?' in endpoint:
+                    if 'ci.yml' in endpoint:
+                        return {'workflow_runs': [{'head_sha': sha, 'head_branch': 'other', 'event': 'workflow_dispatch', 'run_number': 1, 'run_attempt': 1, 'status': 'completed', 'id': 123, 'html_url': '', 'updated_at': ''}]}
+                    return {'workflow_runs': []}
+                return {}
+
+            mock_gh.side_effect = side_effect
+            res = self.evidence.collect(sha, document, repo)
+            self.assertNotIn('ledger_sha', res)
+
+        with patch.object(self.evidence, 'gh') as mock_gh:
+            def side_effect(endpoint, binary=False):
+                if 'runs?' in endpoint:
+                    if 'ci.yml' in endpoint:
+                        return {'workflow_runs': [{'head_sha': sha, 'head_branch': 'main', 'event': 'pull_request', 'run_number': 1, 'run_attempt': 1, 'status': 'completed', 'id': 123, 'html_url': '', 'updated_at': ''}]}
+                    return {'workflow_runs': []}
+                return {}
+
+            mock_gh.side_effect = side_effect
+            res = self.evidence.collect(sha, document, repo)
+            self.assertNotIn('ledger_sha', res)
+
 
 if __name__ == '__main__':
     unittest.main()

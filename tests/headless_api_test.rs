@@ -7,12 +7,15 @@ use std::time::Duration;
 struct ChildGuard {
     child: Child,
     db_paths: Vec<String>,
+    _temp_dir: tempfile::TempDir,
 }
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        // _temp_dir will be dropped here automatically, cleaning up its contents.
+        // We still attempt to remove explicitly tracked paths for good measure.
         for path in &self.db_paths {
             let _ = std::fs::remove_file(path);
             let _ = std::fs::remove_file(format!("{}-wal", path));
@@ -31,11 +34,30 @@ async fn test_headless_api_e2e() {
 
     let url = format!("http://127.0.0.1:{port}/headless");
 
-    let code_db = format!("data/headless-test-code-{port}.db");
-    let mem_db = format!("data/headless-test-mem-{port}.db");
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    let config_dir = temp_dir.path().join("config");
+    let data_dir = temp_dir.path().join("data");
+    std::fs::create_dir_all(&home_dir).unwrap();
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let code_db = data_dir
+        .join(format!("data/headless-test-code-{port}.db"))
+        .to_string_lossy()
+        .into_owned();
+    let mem_db = data_dir
+        .join(format!("data/headless-test-mem-{port}.db"))
+        .to_string_lossy()
+        .into_owned();
 
     let _child = ChildGuard {
         child: std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
+            .env("HOME", &home_dir)
+            .env("XAVIER_CONFIG_PATH", config_dir.join("config.json"))
+            .env("XAVIER_RUNTIME_STATE_PATH", config_dir.join("state.json"))
+            .env("XAVIER_DATA_DIR", &data_dir)
+            .current_dir(temp_dir.path())
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", port.to_string())
             .env("XAVIER_TOKEN", "test-token")
@@ -47,6 +69,7 @@ async fn test_headless_api_e2e() {
             .spawn()
             .expect("failed to start xavier binary"),
         db_paths: vec![code_db, mem_db],
+        _temp_dir: temp_dir,
     };
 
     let client = Client::new();
@@ -134,9 +157,15 @@ async fn test_headless_api_e2e() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["result"]["tool"], "memory_search");
+    assert_eq!(body["code"], 501);
+    assert_eq!(body["reason"], "unsupported_in_headless");
+    assert!(body["supported_tools"].is_array());
+    assert!(body["supported_tools"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("code_scan")));
 
     // 8. GET /v1/providers
     let v1_url = format!("http://127.0.0.1:{port}/v1");

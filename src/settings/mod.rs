@@ -12,6 +12,7 @@ use std::sync::{Arc, LazyLock};
 pub mod defaults;
 pub mod env;
 pub mod inspection;
+pub mod paths;
 pub mod serialization;
 pub mod types;
 pub mod validation;
