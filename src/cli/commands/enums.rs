@@ -1331,7 +1331,10 @@ pub enum ProviderCommand {
     /// Show current provider status
     Status,
     /// List all available providers and strategies
-    List,
+    List {
+        #[arg(long)]
+        json: bool,
+    },
     /// Manually switch to a provider
     Set { name: String },
     /// Set an automatic selection strategy

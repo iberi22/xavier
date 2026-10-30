@@ -371,7 +371,7 @@
       "github_issue": 115,
       "last_tested": "2026-08-31",
       "notes": "Public readiness gate: P2P network & Data Commons functional; operational maturity libp2p/onchain in beta (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]",
-      "implemented_in": "src/mesh/libp2p_transport.rs, src/mesh/iroh_transport.rs, src/mesh/fallback_transport.rs",
+      "implemented_in": "src/mesh/iroh_transport.rs, src/mesh/fallback_transport.rs",
       "tests": [
         "test_mesh_handshake_and_sync",
         "test_heartbeat_service_with_peer_count",
@@ -774,7 +774,8 @@
       "tests": [
         "test_auto_respects_explicit_local_signal",
         "test_auto_triggers_probe_ollama_reachable_with_embeddinggemma",
-        "test_cloud_config_priorities"
+        "test_cloud_config_priorities",
+        "tests/cli_provider_live_routes_e2e.rs::test_provider_live_routes"
       ],
       "req_ids": [
         "REQ-017"
@@ -1817,7 +1818,9 @@
         "explain::model::tests::explain_key_file_readable_by_others_is_not_configured",
         "explain::model::tests::explain_without_provider_uses_global_config",
         "explain::model::tests::explain_unsupported_provider_is_not_configured",
-        "explain::model::tests::explain_anthropic_without_model_is_not_configured"
+        "explain::model::tests::explain_anthropic_without_model_is_not_configured",
+        "tests/explain_isolated_llm_e2e.rs::explain_uses_isolated_llm_settings_and_fails_on_network",
+        "tests/explain_isolated_llm_e2e.rs::explain_falls_back_to_global_when_isolated_not_configured"
       ],
       "user_stories": []
     },
@@ -1974,7 +1977,9 @@
         "explain::context::tests::unreadable_fragment_is_recorded_not_fatal",
         "explain::context::tests::rejects_paths_escaping_the_repo",
         "explain::history::tests::lists_commits_touching_the_range_newest_first",
-        "explain::history::tests::non_repo_directory_is_an_error"
+        "explain::history::tests::non_repo_directory_is_an_error",
+        "tests/code_explain_context_e2e.rs::code_explain_context_assembles_evidence_from_code_and_git_history",
+        "tests/code_explain_context_e2e.rs::code_explain_context_handles_missing_git_repo_gracefully"
       ],
       "user_stories": []
     },
@@ -2643,7 +2648,8 @@
         "maloca::governance::tests::majority_at_exact_threshold_passes",
         "maloca::tests::support_patch_maps_moves_to_200_409_and_404",
         "tests/maloca_governance_wiring_e2e.rs::proposal_lifecycle_e2e",
-        "tests/maloca_governance_wiring_e2e.rs::governance_proposal_rejection_e2e"
+        "tests/maloca_governance_wiring_e2e.rs::governance_proposal_rejection_e2e",
+        "tests/maloca_wiring_routes_e2e.rs::maloca_wiring_e2e"
       ],
       "user_stories": []
     },
@@ -3881,7 +3887,9 @@
         "server::explain_route::tests::explain_rejects_parent_and_absolute_paths",
         "server::explain_route::tests::explain_rejects_inverted_and_oversized_ranges",
         "server::explain_route::tests::explain_rejects_symlink_escaping_the_repo",
-        "server::explain_route::tests::explain_maps_model_failure_to_502"
+        "server::explain_route::tests::explain_maps_model_failure_to_502",
+        "tests/explain_render_route_e2e.rs::explain_resolves_nested_repo",
+        "tests/explain_render_route_e2e.rs::explain_maps_model_failure_to_502"
       ],
       "user_stories": []
     },
