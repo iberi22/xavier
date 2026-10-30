@@ -672,6 +672,49 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         report_apply, _ = self.run_all(apply=True)
         self.assertEqual([], report_apply.get('demotions_applied', []))
 
+
+    def test_truncated_final_block_regression(self):
+        log = '==> Xavier verify pipeline (mode: full, root: /repo)\n  ▶ test_stable\n  ▶ test_unfinished'
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+        self.features['features']['stable']['tests'] = ['test_stable']
+        results, _, _ = evidence_mod.parse_log(log, self.features)
+        self.assertNotIn('test_stable', results['stable']['passed'])
+        self.assertNotIn('test_stable', results['stable']['failed'])
+        self.assertNotIn('test_unfinished', results['stable']['passed'])
+        self.assertNotIn('test_unfinished', results['stable']['failed'])
+
+    def test_parser_empty_missing_malformed_partial_complete(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+
+        doc = {
+            'features': {
+                'missing': {'status': 'beta'},
+                'empty': {'status': 'beta', 'tests': []},
+                'malformed_obj': {'status': 'beta', 'tests': [{}]},
+                'malformed_empty_str': {'status': 'beta', 'tests': ['']},
+                'malformed_list': {'status': 'beta', 'tests': [[]]},
+                'partial': {'status': 'beta', 'tests': ['test_1', 'test_2']},
+                'complete': {'status': 'beta', 'tests': ['test_1']}
+            }
+        }
+        log = '==> Xavier verify pipeline (mode: full, root: /repo)\n  ▶ test_1\n    ✅ xavier (passed=1)\n  ✅ all declared tests passed\n'
+        results, _, evidence_complete = evidence_mod.parse_log(log, doc)
+        self.assertFalse(results['missing']['evidence_complete'])
+        self.assertFalse(results['empty']['evidence_complete'])
+        self.assertFalse(results['malformed_obj']['evidence_complete'])
+        self.assertFalse(results['malformed_empty_str']['evidence_complete'])
+        self.assertFalse(results['malformed_list']['evidence_complete'])
+        self.assertFalse(results['partial']['evidence_complete'])
+        self.assertTrue(results['complete']['evidence_complete'])
+        self.assertFalse(evidence_complete) # since 'test_2' was missing overall
+
+
     def test_stable_incomplete_evidence_collection_skips_review(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
         self.evidence['per_feature_test_results'] = {}
