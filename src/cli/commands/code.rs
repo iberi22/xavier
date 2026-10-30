@@ -368,6 +368,7 @@ async fn handle_code_repos_command(cmd: CodeReposCommand) -> Result<()> {
                 std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             let mut roots = all_code_roots(&workspace);
 
+            let resolved_workspace = roots.first().cloned().unwrap_or_else(|| workspace.clone());
             // Replicate extra_roots_json logic inline to separate source: env vs source: index
             let mut extra_roots = Vec::new();
             if !roots.is_empty() {
@@ -382,40 +383,35 @@ async fn handle_code_repos_command(cmd: CodeReposCommand) -> Result<()> {
                 }));
             }
 
-            let db_path = code_graph_db_path_for_root(&workspace);
+            // Per-repo storage lives under the resolved repository root (not the raw
+            // cwd, which may be a subdirectory); an explicit XAVIER_CODE_GRAPH_DB_PATH
+            // override wins, matching the rest of the code-graph CLI.
+            let db_path = std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
+                .ok()
+                .filter(|p| !p.trim().is_empty())
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| code_graph_db_path_for_root(&resolved_workspace));
             let mut repos = Vec::new();
 
             if db_path.exists() {
-                match Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY) {
-                    Ok(conn) => {
-                        let stmt = conn.prepare(
-                            "SELECT root, name, created_at FROM projects ORDER BY root ASC",
-                        );
-                        if let Ok(mut stmt) = stmt {
-                            let rows = stmt.query_map([], |row| {
-                                Ok((
-                                    row.get::<_, String>(0)?,
-                                    row.get::<_, String>(1)?,
-                                    row.get::<_, Option<String>>(2)?,
-                                ))
-                            });
-                            if let Ok(rows) = rows {
-                                for row in rows.flatten() {
-                                    repos.push(serde_json::json!({
-                                        "root": row.0,
-                                        "name": row.1,
-                                        "created_at": row.2,
-                                        "source": "index"
-                                    }));
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        if !json {
-                            eprintln!("Warning: Failed to open DB read-only: {}", e);
-                        }
-                    }
+                let conn = Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+                let mut stmt =
+                    conn.prepare("SELECT root, name, created_at FROM projects ORDER BY root ASC")?;
+                let rows = stmt.query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                })?;
+                for row in rows {
+                    let row = row?;
+                    repos.push(serde_json::json!({
+                        "root": row.0,
+                        "name": row.1,
+                        "created_at": row.2,
+                        "source": "index"
+                    }));
                 }
             }
 

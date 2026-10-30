@@ -20,6 +20,7 @@ fn test_code_repos_list_cli_e2e() {
 
     let workspace = tmp.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
+    std::fs::create_dir_all(workspace.join(".git")).unwrap();
 
     let extra_root = tmp.path().join("extra_root");
     std::fs::create_dir_all(&extra_root).unwrap();
@@ -87,9 +88,12 @@ fn test_code_repos_list_cli_e2e() {
     db.register_project("/app/service-a", "Service A").unwrap();
     db.register_project("/app/service-b", "Service B").unwrap();
 
-    // Now run again with the populated DB
+    let src_dir = workspace.join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+
+    // Now run again with the populated DB from a nested path to verify repo root resolution
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
-    cmd.current_dir(&workspace)
+    cmd.current_dir(&src_dir)
         .args(["code", "repos", "list", "--json"]);
     cmd.env("HOME", &home);
     cmd.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
@@ -146,4 +150,35 @@ fn test_code_repos_list_cli_e2e() {
 
     // Explicit checkpoint wal for shutdown
     db.checkpoint_wal().unwrap();
+    drop(db); // Drop the DB so we can corrupt the file
+
+    // 4. Test error propagation when DB is corrupt
+    std::fs::write(
+        &db_path,
+        b"not a real sqlite database! this is garbage data",
+    )
+    .unwrap();
+
+    let mut cmd_corrupt = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd_corrupt
+        .current_dir(&workspace)
+        .args(["code", "repos", "list", "--json"]);
+    cmd_corrupt.env("HOME", &home);
+    cmd_corrupt.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
+    cmd_corrupt.env("XAVIER_RUNTIME_STATE_PATH", &state);
+    cmd_corrupt.env("XAVIER_DATA_DIR", &data);
+    cmd_corrupt.env("XAVIER_CODE_EXTRA_ROOTS", &extra_root);
+
+    let out_corrupt = cmd_corrupt.output().unwrap();
+    assert!(
+        !out_corrupt.status.success(),
+        "Corrupt DB should result in a failed command"
+    );
+
+    let stderr = String::from_utf8_lossy(&out_corrupt.stderr);
+    assert!(
+        stderr.contains("file is not a database"),
+        "Error should bubble up, stderr: {}",
+        stderr
+    );
 }
