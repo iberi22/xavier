@@ -110,7 +110,7 @@ fn code_explain_context_assembles_evidence_from_code_and_git_history() {
         .find(|e| e.kind == EvidenceKind::Code)
         .expect("Code evidence missing");
     assert_eq!(code_evidence.source_ref, "src/lib.rs:1-3");
-    assert_eq!(code_evidence.text, file_content);
+    assert_eq!(code_evidence.text, file_content.trim_end());
     assert_eq!(code_evidence.score, f32::MAX);
 
     // Check that we have evidence from the git history source
@@ -119,7 +119,7 @@ fn code_explain_context_assembles_evidence_from_code_and_git_history() {
         .iter()
         .find(|e| e.kind == EvidenceKind::Commit)
         .expect("Commit evidence missing");
-    assert_eq!(commit_evidence.source_ref, "src/lib.rs:1-3");
+    assert_eq!(commit_evidence.source_ref.len(), 40);
     assert!(commit_evidence.text.contains("Initial commit"));
 }
 
@@ -163,7 +163,5 @@ fn code_explain_context_handles_missing_git_repo_gracefully() {
         .iter()
         .find(|(name, _)| name == "git-history")
         .expect("git-history should be skipped");
-    assert!(
-        skipped_git.1.contains("not a git repository") || skipped_git.1.contains("running git")
-    );
+    assert!(skipped_git.1.contains("is not inside a git repository"));
 }

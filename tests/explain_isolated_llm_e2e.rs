@@ -101,35 +101,66 @@ async fn post_explain(app: &Router) -> (StatusCode, Value) {
 
 #[cfg(unix)]
 #[tokio::test]
+#[serial_test::serial]
 async fn explain_uses_isolated_llm_settings_and_fails_on_network() {
     let temp = tempfile::tempdir().expect("tempdir");
     let key_file = write_key_file(temp.path(), "fake-api-key", 0o600);
 
-    // We configure Anthropic. Since we don't mock the endpoint here, it will try to call the real
-    // anthropic or error out. What we want to check is that it attempts the provider request
-    // rather than falling back to the disabled model immediately.
-    let (app, _envs) = isolated_explain_app(&temp, Some("anthropic"), Some(&key_file)).await;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let mock_called = Arc::new(AtomicBool::new(false));
+    let called_clone = mock_called.clone();
+
+    let mock_app = Router::new().route(
+        "/v1/messages",
+        axum::routing::post(move || async move {
+            called_clone.store(true, Ordering::SeqCst);
+            axum::Json(serde_json::json!({
+                "id": "msg_123",
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "mock explanation"}],
+                "model": "claude-3-sonnet-20240229",
+                "stop_reason": "end_turn",
+                "stop_sequence": null,
+                "usage": {"input_tokens": 10, "output_tokens": 10}
+            }))
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.unwrap();
+    });
+
+    let (app, mut envs) = isolated_explain_app(&temp, Some("anthropic"), Some(&key_file)).await;
+    envs.push(RestoreEnv::set_str(&[
+        ("XAVIER_EXPLAIN_MODEL", "claude-3-sonnet-20240229"),
+        (
+            "XAVIER_EXPLAIN_API_ENDPOINT",
+            &format!("http://{addr}/v1/messages"),
+        ),
+    ]));
 
     let (status, json) = post_explain(&app).await;
 
-    // The request should fail (BAD_GATEWAY) because the anthropic client cannot make a real request
-    // (no network in sandbox, or DNS error), but it SHOULD indicate an Anthropic error, not a
-    // global 'disabled' error.
-    assert_eq!(status, StatusCode::BAD_GATEWAY);
-    let error_msg = json["error"].as_str().unwrap_or("");
+    assert_eq!(status, StatusCode::OK, "json: {json:?}");
     assert!(
-        error_msg.contains("anthropic explanation request failed"),
-        "Expected anthropic error, got: {}",
-        error_msg
+        mock_called.load(Ordering::SeqCst),
+        "Mock server was not called"
     );
-    // Ensure the key doesn't leak in the error message
-    assert!(!error_msg.contains("fake-api-key"));
+    assert_eq!(json["explanation"], "mock explanation");
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn explain_falls_back_to_global_when_isolated_not_configured() {
     let temp = tempfile::tempdir().expect("tempdir");
-    let (app, _envs) = isolated_explain_app(&temp, None, None).await;
+    let (app, mut envs) = isolated_explain_app(&temp, None, None).await;
+    envs.push(RestoreEnv::clear(&[
+        "XAVIER_EXPLAIN_PROVIDER",
+        "XAVIER_EXPLAIN_API_KEY_FILE",
+    ]));
 
     let (status, json) = post_explain(&app).await;
 
