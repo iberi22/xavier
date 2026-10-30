@@ -109,9 +109,9 @@ def parse_log(log, document):
 def collect(sha, document, repo):
     evidence = dict(sha=sha, per_feature_test_results={}, integration_targets_passed=[])
     for workflow, key in [('ci.yml', 'ledger'), ('e2e-segmented.yml', 'e2e')]:
-        runs = gh(f'{repo}/actions/workflows/{workflow}/runs?branch=main&event=push&head_sha={sha}&per_page=100')['workflow_runs']
+        runs = gh(f'{repo}/actions/workflows/{workflow}/runs?branch=main&head_sha={sha}&per_page=100')['workflow_runs']
         runs = [r for r in runs if r['head_sha'] == sha and r['head_branch'] == 'main'
-                and r['event'] == 'push']
+                and r['event'] in ('push', 'workflow_dispatch')]
         if not runs:
             continue
         run = max(runs, key=lambda r: (r['run_number'], r['run_attempt']))
