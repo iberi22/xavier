@@ -104,8 +104,13 @@ impl LiveTestServer {
         for _ in 0..120 {
             if let Ok(resp) = client.get(&health_url).send().await {
                 if resp.status().is_success() {
-                    healthy = true;
-                    break;
+                    // The ready gate answers 200 {"status":"starting"} before the
+                    // app router (and /memory/add) is installed; keep polling.
+                    let body = resp.text().await.unwrap_or_default();
+                    if !body.contains("\"status\":\"starting\"") {
+                        healthy = true;
+                        break;
+                    }
                 }
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
