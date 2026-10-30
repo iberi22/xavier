@@ -37,6 +37,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: BackupCommand,
     },
+    /// Manage XAVIER projects
+    Projects {
+        #[command(subcommand)]
+        cmd: ProjectsCommand,
+    },
     /// Inspect effective settings and edit runtime overrides
     Config(super::config::ConfigArgs),
     /// Initialize Xavier onboarding and interactive RAG installer wizard
@@ -619,7 +624,11 @@ pub enum SpaceCommand {
         label: Vec<String>,
     },
     /// List all spaces
-    List,
+    List {
+        /// Output in JSON format
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Unlock a space
     Unlock {
         /// The space ID
@@ -2422,5 +2431,18 @@ pub enum BackupCommand {
         /// Output in JSON format
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ProjectsCommand {
+    /// List all projects (workspaces)
+    List {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+        /// Show all projects, including scratch/temp workspaces
+        #[arg(long)]
+        all: bool,
     },
 }
