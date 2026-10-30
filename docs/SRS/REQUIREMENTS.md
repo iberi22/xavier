@@ -238,7 +238,7 @@ AST/symbol indexing via `code-graph` sidecar: `/code/scan`, `/code/find`, `/code
 - **Category:** Functional (Phase 2+)
 - **Priority:** High
 - **SRS Status:** `verified` (**100%** — WAVE-3 + WAVE-4 stable)
-- **Files:** `src/mesh/` (42 files: libp2p_transport, fallback_transport, iroh_transport, mesh_service, heartbeat, namespace, pro_gate), `src/data_commons/`, `tests/mesh_integration.rs`
+- **Files:** `src/mesh/` (fallback_transport, iroh_transport, mesh_service, heartbeat, namespace, pro_gate), `src/data_commons/`, `tests/mesh_integration.rs`
 - **Features:** `feat-mesh-network` (100% stable) · EPIC: #115
 
 ### Description
