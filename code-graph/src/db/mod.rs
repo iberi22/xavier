@@ -2218,33 +2218,41 @@ mod tests {
         db.insert_symbols(&[sym1.clone()]).unwrap();
 
         let conn = db.conn.lock().unwrap();
-        let root1: Option<String> = conn.query_row(
-            "SELECT project_root FROM symbols WHERE stable_id = ?1",
-            params![sym1.stable_id.as_deref().unwrap()],
-            |row: &rusqlite::Row| row.get(0)
-        ).unwrap();
+        let root1: Option<String> = conn
+            .query_row(
+                "SELECT project_root FROM symbols WHERE stable_id = ?1",
+                params![sym1.stable_id.as_deref().unwrap()],
+                |row: &rusqlite::Row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(root1, None);
         drop(conn);
 
         // 2. insert_symbols_with_root writes the root
-        db.insert_symbols_with_root(&[sym2.clone()], Some("/path/to/proj")).unwrap();
+        db.insert_symbols_with_root(&[sym2.clone()], Some("/path/to/proj"))
+            .unwrap();
         let conn = db.conn.lock().unwrap();
-        let root2: Option<String> = conn.query_row(
-            "SELECT project_root FROM symbols WHERE stable_id = ?1",
-            params![sym2.stable_id.as_deref().unwrap()],
-            |row: &rusqlite::Row| row.get(0)
-        ).unwrap();
+        let root2: Option<String> = conn
+            .query_row(
+                "SELECT project_root FROM symbols WHERE stable_id = ?1",
+                params![sym2.stable_id.as_deref().unwrap()],
+                |row: &rusqlite::Row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(root2, Some("/path/to/proj".to_string()));
         drop(conn);
 
         // 3. re-inserting same stable_id updates the root
-        db.insert_symbols_with_root(&[sym1.clone()], Some("/new/root")).unwrap();
+        db.insert_symbols_with_root(&[sym1.clone()], Some("/new/root"))
+            .unwrap();
         let conn = db.conn.lock().unwrap();
-        let root1_updated: Option<String> = conn.query_row(
-            "SELECT project_root FROM symbols WHERE stable_id = ?1",
-            params![sym1.stable_id.as_deref().unwrap()],
-            |row: &rusqlite::Row| row.get(0)
-        ).unwrap();
+        let root1_updated: Option<String> = conn
+            .query_row(
+                "SELECT project_root FROM symbols WHERE stable_id = ?1",
+                params![sym1.stable_id.as_deref().unwrap()],
+                |row: &rusqlite::Row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(root1_updated, Some("/new/root".to_string()));
     }
 
@@ -2661,7 +2669,9 @@ mod tests {
         {
             let conn = db.conn.lock().expect("lock");
             let size_limit: i64 = conn
-                .query_row("PRAGMA journal_size_limit;", [], |row: &rusqlite::Row| row.get(0))
+                .query_row("PRAGMA journal_size_limit;", [], |row: &rusqlite::Row| {
+                    row.get(0)
+                })
                 .expect("query pragma");
             assert_eq!(size_limit, 64 * 1024 * 1024);
         }
