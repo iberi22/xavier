@@ -717,11 +717,13 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.features['features']['stable']['tests'] = ['test_stable']
         self.evidence['per_feature_test_results']['stable'] = dict(
             declared=['test_stable'], passed=['test_stable'], failed=[],
-            integration_targets_by_test={'test_stable': ['integration']})
+            integration_targets_by_test={'test_stable': ['integration']},
+            evidence_complete=True)
         report, err = self.run_all()
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
         self.assertNotIn('test_stable', err)
+        self.assertFalse(any('review skipped' in r for r in stable.get('review_reasons', [])))
 
     def test_common_evidence_failure_flags_nothing(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
@@ -771,6 +773,9 @@ class PlannedBetaPromotionTests(unittest.TestCase):
     def test_completed_failure_evidence_reaches_stable_review(self):
         # A test fails, verifier reports failure, but all tests were parsed
         self.features['features']['stable']['tests'] = ['test_stable']
+        if 'stable' not in self.evidence.setdefault('per_feature_test_results', {}):
+            self.evidence['per_feature_test_results']['stable'] = {}
+        self.evidence['per_feature_test_results']['stable']['evidence_complete'] = True
         self.evidence['ledger_run_conclusion'] = 'failure'
         self.evidence['per_feature_test_results']['stable'] = dict(
             declared=['test_stable'], passed=[], failed=['test_stable'],
@@ -784,7 +789,9 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
     def test_apply_without_apply_demotions_leaves_flagged_stable(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
-        self.evidence['per_feature_test_results']['stable'] = {'evidence_complete': True}
+        if 'stable' not in self.evidence.setdefault('per_feature_test_results', {}):
+            self.evidence['per_feature_test_results']['stable'] = {}
+        self.evidence['per_feature_test_results']['stable']['evidence_complete'] = True
         report, _ = self.run_all(apply=True)
         self.assertTrue(report['features']['stable'].get('review_flagged'))
         import json
@@ -795,7 +802,12 @@ class PlannedBetaPromotionTests(unittest.TestCase):
     def test_apply_apply_demotions_sets_beta(self):
         import json
         self.features['features']['stable']['open_gaps'] = ['pending']
-        self.evidence['per_feature_test_results']['stable'] = {'evidence_complete': True}
+        if 'stable' not in self.evidence.setdefault('per_feature_test_results', {}):
+            self.evidence['per_feature_test_results']['stable'] = {}
+        self.evidence['per_feature_test_results']['stable']['evidence_complete'] = True
+        if 'stable' not in self.evidence.setdefault('per_feature_test_results', {}):
+            self.evidence['per_feature_test_results']['stable'] = {}
+        self.evidence['per_feature_test_results']['stable']['evidence_complete'] = True
         self.features['features']['stable']['progress_pct'] = 100
         self.features['features']['stable']['ledger'] = {'promoted_by': 'bot'}
 
@@ -839,7 +851,12 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         import json
         self.features['metadata'] = {'features_stable': 1, 'features_beta': 0, 'features_in_progress': 0, 'features_planned': 0, 'features_complete': 1, 'total_features': 1, 'overall_progress_pct': 100.0, 'last_verified': '2000-01-01'}
         self.features['features']['stable']['open_gaps'] = ['pending']
-        self.evidence['per_feature_test_results']['stable'] = {'evidence_complete': True}
+        if 'stable' not in self.evidence.setdefault('per_feature_test_results', {}):
+            self.evidence['per_feature_test_results']['stable'] = {}
+        self.evidence['per_feature_test_results']['stable']['evidence_complete'] = True
+        if 'stable' not in self.evidence.setdefault('per_feature_test_results', {}):
+            self.evidence['per_feature_test_results']['stable'] = {}
+        self.evidence['per_feature_test_results']['stable']['evidence_complete'] = True
         self.features['features']['stable']['progress_pct'] = 100
 
         evidence = self.root / 'evidence.json'
@@ -876,7 +893,12 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         if 'metadata' in self.features:
             del self.features['metadata']
         self.features['features']['stable']['open_gaps'] = ['pending']
-        self.evidence['per_feature_test_results']['stable'] = {'evidence_complete': True}
+        if 'stable' not in self.evidence.setdefault('per_feature_test_results', {}):
+            self.evidence['per_feature_test_results']['stable'] = {}
+        self.evidence['per_feature_test_results']['stable']['evidence_complete'] = True
+        if 'stable' not in self.evidence.setdefault('per_feature_test_results', {}):
+            self.evidence['per_feature_test_results']['stable'] = {}
+        self.evidence['per_feature_test_results']['stable']['evidence_complete'] = True
         self.features['features']['stable']['progress_pct'] = 100
 
         evidence = self.root / 'evidence.json'

@@ -62,7 +62,7 @@ def parse_log(log, document):
                     passed.add(test)
                     targets_by_test[test] = sorted(test_targets)
                     targets.update(test_targets)
-            else:
+            elif '❌ FAILED:' in block:
                 if flagged:
                     candidate_failed.add(test)
                     candidate.add(test)
