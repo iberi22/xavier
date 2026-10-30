@@ -153,7 +153,7 @@ fn billing_usage_success_resolves_tenant() {
     let assert_called = Arc::new(Mutex::new(String::new()));
     let assert_called_clone = Arc::clone(&assert_called);
 
-    std::thread::spawn(move || {
+    let mock_thread = std::thread::spawn(move || {
         for _ in 0..2 {
             if let Ok((mut stream, _)) = listener.accept() {
                 let mut buf = Vec::new();
@@ -249,6 +249,8 @@ fn billing_usage_success_resolves_tenant() {
 
     let (status, stdout, stderr) = wait_with_timeout(cmd);
 
+    mock_thread.join().unwrap(); // Join thread before assertions to propagate thread panics
+
     let a_err = assert_called.lock().unwrap().clone();
     assert!(a_err.is_empty(), "Mock assertion failed: {}", a_err);
 
@@ -263,6 +265,8 @@ fn billing_usage_success_resolves_tenant() {
     assert_eq!(status, Some(0), "stderr: {stderr}, stdout: {stdout}");
 
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    // In current main, checkout exposes only the resolved tenant (it hits checkout mock returning coming_soon).
+    // It doesn't print usage output directly when checking out. We assert what it outputs currently.
     assert_eq!(json["status"], "coming_soon");
     assert_eq!(json["plan"], "pro");
 }
@@ -272,7 +276,7 @@ fn billing_usage_500_fails_checkout() {
     let home_dir = tempdir().unwrap();
     let (listener, url) = bind_mock_server();
 
-    std::thread::spawn(move || {
+    let mock_thread = std::thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
             handle_mock_request(
                 &mut stream,
@@ -289,6 +293,8 @@ fn billing_usage_500_fails_checkout() {
     cmd.env("XAVIER_BILLING_URL", &url);
 
     let (status, _, stderr) = wait_with_timeout(cmd);
+    mock_thread.join().unwrap();
+
     assert_ne!(status, Some(0));
     assert!(stderr.contains("cannot resolve checkout tenant"));
     assert!(stderr.contains("HTTP 500"));
@@ -299,7 +305,7 @@ fn billing_usage_401_unauthorized() {
     let home_dir = tempdir().unwrap();
     let (listener, url) = bind_mock_server();
 
-    std::thread::spawn(move || {
+    let mock_thread = std::thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
             handle_mock_request(
                 &mut stream,
@@ -316,6 +322,8 @@ fn billing_usage_401_unauthorized() {
     cmd.env("XAVIER_BILLING_URL", &url);
 
     let (status, _, stderr) = wait_with_timeout(cmd);
+    mock_thread.join().unwrap();
+
     assert_ne!(status, Some(0));
     assert!(stderr.contains("cannot resolve checkout tenant"));
     assert!(stderr.contains("rejected the credentials (HTTP 401)"));
@@ -329,7 +337,7 @@ fn billing_usage_missing_token_pins_permissive_checkout() {
     let assert_called = Arc::new(Mutex::new(String::new()));
     let assert_called_clone = Arc::clone(&assert_called);
 
-    std::thread::spawn(move || {
+    let mock_thread = std::thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
             let (req_str, json) = handle_mock_request(
                 &mut stream,
@@ -357,10 +365,13 @@ fn billing_usage_missing_token_pins_permissive_checkout() {
     cmd.env("XAVIER_BILLING_URL", &url);
 
     let (status, stdout, _) = wait_with_timeout(cmd);
+    mock_thread.join().unwrap();
 
     let a_err = assert_called.lock().unwrap().clone();
     assert!(a_err.is_empty(), "Mock assertion failed: {}", a_err);
 
+    // Current checkout deliberately permits missing tokens, so this tests that behavior
+    // rather than failing with a configuration error. A non-zero config error for a missing token is out of scope for now.
     assert_eq!(status, Some(0));
 
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
