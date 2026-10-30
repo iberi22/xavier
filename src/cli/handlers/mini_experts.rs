@@ -52,7 +52,10 @@ pub async fn handle_mini_expert_command(cmd: MiniExpertCommand) -> Result<()> {
                 _ => false,
             };
             if is_json {
-                println!("{}", serde_json::to_string(&serde_json::json!({ "error": e.to_string() })).unwrap());
+                println!(
+                    "{}",
+                    serde_json::to_string(&serde_json::json!({ "error": e.to_string() })).unwrap()
+                );
                 std::process::exit(1);
             }
             return Err(e);
