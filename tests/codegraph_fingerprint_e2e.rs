@@ -1,10 +1,11 @@
 //! e2e test for code-graph fingerprint contract.
 
 use code_graph::db::CodeGraphDB;
+use code_graph::fingerprint::{fingerprint_source, to_json_sorted};
 use code_graph::indexer::Indexer;
 use code_graph::query::QueryEngine;
+use code_graph::types::Language;
 use std::fs;
-use std::process::Command;
 use std::sync::Arc;
 use tempfile::tempdir;
 use xavier::cli::state::CodeGraphState;
@@ -44,10 +45,6 @@ impl Drop for EnvRestorer {
     }
 }
 
-fn get_cargo() -> String {
-    std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string())
-}
-
 #[tokio::test]
 #[serial_test::serial]
 async fn test_fingerprint_stable_unchanged() {
@@ -78,42 +75,18 @@ async fn test_fingerprint_stable_unchanged() {
     state.indexer.index(&root, true).await.unwrap();
 
     let path_str = src_dir.join("lib.rs").to_str().unwrap().to_string();
+    let source1 = fs::read_to_string(&path_str).unwrap();
 
-    let output1 = Command::new(get_cargo())
-        .args(&[
-            "run",
-            "-p",
-            "code-graph",
-            "--",
-            "fingerprint",
-            "--lang",
-            "rust",
-            &path_str,
-        ])
-        .output()
-        .expect("failed to execute cargo run");
-    assert!(output1.status.success());
-    let fp1_json = String::from_utf8_lossy(&output1.stdout);
+    let fp1_obj = fingerprint_source(&source1, Language::Rust, &path_str, &[]);
+    let fp1_json = to_json_sorted(&fp1_obj);
     let mut fp1: serde_json::Value = serde_json::from_str(&fp1_json).unwrap();
 
     // stable
     state.indexer.index(&root, true).await.unwrap();
+    let source2 = fs::read_to_string(&path_str).unwrap();
 
-    let output2 = Command::new(get_cargo())
-        .args(&[
-            "run",
-            "-p",
-            "code-graph",
-            "--",
-            "fingerprint",
-            "--lang",
-            "rust",
-            &path_str,
-        ])
-        .output()
-        .expect("failed to execute cargo run");
-    assert!(output2.status.success());
-    let fp2_json = String::from_utf8_lossy(&output2.stdout);
+    let fp2_obj = fingerprint_source(&source2, Language::Rust, &path_str, &[]);
+    let fp2_json = to_json_sorted(&fp2_obj);
     let mut fp2: serde_json::Value = serde_json::from_str(&fp2_json).unwrap();
 
     let functions = fp1.get("functions").unwrap().as_array().unwrap();
@@ -163,44 +136,20 @@ async fn test_fingerprint_changes() {
     state.indexer.index(&root, true).await.unwrap();
 
     let path_str = lib_rs.to_str().unwrap().to_string();
+    let source1 = fs::read_to_string(&path_str).unwrap();
 
-    let output1 = Command::new(get_cargo())
-        .args(&[
-            "run",
-            "-p",
-            "code-graph",
-            "--",
-            "fingerprint",
-            "--lang",
-            "rust",
-            &path_str,
-        ])
-        .output()
-        .expect("failed to execute cargo run");
-    assert!(output1.status.success());
-    let fp1_json = String::from_utf8_lossy(&output1.stdout);
+    let fp1_obj = fingerprint_source(&source1, Language::Rust, &path_str, &[]);
+    let fp1_json = to_json_sorted(&fp1_obj);
     let mut fp1: serde_json::Value = serde_json::from_str(&fp1_json).unwrap();
 
     // change the source
     fs::write(&lib_rs, code2).unwrap();
 
     state.indexer.index(&root, true).await.unwrap();
+    let source2 = fs::read_to_string(&path_str).unwrap();
 
-    let output2 = Command::new(get_cargo())
-        .args(&[
-            "run",
-            "-p",
-            "code-graph",
-            "--",
-            "fingerprint",
-            "--lang",
-            "rust",
-            &path_str,
-        ])
-        .output()
-        .expect("failed to execute cargo run");
-    assert!(output2.status.success());
-    let fp2_json = String::from_utf8_lossy(&output2.stdout);
+    let fp2_obj = fingerprint_source(&source2, Language::Rust, &path_str, &[]);
+    let fp2_json = to_json_sorted(&fp2_obj);
     let mut fp2: serde_json::Value = serde_json::from_str(&fp2_json).unwrap();
 
     if let Some(f1) = fp1.get_mut("functions").and_then(|v| v.as_array_mut()) {
