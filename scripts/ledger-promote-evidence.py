@@ -30,7 +30,7 @@ STREAK = 3
 
 
 def gh(endpoint, binary=False):
-    attempts = 5
+    attempts = 4
     for attempt in range(attempts):
         try:
             data = subprocess.check_output(['gh', 'api', endpoint], stderr=subprocess.PIPE)
@@ -39,7 +39,7 @@ def gh(endpoint, binary=False):
             if attempt == attempts - 1:
                 raise
             stderr = e.stderr.decode('utf-8', errors='replace') if e.stderr else ''
-            if re.search(r'HTTP 5[0-9]{2}|timeout|connection reset', stderr, re.IGNORECASE) or '429' in stderr:
+            if re.search(r'HTTP (?:5[0-9]{2}|429)(?!\d)|timeout|connection reset', stderr, re.IGNORECASE):
                 time.sleep(2 ** (attempt + 1))
             else:
                 raise

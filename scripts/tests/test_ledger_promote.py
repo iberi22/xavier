@@ -1380,7 +1380,7 @@ class TestLedgerPromoteEvidence(unittest.TestCase):
         def mock_check_output(args, **kwargs):
             nonlocal attempts
             attempts += 1
-            if attempts <= 2:
+            if attempts <= 3:
                 import subprocess
                 raise subprocess.CalledProcessError(1, args, stderr=b'HTTP 502 Bad Gateway')
             return b'{"success": true}'
@@ -1392,8 +1392,8 @@ class TestLedgerPromoteEvidence(unittest.TestCase):
         try:
             result = evidence.gh('dummy', binary=False)
             self.assertEqual(result, {"success": True})
-            self.assertEqual(attempts, 3)
-            self.assertEqual(sleep_calls, [2, 4])
+            self.assertEqual(attempts, 4)
+            self.assertEqual(sleep_calls, [2, 4, 8])
         finally:
             evidence.time.sleep = original_sleep
             evidence.subprocess.check_output = original_check_output
@@ -1410,6 +1410,60 @@ class TestLedgerPromoteEvidence(unittest.TestCase):
             attempts += 1
             import subprocess
             raise subprocess.CalledProcessError(1, args, stderr=b'HTTP 404 Not Found')
+
+        original_check_output = evidence.subprocess.check_output
+        evidence.subprocess.check_output = mock_check_output
+        try:
+            import subprocess
+            with self.assertRaises(subprocess.CalledProcessError):
+                evidence.gh('dummy', binary=False)
+            self.assertEqual(attempts, 1)
+        finally:
+            evidence.subprocess.check_output = original_check_output
+
+
+    def test_gh_exhaust_attempts(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence)
+
+        attempts = 0
+        def mock_check_output(args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            import subprocess
+            raise subprocess.CalledProcessError(1, args, stderr=b'HTTP 502 Bad Gateway')
+
+        def mock_sleep(seconds):
+            pass
+
+        original_sleep = evidence.time.sleep
+        original_check_output = evidence.subprocess.check_output
+        evidence.time.sleep = mock_sleep
+        evidence.subprocess.check_output = mock_check_output
+        try:
+            import subprocess
+            with self.assertRaises(subprocess.CalledProcessError):
+                evidence.gh('dummy', binary=False)
+            self.assertEqual(attempts, 4)
+        finally:
+            evidence.time.sleep = original_sleep
+            evidence.subprocess.check_output = original_check_output
+
+    def test_gh_false_429(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence)
+
+        attempts = 0
+        def mock_check_output(args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            import subprocess
+            # URL contains 429, but status is 404
+            raise subprocess.CalledProcessError(1, args, stderr=b'HTTP 404 Not Found for https://api.github.com/repos/foo/bar/runs/429123/jobs')
 
         original_check_output = evidence.subprocess.check_output
         evidence.subprocess.check_output = mock_check_output
