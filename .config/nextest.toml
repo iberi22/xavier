@@ -103,3 +103,11 @@ test-group = "serial"
 filter = 'binary(=suite_13) & test(/^(tgd_prune_gate_test)::/)'
 test-group = "serial"
 
+
+[[profile.default.overrides]]
+filter = 'test(resolve_state_dir_matches_maloca_and_default)'
+test-group = "serial"
+
+[[profile.ci.overrides]]
+filter = 'test(resolve_state_dir_matches_maloca_and_default)'
+test-group = "serial"

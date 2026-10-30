@@ -32,6 +32,11 @@ pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 /// Each variant maps to a distinct subcommand exposed to the user.
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
+    /// Manage XAVIER projects
+    Projects {
+        #[command(subcommand)]
+        cmd: ProjectsCommand,
+    },
     /// Inspect effective settings and edit runtime overrides
     Config(super::config::ConfigArgs),
     /// Initialize Xavier onboarding and interactive RAG installer wizard
@@ -614,7 +619,11 @@ pub enum SpaceCommand {
         label: Vec<String>,
     },
     /// List all spaces
-    List,
+    List {
+        /// Output in JSON format
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Unlock a space
     Unlock {
         /// The space ID
@@ -2417,4 +2426,17 @@ pub enum RecoveryCommand {
     },
     /// Disconnect the local Google Drive credential.
     Disconnect,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ProjectsCommand {
+    /// List all projects (workspaces)
+    List {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+        /// Show all projects, including scratch/temp workspaces
+        #[arg(long)]
+        all: bool,
+    },
 }

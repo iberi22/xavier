@@ -77,3 +77,8 @@ mod mcp_surface_split_doc;
 
 #[path = "cli_json_sweep2_e2e.rs"]
 mod cli_json_sweep2_e2e;
+
+#[path = "projects_list_cli_e2e.rs"]
+mod projects_list_cli_e2e;
+#[path = "space_cli_e2e.rs"]
+mod space_cli_e2e;

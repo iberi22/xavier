@@ -41,7 +41,7 @@ async fn memory_stats_routes_match_cli_mcp() {
     for i in 0..2 {
         let payload = serde_json::json!({
             "path": format!("activity/stats/events/{}", i),
-            "text": format!("Content for stats {}", i),
+            "content": format!("Content for stats {}", i),
             "metadata": {"index": i, "clearance": "unclassified"}
         });
 
@@ -56,7 +56,12 @@ async fn memory_stats_routes_match_cli_mcp() {
         let res = tower::ServiceExt::oneshot(t.app.clone(), req)
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::OK);
+        let status = res.status();
+        let body_bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let body = String::from_utf8_lossy(&body_bytes);
+        assert_eq!(status, StatusCode::OK, "{body}");
     }
 
     // GET /memory/stats

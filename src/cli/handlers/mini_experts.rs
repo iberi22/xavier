@@ -44,7 +44,20 @@ fn print_records(list: &[ExpertRecord], json: bool) {
 
 /// Handles mini-expert CLI subcommands.
 pub async fn handle_mini_expert_command(cmd: MiniExpertCommand) -> Result<()> {
-    let store = ExpertStore::open_default()?;
+    let store = match ExpertStore::open_default() {
+        Ok(s) => s,
+        Err(e) => {
+            let is_json = match cmd {
+                MiniExpertCommand::List { json } => json,
+                _ => false,
+            };
+            if is_json {
+                println!("{}", serde_json::to_string(&serde_json::json!({ "error": e.to_string() })).unwrap());
+                std::process::exit(1);
+            }
+            return Err(e);
+        }
+    };
     run_command(&store, &CliOllamaRunner::from_env(), cmd).await
 }
 

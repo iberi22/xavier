@@ -268,16 +268,31 @@ pub async fn list_plugins(json: bool) -> Result<()> {
         }
     };
 
-    if json {
-        println!("{}", serde_json::to_string(&registry.plugins).unwrap());
-        return Ok(());
-    }
-
-    println!("Available plugins:");
     let plugin_bin = xavier_home().join("plugins").join("codegraph");
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let symlink_bin = home.join(".local").join("bin").join("codegraph");
 
+    if json {
+        let mut plugins = Vec::new();
+        for p in registry.plugins {
+            let mut val = serde_json::to_value(&p).unwrap();
+            if p.name == "codegraph" {
+                let status = if plugin_bin.exists() || symlink_bin.exists() {
+                    "installed"
+                } else {
+                    "available"
+                };
+                if let Some(obj) = val.as_object_mut() {
+                    obj.insert("status".to_string(), serde_json::json!(status));
+                }
+            }
+            plugins.push(val);
+        }
+        println!("{}", serde_json::to_string(&plugins).unwrap());
+        return Ok(());
+    }
+
+    println!("Available plugins:");
     for p in registry.plugins {
         if p.name == "codegraph" {
             let status = if plugin_bin.exists() || symlink_bin.exists() {
