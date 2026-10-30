@@ -171,8 +171,6 @@ def evaluate(document, evidence, history, root, streak):
         common.append('missing full verifier run URL')
     if not chain or chain[0] != sha or len(set(chain)) != len(chain):
         common.append('invalid consecutive main SHA sequence')
-    if evidence.get('evidence_complete') is not True:
-        common.append('evidence collection incomplete')
     indexed = rust_tests(root)
     targets = set(evidence.get('integration_targets_passed', []))
     per_feature = evidence.get('per_feature_test_results', {})
@@ -261,8 +259,8 @@ def evaluate(document, evidence, history, root, streak):
             declared = []
         if status == 'beta':
             reasons = list(lane_common)
-            if result.get('evidence_complete') is False:
-                reasons.append('incomplete evidence')
+            if evidence.get('evidence_complete') is not True:
+                reasons.append('evidence collection incomplete')
             reasons.extend(completeness_reasons(feature))
             reasons.extend(missing_list)
             evaluated_passed, evaluated_failed = gating_passed, gating_failed
@@ -271,8 +269,8 @@ def evaluate(document, evidence, history, root, streak):
         else:
             blocking, informational = beta_completeness_split(feature)
             reasons = list(lane_common) + blocking + missing_list
-            if result.get('evidence_complete') is False:
-                reasons.append('incomplete evidence')
+            if evidence.get('evidence_complete') is not True:
+                reasons.append('evidence collection incomplete')
             informational = list(informational)
             # Planned/in_progress lane: candidate sets, plus gating sets for
             # names shared with gating features (those names are skipped by
