@@ -4048,7 +4048,11 @@
         "tests::invalid_empty_or_oversized_identity_and_nonce_rejected",
         "tests::sqlite_open_or_transaction_error_is_not_fresh",
         "tests::timestamp_extremes_are_rejected_without_overflow",
-        "tests::concurrent_cap_and_duplicate_claims"
+        "tests::concurrent_cap_and_duplicate_claims",
+        "tests/mesh_replay_store_e2e.rs::fresh_then_replayed_across_reopen",
+        "tests/mesh_replay_store_e2e.rs::senders_are_isolated_across_reopen",
+        "tests/mesh_replay_store_e2e.rs::stale_timestamp_rejected",
+        "tests/mesh_replay_store_e2e.rs::two_handles_same_file"
       ],
       "passes": false,
       "spec_reference": "docs/features/specs/FEATURE-MESH-REPLAY-STORE.md",
