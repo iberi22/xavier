@@ -253,8 +253,26 @@ pub async fn install_plugin(name: String) -> Result<()> {
     Ok(())
 }
 
-pub async fn list_plugins() -> Result<()> {
-    let registry = DefaultRegistry::new().await?;
+pub async fn list_plugins(json: bool) -> Result<()> {
+    let registry = match DefaultRegistry::new().await {
+        Ok(reg) => reg,
+        Err(e) => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&serde_json::json!({ "error": e.to_string() })).unwrap()
+                );
+                std::process::exit(1);
+            }
+            return Err(e);
+        }
+    };
+
+    if json {
+        println!("{}", serde_json::to_string(&registry.plugins).unwrap());
+        return Ok(());
+    }
+
     println!("Available plugins:");
     let plugin_bin = xavier_home().join("plugins").join("codegraph");
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));

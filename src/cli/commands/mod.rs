@@ -422,7 +422,9 @@ impl Cli {
                 PluginCommand::Install { name } => {
                     crate::cli::handlers::plugins::install_plugin(name.clone()).await
                 }
-                PluginCommand::List => crate::cli::handlers::plugins::list_plugins().await,
+                PluginCommand::List { json } => {
+                    crate::cli::handlers::plugins::list_plugins(*json).await
+                }
             },
             Command::MiniExpert { cmd } => {
                 crate::cli::handlers::mini_experts::handle_mini_expert_command(cmd.clone()).await

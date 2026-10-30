@@ -74,3 +74,6 @@ mod skill_store_config;
 mod cli_provider_live_routes_e2e;
 #[path = "mcp_surface_split_doc.rs"]
 mod mcp_surface_split_doc;
+
+#[path = "cli_json_sweep2_e2e.rs"]
+mod cli_json_sweep2_e2e;

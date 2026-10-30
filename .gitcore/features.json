@@ -3329,7 +3329,13 @@
         "tests/cli_health_stats_parity.rs::degraded_health_prints_server_reason_and_version",
         "tests/cli_health_stats_parity.rs::degraded_health_exits_zero_per_documented_contract",
         "tests/cli_health_stats_parity.rs::unhealthy_health_exits_nonzero",
-        "tests/memory_stats_route_e2e.rs::memory_stats_routes_match_cli_mcp"
+        "tests/memory_stats_route_e2e.rs::memory_stats_routes_match_cli_mcp",
+        "tests/cli_json_sweep2_e2e.rs::test_tasks_list_json",
+        "tests/cli_json_sweep2_e2e.rs::test_plugin_list_json",
+        "tests/cli_json_sweep2_e2e.rs::test_governance_list_json",
+        "tests/cli_json_sweep2_e2e.rs::test_governance_status_json",
+        "tests/cli_json_sweep2_e2e.rs::test_mini_expert_list_json",
+        "tests/cli_json_sweep2_e2e.rs::test_repo_config_show_json"
       ],
       "req_ids": [
         "REQ-072"

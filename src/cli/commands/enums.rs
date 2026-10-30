@@ -1178,6 +1178,8 @@ pub enum TasksCommand {
         status: Option<String>,
         #[arg(short = 'q', long)]
         search: Option<String>,
+        #[arg(long, default_value_t = false)]
+        json: bool,
     },
     /// Synchronize tasks with configured backends
     Sync,
@@ -1873,7 +1875,10 @@ pub enum SecretsCommand {
 #[derive(Subcommand, Debug, Clone)]
 pub enum GovernanceCommand {
     /// List active proposals
-    List,
+    List {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Create a new proposal
     Create {
         /// Proposal title
@@ -1885,6 +1890,8 @@ pub enum GovernanceCommand {
     Status {
         /// Proposal ID
         proposal_id: String,
+        #[arg(long, default_value_t = false)]
+        json: bool,
     },
     /// Cast a vote on a proposal
     Vote {
@@ -2255,7 +2262,10 @@ pub enum PluginCommand {
     /// Install a plugin
     Install { name: String },
     /// List plugins
-    List,
+    List {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 /// Mini-expert subcommands
@@ -2293,7 +2303,10 @@ pub enum MiniExpertCommand {
         candidate: bool,
     },
     /// List registered mini-experts (all versions)
-    List,
+    List {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Make a version the single active one (rollback = activate an older version)
     Activate { name: String, version: String },
     /// Retire a version (the active one when --version is omitted)
