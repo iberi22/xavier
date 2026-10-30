@@ -78,5 +78,8 @@ pub static SUITE_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_ne
 #[path = "cli_add_path_e2e.rs"]
 mod cli_add_path_e2e;
 
+#[path = "core_smoke_cli_e2e.rs"]
+mod core_smoke_cli_e2e;
+
 #[path = "skill_dispatch_ephemeral_e2e.rs"]
 mod skill_dispatch_ephemeral_e2e;
