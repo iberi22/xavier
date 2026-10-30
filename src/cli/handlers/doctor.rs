@@ -212,6 +212,137 @@ async fn probe_daemon_config_at(base_url: &str, token: &str) -> ConfigProbe {
     }
 }
 
+/// Check for test pollution left in a real install.
+pub fn check_test_pollution(_settings: &XavierSettings) -> Vec<CheckResult> {
+    let mut results = Vec::new();
+    let temp_dir = std::env::temp_dir();
+
+    // 1. Check runtime state overlay
+    let runtime_state_path_var = std::env::var_os("XAVIER_RUNTIME_STATE_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("~"));
+            home.join(".local/state/xavier/xavier.runtime.json")
+        });
+
+    let mut found_pollution = false;
+
+    if runtime_state_path_var.exists() {
+        match std::fs::read_to_string(&runtime_state_path_var) {
+            Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
+                Ok(json) => {
+                    let keys_to_check = ["data_dir", "db_path", "workspace_dir"];
+                    for key in keys_to_check {
+                        if let Some(path_str) = json.get(key).and_then(|v| v.as_str()) {
+                            let path = std::path::Path::new(path_str);
+                            if path.starts_with(&temp_dir) {
+                                results.push(DoctorCheck {
+                                    name: "Test Pollution".to_string(),
+                                    status: CheckStatus::Warn,
+                                    detail: format!(
+                                        "Runtime state {} points to a temp path: {}",
+                                        key,
+                                        path.display()
+                                    ),
+                                    hint: None,
+                                    timed_out: false,
+                                });
+                                found_pollution = true;
+                            } else if !path.exists() {
+                                results.push(DoctorCheck {
+                                    name: "Test Pollution".to_string(),
+                                    status: CheckStatus::Warn,
+                                    detail: format!(
+                                        "Runtime state {} points to a non-existent path: {}",
+                                        key,
+                                        path.display()
+                                    ),
+                                    hint: None,
+                                    timed_out: false,
+                                });
+                                found_pollution = true;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    results.push(DoctorCheck {
+                        name: "Test Pollution".to_string(),
+                        status: CheckStatus::Warn,
+                        detail: format!("Failed to parse runtime state JSON: {}", e),
+                        hint: None,
+                        timed_out: false,
+                    });
+                    found_pollution = true;
+                }
+            },
+            Err(e) => {
+                results.push(DoctorCheck {
+                    name: "Test Pollution".to_string(),
+                    status: CheckStatus::Warn,
+                    detail: format!("Failed to read runtime state: {}", e),
+                    hint: None,
+                    timed_out: false,
+                });
+                found_pollution = true;
+            }
+        }
+    }
+
+    // 2. Check XAVIER_DATA_DIR
+    let data_dir = XavierSettings::resolve_data_dir();
+    let is_test_mode =
+        std::env::var("XAVIER_TEST").is_ok() || std::env::var("XAVIER_TEST_MODE").is_ok();
+
+    if data_dir.starts_with(&temp_dir) && !is_test_mode {
+        results.push(DoctorCheck {
+            name: "Test Pollution".to_string(),
+            status: CheckStatus::Warn,
+            detail: format!(
+                "XAVIER_DATA_DIR is in temp dir but not in test mode: {}",
+                data_dir.display()
+            ),
+            hint: None,
+            timed_out: false,
+        });
+        found_pollution = true;
+    }
+
+    if data_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&data_dir) {
+            for entry in entries.flatten() {
+                let file_name = entry.file_name();
+                let file_name_str = file_name.to_string_lossy();
+                if file_name_str.contains("SHOULD-NOT-EXIST") {
+                    results.push(DoctorCheck {
+                        name: "Test Pollution".to_string(),
+                        status: CheckStatus::Warn,
+                        detail: format!(
+                            "Found SHOULD-NOT-EXIST file/dir in data dir: {}",
+                            entry.path().display()
+                        ),
+                        hint: None,
+                        timed_out: false,
+                    });
+                    found_pollution = true;
+                }
+            }
+        }
+    }
+
+    if !found_pollution {
+        results.push(DoctorCheck {
+            name: "Test Pollution".to_string(),
+            status: CheckStatus::Ok,
+            detail: "no test pollution found".to_string(),
+            hint: None,
+            timed_out: false,
+        });
+    }
+
+    results
+}
+
 /// Reports unusable sidecar candidates without executing or changing them.
 pub fn check_codegraph_sidecar() -> Vec<CheckResult> {
     let report = crate::codebase::codegraph_sidecar::inspect_codegraph_candidates();
@@ -1095,13 +1226,18 @@ pub async fn execute_doctor_checks(
         check_scheduler(&settings_sched)
     });
 
+    let settings_poll = settings.clone();
+    let pollution_probe = run_sync_probe("Test Pollution", DOCTOR_CHECK_TIMEOUT, move || {
+        check_test_pollution(&settings_poll)
+    });
+
     let sidecar_probe = run_sync_probe(
         "CodeGraph Sidecar Candidates",
         DOCTOR_CHECK_TIMEOUT,
         check_codegraph_sidecar,
     );
 
-    let (db, emb, mem, mesh, http, sec, sched, sidecar) = tokio::join!(
+    let (db, emb, mem, mesh, http, sec, sched, pollution, sidecar) = tokio::join!(
         db_probe,
         emb_probe,
         mem_probe,
@@ -1109,6 +1245,7 @@ pub async fn execute_doctor_checks(
         http_probe,
         sec_probe,
         sched_probe,
+        pollution_probe,
         sidecar_probe
     );
 
@@ -1120,6 +1257,7 @@ pub async fn execute_doctor_checks(
     checks.extend(http);
     checks.extend(sec);
     checks.extend(sched);
+    checks.extend(pollution);
     checks.extend(sidecar);
 
     let overall = compute_overall_status(&checks);

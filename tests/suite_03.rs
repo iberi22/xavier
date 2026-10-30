@@ -55,3 +55,5 @@ mod error_test;
 
 #[path = "skill_usage_telemetry.rs"]
 mod skill_usage_telemetry;
+#[path = "doctor_test_pollution_e2e.rs"]
+mod doctor_test_pollution_e2e;

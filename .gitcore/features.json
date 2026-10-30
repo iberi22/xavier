@@ -3388,7 +3388,12 @@
         "doctor_completes_when_a_probe_hangs",
         "doctor_prints_output_even_with_timed_out_checks",
         "doctor_exit_code_reflects_overall_status",
-        "tests/doctor_bounded_test.rs::doctor_reports_before_deadline_when_tcp_peer_never_responds"
+        "tests/doctor_bounded_test.rs::doctor_reports_before_deadline_when_tcp_peer_never_responds",
+        "test_doctor_pollution_clean",
+        "test_doctor_pollution_runtime_overlay",
+        "test_doctor_pollution_file_should_not_exist",
+        "test_doctor_pollution_invalid_json",
+        "test_doctor_pollution_temp_dir_without_test_mode"
       ],
       "req_ids": [
         "REQ-070"

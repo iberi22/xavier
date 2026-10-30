@@ -32,7 +32,7 @@ filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_lea
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard)::/)'
+filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard|doctor_test_pollution_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -72,7 +72,7 @@ filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_lea
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard)::/)'
+filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard|doctor_test_pollution_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
