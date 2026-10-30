@@ -35,6 +35,9 @@ mod codegraph_installer_e2e;
 #[path = "codegraph_scan_then_query.rs"]
 mod codegraph_scan_then_query;
 
+#[path = "codegraph_walk_hardening_e2e.rs"]
+mod codegraph_walk_hardening_e2e;
+
 #[path = "codegraph_uds_ipc_e2e.rs"]
 mod codegraph_uds_ipc_e2e;
 
