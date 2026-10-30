@@ -5,6 +5,8 @@ name: Server Packages
 # in a clean environment and started before it counts as built.
 
 on:
+  # PRs: packaging-specific paths only (runner budget, unblock-1030). Dependency
+  # bumps (Cargo.toml/Cargo.lock) are still verified by the push-to-main run below.
   pull_request:
     branches: [main, 'sprint/**']
     paths:
@@ -12,8 +14,6 @@ on:
       - 'Dockerfile.headless'
       - 'flake.nix'
       - 'flake.lock'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
       - 'docs/DEPLOY/LINUX_SERVER.md'
       - '.github/workflows/server-packages.yml'
   push:

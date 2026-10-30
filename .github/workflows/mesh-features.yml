@@ -1,11 +1,29 @@
 name: Mesh Features
 
 on:
+  # PRs run only when mesh-relevant paths change (runner budget, unblock-1030).
+  # Push to main stays unfiltered so any cross-module break is still caught.
+  # Not a required check, so a skipped PR run never blocks merging.
   pull_request:
+    paths:
+      - 'src/mesh/**'
+      - 'src/memory/**'
+      - 'src/crypto/**'
+      - 'src/node_identity/**'
+      - 'src/lib.rs'
+      - 'tests/mesh_*.rs'
+      - 'scripts/e2e-wave-target.sh'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/mesh-features.yml'
   push:
     branches:
       - main
   workflow_dispatch:
+
+concurrency:
+  group: mesh-features-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
