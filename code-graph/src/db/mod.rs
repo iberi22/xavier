@@ -942,7 +942,7 @@ impl CodeGraphDB {
                 })
             })
             .map_err(|e| GraphError::Database(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| GraphError::Database(e.to_string()))?;
 
         Ok(symbols)
@@ -1167,7 +1167,7 @@ impl CodeGraphDB {
                 .map_err(|e| GraphError::Database(e.to_string()))?
         };
         let collected_rows = rows
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| GraphError::Database(e.to_string()))?;
         Ok(collected_rows)
     }

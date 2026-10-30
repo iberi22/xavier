@@ -254,33 +254,76 @@ pub async fn build_info(State(state): State<AppState>) -> impl IntoResponse {
 mod tests {
     use super::*;
     use crate::server::mcp::tests::test_state;
-    use std::sync::Arc;
-    use tokio::sync::Mutex;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use std::time::{Duration, Instant};
+
+    struct MaxPoll<F> {
+        inner: Pin<Box<F>>,
+        max_poll: Duration,
+        polls: u32,
+    }
+
+    impl<F: Future> MaxPoll<F> {
+        fn new(inner: F) -> Self {
+            Self {
+                inner: Box::pin(inner),
+                max_poll: Duration::ZERO,
+                polls: 0,
+            }
+        }
+    }
+
+    impl<F: Future> Future for MaxPoll<F> {
+        type Output = (F::Output, Duration, u32);
+
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let start = Instant::now();
+            let poll = self.inner.as_mut().poll(cx);
+            let elapsed = start.elapsed();
+
+            self.polls += 1;
+            if elapsed > self.max_poll {
+                self.max_poll = elapsed;
+            }
+
+            match poll {
+                Poll::Ready(output) => Poll::Ready((output, self.max_poll, self.polls)),
+                Poll::Pending => Poll::Pending,
+            }
+        }
+    }
 
     #[tokio::test(flavor = "current_thread")]
     async fn health_handler_does_not_block_the_runtime() {
         crate::isolate_test_process!();
 
         let (state, _) = test_state().await;
-        let counter = Arc::new(Mutex::new(0));
 
-        let ticker_counter = Arc::clone(&counter);
-        tokio::spawn(async move {
-            loop {
-                let mut guard = ticker_counter.lock().await;
-                *guard += 1;
-                drop(guard);
-                tokio::task::yield_now().await;
-            }
-        });
+        let (resp, max_poll, polls) = MaxPoll::new(health(State(state))).await;
+        let resp = resp.into_response();
+        let status = resp.status();
 
-        // The handler should yield so the ticker runs
-        let _ = health(State(state)).await;
-
-        let final_count = *counter.lock().await;
+        assert_eq!(status, axum::http::StatusCode::OK);
         assert!(
-            final_count > 0,
-            "Ticker did not advance while health handler ran - possible blocking in async context"
+            max_poll < Duration::from_millis(500),
+            "Handler had a blocking poll taking {:?} (polls: {})",
+            max_poll,
+            polls
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn max_poll_detects_a_blocking_poll() {
+        let fut = async {
+            std::thread::sleep(Duration::from_millis(800));
+        };
+        let (_, max_poll, _) = MaxPoll::new(fut).await;
+        assert!(
+            max_poll >= Duration::from_millis(800),
+            "MaxPoll failed to detect blocking poll: {:?}",
+            max_poll
         );
     }
 }
