@@ -616,7 +616,7 @@ xavier provider set openai
 
 ### `xavier provider auto <strategy>`
 
-Set automatic provider selection strategy.
+(Unsupported) This command is not supported on this daemon version and will exit non-zero.
 
 ```bash
 xavier provider auto balanced

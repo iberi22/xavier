@@ -77,25 +77,35 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
             std::process::exit(exit_code);
         }
         ProviderCommand::Set { name } => {
-            let resp = client
+            let resp_result = client
                 .post(format!("{}/v1/providers/switch", base_url))
                 .header("X-Xavier-Token", &token)
                 .json(&serde_json::json!({ "provider": name }))
                 .send()
-                .await?;
+                .await;
 
-            if resp.status().is_success() {
-                let res: serde_json::Value = resp.json().await?;
-                println!(
-                    "✅ {}",
-                    res["message"].as_str().unwrap_or("Switched provider")
-                );
-            } else {
-                println!(
-                    "❌ Failed to set provider: {}",
-                    resp.text().await.unwrap_or_default()
-                );
+            let exit_code = crate::cli::utils::exit_code_for(&resp_result);
+
+            match resp_result {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        let res: serde_json::Value = resp.json().await?;
+                        println!(
+                            "✅ {}",
+                            res["message"].as_str().unwrap_or("Switched provider")
+                        );
+                    } else {
+                        println!(
+                            "❌ Failed to set provider: {}",
+                            resp.text().await.unwrap_or_default()
+                        );
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to set provider: {}", e);
+                }
             }
+            std::process::exit(exit_code);
         }
         ProviderCommand::Auto { strategy: _ } => {
             println!("❌ Route /v1/providers/auto is not available on this daemon version");

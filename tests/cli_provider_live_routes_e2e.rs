@@ -12,6 +12,7 @@ xavier::isolate_test_process!();
 #[derive(Clone, Default)]
 struct RequestLog {
     switches: Arc<Mutex<Vec<serde_json::Value>>>,
+    all_requests: Arc<Mutex<usize>>,
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -19,6 +20,9 @@ struct RequestLog {
 async fn test_provider_live_routes() {
     let tmp_config = TempDir::new().unwrap();
     let tmp_data = TempDir::new().unwrap();
+
+    let config_path = tmp_config.path().join("config.toml");
+    std::fs::write(&config_path, "{}").unwrap();
 
     let request_log = RequestLog::default();
     let log_clone = request_log.clone();
@@ -45,6 +49,12 @@ async fn test_provider_live_routes() {
                     "new": body.get("provider").unwrap_or(&serde_json::json!("")).as_str().unwrap_or("")
                 }))
             }),
+        )
+        .fallback(
+            axum::routing::any(|_req: axum::extract::Request| async move {
+                // Return 404 for unhandled paths but test should assert we never reach here for 'auto'
+                axum::http::StatusCode::NOT_FOUND
+            })
         );
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -68,6 +78,14 @@ async fn test_provider_live_routes() {
         "HOME".to_string(),
         tmp_config.path().to_string_lossy().to_string(),
     );
+    envs.insert(
+        "XAVIER_CONFIG_PATH".to_string(),
+        config_path.to_string_lossy().to_string(),
+    );
+    envs.insert(
+        "XAVIER_RUNTIME_STATE_PATH".to_string(),
+        tmp_data.path().to_string_lossy().to_string(),
+    );
     envs.insert("XAVIER_HOST".to_string(), "127.0.0.1".to_string());
     envs.insert("XAVIER_PORT".to_string(), addr.port().to_string());
 
@@ -77,17 +95,27 @@ async fn test_provider_live_routes() {
     let output_list = Command::new(xavier_bin)
         .envs(&envs)
         .env("XAVIER_URL", &url)
+        .env("XAVIER_CONFIG_PATH", &config_path)
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp_data.path())
         .arg("provider")
         .arg("list")
         .output()
         .unwrap();
 
-    assert_eq!(output_list.status.code().unwrap(), 0);
+    if output_list.status.code().unwrap() != 0 {
+        println!("stdout: {}", String::from_utf8_lossy(&output_list.stdout));
+        println!("stderr: {}", String::from_utf8_lossy(&output_list.stderr));
+        assert_eq!(output_list.status.code().unwrap(), 0);
+    }
+    let stdout_list = String::from_utf8(output_list.stdout).unwrap();
+    assert!(stdout_list.contains("mock-provider"));
 
     // 2. List with --json
     let output_list_json = Command::new(xavier_bin)
         .envs(&envs)
         .env("XAVIER_URL", &url)
+        .env("XAVIER_CONFIG_PATH", &config_path)
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp_data.path())
         .arg("provider")
         .arg("list")
         .arg("--json")
@@ -107,6 +135,8 @@ async fn test_provider_live_routes() {
     let output_set = Command::new(xavier_bin)
         .envs(&envs)
         .env("XAVIER_URL", &url)
+        .env("XAVIER_CONFIG_PATH", &config_path)
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp_data.path())
         .arg("provider")
         .arg("set")
         .arg("test-openai")
@@ -125,9 +155,12 @@ async fn test_provider_live_routes() {
     }
 
     // 4. Auto strategy should fail non-zero
+    let _auto_requests_before = *request_log.all_requests.lock().unwrap();
     let output_auto = Command::new(xavier_bin)
         .envs(&envs)
         .env("XAVIER_URL", &url)
+        .env("XAVIER_CONFIG_PATH", &config_path)
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp_data.path())
         .arg("provider")
         .arg("auto")
         .arg("test-strategy")
@@ -140,6 +173,11 @@ async fn test_provider_live_routes() {
     assert!(
         stderr_str.contains("not available") || stdout_auto_str.contains("not available"),
         "Should print not available error message"
+    );
+    let auto_requests_after = *request_log.all_requests.lock().unwrap();
+    assert_eq!(
+        _auto_requests_before, auto_requests_after,
+        "Auto should not make any network requests"
     );
 
     // 5. Missing route check - setup a mock WITHOUT the route to ensure it fails non-zero
@@ -156,6 +194,8 @@ async fn test_provider_live_routes() {
     let output_list_empty = Command::new(xavier_bin)
         .envs(&envs)
         .env("XAVIER_URL", &url_empty)
+        .env("XAVIER_CONFIG_PATH", &config_path)
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp_data.path())
         .arg("provider")
         .arg("list")
         .output()
