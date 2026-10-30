@@ -829,3 +829,9 @@ class PlannedBetaPromotionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+    def test_run_failures_clear_evidence_complete_in_report(self):
+        self.evidence['evidence_complete'] = True
+        self.evidence['ledger_run_conclusion'] = 'failure'
+        report, _ = self.run_all()
+        self.assertFalse(report['evidence_complete'])
