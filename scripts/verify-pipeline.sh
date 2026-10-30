@@ -376,6 +376,9 @@ PY
       ZERO_MATCH=1
     fi
   done < "$TEST_LIST"
+  # Gating lane done: checkpoint here (before [4b/5]) so the elapsed time is
+  # the gating cost alone, and it is printed even when gating failed.
+  echo "==> [4/5] finished, elapsed: ${SECONDS}s"
   # Candidate lane (planned only, NON-GATING): execute the declared tests of
   # `planned` features so the promoter has evidence for planned->beta. The
   # lane runs AFTER the gating result is decided and never changes it:
@@ -497,7 +500,6 @@ PY
     exit 1
   fi
   echo "  ✅ all declared tests passed"
-  echo "==> [4/5] finished, elapsed: ${SECONDS}s"
 fi
 
 # ---------------------------------------------------------------- strict

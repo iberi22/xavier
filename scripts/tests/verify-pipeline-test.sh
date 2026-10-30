@@ -453,6 +453,10 @@ chmod +x "$TEST_DIR/bin13/cargo"
   if ! echo "$OUT" | grep -q '==> \[3/5\] finished, elapsed:'; then echo "FAIL: missing [3/5] elapsed"; echo "$OUT"; return 1 2>/dev/null || false; fi
   if ! echo "$OUT" | grep -q '==> \[4/5\] finished, elapsed:'; then echo "FAIL: missing [4/5] elapsed"; echo "$OUT"; return 1 2>/dev/null || false; fi
   if ! echo "$OUT" | grep -q '==> \[4b/5\] finished, elapsed:'; then echo "FAIL: missing [4b/5] elapsed"; echo "$OUT"; return 1 2>/dev/null || false; fi
+  # Order: the [4/5] checkpoint closes the gating lane, so it must come before [4b/5] starts.
+  L4="$(echo "$OUT" | grep -n '==> \[4/5\] finished, elapsed:' | head -1 | cut -d: -f1)"
+  L4B="$(echo "$OUT" | grep -nE '==> \[4b/5\] (Executing|Skipping)' | head -1 | cut -d: -f1)"
+  if [ -z "$L4" ] || [ -z "$L4B" ] || [ "$L4" -ge "$L4B" ]; then echo "FAIL: [4/5] checkpoint must precede [4b/5] (L4=$L4 L4B=$L4B)"; echo "$OUT"; return 1 2>/dev/null || false; fi
   echo "PASS: Test Case 13"
 )
 
