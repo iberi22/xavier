@@ -436,12 +436,18 @@ def main():
     review_flagged_fids = sorted(fid for fid, r in results.items() if r.get('review_flagged'))
     review_dict = {'stable->beta': review_flagged_fids}
 
-    report = dict(sha=evidence.get('sha'), dry_run=not getattr(args, 'apply', False),
+    report = dict(sha=evidence.get('sha'), main_head=evidence.get('main_head'),
+                  skipped_pending_shas=evidence.get('skipped_pending_shas', []),
+                  dry_run=not getattr(args, 'apply', False),
                   promotions=promotions, review=review_dict, features=results)
     report['demotions_applied'] = demotions_applied
 
     print(json.dumps(report, indent=2, sort_keys=True))
     print('# Ledger promotion\n', file=sys.stderr)
+    print(f"Evaluated SHA: {evidence.get('sha') or 'none (no completed commit)'}", file=sys.stderr)
+    print(f"Main HEAD SHA: {evidence.get('main_head')}", file=sys.stderr)
+    print('Skipped pending SHAs: ' + (', '.join(evidence.get('skipped_pending_shas', [])) or 'none'),
+          file=sys.stderr)
     for transition in ('beta->stable', 'planned->beta', 'in_progress->beta'):
         members = sorted(fid for fid in eligible
                          if results[fid].get('transition') == transition)

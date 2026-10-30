@@ -1,10 +1,12 @@
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1]
@@ -1178,6 +1180,187 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertEqual(4, meta.get('total_features', 0))
         self.assertEqual(1, meta.get('features_complete', 0))
 
+
+
+class CompletedChainTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / 'tests').mkdir()
+        (self.root / 'tests' / 'integration.rs').write_text(
+            '#[test]\nfn test_roundtrip() {}\n')
+        self.document = json.loads((FIXTURES / 'features.json').read_text())
+        self.runs = {}
+        self.job_conclusions = {}
+        self.snapshots = {}
+        log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
+               '  ▶ test_roundtrip\n'
+               '    ✅ cargo test --test integration (passed=1)\n'
+               '  ✅ all declared tests passed\n')
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, 'w') as z:
+            z.writestr('ledger.log', log)
+        self.archive = archive.getvalue()
+
+    def add_runs(self, sha, status='completed', conclusion='success', attempt=1):
+        for workflow in ('ci.yml', 'e2e-segmented.yml'):
+            self.runs.setdefault((sha, workflow), []).append(dict(
+                head_sha=sha, head_branch='main', event='push', run_number=1,
+                run_attempt=attempt, status=status, conclusion=conclusion,
+                id=sha, html_url=f'https://example.test/runs/{sha}',
+                updated_at='2026-10-30T00:00:00Z'))
+
+    def gh(self, endpoint, binary=False):
+        if '/workflows/' in endpoint:
+            workflow = endpoint.split('/workflows/')[1].split('/')[0]
+            sha = endpoint.split('head_sha=')[1].split('&')[0]
+            return {'workflow_runs': self.runs.get((sha, workflow), [])}
+        if '/jobs?' in endpoint:
+            sha = endpoint.split('/runs/')[1].split('/')[0]
+            return {'jobs': [dict(name='Full Ledger Verification',
+                                 conclusion=self.job_conclusions.get(sha, 'success'))]}
+        if '/artifacts?' in endpoint:
+            return {'artifacts': [dict(name='ledger-logs', expired=False,
+                                       size_in_bytes=len(self.archive), id=1)]}
+        if endpoint.endswith('/zip') and binary:
+            return self.archive
+        self.fail(f'Unexpected gh call: {endpoint}')
+
+    def gather(self, shas):
+        def git_output(command, text):
+            if command[1] == 'rev-list':
+                return '\n'.join(shas)
+            self.assertEqual(command[:2], ['git', 'show'])
+            sha = command[2].split(':')[0]
+            return json.dumps(self.snapshots.get(sha, self.document))
+
+        with patch.object(collector.subprocess, 'check_output', side_effect=git_output) as git, \
+                patch.object(collector, 'gh', side_effect=self.gh):
+            evidence, history = collector.gather(self.document, 'repos/test/repo', self.root)
+        self.assertEqual(git.call_args_list[0].args[0],
+            ['git', 'rev-list', '--first-parent', f'-{collector.COMMIT_WINDOW}', 'HEAD'],
+        )
+        result = collector.promoter.evaluate(self.document, evidence, history, self.root, 3)['beta']
+        return evidence, history, result
+
+    def test_pending_head_skipped_newest_completed_evaluated(self):
+        self.add_runs('head', status='in_progress', conclusion=None)
+        for sha in ('c', 'b', 'a'):
+            self.add_runs(sha)
+        evidence, history, result = self.gather(['head', 'c', 'b', 'a'])
+        self.assertEqual(evidence['sha'], 'c')
+        self.assertEqual(evidence['main_head'], 'head')
+        self.assertEqual(evidence['main_shas'], ['c', 'b', 'a'])
+        self.assertEqual(evidence['skipped_pending_shas'], ['head'])
+        self.assertEqual(history['beta'], ['c', 'b', 'a'])
+        self.assertTrue(result['eligible'], result)
+
+    def test_pending_between_completed_does_not_break_streak(self):
+        for sha in ('c', 'b', 'a'):
+            self.add_runs(sha)
+        self.add_runs('pending', status='queued', conclusion=None)
+        evidence, _, result = self.gather(['c', 'pending', 'b', 'a'])
+        self.assertEqual(evidence['main_shas'], ['c', 'b', 'a'])
+        self.assertEqual(evidence['skipped_pending_shas'], ['pending'])
+        self.assertEqual(result['green_streak'], 3)
+        self.assertTrue(result['eligible'], result)
+
+    def test_declarations_changed_after_evaluated_sha_block_promotion(self):
+        for sha in ('c', 'b', 'a'):
+            self.add_runs(sha)
+            self.snapshots[sha] = json.loads(json.dumps(self.document))
+            # An older declaration removed from today's ledger must still be
+            # retained in the evidence, even when today's remaining test passed.
+            self.snapshots[sha]['features']['beta']['tests'].append('test_removed')
+        evidence, history, result = self.gather(['head', 'c', 'b', 'a'])
+        self.assertEqual(evidence['sha'], 'c')
+        self.assertIn('test_removed', evidence['per_feature_test_results']['beta']['declared'])
+        self.assertIn('declared test evidence differs from ledger', result['reasons'])
+        self.assertNotIn('beta', history)
+        self.assertFalse(result['eligible'])
+
+    def test_completed_red_commit_breaks_streak(self):
+        for workflow in ('ci.yml', 'e2e-segmented.yml'):
+            for conclusion in ('failure', 'cancelled', 'timed_out'):
+                with self.subTest(workflow=workflow, conclusion=conclusion):
+                    self.runs = {}
+                    for sha in ('c', 'b', 'a'):
+                        self.add_runs(sha)
+                    self.runs[('b', workflow)][0]['conclusion'] = conclusion
+                    evidence, history, result = self.gather(['c', 'b', 'a'])
+                    self.assertEqual(evidence['main_shas'], ['c', 'b', 'a'])
+                    self.assertNotIn('b', history.get('beta', []))
+                    self.assertEqual(result['green_streak'], 1)
+                    self.assertFalse(result['eligible'])
+
+    def test_completed_commit_with_incomplete_feature_evidence_breaks_streak(self):
+        for sha in ('c', 'b', 'a'):
+            self.add_runs(sha)
+        original_gh = self.gh
+
+        def missing_artifact(endpoint, binary=False):
+            if '/runs/b/artifacts?' in endpoint:
+                return {'artifacts': []}
+            return original_gh(endpoint, binary)
+
+        self.gh = missing_artifact
+        evidence, history, result = self.gather(['c', 'b', 'a'])
+        self.assertEqual(evidence['main_shas'], ['c', 'b', 'a'])
+        self.assertNotIn('b', history.get('beta', []))
+        self.assertEqual(result['green_streak'], 1)
+        self.assertFalse(result['eligible'])
+
+    def test_failed_full_ledger_job_breaks_streak(self):
+        for sha in ('c', 'b', 'a'):
+            self.add_runs(sha)
+        self.job_conclusions['b'] = 'failure'
+        _, _, result = self.gather(['c', 'b', 'a'])
+        self.assertEqual(result['green_streak'], 1)
+        self.assertFalse(result['eligible'])
+
+    def test_latest_attempt_pending_skips_older_green_attempt(self):
+        self.add_runs('head')
+        self.add_runs('head', status='in_progress', conclusion=None, attempt=2)
+        self.add_runs('c')
+        evidence, _, result = self.gather(['head', 'c'])
+        self.assertEqual(evidence['sha'], 'c')
+        self.assertEqual(evidence['skipped_pending_shas'], ['head'])
+        self.assertFalse(result['eligible'])
+
+    def test_no_completed_commit_no_evaluation_or_promotion(self):
+        self.add_runs('head', status='queued', conclusion=None)
+        self.add_runs('partial')
+        del self.runs[('partial', 'e2e-segmented.yml')]
+        evidence, history, result = self.gather(['head', 'partial', 'missing'])
+        self.assertIsNone(evidence['sha'])
+        self.assertEqual(evidence['main_shas'], [])
+        self.assertEqual(evidence['skipped_pending_shas'], ['head', 'partial', 'missing'])
+        self.assertEqual(history, {})
+        self.assertFalse(result['eligible'])
+
+    def test_report_records_both_shas_and_pending_commits(self):
+        self.add_runs('head', status='queued', conclusion=None)
+        for sha in ('c', 'b', 'a'):
+            self.add_runs(sha)
+        evidence, history, _ = self.gather(['head', 'c', 'b', 'a'])
+        features_path = self.root / 'features.json'
+        evidence_path = self.root / 'evidence.json'
+        history_path = self.root / 'history.json'
+        for path, value in ((features_path, self.document), (evidence_path, evidence),
+                            (history_path, history)):
+            path.write_text(json.dumps(value))
+        run = subprocess.run([
+            sys.executable, str(SCRIPTS / 'ledger-promote.py'),
+            '--features', str(features_path), '--evidence', str(evidence_path),
+            '--history', str(history_path)], capture_output=True, text=True, check=True)
+        report = json.loads(run.stdout)
+        self.assertEqual(report['sha'], 'c')
+        self.assertEqual(report['main_head'], 'head')
+        self.assertEqual(report['skipped_pending_shas'], ['head'])
+        self.assertIn('Evaluated SHA: c', run.stderr)
+        self.assertIn('Main HEAD SHA: head', run.stderr)
+        self.assertIn('Skipped pending SHAs: head', run.stderr)
 
 
 class TestLedgerPromoteEvidence(unittest.TestCase):
