@@ -59,6 +59,15 @@ Skill B logic.",
 
     let mut registry = SkillRegistry::new(vec![skills_dir]);
     registry.reindex().await.unwrap();
+    let skill_a_hash = registry
+        .get("skill-a")
+        .expect("skill-a indexed")
+        .content_hash
+        .clone();
+    assert!(
+        skill_a_hash.len() >= 12 && skill_a_hash.chars().all(|c| c.is_ascii_hexdigit()),
+        "registry content hash is hex: {skill_a_hash}"
+    );
 
     let documents = Arc::new(tokio::sync::RwLock::new(vec![]));
     let memory = Arc::new(QmdMemory::new_with_workspace(documents, "ws1"));
@@ -97,7 +106,17 @@ Skill B logic.",
         published.contains("Solve the unique target challenge"),
         "skill-a description found"
     );
-    assert!(published.contains("Skill A logic"), "skill-a logic found");
+    // Provenance: the pack stamps each selected skill with its registry content
+    // hash (first 12 hex chars), never the skill body.
+    let stamp = format!("- skill-a ({})", &skill_a_hash[..12]);
+    assert!(
+        published.contains(&stamp),
+        "selected-skill provenance stamp with content hash {stamp:?} missing: {published}"
+    );
+    assert!(
+        !published.contains("Skill A logic"),
+        "skill body must not be published in the pack"
+    );
 
     assert!(
         estimate_tokens(&published) <= max_tokens,
