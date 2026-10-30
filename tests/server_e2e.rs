@@ -52,14 +52,19 @@ async fn test_health_endpoint_via_xavier_binary() {
     let protected_url = format!("{url}/v1/account/usage");
 
     let mut last_error = "no request attempted".to_string();
-    let deadline = Instant::now() + Duration::from_secs(90);
+    let deadline = Instant::now() + Duration::from_secs(55);
 
     while Instant::now() < deadline {
         if let Ok(Some(status)) = _child.0.try_wait() {
             panic!("xavier http exited during startup with status {status}");
         }
 
-        match client.get(&ready_url).send().await {
+        match client
+            .get(&ready_url)
+            .timeout(Duration::from_secs(2))
+            .send()
+            .await
+        {
             Ok(resp) if resp.status().is_success() => break,
             Ok(resp) => last_error = format!("GET /ready -> HTTP {}", resp.status()),
             Err(err) => last_error = err.to_string(),
@@ -68,7 +73,7 @@ async fn test_health_endpoint_via_xavier_binary() {
     }
 
     if Instant::now() >= deadline {
-        panic!("xavier http did not answer GET /ready with 2xx within 90s (last: {last_error})");
+        panic!("xavier http did not answer GET /ready with 2xx within 55s (last: {last_error})");
     }
 
     let mut healthy = false;

@@ -100,14 +100,19 @@ impl LiveTestServer {
         let client = Client::new();
         let ready_url = format!("{url}/ready");
         let mut last_error = "no request attempted".to_string();
-        let deadline = Instant::now() + Duration::from_secs(90);
+        let deadline = Instant::now() + Duration::from_secs(55);
 
         while Instant::now() < deadline {
             if let Ok(Some(status)) = child.try_wait() {
                 panic!("xavier http exited during startup with status {status}");
             }
 
-            match client.get(&ready_url).send().await {
+            match client
+                .get(&ready_url)
+                .timeout(Duration::from_secs(2))
+                .send()
+                .await
+            {
                 Ok(resp) if resp.status().is_success() => break,
                 Ok(resp) => last_error = format!("GET /ready -> HTTP {}", resp.status()),
                 Err(err) => last_error = err.to_string(),
@@ -117,7 +122,7 @@ impl LiveTestServer {
 
         if Instant::now() >= deadline {
             panic!(
-                "Live server did not answer GET /ready with 2xx within 90s (last: {last_error})"
+                "Live server did not answer GET /ready with 2xx within 55s (last: {last_error})"
             );
         }
 

@@ -48,7 +48,7 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
 
     let client = reqwest::Client::new();
     let mut last_error = "no request attempted".to_string();
-    let deadline = Instant::now() + Duration::from_secs(90);
+    let deadline = Instant::now() + Duration::from_secs(55);
 
     // Poll /ready
     while Instant::now() < deadline {
@@ -59,6 +59,7 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
 
         match client
             .get(format!("http://127.0.0.1:{port}/ready"))
+            .timeout(Duration::from_secs(2))
             .send()
             .await
         {
@@ -70,7 +71,7 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
     }
 
     if Instant::now() >= deadline {
-        panic!("xavier http did not answer GET /ready with 2xx within 90s (last: {last_error})");
+        panic!("xavier http did not answer GET /ready with 2xx within 55s (last: {last_error})");
     }
 
     // Sembrar una memoria
