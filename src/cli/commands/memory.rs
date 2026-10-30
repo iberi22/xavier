@@ -40,6 +40,9 @@ pub async fn handle_memory_command(
         crate::cli::commands::enums::memory::MemoryCommand::FtsCheck { db, json } => {
             run_fts_check(db, json).await
         }
+        crate::cli::commands::enums::memory::MemoryCommand::FtsRebuild { db, json } => {
+            run_fts_rebuild(db, json).await
+        }
         crate::cli::commands::enums::memory::MemoryCommand::EncryptPrivate {
             dry_run,
             apply,
@@ -755,4 +758,112 @@ mod tests {
             .to_string()
             .contains("❌ Self-indexing failed:"));
     }
+}
+
+async fn run_fts_rebuild(db: Option<std::path::PathBuf>, json: bool) -> Result<()> {
+    let db_path = db.unwrap_or_else(|| {
+        crate::settings::XavierSettings::resolve_data_dir().join("vec-store.sqlite3")
+    });
+
+    if !db_path.exists() {
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string(&serde_json::json!({
+                    "status": "error",
+                    "error": "Database file not found",
+                    "db": db_path.display().to_string()
+                }))
+                .unwrap()
+            );
+        } else {
+            eprintln!("Error: Database file not found at {}", db_path.display());
+        }
+        std::process::exit(2);
+    }
+
+    match rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
+    ) {
+        Ok(conn) => {
+            if let Err(e) = conn.execute("INSERT INTO memory_fts(memory_fts) VALUES('rebuild')", [])
+            {
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string(&serde_json::json!({
+                            "status": "error",
+                            "error": format!("Operational error during rebuild: {}", e),
+                            "db": db_path.display().to_string()
+                        }))
+                        .unwrap()
+                    );
+                } else {
+                    eprintln!("Error: Operational error during rebuild: {}", e);
+                }
+                std::process::exit(2);
+            }
+
+            if let Err(e) = conn.execute(
+                "INSERT INTO memory_fts(memory_fts) VALUES('integrity-check')",
+                [],
+            ) {
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string(&serde_json::json!({
+                            "status": "error",
+                            "error": format!("Operational error during integrity check: {}", e),
+                            "db": db_path.display().to_string()
+                        }))
+                        .unwrap()
+                    );
+                } else {
+                    eprintln!("Error: Operational error during integrity check: {}", e);
+                }
+                std::process::exit(2);
+            }
+
+            let rows: i64 = conn
+                .query_row("SELECT count(*) FROM memory_fts", [], |row| row.get(0))
+                .unwrap_or(0);
+
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&serde_json::json!({
+                        "status": "ok",
+                        "db": db_path.display().to_string(),
+                        "rows": rows
+                    }))
+                    .unwrap()
+                );
+            } else {
+                println!(
+                    "FTS rebuild successful for {}. Rows: {}",
+                    db_path.display(),
+                    rows
+                );
+            }
+        }
+        Err(e) => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&serde_json::json!({
+                        "status": "error",
+                        "error": format!("Operational error: {}", e),
+                        "db": db_path.display().to_string()
+                    }))
+                    .unwrap()
+                );
+            } else {
+                eprintln!("Error: Operational error: {}", e);
+            }
+            std::process::exit(2);
+        }
+    }
+
+    Ok(())
 }
