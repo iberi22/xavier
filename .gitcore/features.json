@@ -4054,7 +4054,10 @@
         "packaging_contract::installer_rejects_tampered_archive",
         "packaging_contract::installer_user_mode_installs_binary_and_private_token",
         "tests/headless_packaging_contract_e2e.rs::installer_rejects_tampered_archive",
-        "tests/headless_packaging_contract_e2e.rs::installer_user_mode_installs_binary_and_private_token"
+        "tests/headless_packaging_contract_e2e.rs::installer_user_mode_installs_binary_and_private_token",
+        "tests/headless_unsupported_contract_e2e.rs::headless_unsupported_tool_returns_contract",
+        "tests/headless_unsupported_contract_e2e.rs::headless_supported_tool_does_not_return_501",
+        "tests/headless_unsupported_contract_e2e.rs::headless_agent_endpoints_return_contract"
       ],
       "user_stories": []
     },

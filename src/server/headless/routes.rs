@@ -270,6 +270,9 @@ fn open_code_graph_db(
         .map_err(|e| e.to_string())
 }
 
+pub const SUPPORTED_HEADLESS_TOOLS: &[&str] =
+    &["code_scan", "code_find", "code_stats", "code_context"];
+
 async fn execute_code_tool(name: &str, args: &serde_json::Value) -> axum::response::Response {
     let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
     let workspace = std::path::PathBuf::from(path_str);
@@ -436,7 +439,9 @@ async fn execute_code_tool(name: &str, args: &serde_json::Value) -> axum::respon
             axum::http::StatusCode::NOT_IMPLEMENTED,
             AxumJson(serde_json::json!({
                 "error": format!("Tool '{name}' is not implemented in headless mode"),
-                "code": 501
+                "code": 501,
+                "reason": "unsupported_in_headless",
+                "supported_tools": SUPPORTED_HEADLESS_TOOLS
             })),
         )
             .into_response(),
@@ -449,16 +454,16 @@ pub async fn execute_tool(name: String, req: ToolExecuteRequest) -> impl IntoRes
         return execute_code_tool(&name, &req.args).await;
     }
 
-    // Simple mock execution for non-code tools (unchanged contract)
-    AxumJson(HeadlessToolExecuteResponse {
-        result: HeadlessToolExecutionResult {
-            tool: name,
-            args_received: req.args,
-            status: "executed",
-        },
-        execution_time_ms: 5,
-    })
-    .into_response()
+    (
+        axum::http::StatusCode::NOT_IMPLEMENTED,
+        AxumJson(serde_json::json!({
+            "error": format!("Tool '{name}' is not implemented in headless mode"),
+            "code": 501,
+            "reason": "unsupported_in_headless",
+            "supported_tools": SUPPORTED_HEADLESS_TOOLS
+        })),
+    )
+        .into_response()
 }
 
 /// Provider status.

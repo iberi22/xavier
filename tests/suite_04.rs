@@ -41,6 +41,9 @@ mod headless_api_test;
 #[path = "headless_chat_test.rs"]
 mod headless_chat_test;
 
+#[path = "headless_unsupported_contract_e2e.rs"]
+mod headless_unsupported_contract_e2e;
+
 #[path = "health_test.rs"]
 mod health_test;
 
