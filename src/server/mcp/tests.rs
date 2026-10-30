@@ -3196,7 +3196,7 @@ async fn recovery_status_uses_configured_directory() {
     let output = result.expect("admin status");
     assert_eq!(output["structuredContent"]["kcvPresent"], true);
     assert_eq!(output["structuredContent"]["cryptPassphraseBackedUp"], true);
-    let schema = super::server::get_xavier_tools()
+    let schema = super::server::get_xavier_tools(false)
         .into_iter()
         .find(|t| t.name == "recovery_status")
         .unwrap()

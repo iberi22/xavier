@@ -62,7 +62,7 @@ def parse_log(log, document):
                     passed.add(test)
                     targets_by_test[test] = sorted(test_targets)
                     targets.update(test_targets)
-            else:
+            elif '❌ FAILED:' in block:
                 if flagged:
                     candidate_failed.add(test)
                     candidate.add(test)
@@ -75,7 +75,10 @@ def parse_log(log, document):
         all_declared = set()
         for f in document['features'].values():
             decl = f.get('tests', [])
-            all_declared.update(decl if isinstance(decl, list) else [])
+            if isinstance(decl, list):
+                for t in decl:
+                    if isinstance(t, str):
+                        all_declared.add(t)
         # Also, the original script checked '✅ all declared tests passed'
         if all_declared <= parsed_tests:
             evidence_complete = True
@@ -83,28 +86,32 @@ def parse_log(log, document):
     for fid, f in document['features'].items():
         declared = f.get('tests', [])
         declared = declared if isinstance(declared, list) else []
+        is_valid_list = bool(declared) and all(isinstance(t, str) and t for t in declared)
+        feat_evidence_complete = is_valid_list and all(t in parsed_tests for t in declared)
+        valid_declared = [t for t in declared if isinstance(t, str)]
         results[fid] = dict(declared=f.get('tests', []),
-                            passed=sorted(set(declared) & (passed - failed)),
+                            evidence_complete=feat_evidence_complete,
+                            passed=sorted(set(valid_declared) & (passed - failed)),
                             integration_targets_by_test={test: targets_by_test.get(test, [])
-                                                         for test in declared
+                                                         for test in valid_declared
                                                          if test in passed - failed},
-                            failed=sorted(set(declared) & failed),
-                            candidate_passed=sorted(set(declared) & candidate_passed),
-                            candidate_failed=sorted(set(declared) & candidate_failed),
+                            failed=sorted(set(valid_declared) & failed),
+                            candidate_passed=sorted(set(valid_declared) & candidate_passed),
+                            candidate_failed=sorted(set(valid_declared) & candidate_failed),
                             candidate_integration_targets_by_test={
                                 test: candidate_targets_by_test.get(test, [])
-                                for test in declared
+                                for test in valid_declared
                                 if test in candidate_passed},
-                            candidate_tests=sorted(set(declared) & candidate))
+                            candidate_tests=sorted(set(valid_declared) & candidate))
     return results, sorted(targets), evidence_complete
 
 
 def collect(sha, document, repo):
     evidence = dict(sha=sha, per_feature_test_results={}, integration_targets_passed=[])
     for workflow, key in [('ci.yml', 'ledger'), ('e2e-segmented.yml', 'e2e')]:
-        runs = gh(f'{repo}/actions/workflows/{workflow}/runs?branch=main&event=push&head_sha={sha}&per_page=100')['workflow_runs']
+        runs = gh(f'{repo}/actions/workflows/{workflow}/runs?branch=main&head_sha={sha}&per_page=100')['workflow_runs']
         runs = [r for r in runs if r['head_sha'] == sha and r['head_branch'] == 'main'
-                and r['event'] == 'push']
+                and r['event'] in ('push', 'workflow_dispatch')]
         if not runs:
             continue
         run = max(runs, key=lambda r: (r['run_number'], r['run_attempt']))

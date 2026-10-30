@@ -288,6 +288,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: UsersCommand,
     },
+    /// Manage multi-tenant configurations
+    Tenants {
+        #[command(subcommand)]
+        cmd: TenantsCommand,
+    },
     /// Show API quotas and limits for providers
     Quota,
     /// Manage LLM providers and hot-switching
@@ -652,8 +657,10 @@ pub enum SpaceCommand {
         /// Display name for the peer
         display: String,
     },
-    /// Lock a space
+    /// Lock a space (Not available yet)
     Lock {
+        #[arg(long)]
+        json: bool,
         /// The space ID
         id: String,
     },
@@ -1336,7 +1343,10 @@ pub enum ProviderCommand {
     /// Show current provider status
     Status,
     /// List all available providers and strategies
-    List,
+    List {
+        #[arg(long)]
+        json: bool,
+    },
     /// Manually switch to a provider
     Set { name: String },
     /// Set an automatic selection strategy
@@ -1406,6 +1416,24 @@ pub enum OnboardClient {
 pub enum TokenScope {
     Read,
     Write,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum TenantsCommand {
+    /// List all tenants
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a specific tenant
+    Show {
+        /// Tenant ID
+        id: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Local user account administration subcommands (operador con acceso al nodo).
@@ -2156,6 +2184,16 @@ pub mod memory {
             /// Run while the daemon is up (busy timeout + IMMEDIATE batches)
             #[arg(long)]
             online: bool,
+        },
+
+        /// Check the memory_fts index for corruption. Exits 0 on ok, 1 on corruption, 2 on operational errors.
+        FtsCheck {
+            /// Path to the memory SQLite database (defaults to the resolved data directory)
+            #[arg(long)]
+            db: Option<PathBuf>,
+            /// Output result in JSON format
+            #[arg(long)]
+            json: bool,
         },
 
         /// Prune low-utility or stale memories
