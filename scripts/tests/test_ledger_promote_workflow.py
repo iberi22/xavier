@@ -9,8 +9,15 @@ class TestLedgerPromoteWorkflow(unittest.TestCase):
         try:
             import yaml
             self.yaml_available = True
+            from yaml.loader import SafeLoader
+            class StringLoader(SafeLoader):
+                pass
+            import yaml.resolver
+            for ch in "yYnNtTfFoO":
+                if ch in StringLoader.yaml_implicit_resolvers:
+                    StringLoader.yaml_implicit_resolvers[ch] = [x for x in StringLoader.yaml_implicit_resolvers[ch] if x[0] != 'tag:yaml.org,2002:bool']
             with open(self.workflow_path) as f:
-                self.workflow = yaml.safe_load(f)
+                self.workflow = yaml.load(f, Loader=StringLoader)
         except ImportError:
             self.yaml_available = False
 
