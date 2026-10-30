@@ -50,7 +50,7 @@ See `tests/xtsp/` for the complete integration test suite.
 | Ecosystem App Registry | Stable | `GET /v1/maloca/registry[/{app_id}]`, ETag-cached. |
 | Alignment audit | Stable | `GET /v1/maloca/alignment[/goals]` — GOAL.md compliance. |
 | Unified backlog | Stable | `GET /v1/maloca/backlog/unified|summary` — multi-repo aggregation, TTL cache. |
-| Model Router | Stable | `POST /v1/maloca/models/infer`, `GET list|health` — Ollama/cloud providers. |
+| <a name="maloca-model-router"></a>Model Router | Unsupported | `/v1/maloca/models/*` return 501. Use `/v1/providers` instead. |
 | HumanChallenge engine | Stable | `POST challenges/generate|answer`, `GET list|stats`. |
 | Panel UI tabs | Stable | Registry / Goals / Backlog / Challenges / Models in `panel-ui/src/maloca/MalocaView.tsx`. |
 
