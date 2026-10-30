@@ -22,8 +22,12 @@ fn fts_rebuild_ok() {
             .prepare("INSERT INTO memory_fts(id, path, content) VALUES (?1, ?2, ?3)")
             .unwrap();
         for i in 1..=1000 {
-            stmt.execute(rusqlite::params![i, format!("path{}", i), format!("content{}", i)])
-                .unwrap();
+            stmt.execute(rusqlite::params![
+                i,
+                format!("path{}", i),
+                format!("content{}", i)
+            ])
+            .unwrap();
         }
     }
 
@@ -33,12 +37,17 @@ fn fts_rebuild_ok() {
     conn.execute("DELETE FROM memory_fts_idx", []).unwrap();
 
     // Verify MATCH query demonstrably fails to find a known document BEFORE we rebuild it
-    let res = conn.query_row(
-        "SELECT count(*) FROM memory_fts WHERE memory_fts MATCH 'content500'",
-        [],
-        |row| row.get::<_, i64>(0)
-    ).unwrap();
-    assert_eq!(res, 0, "MATCH should fail to find the document because of index corruption");
+    let res = conn
+        .query_row(
+            "SELECT count(*) FROM memory_fts WHERE memory_fts MATCH 'content500'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap();
+    assert_eq!(
+        res, 0,
+        "MATCH should fail to find the document because of index corruption"
+    );
     conn.close().unwrap();
 
     let exe = env!("CARGO_BIN_EXE_xavier");
@@ -79,7 +88,10 @@ fn fts_rebuild_ok() {
             .prepare("SELECT count(*) FROM memory_fts WHERE memory_fts MATCH 'content500'")
             .unwrap();
         let match_count: i64 = stmt.query_row([], |row| row.get(0)).unwrap();
-        assert_eq!(match_count, 1, "MATCH should find the document after rebuild");
+        assert_eq!(
+            match_count, 1,
+            "MATCH should find the document after rebuild"
+        );
     }
     conn.close().unwrap();
 
