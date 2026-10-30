@@ -432,7 +432,7 @@ def main():
     review_flagged_fids = sorted(fid for fid, r in results.items() if r.get('review_flagged'))
     review_dict = {'stable->beta': review_flagged_fids}
 
-    report = dict(sha=evidence.get('sha'), dry_run=not getattr(args, 'apply', False),
+    report = dict(sha=evidence.get('sha'), dry_run=not getattr(args, 'apply', False), evidence_complete=evidence.get('evidence_complete', False),
                   promotions=promotions, review=review_dict, features=results)
     report['demotions_applied'] = demotions_applied
 
