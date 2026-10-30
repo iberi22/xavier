@@ -205,8 +205,8 @@
       "tests": [
         "test_fts5_symbols_search_and_sync",
         "test_extract_call_names",
-        "code-graph/src/db/mod.rs::test_find_by_file_propagates_row_errors",
-        "code-graph/src/db/mod.rs::test_find_edges_to_propagates_row_errors"
+        "test_find_by_file_propagates_row_errors",
+        "test_find_edges_to_propagates_row_errors"
       ],
       "req_ids": [
         "REQ-011"
@@ -1417,6 +1417,7 @@
       "req_ids": [],
       "user_stories": [],
       "tests": [
+        "tests/maloca_models_unsupported_e2e.rs::maloca_models_unsupported_e2e",
         "test_classify_operation",
         "test_default_query_functions",
         "test_event_to_dto",
@@ -1694,7 +1695,8 @@
         "karma_uses_ivn_root_and_imports_legacy_once_without_writing_it",
         "atomic_json_publishes_complete_private_documents",
         "atomic_json_preserves_previous_file_and_cleans_failed_temporary_files",
-        "json_load_reports_corruption_and_read_errors"
+        "json_load_reports_corruption_and_read_errors",
+        "tests/ivn_storage_persistence.rs::corrupt_exclusions_are_not_overwritten"
       ],
       "spec": "docs/features/specs/FEATURE-feat-ivn-karma.md"
     },
@@ -2280,7 +2282,8 @@
         "walk_skips_nul_masquerading_as_source",
         "walk_skips_oversize_files_without_reading_them",
         "walk_reports_zero_skips_for_clean_tree",
-        "parse_file_rejects_oversize_explicit_paths"
+        "parse_file_rejects_oversize_explicit_paths",
+        "tests/codegraph_walk_hardening_e2e.rs::test_codegraph_walk_hardening_e2e"
       ],
       "req_ids": [
         "REQ-005",
@@ -3125,7 +3128,8 @@
         "out_of_scope_memories_and_decisions_are_excluded",
         "test_secret_finding_blocks_publication_without_creating_link",
         "release_removes_unchanged_entries_and_owned_directory",
-        "test_live_composition_hash_matches_composer_without_files"
+        "test_live_composition_hash_matches_composer_without_files",
+        "tests/skill_dispatch_ephemeral_e2e.rs::skill_dispatch_ephemeral_lifecycle"
       ],
       "implemented_in": "src/context/skill_controller/composer.rs, src/context/skill_controller/lease.rs, src/context/skill_dispatcher.rs, src/server/mcp/tools_context.rs, src/server/http/context.rs, src/cli/commands/spawn.rs"
     },
@@ -3843,7 +3847,9 @@
         "test_space_manager_directory_and_namespace_isolation",
         "test_invite_lifecycle_roundtrip",
         "test_invite_expiry_and_space_listing",
-        "test_membership_permissions_end_to_end"
+        "test_membership_permissions_end_to_end",
+        "tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_stderr",
+        "tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_json"
       ],
       "req_ids": [],
       "user_stories": [],
