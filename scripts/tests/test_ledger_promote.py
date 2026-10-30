@@ -15,7 +15,7 @@ spec.loader.exec_module(collector)
 
 
 class PromoterTests(unittest.TestCase):
-    def test_evidence_complete_excludes_deferred(self):
+    def test_evidence_complete_excludes_deferred_on_failing_pipeline(self):
         log = "==> Xavier verify pipeline (mode: full, root: /repo)\n  ▶ test_stable\n    ❌ FAILED: test_stable\n  ❌ declared tests failed (zero-match=0) — failing pipeline\n"
         import importlib.util
         spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
@@ -322,7 +322,8 @@ class PromoterTests(unittest.TestCase):
         }
         # A log that doesn't mention 'some_test', but mode is full
         log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
-               '  ▶ test_roundtrip\n    ✅ --test integration (passed=1)\n')
+               '  ▶ test_roundtrip\n    ✅ --test integration (passed=1)\n'
+               '  ✅ all declared tests passed\n')
         # Parse it with evidence collector
         results, targets, evidence_complete = collector.parse_log(log, self.features)
         # Even without 'some_test', evidence should be complete because deferred feature is skipped
