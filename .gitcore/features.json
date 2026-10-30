@@ -3087,7 +3087,7 @@
       "name": "Single Skill Registry Construction",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "One build_skill_registry(workspace) used by REST, MCP and session fusion; named, documented dispatch (0.40) and fusion (0.5) confidence constants (D7b, D7c)",
       "steps": [
         "Use one build_skill_registry(workspace) constructor across REST, MCP and session fusion",
@@ -3095,7 +3095,7 @@
         "Verify candidate parity and preserve existing response shapes"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-registry-unify.md (Unified Skill Registry Constructor and Thresholds). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D7b, D7c). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-registry-unify.md (Unified Skill Registry Constructor and Thresholds). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D7b, D7c). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests test_mcp_skill_list_matches_rest_on_same_fixture, test_mcp_context_tools_own_no_registry_constructor, test_build_skill_registry_indexes_every_discovery_root, test_fusion_e2e_seeded_thread_injects_skill, test_confidence_calibration_range, tests/skill_registry_unify_parity_e2e.rs::test_build_skill_registry_indexes_every_discovery_root",
       "tests": [
         "test_mcp_skill_list_matches_rest_on_same_fixture",
         "test_mcp_context_tools_own_no_registry_constructor",
@@ -3111,7 +3111,7 @@
       "name": "Declarative Skill Manifest and Projector",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "TOML v1 manifest + CLI plan/apply/rollback projecting one symlink per selected skill into allowlisted tool roots; dry-run default, journal, backups, atomic swap (D1-D4, D9)",
       "steps": [
         "Parse TOML v1 explicit placements and reject globs or whole-directory links",
@@ -3119,7 +3119,7 @@
         "Verify symlink ownership, backups, atomic swaps and idempotent rollback"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md (Declarative Skill Manifest and Projector). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D1-D4, D9). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md (Declarative Skill Manifest and Projector). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D1-D4, D9). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests test_manifest_rejections, test_dry_run_apply_reports_without_touching_disk, test_atomic_write_creates_and_overwrites, test_symlink_backup_preserves_readlink_without_dereferencing, test_apply_rejects_unmanaged_regular_file_collision_without_touching_it, test_rejects_empty_allowlist_and_unauthorized_target, tests/skill_controller_core_adapters.rs::codex_project_projection_remains_readable_offline, tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage, test_repeated_rollback_is_idempotent",
       "tests": [
         "test_manifest_rejections",
         "test_dry_run_apply_reports_without_touching_disk",
@@ -3128,7 +3128,8 @@
         "test_apply_rejects_unmanaged_regular_file_collision_without_touching_it",
         "test_rejects_empty_allowlist_and_unauthorized_target",
         "tests/skill_controller_core_adapters.rs::codex_project_projection_remains_readable_offline",
-        "tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage"
+        "tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage",
+        "test_repeated_rollback_is_idempotent"
       ],
       "implemented_in": "src/context/skill_controller/manifest.rs, src/context/skill_controller/policy.rs, src/context/skill_controller/backup.rs, src/context/skill_controller/projector.rs, src/context/skill_controller/rollback.rs, src/cli/handlers/skills.rs, src/cli/commands/mod.rs"
     },
