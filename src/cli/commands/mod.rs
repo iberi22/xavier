@@ -42,7 +42,6 @@ pub mod regen;
 pub mod repo;
 pub mod repo_pack;
 pub mod secrets;
-pub mod service;
 pub mod session;
 pub mod space;
 pub mod spawn;
@@ -104,7 +103,10 @@ impl Cli {
             }
             Command::Init(ref args) => installer::run_installer(args.clone()),
             Command::Mcp => start_mcp_stdio().await,
-            Command::IndexSelf { json } => memory::run_index_self(*json).await,
+            Command::IndexSelf => {
+                println!("IndexSelf is not yet implemented.");
+                Ok(())
+            }
             Command::Search {
                 query,
                 limit,
@@ -492,14 +494,6 @@ impl Cli {
             Command::MirrorImport { input } => mirror::handle_mirror_import(input.clone()).await,
             Command::Airgap(args) => airgap::handle_airgap_command(args.clone()).await,
             Command::Skills { cmd } => handle_skills_command(cmd.clone()).await,
-            Command::Service { cmd } => service::run_service_cmd(cmd).await,
-            Command::Logs {
-                since,
-                grep,
-                lines,
-                follow,
-                json,
-            } => service::run_logs_cmd(since, grep, lines, *follow, *json).await,
         }
     }
 }

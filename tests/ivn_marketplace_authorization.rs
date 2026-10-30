@@ -234,7 +234,6 @@ fn identity_request() -> Value {
 }
 
 #[tokio::test]
-#[serial_test::serial]
 async fn productive_router_enforces_ivn_marketplace_roles_and_preserves_state() {
     let temp = tempfile::tempdir().unwrap();
     let _cwd = RestoreCwd(std::env::current_dir().unwrap());

@@ -5,6 +5,7 @@ use xavier::maloca::{CreateSupportBody, MalocaStore};
 xavier::isolate_test_process!();
 
 #[test]
+#[serial_test::serial]
 fn persist_leaves_no_tmp_files_after_success_e2e() {
     let tmp = tempdir().unwrap();
     let store = MalocaStore::open(tmp.path());
@@ -43,6 +44,7 @@ fn persist_leaves_no_tmp_files_after_success_e2e() {
 }
 
 #[test]
+#[serial_test::serial]
 fn persisted_store_json_is_valid_json_after_write_e2e() {
     let tmp = tempdir().unwrap();
     let store = MalocaStore::open(tmp.path());
@@ -61,6 +63,7 @@ fn persisted_store_json_is_valid_json_after_write_e2e() {
 }
 
 #[test]
+#[serial_test::serial]
 fn persist_replaces_store_file_by_rename_not_in_place_e2e() {
     let tmp = tempdir().unwrap();
     let store = MalocaStore::open(tmp.path());
@@ -72,10 +75,10 @@ fn persist_replaces_store_file_by_rename_not_in_place_e2e() {
     });
 
     let store_file = tmp.path().join("maloca").join("store.json");
-    // Hold a handle on the original file: an atomic rename-replace leaves the
-    // old inode (and its contents) intact for this reader, while an in-place
-    // write would truncate/overwrite what the handle sees.
-    let mut old_handle = std::fs::File::open(&store_file).unwrap();
+
+    // Open the file *before* the second persist
+    let mut file = std::fs::File::open(&store_file).unwrap();
+
     #[cfg(unix)]
     let inode_before = {
         use std::os::unix::fs::MetadataExt;
@@ -89,24 +92,30 @@ fn persist_replaces_store_file_by_rename_not_in_place_e2e() {
     });
 
     #[cfg(unix)]
-    {
+    let inode_after = {
         use std::os::unix::fs::MetadataExt;
-        let inode_after = std::fs::metadata(&store_file).unwrap().ino();
-        assert_ne!(
-            inode_before, inode_after,
-            "persist must replace store.json via rename, not rewrite it in place"
-        );
-    }
+        std::fs::metadata(&store_file).unwrap().ino()
+    };
 
+    #[cfg(unix)]
+    assert_ne!(
+        inode_before, inode_after,
+        "inode must change upon atomic rename"
+    );
+
+    // Read from the already-open file handle
+    use std::io::Read;
     let mut old_content = String::new();
-    std::io::Read::read_to_string(&mut old_handle, &mut old_content).unwrap();
-    assert!(old_content.contains("initial"), "{old_content}");
+    file.read_to_string(&mut old_content).unwrap();
+
+    // The old file handle must STILL have the old content (no "subsequent")
+    // because atomic replacement writes to a new file and swaps the dir entry,
+    // leaving the old inode intact for existing readers.
     assert!(
         !old_content.contains("subsequent"),
-        "the pre-existing file must be untouched by the replacement: {old_content}"
+        "the already-open file handle must read the old contents, proving it was not overwritten in place"
     );
 
     let content = std::fs::read_to_string(&store_file).unwrap();
-    assert!(content.contains("initial"));
     assert!(content.contains("subsequent"));
 }

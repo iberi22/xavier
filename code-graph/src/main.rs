@@ -500,13 +500,6 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    if std::env::args_os().len() == 1 {
-        use clap::CommandFactory;
-        let mut cmd = Cli::command();
-        eprintln!("{}", cmd.render_help());
-        std::process::exit(1);
-    }
-
     let cli = Cli::parse();
 
     // Fingerprint mode never opens a database and never starts a server.

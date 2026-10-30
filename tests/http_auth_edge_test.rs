@@ -285,7 +285,6 @@ fn create_test_app() -> Router {
 }
 
 #[tokio::test]
-#[serial_test::serial]
 async fn test_middleware_unconfigured_server_token() {
     let env = EnvGuard::new(&["XAVIER_TOKEN"]);
     env.remove("XAVIER_TOKEN");
@@ -308,7 +307,6 @@ async fn test_middleware_unconfigured_server_token() {
 }
 
 #[tokio::test]
-#[serial_test::serial]
 async fn test_middleware_missing_auth_header() {
     let env = EnvGuard::new(&["XAVIER_TOKEN"]);
     env.set("XAVIER_TOKEN", "valid_server_token_123");
@@ -329,7 +327,6 @@ async fn test_middleware_missing_auth_header() {
 }
 
 #[tokio::test]
-#[serial_test::serial]
 async fn test_middleware_empty_auth_header() {
     let env = EnvGuard::new(&["XAVIER_TOKEN"]);
     env.set("XAVIER_TOKEN", "valid_server_token_123");
@@ -350,7 +347,6 @@ async fn test_middleware_empty_auth_header() {
 }
 
 #[tokio::test]
-#[serial_test::serial]
 async fn test_middleware_unsupported_scheme() {
     let env = EnvGuard::new(&["XAVIER_TOKEN"]);
     env.set("XAVIER_TOKEN", "valid_server_token_123");
@@ -371,7 +367,6 @@ async fn test_middleware_unsupported_scheme() {
 }
 
 #[tokio::test]
-#[serial_test::serial]
 async fn test_middleware_valid_x_xavier_token() {
     let env = EnvGuard::new(&["XAVIER_TOKEN"]);
     env.set("XAVIER_TOKEN", "valid_server_token_123");
@@ -392,7 +387,6 @@ async fn test_middleware_valid_x_xavier_token() {
 }
 
 #[tokio::test]
-#[serial_test::serial]
 async fn test_middleware_valid_bearer_token() {
     let env = EnvGuard::new(&["XAVIER_TOKEN"]);
     env.set("XAVIER_TOKEN", "valid_server_token_123");
@@ -413,7 +407,6 @@ async fn test_middleware_valid_bearer_token() {
 }
 
 #[tokio::test]
-#[serial_test::serial]
 async fn test_middleware_valid_legacy_token() {
     let env = EnvGuard::new(&["XAVIER_TOKEN"]);
     env.set("XAVIER_TOKEN", "valid_server_token_123");
@@ -434,7 +427,6 @@ async fn test_middleware_valid_legacy_token() {
 }
 
 #[tokio::test]
-#[serial_test::serial]
 async fn test_middleware_valid_raw_token() {
     let env = EnvGuard::new(&["XAVIER_TOKEN"]);
     env.set("XAVIER_TOKEN", "valid_server_token_123");
@@ -455,7 +447,6 @@ async fn test_middleware_valid_raw_token() {
 }
 
 #[tokio::test]
-#[serial_test::serial]
 async fn test_middleware_invalid_token_no_jwt_fallback() {
     let env = EnvGuard::new(&["XAVIER_TOKEN", "XAVIER_JWT_SECRET"]);
     env.set("XAVIER_TOKEN", "valid_server_token_123");
@@ -477,7 +468,6 @@ async fn test_middleware_invalid_token_no_jwt_fallback() {
 }
 
 #[tokio::test]
-#[serial_test::serial]
 async fn test_middleware_invalid_token_jwt_fallback_success() {
     let env = EnvGuard::new(&["XAVIER_TOKEN", "XAVIER_JWT_SECRET"]);
     env.set("XAVIER_TOKEN", "valid_server_token_123");
@@ -507,7 +497,6 @@ async fn test_middleware_invalid_token_jwt_fallback_success() {
 }
 
 #[tokio::test]
-#[serial_test::serial]
 async fn test_middleware_invalid_token_jwt_fallback_invalid_jwt() {
     let env = EnvGuard::new(&["XAVIER_TOKEN", "XAVIER_JWT_SECRET"]);
     env.set("XAVIER_TOKEN", "valid_server_token_123");

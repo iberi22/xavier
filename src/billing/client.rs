@@ -33,7 +33,6 @@ pub const CLOUD_TOKEN_ENVS: [&str; 2] = ["PGHEART_TOKEN", "XAVIER_PGHEART_TOKEN"
 pub struct BillingEndpoints {
     /// swal-billing base URL (no trailing slash).
     pub billing_url: String,
-    pub billing_url_source: &'static str,
     /// xavier-cloud base URL (no trailing slash).
     pub cloud_url: String,
     /// Tenant API key for xavier-cloud, if configured.
@@ -68,17 +67,12 @@ impl BillingEndpoints {
     /// Resolve endpoints from an arbitrary key lookup (env vars in production,
     /// a map in tests).
     pub fn resolve_with(lookup: &dyn Fn(&str) -> Option<String>) -> Self {
-        let (billing_url, billing_url_source) =
-            if let Some(url) = first_non_empty(lookup, &[BILLING_URL_ENV]) {
-                (url, "env")
-            } else {
-                (DEFAULT_BILLING_URL.to_string(), "default")
-            };
+        let billing_url = first_non_empty(lookup, &[BILLING_URL_ENV])
+            .unwrap_or_else(|| DEFAULT_BILLING_URL.to_string());
         let cloud_url = first_non_empty(lookup, &CLOUD_URL_ENVS)
             .unwrap_or_else(|| DEFAULT_CLOUD_URL.to_string());
         Self {
             billing_url: normalize_url(&billing_url),
-            billing_url_source,
             cloud_url: normalize_url(&cloud_url),
             cloud_token: first_non_empty(lookup, &CLOUD_TOKEN_ENVS),
         }
@@ -253,19 +247,8 @@ where
     Option::<String>::deserialize(d).map(Some)
 }
 
-/// Reachability probe result for the billing server.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct Reachability {
-    pub url: String,
-    pub source: String,
-    pub reachable: bool,
-    pub status: Option<u16>,
-    pub error: Option<String>,
-}
-
 /// Body of xavier-cloud `GET /v1/cloud/usage`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-
 pub struct CloudUsage {
     pub tenant: String,
     /// `None`: the server does not report plans (xavier-cloud older than the
@@ -353,21 +336,6 @@ fn error_field(body: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Redact credentials, query string and fragment from a URL before it is
-/// shown to the user (status output must never echo embedded secrets).
-pub fn redact_url(raw: &str) -> String {
-    match url::Url::parse(raw) {
-        Ok(mut u) => {
-            let _ = u.set_username("");
-            let _ = u.set_password(None);
-            u.set_query(None);
-            u.set_fragment(None);
-            u.to_string().trim_end_matches('/').to_string()
-        }
-        Err(_) => "(unparseable url)".to_string(),
-    }
-}
-
 fn truncate(body: &str) -> String {
     const MAX: usize = 300;
     if body.len() <= MAX {
@@ -410,34 +378,6 @@ impl BillingClient {
     /// Endpoints this client uses.
     pub fn endpoints(&self) -> &BillingEndpoints {
         &self.endpoints
-    }
-
-    /// `GET {billing}/v1/xavier/plans` with a 5s timeout to check reachability.
-    pub async fn check_reachability(&self) -> Reachability {
-        let source = self.endpoints.billing_url_source.to_string();
-        let url = format!("{}/v1/xavier/plans", self.endpoints.billing_url);
-        let http = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap_or_else(|_| self.http.clone());
-
-        let resp = http.get(&url).send().await;
-        match resp {
-            Ok(r) => Reachability {
-                url: redact_url(&self.endpoints.billing_url),
-                source,
-                reachable: true,
-                status: Some(r.status().as_u16()),
-                error: None,
-            },
-            Err(e) => Reachability {
-                url: redact_url(&self.endpoints.billing_url),
-                source,
-                reachable: false,
-                status: e.status().map(|s| s.as_u16()),
-                error: Some(e.without_url().to_string()),
-            },
-        }
     }
 
     /// `GET {billing}/v1/xavier/plans`.
@@ -572,14 +512,6 @@ impl BillingClient {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn redact_url_strips_credentials_query_and_fragment() {
-        let r = super::redact_url("https://user:s3cret@billing.example.com/base?token=abc#frag");
-        assert_eq!(r, "https://billing.example.com/base");
-        assert!(!r.contains("s3cret") && !r.contains("token") && !r.contains("user"));
-        assert_eq!(super::redact_url("not a url"), "(unparseable url)");
-    }
-
     use super::*;
     use std::collections::HashMap;
 
@@ -703,7 +635,6 @@ mod tests {
     fn endpoints(billing: &str, cloud: &str, token: Option<&str>) -> BillingEndpoints {
         BillingEndpoints {
             billing_url: billing.to_string(),
-            billing_url_source: "env",
             cloud_url: cloud.to_string(),
             cloud_token: token.map(str::to_string),
         }

@@ -16,9 +16,7 @@ open class BuildTask : DefaultTask() {
 
     @TaskAction
     fun assemble() {
-        // The CLI is the npm package @tauri-apps/cli (CI installs it with pnpm);
-        // there is no `cargo tauri` subcommand on the runner.
-        val executable = """pnpm""";
+        val executable = """cargo""";
         try {
             runTauriCli(executable)
         } catch (e: Exception) {
@@ -50,13 +48,10 @@ open class BuildTask : DefaultTask() {
         val rootDirRel = rootDirRel ?: throw GradleException("rootDirRel cannot be null")
         val target = target ?: throw GradleException("target cannot be null")
         val release = release ?: throw GradleException("release cannot be null")
-        val args = listOf("exec", "tauri", "android", "android-studio-script");
+        val args = listOf("tauri", "android", "android-studio-script");
 
         project.exec {
-            // rootDirRel points at panel-ui/src-tauri, which is not a pnpm package, so
-            // `pnpm exec` would resolve from the workspace root (no tauri bin there).
-            // Run from panel-ui, which owns @tauri-apps/cli; the CLI finds src-tauri itself.
-            workingDir(File(File(project.projectDir, rootDirRel), ".."))
+            workingDir(File(project.projectDir, rootDirRel))
             executable(executable)
             args(args)
             if (project.logger.isEnabled(LogLevel.DEBUG)) {

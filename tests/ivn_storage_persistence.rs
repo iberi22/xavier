@@ -22,7 +22,6 @@ impl Drop for RestoreProcessPaths {
 }
 
 #[test]
-#[serial_test::serial]
 fn karma_uses_ivn_root_and_imports_legacy_once_without_writing_it() {
     let temporary = tempfile::tempdir().unwrap();
     let _restore = RestoreProcessPaths {
@@ -178,7 +177,6 @@ fn corrupt_karma_is_not_overwritten_after_reward_or_decay() {
 }
 
 #[test]
-#[serial_test::serial]
 fn corrupt_exclusions_are_not_overwritten() {
     use xavier::data_commons::ivn::{clear_exclusions, is_excluded_at, record_exclusion};
     use xavier::data_commons::types::WalletAddress;

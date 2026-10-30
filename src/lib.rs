@@ -95,8 +95,8 @@ pub mod domain;
 pub mod ports;
 pub mod time;
 
-#[cfg(all(unix, any(test, feature = "test-utils")))]
-pub mod packaging_contract;
+#[cfg(all(test, unix))]
+mod packaging_contract;
 
 use std::sync::Arc;
 

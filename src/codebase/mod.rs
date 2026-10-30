@@ -18,7 +18,6 @@ pub mod issue_context;
 pub mod repo_config;
 pub mod repo_identity;
 pub mod repo_package_crypto;
-pub mod repo_registry;
 pub mod snapshot;
 
 /// Validation regex for project_id: only alphanumeric, hyphens, and underscores.
