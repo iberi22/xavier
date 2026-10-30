@@ -3060,7 +3060,7 @@
       "implemented_in": "src/self_manage/mod.rs",
       "name": "Ticket Dedup While Open",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3531",
       "status": "beta",
@@ -3079,7 +3079,7 @@
         "self_manage::ticket_create_tests::support_status_open_unless_terminal"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests self_manage::ticket_create_tests::ticket_open_fingerprint_dedupes, tests/ticket_dedup_while_open_e2e.rs::ticket_dedup_creates_new_ticket_when_previous_is_resolved, tests/ticket_dedup_while_open_e2e.rs::ticket_dedup_deduplicates_when_open, self_manage::ticket_create_tests::ticket_closed_fingerprint_creates_new_ticket, self_manage::ticket_create_tests::ticket_unknown_status_dedupes, self_manage::ticket_create_tests::ticket_closed_recurrence_still_rate_limited, self_manage::ticket_create_tests::support_status_open_unless_terminal"
     },
     "feat-skill-registry-unify": {
       "id": "feat-skill-registry-unify",
@@ -3484,7 +3484,7 @@
       "implemented_in": "src/scheduler/daemon.rs, src/self_manage/mod.rs",
       "name": "Incident Ticket Dedup",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3516",
       "status": "beta",
@@ -3499,7 +3499,7 @@
         "self_manage::ticket_create_tests::test_ticket_deduplication_and_rate_limiting"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests scheduler::daemon::alert_ticket_tests::repeated_alert_samples_deduplicate_to_one_ticket, tests/incident_ticket_dedup_e2e.rs::incident_ticket_deduplicates_on_same_fingerprint, tests/incident_ticket_dedup_e2e.rs::incident_ticket_creates_fresh_for_different_fingerprint, self_manage::ticket_create_tests::test_ticket_deduplication_and_rate_limiting"
     },
     "feat-guardian-truth": {
       "id": "feat-guardian-truth",
