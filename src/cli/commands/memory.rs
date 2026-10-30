@@ -119,15 +119,19 @@ async fn run_import_markdown(dir: &std::path::Path) -> Result<()> {
 
 async fn run_fts_check(db: Option<std::path::PathBuf>, json: bool) -> Result<()> {
     let db_path = db.unwrap_or_else(|| {
-        crate::settings::XavierSettings::resolve_data_dir()
-            .join(crate::memory::repo_memory_store_path::REPO_MEMORY_DB_FILENAME)
+        crate::settings::XavierSettings::resolve_data_dir().join("vec-store.sqlite3")
     });
 
     if !db_path.exists() {
         if json {
             println!(
-                "{{\"status\":\"error\",\"error\":\"Database file not found\",\"db\":\"{}\"}}",
-                db_path.display()
+                "{}",
+                serde_json::to_string(&serde_json::json!({
+                    "status": "error",
+                    "error": "Database file not found",
+                    "db": db_path.display().to_string()
+                }))
+                .unwrap()
             );
         } else {
             eprintln!("Error: Database file not found at {}", db_path.display());
@@ -140,15 +144,33 @@ async fn run_fts_check(db: Option<std::path::PathBuf>, json: bool) -> Result<()>
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     ) {
         Ok(conn) => {
-            if let Err(e) = conn.execute(
-                "INSERT INTO memory_fts(memory_fts) VALUES('integrity-check')",
+            let mut check_error = None;
+
+            if let Err(e) = conn.query_row("PRAGMA quick_check", [], |row| row.get::<_, String>(0))
+            {
+                check_error = Some(e);
+            } else if let Err(e) = conn.query_row("SELECT count(*) FROM memory_fts", [], |row| {
+                row.get::<_, i64>(0)
+            }) {
+                check_error = Some(e);
+            } else if let Err(e) = conn.query_row(
+                "SELECT count(*) FROM memory_fts WHERE memory_fts MATCH 'test'",
                 [],
+                |row| row.get::<_, i64>(0),
             ) {
+                check_error = Some(e);
+            }
+
+            if let Some(e) = check_error {
                 if json {
                     println!(
-                        "{{\"status\":\"corrupt\",\"error\":\"{}\",\"db\":\"{}\"}}",
-                        e,
-                        db_path.display()
+                        "{}",
+                        serde_json::to_string(&serde_json::json!({
+                            "status": "corrupt",
+                            "error": e.to_string(),
+                            "db": db_path.display().to_string()
+                        }))
+                        .unwrap()
                     );
                 } else {
                     println!("corrupt (error: {})", e);
@@ -156,7 +178,14 @@ async fn run_fts_check(db: Option<std::path::PathBuf>, json: bool) -> Result<()>
                 std::process::exit(1);
             } else {
                 if json {
-                    println!("{{\"status\":\"ok\",\"db\":\"{}\"}}", db_path.display());
+                    println!(
+                        "{}",
+                        serde_json::to_string(&serde_json::json!({
+                            "status": "ok",
+                            "db": db_path.display().to_string()
+                        }))
+                        .unwrap()
+                    );
                 } else {
                     println!("ok");
                 }
@@ -166,9 +195,13 @@ async fn run_fts_check(db: Option<std::path::PathBuf>, json: bool) -> Result<()>
         Err(e) => {
             if json {
                 println!(
-                    "{{\"status\":\"error\",\"error\":\"Failed to open database: {}\",\"db\":\"{}\"}}",
-                    e,
-                    db_path.display()
+                    "{}",
+                    serde_json::to_string(&serde_json::json!({
+                        "status": "error",
+                        "error": format!("Failed to open database: {}", e),
+                        "db": db_path.display().to_string()
+                    }))
+                    .unwrap()
                 );
             } else {
                 eprintln!("Error: Failed to open database: {}", e);

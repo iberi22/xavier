@@ -78,3 +78,29 @@ fn fts_check_missing_db() {
 
     assert_eq!(output.status.code(), Some(2));
 }
+
+#[test]
+fn fts_check_json_escaping() {
+    let tmp = tempdir().unwrap();
+    // Test that the emitted JSON properly escapes quotes and backslashes in paths
+    let db_path = tmp.path().join("test\"path\\db.sqlite3");
+
+    let exe = env!("CARGO_BIN_EXE_xavier");
+    let output = std::process::Command::new(exe)
+        .arg("memory")
+        .arg("fts-check")
+        .arg("--json")
+        .arg("--db")
+        .arg(&db_path)
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+
+    assert_eq!(parsed["status"], "error");
+    assert_eq!(parsed["db"].as_str().unwrap(), db_path.to_str().unwrap());
+}
