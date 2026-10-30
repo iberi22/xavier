@@ -152,3 +152,36 @@ fn fts_check_json_escaping() {
     assert_eq!(parsed["status"], "error");
     assert_eq!(parsed["db"].as_str().unwrap(), db_path.to_str().unwrap());
 }
+
+#[test]
+fn fts_check_not_a_database_is_corruption() {
+    let tmp = tempdir().unwrap();
+    let db_path = tmp.path().join("memory-store.sqlite3");
+    // Not an SQLite file at all: SQLITE_NOTADB must be reported as corruption
+    // (exit 1), not as an operational error (exit 2).
+    std::fs::write(&db_path, vec![0xA5u8; 8192]).unwrap();
+
+    let exe = env!("CARGO_BIN_EXE_xavier");
+    let output = std::process::Command::new(exe)
+        .env("HOME", tmp.path())
+        .env("XAVIER_DATA_DIR", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config.toml"))
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp.path().join("runtime.json"))
+        .arg("memory")
+        .arg("fts-check")
+        .arg("--json")
+        .arg("--db")
+        .arg(&db_path)
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {} stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(parsed["status"], "corrupt");
+}

@@ -117,6 +117,19 @@ async fn run_import_markdown(dir: &std::path::Path) -> Result<()> {
     }
 }
 
+/// SQLite failures that mean the database or FTS index is corrupt (exit 1),
+/// as opposed to operational failures such as BUSY or I/O errors (exit 2).
+fn is_sqlite_corruption(e: &rusqlite::Error) -> bool {
+    matches!(
+        e,
+        rusqlite::Error::SqliteFailure(f, _)
+            if matches!(
+                f.code,
+                rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase
+            )
+    )
+}
+
 fn op_err(e: rusqlite::Error, db_path: &std::path::Path, json: bool) -> Result<()> {
     if json {
         println!(
@@ -163,35 +176,59 @@ async fn run_fts_check(db: Option<std::path::PathBuf>, json: bool) -> Result<()>
         Ok(conn) => {
             let mut check_error = None;
 
-            // PRAGMA quick_check returns 1 or more rows.
-            // If the single row is "ok", there's no corruption.
+            // PRAGMA quick_check returns 1 or more rows; a single "ok" row means
+            // no corruption. SQLITE_CORRUPT / SQLITE_NOTADB are corruption (exit 1);
+            // every other SQLite failure (BUSY, I/O, missing table...) is an
+            // operational error (exit 2). Row-step errors are never discarded.
             match conn.prepare("PRAGMA quick_check") {
                 Ok(mut stmt) => match stmt.query_map([], |row| row.get::<_, String>(0)) {
                     Ok(rows) => {
                         let mut msgs = Vec::new();
-                        for r in rows.flatten() {
-                            msgs.push(r);
+                        for r in rows {
+                            match r {
+                                Ok(m) => msgs.push(m),
+                                Err(e) if is_sqlite_corruption(&e) => {
+                                    check_error = Some(e.to_string());
+                                    break;
+                                }
+                                Err(e) => return op_err(e, &db_path, json),
+                            }
                         }
-                        if msgs != ["ok"] {
-                            check_error = Some(msgs.join("\n"));
+                        if check_error.is_none() {
+                            if msgs.is_empty() {
+                                check_error =
+                                    Some("PRAGMA quick_check returned no rows".to_string());
+                            } else if msgs != ["ok"] {
+                                check_error = Some(msgs.join("\n"));
+                            }
                         }
                     }
+                    Err(e) if is_sqlite_corruption(&e) => check_error = Some(e.to_string()),
                     Err(e) => return op_err(e, &db_path, json),
                 },
+                Err(e) if is_sqlite_corruption(&e) => check_error = Some(e.to_string()),
                 Err(e) => return op_err(e, &db_path, json),
             }
 
             if check_error.is_none() {
-                if let Err(e) = conn.query_row("SELECT count(*) FROM memory_fts", [], |row| {
+                match conn.query_row("SELECT count(*) FROM memory_fts", [], |row| {
                     row.get::<_, i64>(0)
                 }) {
-                    return op_err(e, &db_path, json);
-                } else if let Err(e) = conn.query_row(
+                    Ok(_) => {}
+                    Err(e) if is_sqlite_corruption(&e) => check_error = Some(e.to_string()),
+                    Err(e) => return op_err(e, &db_path, json),
+                }
+            }
+
+            if check_error.is_none() {
+                match conn.query_row(
                     "SELECT count(*) FROM memory_fts WHERE memory_fts MATCH 'test'",
                     [],
                     |row| row.get::<_, i64>(0),
                 ) {
-                    return op_err(e, &db_path, json);
+                    Ok(_) => {}
+                    Err(e) if is_sqlite_corruption(&e) => check_error = Some(e.to_string()),
+                    Err(e) => return op_err(e, &db_path, json),
                 }
             }
 
