@@ -61,3 +61,6 @@ mod ready_gate_startup;
 mod billing_status_test;
 #[path = "config_cli.rs"]
 mod config_cli;
+
+#[path = "core_smoke_cli_e2e.rs"]
+mod core_smoke_cli_e2e;
