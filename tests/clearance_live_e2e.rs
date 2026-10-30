@@ -11,7 +11,7 @@ use reqwest::Client;
 use serde_json::{json, Value};
 use std::net::TcpListener;
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tempfile::NamedTempFile;
 use tempfile::TempDir;
 
@@ -65,7 +65,7 @@ impl LiveTestServer {
         let readonly_jwt =
             generate_jwt(&readonly_user, jwt_secret.as_bytes()).expect("generate readonly jwt");
 
-        let mut child = Command::new(env!("CARGO_BIN_EXE_xavier"))
+        let child = Command::new(env!("CARGO_BIN_EXE_xavier"))
             .arg("http")
             .arg(port.to_string())
             .arg("--mcp-port")
@@ -98,33 +98,28 @@ impl LiveTestServer {
             .expect("failed to spawn xavier binary");
 
         let client = Client::new();
-        let ready_url = format!("{url}/ready");
-        let mut last_error = "no request attempted".to_string();
-        let deadline = Instant::now() + Duration::from_secs(55);
+        let health_url = format!("{url}/health");
+        let mut healthy = false;
 
-        while Instant::now() < deadline {
-            if let Ok(Some(status)) = child.try_wait() {
-                panic!("xavier http exited during startup with status {status}");
-            }
-
-            match client
-                .get(&ready_url)
-                .timeout(Duration::from_secs(2))
-                .send()
-                .await
-            {
-                Ok(resp) if resp.status().is_success() => break,
-                Ok(resp) => last_error = format!("GET /ready -> HTTP {}", resp.status()),
-                Err(err) => last_error = err.to_string(),
+        for _ in 0..120 {
+            if let Ok(resp) = client.get(&health_url).send().await {
+                if resp.status().is_success() {
+                    // The ready gate answers 200 {"status":"starting"} before the
+                    // app router (and /memory/add) is installed; keep polling.
+                    let body = resp.text().await.unwrap_or_default();
+                    if !body.contains("\"status\":\"starting\"") {
+                        healthy = true;
+                        break;
+                    }
+                }
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
 
-        if Instant::now() >= deadline {
-            panic!(
-                "Live server did not answer GET /ready with 2xx within 55s (last: {last_error})"
-            );
-        }
+        assert!(
+            healthy,
+            "Live server failed to become healthy at {health_url} within 60s"
+        );
 
         LiveTestServer {
             _child: ChildGuard(child),

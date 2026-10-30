@@ -1,6 +1,6 @@
 use std::net::TcpListener;
 use std::process::{Child, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 struct ChildGuard(Child);
 
@@ -20,7 +20,7 @@ async fn test_health_endpoint_via_xavier_binary() {
         .expect("local addr")
         .port();
     let url = format!("http://127.0.0.1:{port}");
-    let mut _child = ChildGuard(
+    let _child = ChildGuard(
         std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
             .arg("http")
             .arg(port.to_string())
@@ -46,132 +46,115 @@ async fn test_health_endpoint_via_xavier_binary() {
     );
 
     let client = reqwest::Client::new();
-    let ready_url = format!("{url}/ready");
     let health_url = format!("{url}/health");
     let readiness_url = format!("{url}/readiness");
     let protected_url = format!("{url}/v1/account/usage");
-
-    let mut last_error = "no request attempted".to_string();
-    let deadline = Instant::now() + Duration::from_secs(55);
-
-    while Instant::now() < deadline {
-        if let Ok(Some(status)) = _child.0.try_wait() {
-            panic!("xavier http exited during startup with status {status}");
-        }
-
-        match client
-            .get(&ready_url)
-            .timeout(Duration::from_secs(2))
-            .send()
-            .await
-        {
-            Ok(resp) if resp.status().is_success() => break,
-            Ok(resp) => last_error = format!("GET /ready -> HTTP {}", resp.status()),
-            Err(err) => last_error = err.to_string(),
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-
-    if Instant::now() >= deadline {
-        panic!("xavier http did not answer GET /ready with 2xx within 55s (last: {last_error})");
-    }
-
     let mut healthy = false;
     let mut readiness_checked = false;
     let mut auth_checked = false;
 
-    match client.get(&health_url).send().await {
-        Ok(response) if response.status().is_success() => {
-            let has_request_id = response.headers().contains_key("x-request-id");
-            let body = response.text().await.expect("health body");
+    for _ in 0..120 {
+        match client.get(&health_url).send().await {
+            Ok(response) if response.status().is_success() => {
+                let has_request_id = response.headers().contains_key("x-request-id");
+                let body = response.text().await.expect("health body");
+                // The ready gate (src/server/http/ready_gate.rs) answers 200
+                // {"status":"starting"} before the app router is installed; that is
+                // not "booted" yet, so keep polling.
+                if body.contains("\"status\":\"starting\"") {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    continue;
+                }
+                assert!(has_request_id);
+                assert!(
+                    body.contains("\"status\":\"healthy\"")
+                        || body.contains("\"status\":\"degraded\"")
+                        || body.contains("\"status\":\"unhealthy\"")
+                        || body.contains("\"status\":\"ok\"")
+                );
+                healthy = true;
 
-            assert!(has_request_id);
-            assert!(
-                body.contains("\"status\":\"healthy\"")
-                    || body.contains("\"status\":\"degraded\"")
-                    || body.contains("\"status\":\"unhealthy\"")
-                    || body.contains("\"status\":\"ok\"")
-            );
-            healthy = true;
+                let readiness = client
+                    .get(&readiness_url)
+                    .send()
+                    .await
+                    .expect("readiness response");
+                assert!(readiness.status().is_success());
+                assert!(readiness.headers().contains_key("x-request-id"));
+                let readiness_body = readiness.text().await.expect("readiness body");
+                assert!(readiness_body.contains("\"service\":\"xavier\""));
+                assert!(
+                    readiness_body.contains("\"status\":\"ok\"")
+                        || readiness_body.contains("\"status\":\"degraded\"")
+                );
+                readiness_checked = true;
 
-            let readiness = client
-                .get(&readiness_url)
-                .send()
-                .await
-                .expect("readiness response");
-            assert!(readiness.status().is_success());
-            assert!(readiness.headers().contains_key("x-request-id"));
-            let readiness_body = readiness.text().await.expect("readiness body");
-            assert!(readiness_body.contains("\"service\":\"xavier\""));
-            assert!(
-                readiness_body.contains("\"status\":\"ok\"")
-                    || readiness_body.contains("\"status\":\"degraded\"")
-            );
-            readiness_checked = true;
+                let protected = client
+                    .get(&protected_url)
+                    .send()
+                    .await
+                    .expect("protected response");
+                assert_eq!(protected.status(), reqwest::StatusCode::UNAUTHORIZED);
+                assert!(protected.headers().contains_key("x-request-id"));
 
-            let protected = client
-                .get(&protected_url)
-                .send()
-                .await
-                .expect("protected response");
-            assert_eq!(protected.status(), reqwest::StatusCode::UNAUTHORIZED);
-            assert!(protected.headers().contains_key("x-request-id"));
+                let authorized = client
+                    .get(&protected_url)
+                    .header("X-Xavier-Token", "test-token")
+                    .send()
+                    .await
+                    .expect("authorized response");
+                assert!(authorized.status().is_success());
+                assert!(authorized.headers().contains_key("x-request-id"));
+                let usage: serde_json::Value = authorized.json().await.expect("usage json");
+                assert!(usage.get("optimization").is_some());
+                assert!(usage["optimization"].get("router_direct_count").is_some());
+                assert!(usage["optimization"].get("semantic_cache_hits").is_some());
 
-            let authorized = client
-                .get(&protected_url)
-                .header("X-Xavier-Token", "test-token")
-                .send()
-                .await
-                .expect("authorized response");
-            assert!(authorized.status().is_success());
-            assert!(authorized.headers().contains_key("x-request-id"));
-            let usage: serde_json::Value = authorized.json().await.expect("usage json");
-            assert!(usage.get("optimization").is_some());
-            assert!(usage["optimization"].get("router_direct_count").is_some());
-            assert!(usage["optimization"].get("semantic_cache_hits").is_some());
+                // E2E Auth test for GET /v1/memories/{id}/outline
+                let outline_unauth = client
+                    .get(format!("{url}/v1/memories/test-mem-id/outline"))
+                    .send()
+                    .await
+                    .expect("outline unauth response");
+                assert_eq!(outline_unauth.status(), reqwest::StatusCode::UNAUTHORIZED);
 
-            // E2E Auth test for GET /v1/memories/{id}/outline
-            let outline_unauth = client
-                .get(format!("{url}/v1/memories/test-mem-id/outline"))
-                .send()
-                .await
-                .expect("outline unauth response");
-            assert_eq!(outline_unauth.status(), reqwest::StatusCode::UNAUTHORIZED);
+                let outline_auth = client
+                    .get(format!("{url}/v1/memories/non-existent-id/outline"))
+                    .header("X-Xavier-Token", "test-token")
+                    .send()
+                    .await
+                    .expect("outline auth response");
+                assert!(outline_auth.status().is_success());
+                let outline_json: serde_json::Value =
+                    outline_auth.json().await.expect("outline json");
+                assert_eq!(outline_json["status"], "error");
+                assert_eq!(outline_json["code"], "NOT_FOUND");
 
-            let outline_auth = client
-                .get(format!("{url}/v1/memories/non-existent-id/outline"))
-                .header("X-Xavier-Token", "test-token")
-                .send()
-                .await
-                .expect("outline auth response");
-            assert!(outline_auth.status().is_success());
-            let outline_json: serde_json::Value = outline_auth.json().await.expect("outline json");
-            assert_eq!(outline_json["status"], "error");
-            assert_eq!(outline_json["code"], "NOT_FOUND");
+                // E2E Auth test for POST /v1/memories/prune
+                let prune_unauth = client
+                    .post(format!("{url}/v1/memories/prune"))
+                    .header("Content-Type", "application/json")
+                    .body(r#"{"older_than_days": 30, "dry_run": true}"#)
+                    .send()
+                    .await
+                    .expect("prune unauth response");
+                assert_eq!(prune_unauth.status(), reqwest::StatusCode::UNAUTHORIZED);
 
-            // E2E Auth test for POST /v1/memories/prune
-            let prune_unauth = client
-                .post(format!("{url}/v1/memories/prune"))
-                .header("Content-Type", "application/json")
-                .body(r#"{"older_than_days": 30, "dry_run": true}"#)
-                .send()
-                .await
-                .expect("prune unauth response");
-            assert_eq!(prune_unauth.status(), reqwest::StatusCode::UNAUTHORIZED);
+                let prune_auth = client
+                    .post(format!("{url}/v1/memories/prune"))
+                    .header("X-Xavier-Token", "test-token")
+                    .header("Content-Type", "application/json")
+                    .body(r#"{"older_than_days": 30, "dry_run": true}"#)
+                    .send()
+                    .await
+                    .expect("prune auth response");
+                assert!(prune_auth.status().is_success());
 
-            let prune_auth = client
-                .post(format!("{url}/v1/memories/prune"))
-                .header("X-Xavier-Token", "test-token")
-                .header("Content-Type", "application/json")
-                .body(r#"{"older_than_days": 30, "dry_run": true}"#)
-                .send()
-                .await
-                .expect("prune auth response");
-            assert!(prune_auth.status().is_success());
-
-            auth_checked = true;
+                auth_checked = true;
+                break;
+            }
+            _ => tokio::time::sleep(Duration::from_millis(500)).await,
         }
-        _ => {}
     }
 
     assert!(healthy, "xavier did not expose a healthy /health endpoint");

@@ -89,34 +89,20 @@ async fn test_health_endpoints_e2e() {
 
     let client = Client::new();
     let mut started = false;
-    let mut last_error = "no request attempted".to_string();
-    // Bounded readiness budget: 55s overall, each request (incl. body) capped at 1s.
-    let deadline = std::time::Instant::now() + Duration::from_secs(55);
-    while std::time::Instant::now() < deadline {
-        match client
-            .get(format!("http://127.0.0.1:{port}/ready"))
-            .timeout(Duration::from_secs(1))
+    for _ in 0..30 {
+        if let Ok(resp) = client
+            .get(format!("http://127.0.0.1:{port}/health"))
             .send()
             .await
         {
-            Ok(resp) if resp.status().is_success() => {
+            if resp.status().is_success() {
                 started = true;
                 break;
             }
-            Ok(resp) => {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
-                last_error = format!("GET /ready -> HTTP {status} body: {body}");
-            }
-            Err(err) => last_error = err.to_string(),
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    assert!(
-        started,
-        "Server failed to start within 55s (last error: {})",
-        last_error
-    );
+    assert!(started, "Server failed to start");
 
     // 1. GET /health (unauthenticated)
     let resp = client
@@ -124,11 +110,8 @@ async fn test_health_endpoints_e2e() {
         .send()
         .await
         .unwrap();
-    let status = resp.status();
-    let body_bytes = resp.bytes().await.unwrap();
-    let body_text = String::from_utf8_lossy(&body_bytes);
-    assert_eq!(status, StatusCode::OK, "body: {}", body_text);
-    let body: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
 
     // Check basic top-level keys
     assert!(body.get("mode").is_some());
@@ -142,11 +125,8 @@ async fn test_health_endpoints_e2e() {
         .await
         .unwrap();
 
-    let status = resp.status();
-    let body_bytes = resp.bytes().await.unwrap();
-    let body_text = String::from_utf8_lossy(&body_bytes);
-    assert_eq!(status, StatusCode::OK, "body: {}", body_text);
-    let body_v1: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body_v1: Value = resp.json().await.unwrap();
 
     // Assert specified JSON shape and values for /v1/system/health:
     // - mode (string)
@@ -223,9 +203,7 @@ async fn test_health_endpoints_e2e() {
         .send()
         .await
         .unwrap();
-    let status = resp_forbidden.status();
-    let body_text = resp_forbidden.text().await.unwrap_or_default();
-    assert_eq!(status, StatusCode::FORBIDDEN, "body: {}", body_text);
+    assert_eq!(resp_forbidden.status(), StatusCode::FORBIDDEN);
 
     let _ = std::fs::remove_file(temp_config_path);
 }
@@ -305,34 +283,20 @@ async fn test_mesh_status_with_license_e2e() {
 
     let client = Client::new();
     let mut started = false;
-    let mut last_error = "no request attempted".to_string();
-    // Bounded readiness budget: 55s overall, each request (incl. body) capped at 1s.
-    let deadline = std::time::Instant::now() + Duration::from_secs(55);
-    while std::time::Instant::now() < deadline {
-        match client
-            .get(format!("http://127.0.0.1:{port}/ready"))
-            .timeout(Duration::from_secs(1))
+    for _ in 0..30 {
+        if let Ok(resp) = client
+            .get(format!("http://127.0.0.1:{port}/health"))
             .send()
             .await
         {
-            Ok(resp) if resp.status().is_success() => {
+            if resp.status().is_success() {
                 started = true;
                 break;
             }
-            Ok(resp) => {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
-                last_error = format!("GET /ready -> HTTP {status} body: {body}");
-            }
-            Err(err) => last_error = err.to_string(),
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    assert!(
-        started,
-        "Server failed to start within 55s (last error: {})",
-        last_error
-    );
+    assert!(started, "Server failed to start");
 
     // GET /v1/mesh/status (with accepted license)
     let resp = client
@@ -341,11 +305,8 @@ async fn test_mesh_status_with_license_e2e() {
         .send()
         .await
         .unwrap();
-    let status = resp.status();
-    let body_bytes = resp.bytes().await.unwrap();
-    let body_text = String::from_utf8_lossy(&body_bytes);
-    assert_eq!(status, StatusCode::OK, "body: {}", body_text);
-    let body: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
 
     // HTTP routes are enabled by license acceptance even without `mesh`.
     // The seeded typed ACL is present; engines remain unchecked.

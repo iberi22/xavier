@@ -58,6 +58,3 @@ mod code_explain_context_e2e;
 
 #[path = "explain_isolated_llm_e2e.rs"]
 mod explain_isolated_llm_e2e;
-
-#[path = "code_repos_list_cli_e2e.rs"]
-mod code_repos_list_cli_e2e;

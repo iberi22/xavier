@@ -67,7 +67,7 @@ impl MalocaStore {
     /// 3. `"data"` — matches `MemorySettings::default()` when no config file
     ///    or env var is present.
     pub fn resolve_state_dir() -> PathBuf {
-        crate::settings::paths::state_dir()
+        crate::settings::XavierSettings::resolve_state_dir()
     }
 
     /// Open the store at the canonical resolved directory (see

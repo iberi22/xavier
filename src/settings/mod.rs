@@ -12,7 +12,6 @@ use std::sync::{Arc, LazyLock};
 pub mod defaults;
 pub mod env;
 pub mod inspection;
-pub mod paths;
 pub mod serialization;
 pub mod types;
 pub mod validation;
@@ -163,6 +162,10 @@ impl XavierSettings {
     /// Resolve config path.
     pub fn resolve_config_path() -> PathBuf {
         serialization::resolve_config_path()
+    }
+
+    pub fn resolve_state_dir() -> PathBuf {
+        serialization::resolve_state_dir()
     }
 
     /// Resolve data dir.

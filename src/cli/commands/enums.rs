@@ -32,11 +32,6 @@ pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 /// Each variant maps to a distinct subcommand exposed to the user.
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
-    /// Manage XAVIER projects
-    Projects {
-        #[command(subcommand)]
-        cmd: ProjectsCommand,
-    },
     /// Inspect effective settings and edit runtime overrides
     Config(super::config::ConfigArgs),
     /// Initialize Xavier onboarding and interactive RAG installer wizard
@@ -619,11 +614,7 @@ pub enum SpaceCommand {
         label: Vec<String>,
     },
     /// List all spaces
-    List {
-        /// Output in JSON format
-        #[arg(long, default_value_t = false)]
-        json: bool,
-    },
+    List,
     /// Unlock a space
     Unlock {
         /// The space ID
@@ -1187,8 +1178,6 @@ pub enum TasksCommand {
         status: Option<String>,
         #[arg(short = 'q', long)]
         search: Option<String>,
-        #[arg(long, default_value_t = false)]
-        json: bool,
     },
     /// Synchronize tasks with configured backends
     Sync,
@@ -1340,22 +1329,6 @@ pub enum CodeCommand {
         /// Upsert short symbol summaries into Xavier memory (`code/{repo}/{stable_id}`)
         #[arg(long, default_value_t = false)]
         memory: bool,
-    },
-    /// Repository management (list, add, remove)
-    Repos {
-        #[command(subcommand)]
-        cmd: CodeReposCommand,
-    },
-}
-
-/// Subcommands for `xavier code repos`
-#[derive(Subcommand, Debug, Clone)]
-pub enum CodeReposCommand {
-    /// List code graph projects
-    List {
-        /// Output result in JSON format
-        #[arg(long)]
-        json: bool,
     },
 }
 
@@ -1900,10 +1873,7 @@ pub enum SecretsCommand {
 #[derive(Subcommand, Debug, Clone)]
 pub enum GovernanceCommand {
     /// List active proposals
-    List {
-        #[arg(long, default_value_t = false)]
-        json: bool,
-    },
+    List,
     /// Create a new proposal
     Create {
         /// Proposal title
@@ -1915,8 +1885,6 @@ pub enum GovernanceCommand {
     Status {
         /// Proposal ID
         proposal_id: String,
-        #[arg(long, default_value_t = false)]
-        json: bool,
     },
     /// Cast a vote on a proposal
     Vote {
@@ -2287,10 +2255,7 @@ pub enum PluginCommand {
     /// Install a plugin
     Install { name: String },
     /// List plugins
-    List {
-        #[arg(long, default_value_t = false)]
-        json: bool,
-    },
+    List,
 }
 
 /// Mini-expert subcommands
@@ -2328,10 +2293,7 @@ pub enum MiniExpertCommand {
         candidate: bool,
     },
     /// List registered mini-experts (all versions)
-    List {
-        #[arg(long, default_value_t = false)]
-        json: bool,
-    },
+    List,
     /// Make a version the single active one (rollback = activate an older version)
     Activate { name: String, version: String },
     /// Retire a version (the active one when --version is omitted)
@@ -2442,17 +2404,4 @@ pub enum RecoveryCommand {
     },
     /// Disconnect the local Google Drive credential.
     Disconnect,
-}
-
-#[derive(Subcommand, Debug, Clone)]
-pub enum ProjectsCommand {
-    /// List all projects (workspaces)
-    List {
-        /// Output in JSON format
-        #[arg(long)]
-        json: bool,
-        /// Show all projects, including scratch/temp workspaces
-        #[arg(long)]
-        all: bool,
-    },
 }

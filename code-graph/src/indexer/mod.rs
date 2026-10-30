@@ -234,8 +234,25 @@ impl Indexer {
                 files_to_mtime.insert(rel, mtime);
             }
         } else {
-            let existing_metadata = self.db.get_all_file_metadata()?;
-            let existing_hashes = self.db.get_all_file_hashes().unwrap_or_default();
+            let canonical_root = std::fs::canonicalize(root)
+                .unwrap_or_else(|_| root.to_path_buf())
+                .to_string_lossy()
+                .into_owned();
+            let resolved_root = if self.project_id != "default" {
+                self.project_id.clone()
+            } else {
+                canonical_root
+            };
+            let project_paths = self
+                .db
+                .get_file_paths_for_project(&resolved_root)
+                .unwrap_or_default();
+
+            let mut existing_metadata = self.db.get_all_file_metadata()?;
+            let mut existing_hashes = self.db.get_all_file_hashes().unwrap_or_default();
+
+            existing_metadata.retain(|path, _| project_paths.contains(path));
+            existing_hashes.retain(|path, _| project_paths.contains(path));
             let mut current_files = std::collections::HashSet::new();
             let mut hash_upserts: HashMap<String, String> = HashMap::new();
 
@@ -460,7 +477,22 @@ impl Indexer {
     /// already pruned by [`crate::db::CodeGraphDB::batch_delete_file_data`]
     /// whenever the delete went through a tracked path).
     pub fn verify_hash_parity(&self, root: &Path) -> Result<ParityReport> {
-        let stored = self.db.get_all_file_hashes()?;
+        let canonical_root = std::fs::canonicalize(root)
+            .unwrap_or_else(|_| root.to_path_buf())
+            .to_string_lossy()
+            .into_owned();
+        let resolved_root = if self.project_id != "default" {
+            self.project_id.clone()
+        } else {
+            canonical_root
+        };
+        let project_paths = self
+            .db
+            .get_file_paths_for_project(&resolved_root)
+            .unwrap_or_default();
+
+        let mut stored = self.db.get_all_file_hashes()?;
+        stored.retain(|path, _| project_paths.contains(path));
         let mut report = ParityReport {
             checked: stored.len(),
             ..Default::default()
@@ -583,8 +615,15 @@ impl Indexer {
                 })
                 .collect()
         };
+        let resolved_root = if self.project_id != "default" {
+            Some(self.project_id.clone())
+        } else {
+            std::fs::canonicalize(root)
+                .ok()
+                .map(|p| p.to_string_lossy().into_owned())
+        };
         let stats = tokio::task::spawn_blocking(move || {
-            db.insert_symbols(&new_symbols)?;
+            db.insert_symbols_with_root(&new_symbols, resolved_root.as_deref())?;
             db.insert_edges(&edges)?;
             if !symbol_embeddings.is_empty() {
                 let batch_refs: Vec<(&str, &[f32])> = symbol_embeddings
@@ -1392,8 +1431,8 @@ mod tests {
         // registration, so this is the pure-native output for the current
         // tree; re-measure if parsers or fixture sources change)
         assert_eq!(stats.total_files, 36, "file count mismatch");
-        assert_eq!(stats.total_symbols, 2716, "symbol count mismatch");
-        assert_eq!(edges_count, 15802, "edge count mismatch");
+        assert_eq!(stats.total_symbols, 2730, "symbol count mismatch");
+        assert_eq!(edges_count, 15876, "edge count mismatch");
     }
 
     #[tokio::test]
