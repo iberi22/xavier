@@ -2717,7 +2717,8 @@
         "test_mtime_touch_without_content_change_skips_reextract",
         "incremental_indexing_removes_deleted_files",
         "test_god_guard_drops_scattered_low_confidence",
-        "test_default_project_keeps_legacy_ids"
+        "test_default_project_keeps_legacy_ids",
+        "tests/codegraph_multilang_reindex_e2e.rs::test_codegraph_multilang_reindex_e2e"
       ],
       "req_ids": [
         "REQ-056"
