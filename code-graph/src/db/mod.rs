@@ -450,7 +450,7 @@ impl CodeGraphDB {
             .query_row(
                 "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='symbols_fts'",
                 [],
-                |row| row.get(0),
+                |row: &rusqlite::Row| row.get(0),
             )
             .map_err(|e| GraphError::Database(e.to_string()))?;
 
@@ -460,7 +460,7 @@ impl CodeGraphDB {
                 .query_row(
                     "SELECT COUNT(*) FROM pragma_table_info('symbols_fts') WHERE name='stable_id'",
                     [],
-                    |row| row.get(0),
+                    |row: &rusqlite::Row| row.get(0),
                 )
                 .unwrap_or(0);
             has_stable == 0
@@ -618,13 +618,21 @@ impl CodeGraphDB {
         conn.query_row(
             "SELECT id FROM symbols WHERE stable_id = ?1",
             params![&stable_id],
-            |row| row.get(0),
+            |row: &rusqlite::Row| row.get(0),
         )
         .map_err(|e| GraphError::Database(e.to_string()))
     }
 
     /// Insert multiple symbols in a batch
     pub fn insert_symbols(&self, symbols: &[Symbol]) -> Result<()> {
+        self.insert_symbols_with_root(symbols, None)
+    }
+
+    pub fn insert_symbols_with_root(
+        &self,
+        symbols: &[Symbol],
+        project_root: Option<&str>,
+    ) -> Result<()> {
         let mut conn = self
             .conn
             .lock()
@@ -637,8 +645,8 @@ impl CodeGraphDB {
         {
             let mut stmt = tx
                 .prepare(
-                    r#"INSERT INTO symbols (stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity)
-                       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                    r#"INSERT INTO symbols (stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity, project_root)
+                       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                        ON CONFLICT(stable_id) DO UPDATE SET
                          name=excluded.name,
                          kind=excluded.kind,
@@ -650,7 +658,8 @@ impl CodeGraphDB {
                          end_col=excluded.end_col,
                          signature=excluded.signature,
                          parent=excluded.parent,
-                         complexity=excluded.complexity"#,
+                         complexity=excluded.complexity,
+                         project_root=excluded.project_root"#,
                 )
                 .map_err(|e| GraphError::Database(e.to_string()))?;
 
@@ -678,6 +687,7 @@ impl CodeGraphDB {
                     symbol.signature,
                     symbol.parent,
                     symbol.complexity,
+                    project_root,
                 ])
                 .map_err(|e| GraphError::Database(e.to_string()))?;
 
@@ -2190,6 +2200,53 @@ impl CodeGraphDB {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn test_insert_symbols_project_root() {
+        let db = CodeGraphDB::in_memory().unwrap();
+
+        let mut sym1 = Symbol::default();
+        sym1.stable_id = Some("func1".to_string());
+        sym1.name = "func1".to_string();
+        sym1.file_path = "src/lib.rs".to_string();
+
+        let mut sym2 = Symbol::default();
+        sym2.stable_id = Some("func2".to_string());
+        sym2.name = "func2".to_string();
+        sym2.file_path = "src/lib.rs".to_string();
+
+        // 1. insert_symbols leaves it NULL
+        db.insert_symbols(&[sym1.clone()]).unwrap();
+
+        let conn = db.conn.lock().unwrap();
+        let root1: Option<String> = conn.query_row(
+            "SELECT project_root FROM symbols WHERE stable_id = ?1",
+            params![sym1.stable_id.as_deref().unwrap()],
+            |row: &rusqlite::Row| row.get(0)
+        ).unwrap();
+        assert_eq!(root1, None);
+        drop(conn);
+
+        // 2. insert_symbols_with_root writes the root
+        db.insert_symbols_with_root(&[sym2.clone()], Some("/path/to/proj")).unwrap();
+        let conn = db.conn.lock().unwrap();
+        let root2: Option<String> = conn.query_row(
+            "SELECT project_root FROM symbols WHERE stable_id = ?1",
+            params![sym2.stable_id.as_deref().unwrap()],
+            |row: &rusqlite::Row| row.get(0)
+        ).unwrap();
+        assert_eq!(root2, Some("/path/to/proj".to_string()));
+        drop(conn);
+
+        // 3. re-inserting same stable_id updates the root
+        db.insert_symbols_with_root(&[sym1.clone()], Some("/new/root")).unwrap();
+        let conn = db.conn.lock().unwrap();
+        let root1_updated: Option<String> = conn.query_row(
+            "SELECT project_root FROM symbols WHERE stable_id = ?1",
+            params![sym1.stable_id.as_deref().unwrap()],
+            |row: &rusqlite::Row| row.get(0)
+        ).unwrap();
+        assert_eq!(root1_updated, Some("/new/root".to_string()));
+    }
 
     #[test]
     fn test_find_by_file_propagates_row_errors() {
@@ -2604,7 +2661,7 @@ mod tests {
         {
             let conn = db.conn.lock().expect("lock");
             let size_limit: i64 = conn
-                .query_row("PRAGMA journal_size_limit;", [], |row| row.get(0))
+                .query_row("PRAGMA journal_size_limit;", [], |row: &rusqlite::Row| row.get(0))
                 .expect("query pragma");
             assert_eq!(size_limit, 64 * 1024 * 1024);
         }
