@@ -11,6 +11,11 @@ on:
         description: 'Also apply stable->beta demotions flagged by the review lane'
         type: boolean
         default: false
+  workflow_run:
+    workflows: ["Xavier CI / CD", "E2E Segmented"]
+    types: [completed]
+  schedule:
+    - cron: '17 */6 * * *'
 
 permissions: {}
 
@@ -28,30 +33,82 @@ jobs:
     timeout-minutes: 10
     outputs:
       sha: ${{ steps.snapshot.outputs.sha }}
+      mode: ${{ steps.resolve.outputs.mode }}
+      eligible_count: ${{ steps.counts.outputs.eligible_count }}
+      demotion_count: ${{ steps.counts.outputs.demotion_count }}
     steps:
+      - name: Resolve run mode
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            if [ "${{ inputs.dry_run }}" == "false" ]; then
+              echo "mode=apply" >> "$GITHUB_OUTPUT"
+            else
+              echo "mode=dry" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "${{ github.event_name }}" == "workflow_run" ]; then
+            if [ "${{ github.event.workflow_run.head_branch }}" != "main" ] || \
+               [ "${{ github.event.workflow_run.head_repository.full_name }}" != "${{ github.repository }}" ] || \
+               ( [ "${{ github.event.workflow_run.event }}" != "push" ] && [ "${{ github.event.workflow_run.event }}" != "workflow_dispatch" ] ); then
+              echo "mode=dry" >> "$GITHUB_OUTPUT"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            else
+              HEAD_SHA=$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)
+              if [ "${{ github.event.workflow_run.head_sha }}" != "$HEAD_SHA" ]; then
+                echo "mode=dry" >> "$GITHUB_OUTPUT"
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              else
+                if [ "${{ vars.LEDGER_PROMOTER_AUTO }}" == "true" ]; then
+                  echo "mode=apply" >> "$GITHUB_OUTPUT"
+                else
+                  echo "mode=dry" >> "$GITHUB_OUTPUT"
+                fi
+              fi
+            fi
+          elif [ "${{ github.event_name }}" == "schedule" ]; then
+            if [ "${{ vars.LEDGER_PROMOTER_AUTO }}" == "true" ]; then
+              echo "mode=apply" >> "$GITHUB_OUTPUT"
+            else
+              echo "mode=dry" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "mode=dry" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v7
+        if: steps.resolve.outputs.skip != 'true'
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: false
       - name: Record evaluated snapshot
+        if: steps.resolve.outputs.skip != 'true'
         id: snapshot
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Gather same-SHA main evidence and reconstruct history
+        if: steps.resolve.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/ledger-promote-evidence.py
-      # Promotions: beta -> stable (complete) plus planned/in_progress -> beta
-      # (built, tested, still incomplete). This step only reports; --apply in
-      # the propose job performs the evaluated promotions grouped by transition.
       - name: Evaluate ledger features (beta->stable, planned/in_progress->beta)
+        if: steps.resolve.outputs.skip != 'true'
         shell: bash
         run: |
           python3 scripts/ledger-promote.py --features .gitcore/features.json \
             --evidence /tmp/ledger-evidence.json --history /tmp/ledger-history.json \
             --dry-run > /tmp/ledger-report.json 2> /tmp/ledger-report.md
           cat /tmp/ledger-report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Calculate counts
+        if: steps.resolve.outputs.skip != 'true'
+        id: counts
+        run: |
+          echo "eligible_count=$(jq '[.features[] | select(.eligible == true)] | length' /tmp/ledger-report.json)" >> "$GITHUB_OUTPUT"
+          echo "demotion_count=$(jq '[.features[] | select(.review_flagged == true)] | length' /tmp/ledger-report.json)" >> "$GITHUB_OUTPUT"
       - name: Preserve evidence and report
+        if: steps.resolve.outputs.skip != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ledger-promoter-evidence
@@ -61,11 +118,12 @@ jobs:
 
   propose:
     needs: evaluate
-    if: inputs.dry_run == false
+    if: needs.evaluate.outputs.mode == 'apply' && (needs.evaluate.outputs.eligible_count != '0' || (github.event_name == 'workflow_dispatch' && inputs.apply_demotions == true && needs.evaluate.outputs.demotion_count != '0'))
     permissions:
       contents: write
       pull-requests: write
       actions: write
+      issues: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -80,7 +138,7 @@ jobs:
           path: /tmp
       - name: Apply evaluated promotions
         run: |
-          if [ "${{ inputs.apply_demotions }}" == "true" ]; then
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ inputs.apply_demotions }}" == "true" ]; then
             python3 scripts/ledger-promote.py --features .gitcore/features.json \
               --evidence /tmp/ledger-evidence.json --history /tmp/ledger-history.json \
               --apply --apply-demotions > /tmp/ledger-report.json 2> /tmp/ledger-report.md
@@ -89,19 +147,28 @@ jobs:
               --evidence /tmp/ledger-evidence.json --history /tmp/ledger-history.json \
               --apply > /tmp/ledger-report.json 2> /tmp/ledger-report.md
           fi
-      # The owner must enable "Allow GitHub Actions to create and approve pull requests",
-      # or a GitHub App token must be used for push, PR creation, and dispatch.
+          if [ -f "scripts/ledger-docs-sync.py" ]; then
+            python3 scripts/ledger-docs-sync.py --write
+            git add docs/FEATURE_STATUS.md
+          fi
       - name: Open promotion PR and dispatch required checks
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          git diff --quiet -- .gitcore/features.json && exit 0
+          git diff --quiet -- .gitcore/features.json docs/FEATURE_STATUS.md && exit 0
+
+          # Guard: ensure diff is subset
+          UNEXPECTED_DIFF=$(git diff --name-only | grep -v -E '^(\.gitcore/features\.json|docs/FEATURE_STATUS\.md)$' || true)
+          if [ -n "$UNEXPECTED_DIFF" ]; then
+            echo "Unexpected files modified: $UNEXPECTED_DIFF"
+            exit 1
+          fi
+
           sha=$(git rev-parse HEAD)
-          # Refuse a stale snapshot; the next dispatch can use the new main.
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$sha"
-          if [ "${{ inputs.apply_demotions }}" == "true" ]; then
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ inputs.apply_demotions }}" == "true" ]; then
             branch="ledger/promote-$sha-demote"
           else
             branch="ledger/promote-$sha"
@@ -111,13 +178,27 @@ jobs:
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add .gitcore/features.json
+            [ -f "docs/FEATURE_STATUS.md" ] && git add docs/FEATURE_STATUS.md
             git commit -m "chore: promote verified ledger features"
             gh auth setup-git
             git push origin "$branch"
           fi
           if [ "$(gh pr list --head "$branch" --base main --state all --json number --jq length)" != 0 ]; then exit 0; fi
-          gh pr create --base main --head "$branch" --title "Promote verified ledger features" --body-file /tmp/ledger-report.md
-          # Both workflows support workflow_dispatch; explicit dispatch runs checks
-          # even when the branch and PR were created with GITHUB_TOKEN.
+
+          # Prepare PR Body
+          cp /tmp/ledger-report.md pr_body.md
+          echo "" >> pr_body.md
+          PROMOTED_FEATURES=$(jq -r '.features | to_entries[] | select(.value.eligible == true and .value.status == "stable") | .key' /tmp/ledger-report.json || true)
+          for f in $PROMOTED_FEATURES; do
+            ISSUES=$(gh issue list --label ledger-gap --state open --json number,body | jq -r --arg f "$f" '.[] | select(.body | contains("<!-- ledger-gap:" + $f + " -->")) | .number')
+            for i in $ISSUES; do
+              echo "Closes #$i" >> pr_body.md
+            done
+          done
+
+          PR_URL=$(gh pr create --base main --head "$branch" --title "Promote verified ledger features" --body-file pr_body.md)
+
           gh workflow run ci.yml --ref "$branch"
           gh workflow run fast-gate.yml --ref "$branch"
+
+          gh pr merge "$branch" --auto --squash --match-head-commit "$(git rev-parse HEAD)" || echo "::warning::Auto-merge could not be enabled for PR $PR_URL" >> "$GITHUB_STEP_SUMMARY"
