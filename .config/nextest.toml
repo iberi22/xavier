@@ -24,11 +24,11 @@ test-threads = "1"
 serial = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e|cli_provider_exit_codes_e2e)::/)'
+filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e|cli_provider_exit_codes_e2e|cli_provider_live_routes_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red|health_truth_e2e|incident_ticket_dedup_e2e|ticket_dedup_while_open_e2e)::/)'
+filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red|health_truth_e2e|incident_ticket_dedup_e2e|mcp_telecom_tools_visibility_e2e|ticket_dedup_while_open_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -40,7 +40,7 @@ filter = 'binary(=suite_04) & test(/^(guardian_truth_test|skill_drift_audit_e2e|
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_05) & test(/^(http_auth_edge_test|ivn_api|ivn_marketplace_authorization|ivn_storage_persistence|maloca_roadmap_route_e2e)::/)'
+filter = 'binary(=suite_05) & test(/^(http_auth_edge_test|ivn_api|ivn_karma|ivn_marketplace_authorization|ivn_storage_persistence|ivn_verdict|maloca_roadmap_route_e2e|maloca_wiring_routes_e2e|maloca_models_unsupported_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -56,7 +56,7 @@ filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_11) & test(/^(skill_route_clearance)::/)'
+filter = 'binary(=suite_11) & test(/^(skill_route_clearance|code_explain_context_e2e|explain_isolated_llm_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -64,11 +64,11 @@ filter = 'binary(=suite_13) & test(/^(tgd_prune_gate_test)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e|cli_provider_exit_codes_e2e)::/)'
+filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2_stress|clavis_http_e2e|clavis_namespace_e2e|clavis_vault_smoke_e2e|cli_provider_exit_codes_e2e|cli_provider_live_routes_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red|health_truth_e2e|incident_ticket_dedup_e2e|ticket_dedup_while_open_e2e)::/)'
+filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red|health_truth_e2e|incident_ticket_dedup_e2e|mcp_telecom_tools_visibility_e2e|ticket_dedup_while_open_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
@@ -80,7 +80,7 @@ filter = 'binary(=suite_04) & test(/^(guardian_truth_test|skill_drift_audit_e2e|
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_05) & test(/^(http_auth_edge_test|ivn_api|ivn_marketplace_authorization|ivn_storage_persistence|maloca_roadmap_route_e2e)::/)'
+filter = 'binary(=suite_05) & test(/^(http_auth_edge_test|ivn_api|ivn_karma|ivn_marketplace_authorization|ivn_storage_persistence|ivn_verdict|maloca_roadmap_route_e2e|maloca_wiring_routes_e2e|maloca_models_unsupported_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
@@ -96,7 +96,7 @@ filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_11) & test(/^(skill_route_clearance)::/)'
+filter = 'binary(=suite_11) & test(/^(skill_route_clearance|code_explain_context_e2e|explain_isolated_llm_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]

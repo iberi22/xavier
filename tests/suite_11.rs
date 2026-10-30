@@ -52,3 +52,9 @@ mod telecom_file_transfer_e2e_test;
 
 #[path = "explain_render_route_e2e.rs"]
 mod explain_render_route_e2e;
+
+#[path = "code_explain_context_e2e.rs"]
+mod code_explain_context_e2e;
+
+#[path = "explain_isolated_llm_e2e.rs"]
+mod explain_isolated_llm_e2e;

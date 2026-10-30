@@ -238,11 +238,11 @@ AST/symbol indexing via `code-graph` sidecar: `/code/scan`, `/code/find`, `/code
 - **Category:** Functional (Phase 2+)
 - **Priority:** High
 - **SRS Status:** `verified` (**100%** — WAVE-3 + WAVE-4 stable)
-- **Files:** `src/mesh/` (42 files: libp2p_transport, fallback_transport, iroh_transport, mesh_service, heartbeat, namespace, pro_gate), `src/data_commons/`, `tests/mesh_integration.rs`
+- **Files:** `src/mesh/` (fallback_transport, iroh_transport, mesh_service, heartbeat, namespace, pro_gate), `src/data_commons/`, `tests/mesh_integration.rs`
 - **Features:** `feat-mesh-network` (100% stable) · EPIC: #115
 
 ### Description
-Distributed P2P memory sync: Ed25519 identity, encrypted transport (AES-GCM+X25519 envelope), ACL, Data Commons. Phase 2 (Iroh/QUIC NAT traversal + libp2p gossipsub stub) shipped in WAVE-3; Phase hardening (gossipsub wire, mesh service, heartbeat) in WAVE-4.
+Distributed P2P memory sync: Ed25519 identity, encrypted transport (AES-GCM+X25519 envelope), ACL, Data Commons. Phase 2 (Iroh/QUIC NAT traversal) shipped in WAVE-3. The libp2p/gossipsub wire is not implemented (verified in Cargo.toml and src/mesh/mod.rs); Phase hardening (gossipsub wire, mesh service, heartbeat) in WAVE-4.
 
 ### Acceptance criteria
 - [x] Node identity + pairing codes (Phase 0)
@@ -619,7 +619,7 @@ Register a VPS as a private SWAL node over SSH. Xavier **genera un keypair SSH d
 - **Priority:** High
 - **SRS Status:** `planned`
 - **Features:** `feat-mesh-network`
-- **Files:** `src/mesh/maturity.rs` (stub)
+- **Files:** `src/mesh/maturity.rs` (reports libp2p unavailable)
 - **Docs:** Wave-3 Docs — enterprise mesh hardening
 
 ### Description

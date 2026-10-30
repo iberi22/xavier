@@ -8,6 +8,9 @@
 
 xavier::isolate_test_process!();
 
+#[path = "memory_fts_check_e2e.rs"]
+mod memory_fts_check_e2e;
+
 #[path = "espacio_isolation_e2e.rs"]
 mod espacio_isolation_e2e;
 
@@ -69,3 +72,6 @@ mod skill_usage_telemetry_e2e;
 mod skill_registry_unify_parity_e2e;
 
 pub static SUITE_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[path = "skill_dispatch_ephemeral_e2e.rs"]
+mod skill_dispatch_ephemeral_e2e;
