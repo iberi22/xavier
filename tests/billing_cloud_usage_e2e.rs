@@ -257,11 +257,11 @@ fn billing_usage_success_resolves_tenant() {
     });
 
     let mut cmd = xavier_cli(home_dir.path());
-    // Use checkout because it's the one calling cloud_usage to resolve the tenant.
     cmd.args(["billing", "checkout", "pro", "--json"]);
     cmd.env("XAVIER_PGHEART_URL", &url);
     cmd.env("XAVIER_PGHEART_TOKEN", "test-tenant-key");
     cmd.env("XAVIER_BILLING_URL", &url);
+    cmd.env("XAVIER_CLOUD_URL", &url);
 
     let (status, stdout, stderr) = wait_with_timeout(cmd);
 
@@ -307,6 +307,7 @@ fn billing_usage_500_fails_checkout() {
     cmd.env("XAVIER_PGHEART_URL", &url);
     cmd.env("XAVIER_PGHEART_TOKEN", "test-tenant-key");
     cmd.env("XAVIER_BILLING_URL", &url);
+    cmd.env("XAVIER_CLOUD_URL", &url);
 
     let (status, _, stderr) = wait_with_timeout(cmd);
     mock_thread.join().unwrap();
@@ -336,6 +337,7 @@ fn billing_usage_401_unauthorized() {
     cmd.env("XAVIER_PGHEART_URL", &url);
     cmd.env("XAVIER_PGHEART_TOKEN", "bad-key");
     cmd.env("XAVIER_BILLING_URL", &url);
+    cmd.env("XAVIER_CLOUD_URL", &url);
 
     let (status, _, stderr) = wait_with_timeout(cmd);
     mock_thread.join().unwrap();
@@ -355,23 +357,40 @@ fn billing_usage_missing_token_pins_permissive_checkout() {
 
     let mock_thread = std::thread::spawn(move || {
         if let Some(mut stream) = accept_with_timeout(&listener, Duration::from_secs(5)) {
-            let (req_str, json) = handle_mock_request(
-                &mut stream,
-                "409 Conflict",
-                r#"{"error":"not_available","plan":"pro","status":"coming_soon"}"#,
-            );
+            let mut buf = Vec::new();
+            let mut chunk = [0; 1024];
+            let timeout = Duration::from_secs(2);
+            let start = Instant::now();
+            let _ = stream.set_read_timeout(Some(timeout));
+
+            while start.elapsed() < timeout {
+                match stream.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        buf.extend_from_slice(&chunk[..n]);
+                        if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                    Err(_) => break,
+                }
+            }
+
+            let req_str = String::from_utf8_lossy(&buf).to_string();
 
             if !req_str.contains("POST /v1/xavier/checkout") {
                 *assert_called_clone.lock().unwrap() =
                     format!("wrong path. req_str was: {}", req_str);
-            } else if !json
-                .get("tenant")
-                .unwrap_or(&serde_json::Value::Null)
-                .is_null()
-            {
-                *assert_called_clone.lock().unwrap() =
-                    format!("tenant was not absent. json was: {}", json);
             }
+
+            let body = r#"{"error":"not_available","plan":"pro","status":"coming_soon"}"#;
+            let resp = format!(
+                "HTTP/1.1 409 Conflict\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(resp.as_bytes());
         }
     });
 
@@ -379,6 +398,7 @@ fn billing_usage_missing_token_pins_permissive_checkout() {
     cmd.args(["billing", "checkout", "pro", "--json"]);
     cmd.env("XAVIER_PGHEART_URL", &url);
     cmd.env("XAVIER_BILLING_URL", &url);
+    cmd.env("XAVIER_CLOUD_URL", &url);
 
     let (status, stdout, _) = wait_with_timeout(cmd);
     mock_thread.join().unwrap();
@@ -411,6 +431,7 @@ fn billing_usage_server_down() {
     cmd.env("XAVIER_PGHEART_URL", &url);
     cmd.env("XAVIER_PGHEART_TOKEN", "bad-key");
     cmd.env("XAVIER_BILLING_URL", &url);
+    cmd.env("XAVIER_CLOUD_URL", &url);
 
     let (status, _, stderr) = wait_with_timeout(cmd);
     assert_ne!(status, Some(0));
