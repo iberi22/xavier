@@ -43,7 +43,8 @@
       "implemented_in": "src/storage/, src/memory/, src/adapters/outbound/",
       "tests": [
         "test_multi_db_manager_lifecycle",
-        "test_invalid_db_id"
+        "test_invalid_db_id",
+        "codebase::connection_manager::tests::memory_project_id_respects_data_dir"
       ],
       "req_ids": [
         "REQ-005",
