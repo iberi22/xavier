@@ -77,7 +77,8 @@
         "explain::codegraph::tests::empty_file_or_range_returns_ok_empty",
         "explain::codegraph::tests::symbol_name_narrows_the_choice",
         "explain::codegraph::tests::limit_caps_total_edges_callers_first",
-        "explain::codegraph::tests::broken_graph_yields_no_evidence"
+        "explain::codegraph::tests::broken_graph_yields_no_evidence",
+        "tests/code_repos_list_cli_e2e.rs::test_code_repos_list_cli_e2e"
       ],
       "user_stories": []
     },

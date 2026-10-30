@@ -4,7 +4,7 @@
 //! for symbol discovery, dependency analysis, and complexity metrics.
 
 use crate::cli::codegraph_sync::{sync_codegraph_from_git, GitSyncOptions};
-use crate::cli::commands::enums::{CodeCommand, CODE_HTTP_CLIENT};
+use crate::cli::commands::enums::{CodeCommand, CodeReposCommand, CODE_HTTP_CLIENT};
 use crate::cli::config::{require_xavier_token, resolve_base_url};
 use xavier::codebase::codegraph_sidecar::{
     ensure_codegraph_sidecar, install_codegraph_sidecar_sync, EnsureOptions, InstallMode,
@@ -257,6 +257,9 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 .send()
                 .await?
         }
+        CodeCommand::Repos { cmd: repos_cmd } => {
+            return handle_code_repos_command(repos_cmd).await;
+        }
         CodeCommand::Install { .. } => unreachable!("Install handled above"),
         CodeCommand::Sync { .. } => unreachable!("Sync handled above"),
     };
@@ -352,6 +355,88 @@ async fn soft_dump(
                 .into_owned()
         });
     println!("Portable code graph dumped to {}", dumped);
+    Ok(())
+}
+
+async fn handle_code_repos_command(cmd: CodeReposCommand) -> Result<()> {
+    match cmd {
+        CodeReposCommand::List { json } => {
+            use rusqlite::{Connection, OpenFlags};
+            use xavier::codebase::repo_identity::{all_code_roots, code_graph_db_path_for_root};
+
+            let workspace =
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let mut roots = all_code_roots(&workspace);
+
+            // Replicate extra_roots_json logic inline to separate source: env vs source: index
+            let mut extra_roots = Vec::new();
+            if !roots.is_empty() {
+                roots.remove(0); // workspace root is at 0
+            }
+            for r in roots {
+                extra_roots.push(serde_json::json!({
+                    "root": r.to_string_lossy(),
+                    "name": r.file_name().unwrap_or_default().to_string_lossy(),
+                    "created_at": serde_json::Value::Null,
+                    "source": "env"
+                }));
+            }
+
+            let db_path = code_graph_db_path_for_root(&workspace);
+            let mut repos = Vec::new();
+
+            if db_path.exists() {
+                match Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY) {
+                    Ok(conn) => {
+                        let stmt = conn.prepare(
+                            "SELECT root, name, created_at FROM projects ORDER BY root ASC",
+                        );
+                        if let Ok(mut stmt) = stmt {
+                            let rows = stmt.query_map([], |row| {
+                                Ok((
+                                    row.get::<_, String>(0)?,
+                                    row.get::<_, String>(1)?,
+                                    row.get::<_, Option<String>>(2)?,
+                                ))
+                            });
+                            if let Ok(rows) = rows {
+                                for row in rows.flatten() {
+                                    repos.push(serde_json::json!({
+                                        "root": row.0,
+                                        "name": row.1,
+                                        "created_at": row.2,
+                                        "source": "index"
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if !json {
+                            eprintln!("Warning: Failed to open DB read-only: {}", e);
+                        }
+                    }
+                }
+            }
+
+            repos.extend(extra_roots);
+
+            if json {
+                let out = serde_json::json!({
+                    "repos": repos,
+                    "count": repos.len()
+                });
+                println!("{}", serde_json::to_string(&out)?);
+            } else {
+                for repo in &repos {
+                    let root = repo["root"].as_str().unwrap_or("");
+                    let name = repo["name"].as_str().unwrap_or("");
+                    let source = repo["source"].as_str().unwrap_or("");
+                    println!("{} ({}) [{}]", name, root, source);
+                }
+            }
+        }
+    }
     Ok(())
 }
 
