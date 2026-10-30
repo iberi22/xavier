@@ -35,29 +35,19 @@ async fn test_codegraph_walk_hardening_e2e() -> Result<()> {
 
     // 4. A sparse file over the size cap (64 MiB)
     let large_rs = repo_root.join("large.rs");
-    let f = File::create(&large_rs)?;
+    // Real source text with no NUL in the first 8 KiB, so only the size cap
+    // can reject it (the sparse tail is past the NUL sniff window).
+    let mut large_head = String::from("pub fn ignored_large() {}\n");
+    while large_head.len() < 16 * 1024 {
+        large_head.push_str("// padding line for the oversize fixture\n");
+    }
+    fs::write(&large_rs, large_head.as_bytes())?;
+    let f = File::options().write(true).open(&large_rs)?;
     f.set_len(65 * 1024 * 1024)?; // 65 MiB
     drop(f);
-    // Write something at the beginning to look like source? The cap check should fail it based on metadata anyway.
 
     let memory_db = Arc::new(CodeGraphDB::in_memory()?);
     let indexer = Indexer::new(memory_db.clone());
-
-    // Check collect_files directly to get skip stats since they might not be on IndexStats
-    let (_files, skips) = indexer.collect_files(&repo_root)?;
-
-    assert_eq!(
-        skips.skipped_binary_ext, 1,
-        "Expected 1 binary extension skip (.png)"
-    );
-    assert_eq!(
-        skips.skipped_binary_content, 1,
-        "Expected 1 binary content skip (NUL byte)"
-    );
-    assert_eq!(
-        skips.skipped_too_large, 1,
-        "Expected 1 too-large skip (65 MiB)"
-    );
 
     // Run the scan
     let stats = indexer.index(&repo_root, false).await?;
@@ -79,6 +69,12 @@ async fn test_codegraph_walk_hardening_e2e() -> Result<()> {
 
     let res_nul = query_engine.find_by_name("ignored_nul", 10)?;
     assert!(res_nul.is_empty(), "nul.rs should not be indexed");
+
+    let res_large = query_engine.find_by_name("ignored_large", 10)?;
+    assert!(
+        res_large.is_empty(),
+        "large.rs over the size cap should not be indexed"
+    );
 
     Ok(())
 }
