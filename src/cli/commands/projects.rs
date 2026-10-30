@@ -2,7 +2,7 @@ use crate::cli::commands::enums::ProjectsCommand;
 use anyhow::Result;
 use rusqlite::OpenFlags;
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Serialize)]
 struct ProjectListOutput {
@@ -39,23 +39,21 @@ pub fn run_projects_command(cmd: &ProjectsCommand) -> Result<()> {
                     filtered: if *all { None } else { Some(filtered) },
                 };
                 println!("{}", serde_json::to_string(&out)?);
-            } else {
-                if projects.is_empty() {
-                    if !*all && filtered > 0 {
-                        println!(
-                            "No active projects found. ({} hidden temp projects)",
-                            filtered
-                        );
-                    } else {
-                        println!("No projects found.");
-                    }
+            } else if projects.is_empty() {
+                if !*all && filtered > 0 {
+                    println!(
+                        "No active projects found. ({} hidden temp projects)",
+                        filtered
+                    );
                 } else {
-                    for proj in &projects {
-                        println!("{}", proj);
-                    }
-                    if !*all && filtered > 0 {
-                        println!("({} hidden temp projects)", filtered);
-                    }
+                    println!("No projects found.");
+                }
+            } else {
+                for proj in &projects {
+                    println!("{}", proj);
+                }
+                if !*all && filtered > 0 {
+                    println!("({} hidden temp projects)", filtered);
                 }
             }
         }
@@ -84,22 +82,8 @@ fn list_projects(db_path: &Path, temp_dir: &Path, all: bool) -> Result<(Vec<Stri
     while let Some(row) = rows.next()? {
         let ws: String = row.get(0)?;
 
-        let mut is_temp = false;
-        let ws_path = Path::new(&ws);
-
-        if ws_path.is_absolute() {
-            is_temp = ws_path.starts_with(temp_dir);
-        } else {
-            // For safety, just checking if it is literally /tmp/...
-            if ws.starts_with("/tmp/") || ws.starts_with("/tmp-") {
-                // handle naive cases
-                if ws_path.starts_with(temp_dir) {
-                    is_temp = true;
-                }
-            }
-        }
-        // Strict start_with for the temp dir
-        is_temp = ws_path.starts_with(temp_dir);
+        // Strict prefix match on the process temp dir (std::env::temp_dir()).
+        let is_temp = Path::new(&ws).starts_with(temp_dir);
 
         if !all && is_temp {
             filtered_count += 1;
@@ -116,6 +100,7 @@ fn list_projects(db_path: &Path, temp_dir: &Path, all: bool) -> Result<(Vec<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     #[test]
