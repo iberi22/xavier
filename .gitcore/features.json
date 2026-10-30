@@ -3571,7 +3571,9 @@
         "tests/memory_fts_check_e2e.rs::fts_check_missing_db",
         "tests/memory_fts_check_e2e.rs::fts_check_json_escaping",
         "tests/memory_fts_check_e2e.rs::fts_check_operational_error",
-        "tests/memory_fts_check_e2e.rs::fts_check_not_a_database_is_corruption"
+        "tests/memory_fts_check_e2e.rs::fts_check_not_a_database_is_corruption",
+        "tests/memory_fts_rebuild_e2e.rs::fts_rebuild_ok",
+        "tests/memory_fts_rebuild_e2e.rs::fts_rebuild_missing_db"
       ],
       "req_ids": [
         "REQ-074"

@@ -359,3 +359,10 @@ failure, `2` for invalid usage, `3` for authentication/authorization failure
 (HTTP 401/403), and `4` for an unreachable server. JSON operation errors use
 `schema_version: 1` and `error` (`code`, `message`). Parser errors remain on
 stderr. HTTP response bodies are not echoed in error messages.
+
+## Memory
+
+`xavier memory fts-check` checks the `memory_fts` index for corruption. It exits `0` on success, `1` on corruption, and `2` on operational errors.
+
+`xavier memory fts-rebuild` rebuilds the corrupted `memory_fts` index. It exits `0` on success, and `2` on missing DB or operational errors.
+Both commands output JSON if `--json` is provided.
