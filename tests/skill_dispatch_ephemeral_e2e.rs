@@ -1,3 +1,7 @@
+#[path = "router_harness/mod.rs"]
+mod router_harness;
+
+use router_harness::RestoreEnv;
 use std::fs;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -12,8 +16,17 @@ xavier::isolate_test_process!();
 
 #[tokio::test]
 #[serial_test::serial]
+#[allow(clippy::await_holding_lock)]
 async fn skill_dispatch_ephemeral_lifecycle() {
+    let _lock = crate::SUITE_ENV_LOCK.lock().await;
     let root = tempdir().unwrap();
+    let _env = RestoreEnv::set_str(&[
+        ("XAVIER_EMBEDDING_PROVIDER_MODE", "disabled"),
+        ("HOME", root.path().to_str().unwrap()),
+        ("XAVIER_CONFIG_PATH", root.path().to_str().unwrap()),
+        ("XAVIER_RUNTIME_STATE_PATH", root.path().to_str().unwrap()),
+        ("XAVIER_DATA_DIR", root.path().to_str().unwrap()),
+    ]);
     let ws1 = root.path().join("ws1");
     let ws2 = root.path().join("ws2");
     let state_dir = root.path().join("state");
@@ -79,6 +92,12 @@ Skill B logic.",
         "content derived from task: {}",
         published
     );
+    assert!(published.contains("skill-a"), "skill-a name found");
+    assert!(
+        published.contains("Solve the unique target challenge"),
+        "skill-a description found"
+    );
+    assert!(published.contains("Skill A logic"), "skill-a logic found");
 
     assert!(
         estimate_tokens(&published) <= max_tokens,
@@ -101,4 +120,13 @@ Skill B logic.",
 
     release_task(&journal, &ws1, "task-1").unwrap();
     assert!(!out.skill_path.exists(), "lease removed");
+    assert!(!lease_path.exists(), "lease file removed");
+    assert!(
+        !lease_path.parent().unwrap().exists(),
+        "owned directory removed"
+    );
+    assert!(
+        std::fs::symlink_metadata(&out.link_path).is_err(),
+        "discovery symlink absent"
+    );
 }
