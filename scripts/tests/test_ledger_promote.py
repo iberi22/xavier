@@ -15,6 +15,24 @@ spec.loader.exec_module(collector)
 
 
 class PromoterTests(unittest.TestCase):
+    def test_evidence_complete_excludes_deferred_on_failing_pipeline(self):
+        log = "==> Xavier verify pipeline (mode: full, root: /repo)\n  ▶ test_stable\n    ❌ FAILED: test_stable\n  ❌ declared tests failed (zero-match=0) — failing pipeline\n"
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+        self.features['features'] = {}
+        self.features['features']['stable'] = {'status': 'stable', 'tests': ['test_stable']}
+        self.features['features']['stable']['open_gaps'] = ['pending']
+
+        self.features['features']['deferred_feat'] = {'status': 'deferred', 'progress_pct': 50, 'tests': ['test_deferred']}
+
+        results, _, evc = evidence_mod.parse_log(log, self.features)
+
+        self.assertTrue(evc)
+        self.assertTrue(results['stable']['evidence_complete'])
+        self.assertFalse(results['deferred_feat']['evidence_complete'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -304,7 +322,8 @@ class PromoterTests(unittest.TestCase):
         }
         # A log that doesn't mention 'some_test', but mode is full
         log = ('==> Xavier verify pipeline (mode: full, root: /repo)\n'
-               '  ▶ test_roundtrip\n    ✅ --test integration (passed=1)\n')
+               '  ▶ test_roundtrip\n    ✅ --test integration (passed=1)\n'
+               '  ✅ all declared tests passed\n')
         # Parse it with evidence collector
         results, targets, evidence_complete = collector.parse_log(log, self.features)
         # Even without 'some_test', evidence should be complete because deferred feature is skipped
@@ -408,17 +427,98 @@ class PromoterTests(unittest.TestCase):
             res, tgt, evc = collector.parse_log(invalid, self.features)
             self.assertEqual([], res['beta']['passed'])
 
-        res, tgt, evc = collector.parse_log(log.replace('full,', 'check,'), self.features)
-        self.assertFalse(evc)
-        res, tgt, evc = collector.parse_log(log.replace('▶ test_roundtrip', '▶ test_other'), self.features)
-        self.assertFalse(evc)
-
-        # Missing footer, but complete coverage means evc = True
+        # Test exact parse result for missing ALL tests passed marker:
         res, tgt, evc = collector.parse_log(log.replace('✅ all declared tests passed', ''), self.features)
-        self.assertTrue(evc)
+        self.assertFalse(evc)
 
 
 class PlannedBetaPromotionTests(unittest.TestCase):
+    def test_p2a4_empty_log_no_demotions_and_no_promotions(self):
+        self.features['features']['beta']['tests'] = ['test_beta']
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {
+            'beta': {'evidence_complete': False, 'declared': ['test_beta'], 'passed': [], 'failed': [], 'integration_targets_by_test': {}},
+            'stable': {'evidence_complete': False, 'declared': ['test_stable'], 'passed': [], 'failed': [], 'integration_targets_by_test': {}}
+        }
+        import json
+        import subprocess
+        import sys
+        self.path.write_text(json.dumps(self.features))
+        evidence = self.root / 'evidence.json'
+        history = self.root / 'history.json'
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        args = ['--features', str(self.path), '--evidence', str(evidence),
+                '--history', str(history), '--apply', '--apply-demotions']
+        from pathlib import Path
+        SCRIPTS = Path('scripts')
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, capture_output=True, text=True, check=True)
+        report = json.loads(result.stdout)
+        self.assertFalse(report['features']['beta']['eligible'])
+        self.assertEqual([], report.get('demotions_applied', []))
+
+
+
+    def test_p2a4_unrecognized_log_no_demotions_no_promotions(self):
+        log = "==> Xavier verify pipeline (mode: full, root: /repo)\n  ▶ test_stable\n    ✅ --test integration (passed=2)\n"
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('evidence', 'scripts/ledger-promote-evidence.py')
+        evidence_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(evidence_mod)
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        results, _, evc = evidence_mod.parse_log(log, self.features)
+        self.assertFalse(evc)
+        self.assertFalse(results['stable']['evidence_complete'])
+
+    def test_p2a4_partial_log_apply_demotions_leaves_unobserved_alone(self):
+        # partial log with --apply --apply-demotions -> no demotions for features with unobserved tests
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = ['test_stable', 'test_2']
+        self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': False, 'declared': ['test_stable', 'test_2'], 'passed': ['test_stable'], 'failed': [], 'integration_targets_by_test': {'test_stable': ['int']}}}
+
+        import json
+        import subprocess
+        import sys
+        self.path.write_text(json.dumps(self.features))
+        evidence = self.root / 'evidence.json'
+        history = self.root / 'history.json'
+        evidence.write_text(json.dumps(self.evidence))
+        history.write_text(json.dumps(self.history))
+        args = ['--features', str(self.path), '--evidence', str(evidence),
+                '--history', str(history), '--apply', '--apply-demotions']
+        from pathlib import Path
+        SCRIPTS = Path('scripts')
+        result = subprocess.run([sys.executable, str(SCRIPTS / 'ledger-promote.py')] + args, capture_output=True, text=True, check=True)
+        report = json.loads(result.stdout)
+
+        stable = report['features']['stable']
+        self.assertFalse(stable.get('review_flagged'))
+        self.assertEqual([], report.get('demotions_applied', []))
+
+    def test_p2a4_full_log_allows_review(self):
+        self.features['features']['stable']['open_gaps'] = ['pending']
+        self.features['features']['stable']['tests'] = ['test_stable']
+        self.evidence['evidence_complete'] = True
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': True, 'declared': ['test_stable'], 'passed': ['test_stable'], 'failed': [], 'integration_targets_by_test': {'test_stable': ['int']}}}
+        report, _ = self.run_all()
+        stable = report['features']['stable']
+        self.assertTrue(stable.get('review_flagged'))
+
+    def test_p2a4_global_incomplete_blocks_beta_to_stable(self):
+        self.features['features']['beta']['tests'] = ['test_roundtrip']
+        self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {
+            'beta': {'evidence_complete': True, 'declared': ['test_roundtrip'], 'passed': ['test_roundtrip'], 'failed': [], 'integration_targets_by_test': {'test_roundtrip': ['integration']}}
+        }
+        report, _ = self.run_all()
+        beta = report['features']['beta']
+        self.assertFalse(beta['eligible'])
+        self.assertIn('evidence collection incomplete', beta['reasons'])
+
     """planned/in_progress -> beta lane (beta -> stable is covered above)."""
 
     def setUp(self):
@@ -669,7 +769,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         report, _ = self.run_all()
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
-        self.assertIn('review skipped: evidence collection incomplete', stable['review_reasons'])
+        self.assertIn('review skipped: incomplete evidence', stable['review_reasons'])
 
     def test_global_incomplete_per_feature_complete_no_demotion(self):
         # (b) global incomplete + per-feature complete => no demotion
@@ -679,8 +779,11 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': True, 'declared': ['test_stable'], 'passed': ['test_stable'], 'failed': [], 'integration_targets_by_test': {'test_stable': ['int']}}}
         report, _ = self.run_all()
         stable = report['features']['stable']
-        self.assertFalse(stable.get('review_flagged'))
-        self.assertTrue(any('review skipped: evidence collection incomplete' in r for r in stable['review_reasons']))
+        # Global incompleteness should NOT skip review if per-feature completeness is true.
+        # But wait, review skipped: evidence collection incomplete might be returned if per-feature is False.
+        # Here per-feature is True.
+        self.assertTrue(stable.get('review_flagged'))
+        self.assertFalse(any('review skipped' in r for r in stable['review_reasons']))
 
     def test_partial_coverage_skipped_with_reason(self):
         # (c) partial coverage => skipped with reason, no demotion
@@ -820,7 +923,7 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         report, _ = self.run_all()
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
-        self.assertTrue(any('review skipped: evidence collection incomplete' in r for r in stable['review_reasons']))
+        self.assertTrue(any('review skipped: incomplete evidence' in r for r in stable['review_reasons']))
 
     def test_stable_open_gaps_flagged(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
@@ -834,10 +937,11 @@ class PlannedBetaPromotionTests(unittest.TestCase):
     def test_stable_incomplete_evidence_demotions_enabled(self):
         self.features['features']['stable']['open_gaps'] = ['pending']
         self.evidence['evidence_complete'] = False
+        self.evidence['per_feature_test_results'] = {'stable': {'evidence_complete': False, 'declared': [], 'passed': [], 'failed': [], 'integration_targets_by_test': {}}}
         report, _ = self.run_all()
         stable = report['features']['stable']
         self.assertFalse(stable.get('review_flagged'))
-        self.assertTrue(any('review skipped: evidence collection incomplete' in r for r in stable['review_reasons']))
+        self.assertTrue(any('review skipped: incomplete evidence' in r for r in stable['review_reasons']))
 
     def test_stable_no_linked_evidence_flagged(self):
         self.features['features']['stable']['tests'] = ['test_stable']

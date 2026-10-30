@@ -42,8 +42,9 @@ def parse_log(log, document):
     targets_by_test = {}
     candidate_targets_by_test = {}
     candidate = set()
+    is_recognized = '(mode: full,' in log and bool(re.search(r'(?m)^\s*✅ all declared tests passed|^\s*(?:Nextest|cargo test) summary|^\s*❌ declared tests failed \(.*?\) — failing pipeline', log))
     if '(mode: full,' in log:
-        for match in re.finditer(r'(?m)^\s*▶ ([^\n]+)\n(.*?)(?=^\s*▶ |^\s*✅ all declared tests passed|^\s*(?:Nextest|cargo test) summary|\Z)', log, re.S):
+        for match in re.finditer(r'(?m)^\s*▶ ([^\n]+)\n(.*?)(?=^\s*▶ |^\s*✅ all declared tests passed|^\s*(?:Nextest|cargo test) summary|^\s*❌ declared tests failed \(.*?\) — failing pipeline|\Z)', log, re.S):
             raw, block = match.groups()
             flagged = bool(CANDIDATE_MARKER.search(raw))
             test = CANDIDATE_MARKER.sub('', raw).strip()
@@ -71,7 +72,7 @@ def parse_log(log, document):
 
     parsed_tests = passed | failed | candidate_passed | candidate_failed
     evidence_complete = False
-    if '(mode: full,' in log:
+    if is_recognized:
         all_declared = set()
         for f in document['features'].values():
             if f.get('status') == 'deferred':
@@ -89,7 +90,7 @@ def parse_log(log, document):
         declared = f.get('tests', [])
         declared = declared if isinstance(declared, list) else []
         is_valid_list = bool(declared) and all(isinstance(t, str) and t for t in declared)
-        feat_evidence_complete = is_valid_list and all(t in parsed_tests for t in declared)
+        feat_evidence_complete = is_recognized and is_valid_list and all(t in parsed_tests for t in declared)
         valid_declared = [t for t in declared if isinstance(t, str)]
         results[fid] = dict(declared=f.get('tests', []),
                             evidence_complete=feat_evidence_complete,
