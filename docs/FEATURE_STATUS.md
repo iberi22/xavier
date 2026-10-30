@@ -4,6 +4,51 @@
 
 Current product label: `0.0.1` — **Status computed from the ledger: 70 stable, 17 beta, 2 in_progress, 28 planned. See [Implementation Audit](plans/IMPLEMENTATION-AUDIT_2026-10-28.md) for details.**
 
+<!-- ledger:summary:start -->
+Ledger: 70 stable, 17 beta, 2 in_progress, 29 planned (118 total, 59.3% stable). Generated from .gitcore/features.json by scripts/ledger-docs-sync.py; do not edit by hand.
+
+| category | stable | beta | in_progress | planned | total |
+|---|---|---|---|---|---|
+| ai | 2 | 0 | 0 | 0 | 2 |
+| auto-improvement | 0 | 1 | 0 | 0 | 1 |
+| cli | 0 | 2 | 0 | 0 | 2 |
+| code-graph | 4 | 2 | 1 | 0 | 7 |
+| cognitive | 4 | 0 | 0 | 0 | 4 |
+| context | 4 | 1 | 0 | 0 | 5 |
+| core | 6 | 0 | 0 | 0 | 6 |
+| cost | 1 | 0 | 0 | 0 | 1 |
+| data | 1 | 0 | 0 | 0 | 1 |
+| docs | 1 | 0 | 0 | 0 | 1 |
+| documentation | 2 | 0 | 0 | 0 | 2 |
+| enterprise | 3 | 1 | 0 | 1 | 5 |
+| explain | 0 | 0 | 0 | 7 | 7 |
+| governance | 3 | 0 | 0 | 0 | 3 |
+| identity | 1 | 0 | 0 | 3 | 4 |
+| infra | 1 | 0 | 0 | 0 | 1 |
+| integration | 7 | 0 | 0 | 0 | 7 |
+| local-first | 1 | 0 | 0 | 0 | 1 |
+| maloca | 1 | 0 | 0 | 4 | 5 |
+| marketplace | 1 | 0 | 0 | 0 | 1 |
+| mcp | 1 | 0 | 0 | 0 | 1 |
+| memory | 1 | 2 | 0 | 1 | 4 |
+| mesh | 1 | 2 | 0 | 1 | 4 |
+| observability | 0 | 2 | 0 | 0 | 2 |
+| packaging | 0 | 0 | 0 | 1 | 1 |
+| platform | 1 | 0 | 0 | 0 | 1 |
+| process | 0 | 0 | 1 | 1 | 2 |
+| retrieval | 3 | 0 | 0 | 0 | 3 |
+| runtime | 1 | 0 | 0 | 0 | 1 |
+| search | 5 | 0 | 0 | 0 | 5 |
+| security | 9 | 2 | 0 | 0 | 11 |
+| self-manage | 0 | 0 | 0 | 2 | 2 |
+| self-management | 0 | 1 | 0 | 0 | 1 |
+| server | 0 | 0 | 0 | 1 | 1 |
+| skills | 0 | 0 | 0 | 6 | 6 |
+| testing | 1 | 1 | 0 | 0 | 2 |
+| ui | 1 | 0 | 0 | 1 | 2 |
+| uncategorized | 3 | 0 | 0 | 0 | 3 |
+<!-- ledger:summary:end -->
+
 This matrix is the operational truth for the repository as of v0.0.1 stabilization.
 As of v0.0.1 stabilization, features declared in `.gitcore/features.json` were `stable` with automated verification. See the file for current status.
 
