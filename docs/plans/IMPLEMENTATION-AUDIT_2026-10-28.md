@@ -1,13 +1,13 @@
 # Xavier Implementation Audit (2026-10-28)
 
-Measured on 2026-10-28 against `main` at `5b690c131`. This is a dated, hand-made audit snapshot, not a release claim and not a ledger artifact.
+Measured on 2026-10-28 against `main` at `5b690c131` (refreshed on 2026-10-30 against current `main`). This is a dated, hand-made audit snapshot, not a release claim and not a ledger artifact.
 
 The source of truth for feature status remains `.gitcore/features.json`, promoted only by `scripts/verify-pipeline.sh` and the Ledger Promoter (see `AGENTS.md` sections 4 and 5). This audit does not change any ledger status. It records where the code, the ledger and the release snapshots disagree, so those gaps can be closed through the normal verification lanes.
 
 ## Summary
 
 - **Overall (weighted, code evidence): 57%**
-- Unweighted feature average: 57%
+- Unweighted feature average: 56%
 - Features inventoried: 100 (31 implemented, 44 partial, 13 stub, 12 missing)
 
 | Area | Weight | Features | Implemented | Partial | Stub | Missing | Score |
@@ -242,7 +242,7 @@ To re-measure, update the status of a row and recompute. No build is needed.
 
 1. **Finish CLI parity** (in progress): dead endpoints, projects list, service management, `--json` sweep, tenants CLI, MCP surface parity.
 2. **Backup and recovery**: local `xavier backup` and restore, a decision on master key export/import, the cloud backup service restored, and an end-to-end USB backup/restore test.
-3. **Code-graph in production**: multi-language, multi-project reindex with a freshness signal, fixes for #3539 and #3540, the O1-O7 verify pipeline, and `index-self` implemented or removed.
+3. **Code-graph in production**: multi-language, multi-project reindex with a freshness signal, fixes for #3540, and the O1-O7 verify pipeline.
 4. **CI truth**: integration suites on `main` (#3554, #3586) and the flaky health test (#3541).
 5. **Promote beta features** with evidence: encryption at rest, memory write integrity, health truth, MCP health honesty, vault hardening, per-repo memory.
 6. **Spaces runtime and multi-tenant CLI**: spaces encryption, `space lock`, tenants and user admin flows.
@@ -250,5 +250,5 @@ To re-measure, update the status of a row and recompute. No build is needed.
 8. **Cloud / billing wiring**: a production billing default, an end-to-end usage and sync test, the Vectorize pricing decision, headless server packaging.
 9. **Skill subsystem redesign**: finish and verify the six ledger features, plus headless agent management.
 10. **Mesh / IVN / Maloca**: decide the v1 scope, then implement or demote the stubs (libp2p, tokenomics, DAO, gpud, alignment) and IVN.
-11. **Release and docs**: release pipeline issues, English API docs, generative UI, autonomous delivery.
+11. **Release and docs**: release pipeline issues, generative UI, autonomous delivery.
 12. **Status hygiene**: reconcile `.gitcore/features.json`, `FEATURE_STATUS.md` and `implementation-score.json` with this document.
