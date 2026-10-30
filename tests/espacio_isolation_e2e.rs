@@ -135,8 +135,11 @@ impl Daemon {
         for _ in 0..120 {
             if let Ok(r) = http.get(format!("{url}/health")).send().await {
                 if r.status().is_success() {
-                    healthy = true;
-                    break;
+                    let body = r.text().await.unwrap_or_default();
+                    if !body.contains("\"status\":\"starting\"") {
+                        healthy = true;
+                        break;
+                    }
                 }
             }
             tokio::time::sleep(Duration::from_millis(500)).await;

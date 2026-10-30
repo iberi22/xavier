@@ -15,6 +15,11 @@ fn clear_git_env(cmd: &mut Command) {
             cmd.env_remove(&k);
         }
     }
+    // Ignore the developer's global/system git config (hooks, signing,
+    // templates) so the fixture repo is hermetic.
+    cmd.env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_TERMINAL_PROMPT", "0");
 }
 
 /// Sets up a temporary git repository with one file and returns its path and a target.
@@ -88,6 +93,7 @@ fn setup_temp_repo_with_file(
 }
 
 #[test]
+#[serial_test::serial]
 fn code_explain_context_assembles_evidence_from_code_and_git_history() {
     let file_content = "pub fn test_fn() {\n    println!(\"hello\");\n}\n";
     let (_temp_dir, target) = setup_temp_repo_with_file(file_content, 1, 3);
@@ -124,6 +130,7 @@ fn code_explain_context_assembles_evidence_from_code_and_git_history() {
 }
 
 #[test]
+#[serial_test::serial]
 fn code_explain_context_handles_missing_git_repo_gracefully() {
     let dir = tempfile::tempdir().expect("tempdir");
     let repo_root = dir.path().to_path_buf();

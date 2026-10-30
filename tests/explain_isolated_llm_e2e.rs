@@ -30,13 +30,25 @@ fn write_key_file(dir: &std::path::Path, contents: &str, mode: u32) -> std::path
     path
 }
 
+/// Restores env guards in reverse creation order (LIFO) so overlapping
+/// guards (clear, then set) unwind back to the original inherited values.
+struct EnvStack(Vec<RestoreEnv>);
+
+impl Drop for EnvStack {
+    fn drop(&mut self) {
+        while let Some(guard) = self.0.pop() {
+            drop(guard);
+        }
+    }
+}
+
 /// Builds the app with the specific isolated explain environment variables.
 async fn isolated_explain_app(
     temp: &TempDir,
     provider: Option<&str>,
     key_file: Option<&std::path::Path>,
     config_path: Option<&std::path::Path>,
-) -> (Router, Vec<RestoreEnv>) {
+) -> (Router, EnvStack) {
     std::fs::create_dir_all(temp.path().join("src")).unwrap();
     std::fs::write(temp.path().join("src/lib.rs"), "fn one() {}\nfn two() {}\n").unwrap();
 
@@ -92,7 +104,7 @@ async fn isolated_explain_app(
         no_ui: true,
     };
 
-    (build_app(state, deps), envs)
+    (build_app(state, deps), EnvStack(envs))
 }
 
 async fn post_explain(app: &Router) -> (StatusCode, Value) {

@@ -49,15 +49,18 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
     let client = reqwest::Client::new();
     let mut server_up = false;
     for _ in 0..30 {
-        if client
+        if let Ok(resp) = client
             .get(format!("http://127.0.0.1:{port}/health"))
             .send()
             .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
         {
-            server_up = true;
-            break;
+            if resp.status().is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                if !body.contains("\"status\":\"starting\"") {
+                    server_up = true;
+                    break;
+                }
+            }
         }
         sleep(Duration::from_millis(500)).await;
     }
