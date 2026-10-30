@@ -402,7 +402,17 @@ PY
         return 1 ;;
     esac
     fnname="${testname##*::}"
-    files="$(cd "$ROOT" && grep -rl --include='*.rs' -e "fn $fnname" src code-graph crates tests 2>/dev/null | head -1)"
+    # A path-qualified id (`tests/foo_e2e.rs::fn`) names its owning file: use it
+    # directly. Grepping the bare fn name picks the first match, which can be a
+    # same-named unit test under src/ -> lib run with a path filter -> 0 tests.
+    files=""
+    case "$testname" in
+      *.rs::*)
+        if [ -f "$ROOT/${testname%%::*}" ]; then files="${testname%%::*}"; fi ;;
+    esac
+    if [ -z "$files" ]; then
+      files="$(cd "$ROOT" && grep -rl --include='*.rs' -e "fn $fnname" src code-graph crates tests 2>/dev/null | head -1)"
+    fi
     if [ -n "$files" ]; then
       for f in $files; do
         file_to_invocation "$f"
