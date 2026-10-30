@@ -32,14 +32,43 @@ fn write_key_file(dir: &std::path::Path, contents: &str, mode: u32) -> std::path
 
 /// Restores env guards in reverse creation order (LIFO) so overlapping
 /// guards (clear, then set) unwind back to the original inherited values.
-struct EnvStack(Vec<RestoreEnv>);
+struct EnvStack {
+    envs: Vec<RestoreEnv>,
+    saved_settings: Option<xavier::settings::XavierSettings>,
+}
 
 impl Drop for EnvStack {
     fn drop(&mut self) {
-        while let Some(guard) = self.0.pop() {
+        while let Some(guard) = self.envs.pop() {
             drop(guard);
         }
+        // Integration tests see the cached (non-cfg(test)) GLOBAL_SETTINGS, so
+        // restore the snapshot taken before this scenario installed its own.
+        if let Some(saved) = self.saved_settings.take() {
+            *xavier::settings::GLOBAL_SETTINGS.write() = saved;
+        }
     }
+}
+
+/// Installs explain model settings into the cached GLOBAL_SETTINGS (the
+/// integration-test build reads the cache, not the config file) and returns
+/// the previous snapshot so `EnvStack` can restore it.
+fn install_explain_settings(explain: Option<(&str, &str)>) -> xavier::settings::XavierSettings {
+    let mut lock = xavier::settings::GLOBAL_SETTINGS.write();
+    let saved = lock.clone();
+    let mut next = saved.clone();
+    match explain {
+        Some((url, model)) => {
+            next.models.explain_url = Some(url.to_string());
+            next.models.explain_model = Some(model.to_string());
+        }
+        None => {
+            next.models.explain_url = None;
+            next.models.explain_model = None;
+        }
+    }
+    *lock = next;
+    saved
 }
 
 /// Builds the app with the specific isolated explain environment variables.
@@ -48,6 +77,7 @@ async fn isolated_explain_app(
     provider: Option<&str>,
     key_file: Option<&std::path::Path>,
     config_path: Option<&std::path::Path>,
+    explain: Option<(&str, &str)>,
 ) -> (Router, EnvStack) {
     std::fs::create_dir_all(temp.path().join("src")).unwrap();
     std::fs::write(temp.path().join("src/lib.rs"), "fn one() {}\nfn two() {}\n").unwrap();
@@ -83,6 +113,8 @@ async fn isolated_explain_app(
         ("XAVIER_RUNTIME_STATE_PATH", runtime_state.as_path()),
     ]));
 
+    let saved_settings = install_explain_settings(explain);
+
     let state = create_test_cli_state(temp).await;
     let workspace_state = Arc::new(
         WorkspaceState::new_minimal(
@@ -104,7 +136,13 @@ async fn isolated_explain_app(
         no_ui: true,
     };
 
-    (build_app(state, deps), EnvStack(envs))
+    (
+        build_app(state, deps),
+        EnvStack {
+            envs,
+            saved_settings: Some(saved_settings),
+        },
+    )
 }
 
 async fn post_explain(app: &Router) -> (StatusCode, Value) {
@@ -161,10 +199,11 @@ async fn explain_uses_isolated_llm_settings_and_fails_on_network() {
         axum::serve(listener, mock_app).await.unwrap();
     });
 
+    let mock_url = format!("http://{addr}/v1/messages");
     let config_path = temp.path().join("config.json");
     let config_json = serde_json::json!({
         "models": {
-            "explain_url": format!("http://{addr}/v1/messages"),
+            "explain_url": mock_url.clone(),
             "explain_model": "claude-3-sonnet-20240229"
         }
     });
@@ -175,6 +214,7 @@ async fn explain_uses_isolated_llm_settings_and_fails_on_network() {
         Some("anthropic"),
         Some(&key_file),
         Some(&config_path),
+        Some((mock_url.as_str(), "claude-3-sonnet-20240229")),
     )
     .await;
 
@@ -192,7 +232,7 @@ async fn explain_uses_isolated_llm_settings_and_fails_on_network() {
 #[serial_test::serial]
 async fn explain_falls_back_to_global_when_isolated_not_configured() {
     let temp = tempfile::tempdir().expect("tempdir");
-    let (app, _envs) = isolated_explain_app(&temp, None, None, None).await;
+    let (app, _envs) = isolated_explain_app(&temp, None, None, None, None).await;
 
     let (status, json) = post_explain(&app).await;
 
