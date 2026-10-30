@@ -64,7 +64,7 @@ Mode resolution, in one step that writes `mode` to the job outputs:
 | `workflow_run` / `schedule` | `true` | apply, demotions OFF (hard-coded; `--apply-demotions` is only reachable from a manual dispatch) |
 | `workflow_run` / `schedule` | unset or other | dry (evaluate + gaps only) |
 
-`evaluate` publishes `eligible_count` (from `report.json`); `propose` runs only when mode is apply and `eligible_count > 0`. With the streak at 3 this means: nothing happens until main has three consecutive green full runs, then the next completion triggers the promotion by itself.
+`evaluate` publishes `eligible_count` (features with `eligible: true`) and `demotion_count` (features with `review_flagged: true`) from `report.json`. `propose` runs when mode is apply and either `eligible_count > 0`, or the run is a manual `workflow_dispatch` with `apply_demotions` and `demotion_count > 0` (a manual demotion-only run must still work). With the streak at 3 this means: nothing happens until main has three consecutive green full runs, then the next completion triggers the promotion by itself.
 
 ## 4. Promotion PR, docs sync and auto-merge (tasks L1 + L2)
 
@@ -72,6 +72,7 @@ Mode resolution, in one step that writes `mode` to the job outputs:
 - The PR (branch `ledger/promote-<sha>`) contains only `.gitcore/features.json` and the synced docs. Body = promoter Markdown report + list of promoted features + `Closes #N` for each open `ledger-gap:<feature-id>` issue of a promoted feature.
 - The workflow dispatches `ci.yml` and `fast-gate.yml` on the branch (existing), then runs `gh pr merge --auto --squash --match-head-commit <sha>`. Ruleset `r1` still enforces "CI Gate" and "Shadow Fast Gate"; auto-merge only merges after both are green. No branch-protection change is needed.
 - Guard: the propose step refuses to continue if the diff touches anything outside `.gitcore/features.json` and `docs/FEATURE_STATUS.md`, or if any feature moved to a status other than the evaluated transitions (no demotions in auto mode).
+- `gh pr merge --auto` only arms auto-merge and returns while checks are pending, so a finished Promoter run does NOT mean its PR merged. Nothing downstream (tags, CI dispatch on main) may assume it did; section 7 detects the merge from main itself.
 
 ## 5. Gap issues (task L3)
 
@@ -96,12 +97,14 @@ Jules PRs go through the normal lane: Codex judges, merge on PASS plus green CI 
 
 ## 7. Tags (task L4)
 
-New workflow `ledger-tag.yml` on `push` to `main` with `paths: [.gitcore/features.json]`, plus `workflow_run` on "Ledger Promoter" for bot-merged commits (which do not fire `push`):
+New workflow `ledger-tag.yml`. A `GITHUB_TOKEN` auto-merge fires no `push` event, and the Promoter run ends before its PR merges, so the workflow is an idempotent reconciler driven by the state of `main`, not by the Promoter run: triggers `push` to `main` (paths `.gitcore/features.json`, covers human merges), `schedule` `'47 * * * *'` (hourly; picks up bot merges within an hour), `workflow_run` on "Ledger Promoter" (cheap early check, usually a no-op) and `workflow_dispatch`. Each run:
+
+- Confirms the merge from main: reads `.gitcore/features.json` at `origin/main` HEAD and the last commit that touched it (`git log -1 -- .gitcore/features.json`). Tags only reflect what is on main; an open or unmerged promotion PR changes nothing.
 
 - When the stable count on main is higher than on the newest existing `ledger-stable-*` tag, create an annotated tag `ledger-stable-<stable>` (e.g. `ledger-stable-74`) on that commit. Message: stable/total, stable %, promoted feature ids, promoter run URL.
 - When stable % crosses a multiple of 10 (60, 70, ...), also tag `ledger-milestone-<pct>` (e.g. `ledger-milestone-70`).
 - Hard guard in the script: refuse any tag name matching `^v`. The loop never creates release tags or GitHub releases. When all core features (core 1.0 definition in `CORE-REFACTOR-2026-10-29.md`) are stable, it opens one issue "Release candidate: core 1.0 ready" for the owner; any `v*` tag stays manual.
-- Same workflow dispatches `ci.yml` and `e2e-segmented.yml` on `main` after a bot merge, and `scripts/ledger-promote-evidence.py` accepts `workflow_dispatch` runs on `main` with the same `head_sha` as evidence (today it reads `event=push` only). Without this, every bot-merged ledger commit breaks the 3-run streak.
+- CI after a bot merge: when main HEAD was authored by `github-actions[bot]`, touches only the ledger files, and has no `Xavier CI / CD` or `E2E Segmented` run for its SHA yet (any event), the workflow dispatches `ci.yml` and `e2e-segmented.yml` on `main`; the existing-run check makes repeated hourly runs a no-op. Also `scripts/ledger-promote-evidence.py` accepts `workflow_dispatch` runs on `main` with the same `head_sha` as evidence (today it reads `event=push` only). Without this, every bot-merged ledger commit breaks the 3-run streak.
 
 ## 8. Owner decisions (2026-10-29)
 
