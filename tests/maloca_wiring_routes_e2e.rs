@@ -9,6 +9,29 @@ use tower::util::ServiceExt;
 
 xavier::isolate_test_process!();
 
+/// Removes an env var for the test's lifetime and restores it on drop.
+struct RemoveEnvGuard {
+    key: &'static str,
+    prev: Option<std::ffi::OsString>,
+}
+
+impl RemoveEnvGuard {
+    fn new(key: &'static str) -> Self {
+        let prev = std::env::var_os(key);
+        std::env::remove_var(key);
+        Self { key, prev }
+    }
+}
+
+impl Drop for RemoveEnvGuard {
+    fn drop(&mut self) {
+        match self.prev.take() {
+            Some(v) => std::env::set_var(self.key, v),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
+
 #[tokio::test]
 #[serial_test::serial]
 async fn maloca_wiring_e2e() {
@@ -33,10 +56,12 @@ async fn maloca_wiring_e2e() {
         ("XAVIER_CONFIG_PATH", config_file.to_str().unwrap()),
         ("XAVIER_RUNTIME_STATE_PATH", runtime_file.to_str().unwrap()),
         ("XAVIER_DATA_DIR", data_dir.to_str().unwrap()),
+        // The isolation macro installs a process-wide XAVIER_STATE_DIR that
+        // takes precedence over XAVIER_DATA_DIR; pin it to this test's tempdir.
+        ("XAVIER_STATE_DIR", state_dir.to_str().unwrap()),
     ]);
-    // Explicitly disable inherited XAVIER_HC_SESSIONS_DIR
-    let _old_sessions = std::env::var_os("XAVIER_HC_SESSIONS_DIR");
-    std::env::remove_var("XAVIER_HC_SESSIONS_DIR");
+    // Disable an inherited XAVIER_HC_SESSIONS_DIR; RAII-restored even on panic.
+    let _hc_sessions = RemoveEnvGuard::new("XAVIER_HC_SESSIONS_DIR");
 
     let state = router_harness::create_test_cli_state(&workspace_dir).await;
     let workspace_state = std::sync::Arc::new(
@@ -130,18 +155,24 @@ async fn maloca_wiring_e2e() {
         );
     }
 
-    // WS feed route is mounted (a plain GET without upgrade headers is rejected
-    // by the extractor, but must not be a 404).
+    // WS feed route is mounted behind auth: with a valid token a plain GET
+    // (no upgrade headers) reaches the WebSocketUpgrade extractor, which
+    // rejects it with a 4xx that is neither 401 nor 404.
     let ws_req = Request::builder()
         .method(Method::GET)
         .uri("/maloca/ws/feed")
+        .header(
+            "Authorization",
+            format!("Bearer {}", router_harness::ROOT_TOKEN),
+        )
         .body(Body::empty())
         .unwrap();
-    let ws_resp = app_router.clone().oneshot(ws_req).await.unwrap();
-    assert_ne!(
-        ws_resp.status(),
-        StatusCode::NOT_FOUND,
-        "WS feed route must be mounted"
+    let ws_status = app_router.clone().oneshot(ws_req).await.unwrap().status();
+    assert!(
+        ws_status.is_client_error()
+            && ws_status != StatusCode::NOT_FOUND
+            && ws_status != StatusCode::UNAUTHORIZED,
+        "WS feed must reach the upgrade extractor, got {ws_status}"
     );
 
     // Write request without token
@@ -190,8 +221,4 @@ async fn maloca_wiring_e2e() {
     );
 
     shutdown.cancel();
-
-    if let Some(v) = _old_sessions {
-        std::env::set_var("XAVIER_HC_SESSIONS_DIR", v);
-    }
 }
