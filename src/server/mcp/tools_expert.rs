@@ -180,7 +180,7 @@ mod tests {
         let tools = get_expert_tools();
         assert_eq!(tools[0].name, "ask_expert");
         assert!(is_expert_tool("ask_expert"));
-        assert!(crate::server::mcp::get_xavier_tools()
+        assert!(crate::server::mcp::get_xavier_tools(false)
             .iter()
             .any(|t| t.name == "ask_expert"));
     }

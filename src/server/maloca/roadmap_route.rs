@@ -29,6 +29,7 @@ pub struct RoadmapSummary {
     pub stable: usize,
     pub in_progress: usize,
     pub planned: usize,
+    pub deferred: usize,
     pub progress_pct: f64,
     pub features: Vec<RoadmapFeature>,
 }
@@ -64,20 +65,28 @@ impl RoadmapSummary {
         let total = features.len();
         let stable = features.iter().filter(|f| is_done(&f.status)).count();
         let planned = features.iter().filter(|f| f.status == "planned").count();
+        let deferred = features.iter().filter(|f| f.status == "deferred").count();
         let in_progress = features
             .iter()
-            .filter(|f| !is_done(&f.status) && f.status != "planned")
+            .filter(|f| !is_done(&f.status) && f.status != "planned" && f.status != "deferred")
             .count();
-        let progress_pct = if total == 0 {
+        let den = total - deferred;
+        let progress_pct = if den == 0 {
             0.0
         } else {
-            features.iter().map(|f| f.progress_pct).sum::<f64>() / total as f64
+            features
+                .iter()
+                .filter(|f| f.status != "deferred")
+                .map(|f| f.progress_pct)
+                .sum::<f64>()
+                / den as f64
         };
         Self {
             total,
             stable,
             in_progress,
             planned,
+            deferred,
             progress_pct,
             features,
         }
@@ -211,6 +220,7 @@ mod tests {
             "completed",
             "planned",
             "in_progress",
+            "deferred",
             "implemented",
             "partial",
             "beta",
@@ -230,10 +240,11 @@ mod tests {
             summary.in_progress, 5,
             "implemented, partial, beta and blocked fall into in_progress"
         );
+        assert_eq!(summary.deferred, 1);
         assert_eq!(summary.total, statuses.len());
         assert_eq!(
             summary.total,
-            summary.stable + summary.in_progress + summary.planned,
+            summary.stable + summary.in_progress + summary.planned + summary.deferred,
             "every feature must be counted once"
         );
     }

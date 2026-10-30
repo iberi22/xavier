@@ -1,0 +1,72 @@
+name: Ledger Tag
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.gitcore/features.json'
+  schedule:
+    - cron: '47 * * * *'
+  workflow_run:
+    workflows: ["Ledger Promoter"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: ledger-tag
+  cancel-in-progress: false
+
+jobs:
+  tag_milestones:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Run tag script
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          python3 scripts/ledger-tag.py --features .gitcore/features.json --sha $(git rev-parse HEAD)
+
+      - name: Dispatch CI on main for bot commits
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          AUTHOR=$(git log -1 --format='%an')
+          FILES_TOUCHED=$(git diff --name-only HEAD^ HEAD | grep -v '^$' || true)
+          # Check if authored by github-actions[bot]
+          if [[ "$AUTHOR" == *"github-actions[bot]"* ]]; then
+            # Check if only ledger files were touched
+            NON_LEDGER=0
+            while IFS= read -r file; do
+              if [[ "$file" != ".gitcore/features.json" && "$file" != "docs/FEATURE_STATUS.md" ]]; then
+                NON_LEDGER=1
+                break
+              fi
+            done <<< "$FILES_TOUCHED"
+
+            if [[ $NON_LEDGER -eq 0 ]]; then
+              SHA=$(git rev-parse HEAD)
+
+              # check existing run for ci.yml
+              HAS_CI=$(gh run list --workflow ci.yml --commit "$SHA" --json databaseId -q '. | length')
+              if [[ "$HAS_CI" == "0" ]]; then
+                gh workflow run ci.yml --ref main
+              fi
+
+              # check existing run for e2e-segmented.yml
+              HAS_E2E=$(gh run list --workflow e2e-segmented.yml --commit "$SHA" --json databaseId -q '. | length')
+              if [[ "$HAS_E2E" == "0" ]]; then
+                gh workflow run e2e-segmented.yml --ref main
+              fi
+            fi
+          fi
