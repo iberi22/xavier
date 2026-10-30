@@ -5,7 +5,8 @@ use chrono::Utc;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use walkdir::WalkDir;
 
 pub async fn handle_backup_command(cmd: BackupCommand) -> Result<()> {
     match cmd {
@@ -16,11 +17,11 @@ pub async fn handle_backup_command(cmd: BackupCommand) -> Result<()> {
 async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result<()> {
     let data_dir = XavierSettings::resolve_data_dir();
 
-    let dest_dir = if let Some(out_dir) = out {
-        out_dir
+    let (dest_dir, out_explicit) = if let Some(out_dir) = out {
+        (out_dir, true)
     } else {
         let timestamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
-        data_dir.join("backups").join(timestamp)
+        (data_dir.join("backups").join(timestamp), false)
     };
 
     if !data_dir.exists() {
@@ -73,7 +74,9 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
         }
     };
 
-    if dest_dir_canon == data_dir_canon || dest_dir_canon.starts_with(&data_dir_canon) {
+    if out_explicit
+        && (dest_dir_canon == data_dir_canon || dest_dir_canon.starts_with(&data_dir_canon))
+    {
         let msg = "Output directory cannot be inside the data directory";
         if json_output {
             println!("{}", json!({"ok": false, "error": msg}));
@@ -85,44 +88,78 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
 
     let mut files_copied = Vec::new();
 
-    let entries = match fs::read_dir(&data_dir) {
-        Ok(e) => e,
-        Err(e) => {
-            if json_output {
-                println!(
-                    "{}",
-                    json!({"ok": false, "error": format!("cannot read data dir: {}", e)})
-                );
-                std::process::exit(1);
-            } else {
-                anyhow::bail!("Cannot read data dir: {}", e);
-            }
-        }
-    };
+    let walker = WalkDir::new(&data_dir).into_iter();
 
-    for entry in entries {
+    for entry in walker {
         let entry = match entry {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(e) => {
+                if json_output {
+                    println!(
+                        "{}",
+                        json!({"ok": false, "error": format!("failed to read directory entry: {}", e)})
+                    );
+                    std::process::exit(1);
+                } else {
+                    anyhow::bail!("Failed to read directory entry: {}", e);
+                }
+            }
         };
 
         let path = entry.path();
-        let file_name = entry.file_name();
 
-        if file_name == "backups" {
+        let rel_path = match path.strip_prefix(&data_dir) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        // skip the root `backups/` directory
+        if rel_path.components().next().map(|c| c.as_os_str())
+            == Some(std::ffi::OsStr::new("backups"))
+        {
             continue;
         }
 
         let metadata = match fs::metadata(&path) {
             Ok(m) => m,
-            Err(_) => continue,
+            Err(e) => {
+                if json_output {
+                    println!(
+                        "{}",
+                        json!({"ok": false, "error": format!("failed to read metadata for {:?}: {}", path, e)})
+                    );
+                    std::process::exit(1);
+                } else {
+                    anyhow::bail!("Failed to read metadata for {:?}: {}", path, e);
+                }
+            }
         };
 
         if !metadata.is_file() {
             continue;
         }
 
-        let dest_path = dest_dir.join(&file_name);
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if name.ends_with("-wal") || name.ends_with("-shm") || name.ends_with("-journal") {
+                continue;
+            }
+        }
+
+        let dest_path = dest_dir.join(rel_path);
+
+        if let Some(parent) = dest_path.parent() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                if json_output {
+                    println!(
+                        "{}",
+                        json!({"ok": false, "error": format!("cannot create output dir {:?}: {}", parent, e)})
+                    );
+                    std::process::exit(1);
+                } else {
+                    anyhow::bail!("Cannot create output dir {:?}: {}", parent, e);
+                }
+            }
+        }
 
         let is_sqlite = path.extension().and_then(|e| e.to_str()) == Some("db")
             || path.extension().and_then(|e| e.to_str()) == Some("sqlite3");
@@ -208,7 +245,7 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
             .collect::<String>();
 
         files_copied.push(json!({
-            "path": file_name.to_string_lossy().to_string(),
+            "path": rel_path.to_string_lossy().to_string(),
             "size": dest_meta.len(),
             "sha256": hash
         }));

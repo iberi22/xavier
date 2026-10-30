@@ -4090,7 +4090,8 @@
       "last_tested": "2026-10-28",
       "tests": [
         "tests/cli_backup_create_e2e.rs::test_backup_create_success",
-        "tests/cli_backup_create_e2e.rs::test_backup_create_unwritable_path"
+        "tests/cli_backup_create_e2e.rs::test_backup_create_unwritable_path",
+        "tests/cli_backup_create_e2e.rs::test_backup_create_out_rejection"
       ],
       "metadata": {}
     }
