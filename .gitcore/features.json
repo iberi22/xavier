@@ -79,7 +79,9 @@
         "explain::codegraph::tests::empty_file_or_range_returns_ok_empty",
         "explain::codegraph::tests::symbol_name_narrows_the_choice",
         "explain::codegraph::tests::limit_caps_total_edges_callers_first",
-        "explain::codegraph::tests::broken_graph_yields_no_evidence"
+        "explain::codegraph::tests::broken_graph_yields_no_evidence",
+        "tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_callers_and_callees_of_symbol_in_range_get_source_refs",
+        "tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_empty_file_or_range_returns_ok_empty"
       ],
       "user_stories": []
     },
@@ -514,7 +516,9 @@
         "explain::memory::tests::search_error_surfaces_as_err",
         "explain::memory::tests::empty_result_is_ok_and_empty",
         "explain::memory::tests::collect_works_inside_spawn_blocking",
-        "explain::memory::tests::qmd_search_adapter_returns_no_hits_for_empty_store"
+        "explain::memory::tests::qmd_search_adapter_returns_no_hits_for_empty_store",
+        "tests/explain_memory_source_e2e.rs::e2e_memory_source_decision_query_filters_by_kind_and_file",
+        "tests/explain_memory_source_e2e.rs::e2e_memory_source_duplicate_ids_across_queries_appear_once"
       ],
       "user_stories": []
     },

@@ -50,6 +50,10 @@ mod telecom_concurrency_stress_test;
 #[allow(clippy::module_inception)]
 #[path = "cli_backup_create_e2e.rs"]
 mod cli_backup_create_e2e;
+#[path = "explain_codegraph_source_e2e.rs"]
+mod explain_codegraph_source_e2e;
+#[path = "explain_memory_source_e2e.rs"]
+mod explain_memory_source_e2e;
 #[path = "telecom_file_transfer_e2e_test.rs"]
 mod telecom_file_transfer_e2e_test;
 
