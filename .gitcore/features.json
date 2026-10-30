@@ -171,7 +171,8 @@
       "tests": [
         "test_get_code_graph_success",
         "test_mcp_compact_outputs",
-        "tests/mcp_telecom_tools_visibility_e2e.rs::default_server_hides_telecom_tools"
+        "tests/mcp_telecom_tools_visibility_e2e.rs::default_server_hides_telecom_tools",
+        "tests/mcp_surface_split_doc.rs::mcp_surface_split_drift_test"
       ],
       "req_ids": [
         "REQ-005",
