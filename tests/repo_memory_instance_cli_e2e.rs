@@ -1,5 +1,12 @@
 //! feat-repo-memory-instance: beta
-//! Integration test for per-repo memory instance isolation using the real CLI binary.
+//! Fallback coverage for the offline CLI path of per-repo memory instances.
+//!
+//! Documented gap: the offline `xavier add` / `xavier search --offline-ok`
+//! fallback ignores `memory_store = "repo"` and always uses the global
+//! vec-store under `XAVIER_DATA_DIR`. Two repos therefore see each other's
+//! offline memories. This test pins that behaviour (global store written,
+//! no repo store created, marker visible from both repos) so a future fix
+//! that adds repo isolation to the offline path must update it on purpose.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -7,152 +14,131 @@ use tempfile::TempDir;
 
 xavier::isolate_test_process!();
 
-fn setup_repo(base: &Path, name: &str) -> PathBuf {
-    let root = base.join(name);
-    std::fs::create_dir_all(root.join(".git")).expect("mkdir .git");
-    std::fs::create_dir_all(root.join(".xavier")).expect("mkdir .xavier");
+fn git_init(root: &Path, home: &Path) {
+    let status = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(root)
+        .env("HOME", home)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", home.join("gitconfig-none"))
+        .status()
+        .expect("spawn git init");
+    assert!(status.success(), "git init failed in {}", root.display());
+    assert!(
+        root.join(".git/HEAD").is_file(),
+        "git init did not create .git/HEAD"
+    );
+}
 
+fn setup_repo(base: &Path, home: &Path, name: &str) -> PathBuf {
+    let root = base.join(name);
+    std::fs::create_dir_all(&root).expect("mkdir repo");
+    git_init(&root, home);
+    std::fs::create_dir_all(root.join(".xavier")).expect("mkdir .xavier");
     let config = format!("project_id = \"{name}\"\nmemory_store = \"repo\"\n");
     std::fs::write(root.join(".xavier/config.toml"), config).expect("write config.toml");
-
     root.canonicalize().expect("canonicalize repo root")
 }
 
-fn run_cli_command(dir: &Path, global_env: &TempDir, args: &[&str]) -> String {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
-    cmd.current_dir(dir);
-    cmd.env_clear();
-    cmd.env("PATH", std::env::var_os("PATH").unwrap_or_default());
-    cmd.env("HOME", global_env.path());
-    cmd.env("XAVIER_CONFIG_PATH", global_env.path().join("config.toml"));
-    cmd.env("XAVIER_RUNTIME_STATE_PATH", global_env.path().join("state"));
-    cmd.env("XAVIER_DATA_DIR", global_env.path().join("data"));
-    // Use the disabled embedder for offline/hermetic test
-    cmd.env("XAVIER_EMBEDDER", "disabled");
-    // Mock keys to prevent real key generation requests
-    cmd.env("XAVIER_MASTER_KEY_PASSPHRASE", "test-passphrase-not-used");
-    // Explicitly add repo root to allowlist for XAVIER_REPO_STORE_ROOTS
-    cmd.env("XAVIER_REPO_STORE_ROOTS", dir);
-    // Isolate from running daemons
-    cmd.env("XAVIER_URL", "http://127.0.0.1:0");
-    cmd.args(args);
-
-    let output = cmd.output().expect("failed to execute cli command");
+fn run_cli(dir: &Path, env_dir: &Path, args: &[&str]) -> (String, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_xavier"))
+        .current_dir(dir)
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", env_dir)
+        .env("XAVIER_CONFIG_PATH", env_dir.join("config.toml"))
+        .env("XAVIER_RUNTIME_STATE_PATH", env_dir.join("state"))
+        .env("XAVIER_DATA_DIR", env_dir.join("data"))
+        .env("XAVIER_EMBEDDER", "disabled")
+        .env("XAVIER_MASTER_KEY_PASSPHRASE", "test-passphrase-not-used")
+        .env("XAVIER_REPO_STORE_ROOTS", dir)
+        // No daemon: force the offline fallback.
+        .env("XAVIER_URL", "http://127.0.0.1:0")
+        .args(args)
+        .output()
+        .expect("failed to execute xavier");
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    if !output.status.success() {
-        panic!(
-            "Command failed with status {:?}.\nStdout:\n{}\nStderr:\n{}",
-            output.status, stdout, stderr
-        );
-    }
-
-    format!("{}\n{}", stdout, stderr)
+    assert!(
+        output.status.success(),
+        "xavier {args:?} failed: {:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status
+    );
+    (stdout, stderr)
 }
 
-#[test]
-fn test_repo_memory_instance_cli_e2e() {
-    let env_dir = TempDir::new().expect("tempdir env");
-    let repos_dir = TempDir::new().expect("tempdir repos");
-
-    let repo_a = setup_repo(repos_dir.path(), "repo-a");
-    let repo_b = setup_repo(repos_dir.path(), "repo-b");
-
-    let unique_marker = "UNIQUE_REPO_MARKER_A_1337";
-
-    let add_output = run_cli_command(&repo_a, &env_dir, &["add", unique_marker]);
-    assert!(
-        add_output.contains("offline")
-            || add_output.contains("added successfully")
-            || add_output.contains(unique_marker)
-            || add_output.contains("Memory added"),
-        "Expected success or offline fallback output, got: {}",
-        add_output
-    );
-
-    std::thread::sleep(std::time::Duration::from_millis(500));
-
-    // The store should be at repo_a/.xavier/memory.sqlite3 because the offline_add_memory uses load_spawn_memory,
-    // which delegates to VecSqliteMemoryStore::from_env, which should respect the repo_store override. Wait, does load_spawn_memory pick up the repo memory store?
-    // Let's check where the file actually got created according to our diagnostic.
-    let global_vec_store = env_dir.path().join("data").join("vec-store.sqlite3");
-
-    let _repo_a_store_file = repo_a.join(".xavier/memory.sqlite3");
-
-    // As seen in the output, load_spawn_memory() creates the database in the global location, because CLI offline commands don't know they should use the repo store! Wait, `VecSqliteStoreConfig::from_env` reads the path from env, or uses the daemon data dir.
-    // Wait, the original prompt states:
-    // "If the CLI has no offline add/search path for a repo instance, assert the documented behaviour instead and record the gap in the PR body (do not invent commands)."
-
-    // Ah! The PR instructions say:
-    // "run the real binary ... to add a memory with a unique marker in A, then search for that marker from A (found) and from B (not found); assert the store files live under repo A's expected location and not in the global data dir.
-    // If the CLI has no offline add/search path for a repo instance, assert the documented behaviour instead and record the gap in the PR body (do not invent commands)."
-
-    // The documented behavior of offline fallback is that it writes to VecSqliteMemoryStore::from_env() which goes to global!
-    // Let's assert exactly what happens (it writes to global) and note the gap in PR body!
-
-    // We see it writes to `env_dir.path().join("data").join("vec-store.sqlite3")`. Let's assert that!
-    assert!(
-        global_vec_store.exists(),
-        "CLI offline add currently writes to global store. If this fails, maybe it wrote to the repo store!"
-    );
-
-    // Let's search from Repo A and Repo B. They both read from global if the offline fallback reads from global!
-    let search_a_output = run_cli_command(
-        &repo_a,
-        &env_dir,
-        &["search", unique_marker, "--offline-ok"],
-    );
-    let search_b_output = run_cli_command(
-        &repo_b,
-        &env_dir,
-        &["search", unique_marker, "--offline-ok"],
-    );
-
-    // Parse the JSON to ensure the marker is actually in the results, not just echoed in the header
-    fn extract_json_and_check(output: &str, marker: &str) -> bool {
-        let start_idx = output.find('{').expect("Output missing JSON block");
-
-        // Find matching closing brace to avoid trailing stderr logs that might be captured
-        let mut brace_count = 0;
-        let mut end_idx = start_idx;
-        for (i, c) in output[start_idx..].char_indices() {
-            if c == '{' {
-                brace_count += 1;
-            } else if c == '}' {
-                brace_count -= 1;
-                if brace_count == 0 {
-                    end_idx = start_idx + i;
+/// Returns true when the first JSON object in `output` has a result whose
+/// content contains `marker`.
+fn results_contain(output: &str, marker: &str) -> bool {
+    let start = output.find('{').expect("output missing JSON object");
+    let mut depth = 0usize;
+    let mut end = None;
+    for (i, c) in output[start..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(start + i);
                     break;
                 }
             }
+            _ => {}
         }
-
-        let json_str = &output[start_idx..=end_idx];
-        let data: serde_json::Value = serde_json::from_str(json_str).unwrap_or_else(|e| {
-            panic!("Valid JSON error: {e}. Output was: {json_str}");
-        });
-
-        let results = data
-            .get("results")
-            .and_then(|r| r.as_array())
-            .expect("results array");
-
-        results.iter().any(|res| {
-            res.get("content")
-                .and_then(|c| c.as_str())
-                .map(|c| c.contains(marker))
-                .unwrap_or(false)
-        })
     }
+    let json = &output[start..=end.expect("unterminated JSON object")];
+    let data: serde_json::Value =
+        serde_json::from_str(json).unwrap_or_else(|e| panic!("invalid JSON ({e}): {json}"));
+    data.get("results")
+        .and_then(|r| r.as_array())
+        .expect("results array")
+        .iter()
+        .any(|r| {
+            r.get("content")
+                .and_then(|c| c.as_str())
+                .is_some_and(|c| c.contains(marker))
+        })
+}
 
-    // Since they both read from global via offline search fallback, they BOTH find it!
+fn assert_no_repo_store(repo: &Path, when: &str) {
+    let store = repo.join(".xavier/memory.sqlite3");
     assert!(
-        extract_json_and_check(&search_a_output, unique_marker),
-        "Search in repo A should actually find the marker in the global fallback store results."
+        !store.exists(),
+        "{when}: offline CLI unexpectedly created a repo store at {} (dual write?)",
+        store.display()
+    );
+}
+
+#[test]
+fn offline_cli_add_search_uses_global_store_fallback() {
+    let env_dir = TempDir::new().expect("tempdir env");
+    let repos_dir = TempDir::new().expect("tempdir repos");
+    let repo_a = setup_repo(repos_dir.path(), env_dir.path(), "repo-a");
+    let repo_b = setup_repo(repos_dir.path(), env_dir.path(), "repo-b");
+    let marker = "UNIQUE_REPO_MARKER_A_1337";
+
+    run_cli(&repo_a, env_dir.path(), &["add", marker]);
+
+    let global_store = env_dir.path().join("data").join("vec-store.sqlite3");
+    assert!(
+        global_store.is_file(),
+        "offline add should write the global store at {}",
+        global_store.display()
+    );
+    assert_no_repo_store(&repo_a, "after add in A");
+    assert_no_repo_store(&repo_b, "after add in A");
+
+    let (out_a, _) = run_cli(&repo_a, env_dir.path(), &["search", marker, "--offline-ok"]);
+    let (out_b, _) = run_cli(&repo_b, env_dir.path(), &["search", marker, "--offline-ok"]);
+
+    assert!(
+        results_contain(&out_a, marker),
+        "search from A must find the marker: {out_a}"
     );
     assert!(
-        extract_json_and_check(&search_b_output, unique_marker),
-        "Search in repo B should actually find the marker because offline fallback lacks repo isolation!"
+        results_contain(&out_b, marker),
+        "documented gap: offline fallback has no repo isolation, so B also finds A's marker: {out_b}"
     );
+    assert_no_repo_store(&repo_a, "after searches");
+    assert_no_repo_store(&repo_b, "after searches");
 }

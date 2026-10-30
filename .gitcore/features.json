@@ -3770,7 +3770,7 @@
         "codegraph_repo_isolation_a_b_evict_reopen",
         "truncated_and_malformed_containers_are_rejected",
         "empty_file_roundtrips",
-        "tests/repo_memory_instance_cli_e2e.rs::test_repo_memory_instance_cli_e2e"
+        "tests/repo_memory_instance_cli_e2e.rs::offline_cli_add_search_uses_global_store_fallback"
       ],
       "req_ids": [],
       "user_stories": []
