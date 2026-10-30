@@ -32,11 +32,15 @@ fn test_backup_create_success() {
     let txt_path = data_dir.join("hello.txt");
     fs::write(&txt_path, "world").unwrap();
 
-    let manifest_path_orig = data_dir.join("manifest.json");
-    fs::write(&manifest_path_orig, "fake manifest").unwrap();
+    // To test ordinary files that look like sidecars are not incorrectly skipped.
+    let personal_path = data_dir.join("personal");
+    fs::write(&personal_path, "personal base").unwrap();
 
     let personal_journal_path = data_dir.join("personal-journal");
     fs::write(&personal_journal_path, "personal stuff").unwrap();
+
+    let notes_path = data_dir.join("notes.txt");
+    fs::write(&notes_path, "notes txt").unwrap();
 
     let notes_wal_path = data_dir.join("notes-wal.txt");
     fs::write(&notes_wal_path, "notes wal").unwrap();
@@ -65,25 +69,27 @@ fn test_backup_create_success() {
 
     let parsed: Value = serde_json::from_str(&stdout).expect("Failed to parse JSON output");
     assert_eq!(parsed["ok"], true);
-    assert_eq!(parsed["files"], 6);
+    assert_eq!(parsed["files"], 7);
 
     let out_dir = std::path::PathBuf::from(parsed["path"].as_str().unwrap());
     assert!(out_dir.exists());
 
-    let manifest_path = out_dir.join(".xavier-backup-manifest.json");
+    let manifest_path = out_dir.join("manifest.json");
     assert!(manifest_path.exists());
     let manifest_content = fs::read_to_string(&manifest_path).unwrap();
     let manifest: Value = serde_json::from_str(&manifest_content).unwrap();
 
     let files = manifest["files"].as_array().unwrap();
-    assert_eq!(files.len(), 6);
+    assert_eq!(files.len(), 7);
 
-    let orig_manifest = out_dir.join("manifest.json");
-    assert!(orig_manifest.exists());
-    assert_eq!(fs::read_to_string(&orig_manifest).unwrap(), "fake manifest");
+    let personal_backup = out_dir.join("personal");
+    assert!(personal_backup.exists());
 
     let personal_journal_backup = out_dir.join("personal-journal");
     assert!(personal_journal_backup.exists());
+
+    let notes_backup = out_dir.join("notes.txt");
+    assert!(notes_backup.exists());
 
     let notes_wal_backup = out_dir.join("notes-wal.txt");
     assert!(notes_wal_backup.exists());
@@ -268,9 +274,6 @@ fn test_backup_create_refuses_non_empty_dest() {
     let txt_path = data_dir.join("hello.txt");
     fs::write(&txt_path, "world").unwrap();
 
-    let manifest_path_orig = data_dir.join("manifest.json");
-    fs::write(&manifest_path_orig, "fake manifest").unwrap();
-
     let personal_journal_path = data_dir.join("personal-journal");
     fs::write(&personal_journal_path, "personal stuff").unwrap();
 
@@ -379,4 +382,86 @@ fn test_backup_create_skips_unreadable_backups_dir() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: Value = serde_json::from_str(&stdout).expect("Failed to parse JSON output");
     assert_eq!(parsed["ok"], true);
+}
+
+#[test]
+#[serial_test::serial]
+fn test_backup_create_manifest_collision() {
+    let tmp = TempDir::new().unwrap();
+    let data_dir = tmp.path().join("data");
+    fs::create_dir_all(&data_dir).unwrap();
+    let runtime_state_path = tmp.path().join("runtime.json");
+    fs::write(&runtime_state_path, "{}").unwrap();
+
+    let manifest_path_orig = data_dir.join("manifest.json");
+    fs::write(&manifest_path_orig, "fake manifest").unwrap();
+
+    let out_dir = tmp.path().join("backup_out");
+
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd.env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config"))
+        .env("XAVIER_RUNTIME_STATE_PATH", &runtime_state_path)
+        .env("XAVIER_DATA_DIR", &data_dir)
+        .arg("backup")
+        .arg("create")
+        .arg("--out")
+        .arg(&out_dir)
+        .arg("--json");
+
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let parsed: Value = serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).unwrap();
+    assert_eq!(parsed["ok"], false);
+    assert!(parsed["error"]
+        .as_str()
+        .unwrap()
+        .contains("conflicts with backup manifest"));
+}
+
+#[test]
+#[serial_test::serial]
+fn test_backup_create_contention() {
+    let tmp = TempDir::new().unwrap();
+    let data_dir = tmp.path().join("data");
+    fs::create_dir_all(&data_dir).unwrap();
+    let runtime_state_path = tmp.path().join("runtime.json");
+    fs::write(&runtime_state_path, "{}").unwrap();
+
+    let db_path = data_dir.join("busy.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute(
+        "CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)",
+        [],
+    )
+    .unwrap();
+
+    // We do NOT enable WAL mode. By default, it's rollback journal.
+    // Lock the database so that backup gets Busy.
+    conn.execute_batch("BEGIN EXCLUSIVE;").unwrap();
+
+    let out_dir = tmp.path().join("backup_out");
+
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd.env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config"))
+        .env("XAVIER_RUNTIME_STATE_PATH", &runtime_state_path)
+        .env("XAVIER_DATA_DIR", &data_dir)
+        .arg("backup")
+        .arg("create")
+        .arg("--out")
+        .arg(&out_dir)
+        .arg("--json");
+
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let parsed: Value = serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).unwrap();
+    assert_eq!(parsed["ok"], false);
+
+    let error_msg = parsed["error"].as_str().unwrap().to_lowercase();
+    assert!(error_msg.contains("locked") || error_msg.contains("busy"));
 }

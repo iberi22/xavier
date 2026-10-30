@@ -56,7 +56,7 @@ filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|code_explain_context_e2e|explain_isolated_llm_e2e)::/)'
+filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|test_backup_create_manifest_collision|test_backup_create_contention|code_explain_context_e2e|explain_isolated_llm_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -96,7 +96,7 @@ filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|code_explain_context_e2e|explain_isolated_llm_e2e)::/)'
+filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|test_backup_create_manifest_collision|test_backup_create_contention|code_explain_context_e2e|explain_isolated_llm_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]

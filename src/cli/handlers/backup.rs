@@ -160,7 +160,18 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
             Err(_) => continue,
         };
 
-        let metadata = match fs::metadata(&path) {
+        if rel_path.as_os_str() == "manifest.json" {
+            let msg =
+                "Source directory contains manifest.json which conflicts with backup manifest";
+            if json_output {
+                println!("{}", json!({"ok": false, "error": msg}));
+                std::process::exit(1);
+            } else {
+                anyhow::bail!("{}", msg);
+            }
+        }
+
+        let metadata = match fs::metadata(path) {
             Ok(m) => m,
             Err(e) => {
                 if json_output {
@@ -186,7 +197,12 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
                     .or_else(|| name.strip_suffix("-shm"))
                     .or_else(|| name.strip_suffix("-journal"))
                 {
-                    if parent.join(base).exists() {
+                    let base_path = parent.join(base);
+                    let is_base_sqlite = base_path.extension().and_then(|e| e.to_str())
+                        == Some("db")
+                        || base_path.extension().and_then(|e| e.to_str()) == Some("sqlite3");
+
+                    if is_base_sqlite && base_path.exists() {
                         continue;
                     }
                 }
@@ -215,13 +231,37 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
         if is_sqlite {
             let res: anyhow::Result<()> = (|| {
                 let src_conn = rusqlite::Connection::open_with_flags(
-                    &path,
+                    path,
                     rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
                         | rusqlite::OpenFlags::SQLITE_OPEN_URI,
                 )?;
                 let mut dest_conn = rusqlite::Connection::open(&dest_path)?;
                 let backup = rusqlite::backup::Backup::new(&src_conn, &mut dest_conn)?;
-                backup.step(-1)?;
+                let mut retries = 0;
+                let mut success = false;
+                loop {
+                    match backup.step(-1)? {
+                        rusqlite::backup::StepResult::Done => {
+                            success = true;
+                            break;
+                        }
+                        rusqlite::backup::StepResult::More => continue,
+                        rusqlite::backup::StepResult::Busy
+                        | rusqlite::backup::StepResult::Locked => {
+                            if retries >= 10 {
+                                break;
+                            }
+                            retries += 1;
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        }
+                        _ => {
+                            anyhow::bail!("Unexpected backup step result");
+                        }
+                    }
+                }
+                if !success {
+                    anyhow::bail!("Database is locked or busy");
+                }
                 Ok(())
             })();
             if let Err(e) = res {
@@ -236,7 +276,7 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
                 }
             }
         } else {
-            if let Err(e) = fs::copy(&path, &dest_path) {
+            if let Err(e) = fs::copy(path, &dest_path) {
                 if json_output {
                     println!(
                         "{}",
@@ -300,7 +340,7 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
         "files": files_copied
     });
 
-    let manifest_path = dest_dir.join(".xavier-backup-manifest.json");
+    let manifest_path = dest_dir.join("manifest.json");
     if let Err(e) = fs::write(
         &manifest_path,
         serde_json::to_string_pretty(&manifest).unwrap(),
