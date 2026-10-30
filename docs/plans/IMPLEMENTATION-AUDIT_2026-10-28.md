@@ -73,7 +73,7 @@ To re-measure, update the status of a row and recompute. No build is needed.
 | Memory write integrity | partial | ledger `feat-memory-write-integrity` = beta | Promote to stable with long-run evidence |
 | Encryption at rest | partial | ledger `feat-encryption-at-rest` = beta; README: auxiliary stores still migrating | Finish auxiliary store migration and validate against long-lived data |
 | Per-repo memory instance (XAV-REPO) | partial | ledger `feat-repo-memory-instance` = beta | Stabilise config/privacy semantics, add e2e test |
-| Memory stats through the port interface | stub | `src/adapters/inbound/http/handlers/memory.rs` returns "not yet implemented in port interface" | Implement stats on the storage port |
+| Memory stats through the port interface | implemented | `tests/memory_stats_route_e2e.rs` | - |
 | FTS index rebuild | missing | `docs/features/specs` fts-index-rebuild = draft-analysis | Design and implement rebuild command |
 | Isolation of test data from live stores | partial | CLI parity audit P2-5 (not started) | Hermetic test fixtures; no test users in live stores |
 

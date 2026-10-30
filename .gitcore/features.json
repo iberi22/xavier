@@ -3324,7 +3324,14 @@
         "stats_reports_semantic_layer_state",
         "tests/cli_health_stats_parity.rs::degraded_health_prints_server_reason_and_version",
         "tests/cli_health_stats_parity.rs::degraded_health_exits_zero_per_documented_contract",
-        "tests/cli_health_stats_parity.rs::unhealthy_health_exits_nonzero"
+        "tests/cli_health_stats_parity.rs::unhealthy_health_exits_nonzero",
+        "tests/memory_stats_route_e2e.rs::memory_stats_routes_match_cli_mcp",
+        "tests/memory_stats_route_e2e.rs::memory_stats_routes_match_cli_mcp",
+        "tests/memory_stats_route_e2e.rs::memory_stats_routes_match_cli_mcp",
+        "tests/memory_stats_route_e2e.rs::memory_stats_routes_match_cli_mcp",
+        "tests/memory_stats_route_e2e.rs::memory_stats_routes_match_cli_mcp",
+        "tests/memory_stats_route_e2e.rs::memory_stats_routes_match_cli_mcp",
+        "tests/memory_stats_route_e2e.rs::memory_stats_routes_match_cli_mcp"
       ],
       "req_ids": [
         "REQ-072"
