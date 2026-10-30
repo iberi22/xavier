@@ -43,7 +43,7 @@ async fn test_health_endpoints_e2e() {
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::create_dir_all(&data_dir).unwrap();
     // Create temporary config file with mesh_accepted = false
-    let temp_config_path = config_dir.join(format!("config.json"));
+    let temp_config_path = config_dir.join("config.json");
     let config_json = serde_json::json!({
         "license": {
             "mesh_accepted": false,
@@ -224,7 +224,7 @@ async fn test_mesh_status_with_license_e2e() {
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::create_dir_all(&data_dir).unwrap();
     // Create a temporary config file with mesh_accepted = true
-    let temp_config_path = config_dir.join(format!("config.json"));
+    let temp_config_path = config_dir.join("config.json");
     let config_json = serde_json::json!({
         "license": {
             "mesh_accepted": true,
