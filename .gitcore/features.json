@@ -778,7 +778,8 @@
         "test_auto_respects_explicit_local_signal",
         "test_auto_triggers_probe_ollama_reachable_with_embeddinggemma",
         "test_cloud_config_priorities",
-        "tests/cli_provider_live_routes_e2e.rs::test_provider_live_routes"
+        "tests/cli_provider_live_routes_e2e.rs::test_provider_live_routes",
+        "tests/cli_provider_exit_codes_e2e.rs::provider_fallback_exits_unsupported_without_side_effects"
       ],
       "req_ids": [
         "REQ-017"
@@ -2722,7 +2723,8 @@
         "test_mtime_touch_without_content_change_skips_reextract",
         "incremental_indexing_removes_deleted_files",
         "test_god_guard_drops_scattered_low_confidence",
-        "test_default_project_keeps_legacy_ids"
+        "test_default_project_keeps_legacy_ids",
+        "tests/codegraph_multilang_reindex_e2e.rs::test_codegraph_multilang_reindex_e2e"
       ],
       "req_ids": [
         "REQ-056"

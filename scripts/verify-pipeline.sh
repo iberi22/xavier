@@ -68,7 +68,7 @@ for f in feats:
     assert fid, f"feature missing id: {f}"
     assert fid not in ids, f"duplicate id: {fid}"
     ids.add(fid)
-    assert f.get("status") in ("planned", "beta", "stable", "active", "implemented", "in_progress"), \
+    assert f.get("status") in ("planned", "beta", "stable", "active", "implemented", "in_progress", "deferred"), \
         f"{fid}: bad status {f.get('status')}"
     assert isinstance(norm_list(f.get("tests")), list), f"{fid}: tests must be a list or string"
     assert isinstance(norm_list(f.get("implemented_in")), list), f"{fid}: implemented_in must be a list or string"
@@ -108,11 +108,13 @@ import json, sys
 ledger = json.load(open(sys.argv[1]))
 raw = ledger.get("features", [])
 feats = list(raw.values()) if isinstance(raw, dict) else raw
+deferred = sum(1 for f in feats if f.get("status") == "deferred")
 n = len(feats)
+den = n - deferred
 stable = sum(1 for f in feats if f.get("status") == "stable")
 beta = sum(1 for f in feats if f.get("status") in ("beta", "implemented", "active"))
-pct = round(sum(f.get("progress_pct", 0) for f in feats) / n, 1) if n else 0
-print(f"  stable={stable} beta={beta} planned={n-stable-beta} total={n} real%={pct}")
+pct = round(sum(f.get("progress_pct", 0) for f in feats if f.get("status") != "deferred") / den, 1) if den > 0 else 0
+print(f"  stable={stable} beta={beta} planned={n-stable-beta-deferred} deferred={deferred} total={n} real%={pct}")
 PY
 
 # ---------------------------------------------------------------- tests
