@@ -2351,7 +2351,7 @@ async fn start_http_server_inner(
     // dir resolution as the Maloca store). On failure fall back to in-memory (None) so the
     // daemon still boots, but say so loudly.
     let hc_store = {
-        let hc_dir = crate::settings::paths::state_dir();
+        let hc_dir = crate::settings::XavierSettings::resolve_state_dir();
         let _ = std::fs::create_dir_all(&hc_dir);
         let hc_path = hc_dir.join("humanchallenge.db");
         match xavier::humanchallenge::HumanChallengeStore::new(&hc_path) {
