@@ -1,23 +1,23 @@
 name: Mesh Features
 
 on:
-  # PRs run only when mesh-relevant paths change (runner budget, unblock-1030).
-  # Push to main stays unfiltered so any cross-module break is still caught.
-  # Not a required check, so a skipped PR run never blocks merging.
+  # PRs skip Mesh only when nothing that can reach the build changed
+  # (docs, Markdown, UI, ledger/agent metadata, other CI workflows), to save
+  # runner budget (unblock-1030). Everything else, including all of src/,
+  # crates/, tests/, scripts/, packaging/ and .cargo/, still runs it.
+  # Push to main stays unfiltered. Not a required check.
   pull_request:
     paths:
-      - 'src/mesh/**'
-      - 'src/memory/**'
-      - 'src/crypto/**'
-      - 'src/node_identity/**'
-      - 'src/lib.rs'
-      - 'src/domain/cycle_breaks/**'
-      - 'tests/mesh_*.rs'
-      - 'tests/suite_07.rs'
-      - 'scripts/e2e-wave-target.sh'
-      - 'scripts/xavier-test-target.sh'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
+      - '**'
+      - '!docs/**'
+      - '!**/*.md'
+      - '!panel-ui/**'
+      - '!public/**'
+      - '!.gitcore/**'
+      - '!.jules/**'
+      - '!.xavier/**'
+      - '!skills/**'
+      - '!.github/**'
       - '.github/workflows/mesh-features.yml'
   push:
     branches:
