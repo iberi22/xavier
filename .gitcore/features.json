@@ -1821,7 +1821,7 @@
       "implemented_in": "src/explain/model.rs, src/cli/server.rs",
       "name": "Explain Isolated LLM",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3560",
       "status": "beta",
@@ -1840,7 +1840,7 @@
         "tests/explain_isolated_llm_e2e.rs::explain_falls_back_to_global_when_isolated_not_configured"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests explain::model::tests::explain_provider_builds_anthropic_config_from_0600_key_file, explain::model::tests::explain_key_file_readable_by_others_is_not_configured, explain::model::tests::explain_without_provider_uses_global_config, explain::model::tests::explain_unsupported_provider_is_not_configured, explain::model::tests::explain_anthropic_without_model_is_not_configured, tests/explain_isolated_llm_e2e.rs::explain_uses_isolated_llm_settings_and_fails_on_network, tests/explain_isolated_llm_e2e.rs::explain_falls_back_to_global_when_isolated_not_configured"
     },
     "feat-data-node-consent": {
       "id": "feat-data-node-consent",
