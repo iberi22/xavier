@@ -371,6 +371,9 @@ jobs:
           source scripts/xavier-test-target.sh
           xavier_cargo_test ci-safe observability_contract
 
+      - name: Run code-graph db_row_errors Integration Test
+        run: cargo test -p code-graph --test db_row_errors
+
       - name: Run Clavis HTTP, Keygen & Vault E2E Tests
         run: |
           source scripts/xavier-test-target.sh
