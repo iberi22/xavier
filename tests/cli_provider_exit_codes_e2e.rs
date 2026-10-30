@@ -121,3 +121,71 @@ async fn test_provider_status_exit_codes() {
 
     server_task.abort();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial_test::serial]
+async fn provider_fallback_exits_unsupported_without_side_effects() {
+    let tmp_config = TempDir::new().unwrap();
+    let tmp_data = TempDir::new().unwrap();
+    let tmp_state = TempDir::new().unwrap();
+
+    let xavier_bin = env!("CARGO_BIN_EXE_xavier");
+
+    let mut envs: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    envs.insert(
+        "XAVIER_DATA_DIR".to_string(),
+        tmp_data.path().to_string_lossy().to_string(),
+    );
+    envs.insert(
+        "HOME".to_string(),
+        tmp_config.path().to_string_lossy().to_string(),
+    );
+    envs.insert(
+        "XAVIER_CONFIG_PATH".to_string(),
+        tmp_config
+            .path()
+            .join("config.toml")
+            .to_string_lossy()
+            .to_string(),
+    );
+    envs.insert(
+        "XAVIER_RUNTIME_STATE_PATH".to_string(),
+        tmp_state.path().join("state").to_string_lossy().to_string(),
+    );
+
+    let output = Command::new(xavier_bin)
+        .envs(&envs)
+        .arg("provider")
+        .arg("fallback")
+        .arg("ollama")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code().unwrap(), 5);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stdout.is_empty(), "Stdout must be empty");
+    assert!(
+        stderr.contains("not supported"),
+        "Stderr must mention not supported: {}",
+        stderr
+    );
+
+    let output_auto = Command::new(xavier_bin)
+        .envs(&envs)
+        .arg("provider")
+        .arg("auto")
+        .output()
+        .unwrap();
+
+    assert_eq!(output_auto.status.code().unwrap(), 4);
+    let stdout_auto = String::from_utf8_lossy(&output_auto.stdout);
+    let stderr_auto = String::from_utf8_lossy(&output_auto.stderr);
+    assert!(stdout_auto.is_empty(), "Stdout auto must be empty");
+    assert!(
+        stderr_auto.contains("not available"),
+        "Stderr auto must mention not available: {}",
+        stderr_auto
+    );
+}
