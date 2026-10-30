@@ -602,6 +602,10 @@ Show current provider status.
 
 List providers and strategies.
 
+| Flag | Default | Description |
+|---|---|---|
+| `--json` | off | Emit the provider list as a single JSON object. |
+
 ### `xavier provider set <name>`
 
 Manually switch provider.
@@ -612,7 +616,7 @@ xavier provider set openai
 
 ### `xavier provider auto <strategy>`
 
-Set automatic provider selection strategy.
+(Unsupported) This command is not supported on this daemon version and will exit non-zero.
 
 ```bash
 xavier provider auto balanced

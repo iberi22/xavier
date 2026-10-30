@@ -774,7 +774,8 @@
       "tests": [
         "test_auto_respects_explicit_local_signal",
         "test_auto_triggers_probe_ollama_reachable_with_embeddinggemma",
-        "test_cloud_config_priorities"
+        "test_cloud_config_priorities",
+        "tests/cli_provider_live_routes_e2e.rs::test_provider_live_routes"
       ],
       "req_ids": [
         "REQ-017"
