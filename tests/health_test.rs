@@ -90,9 +90,12 @@ async fn test_health_endpoints_e2e() {
     let client = Client::new();
     let mut started = false;
     let mut last_error = "no request attempted".to_string();
-    for _ in 0..240 {
+    // Bounded readiness budget: 55s overall, each request (incl. body) capped at 1s.
+    let deadline = std::time::Instant::now() + Duration::from_secs(55);
+    while std::time::Instant::now() < deadline {
         match client
             .get(format!("http://127.0.0.1:{port}/ready"))
+            .timeout(Duration::from_secs(1))
             .send()
             .await
         {
@@ -111,7 +114,7 @@ async fn test_health_endpoints_e2e() {
     }
     assert!(
         started,
-        "Server failed to start within 60s (last error: {})",
+        "Server failed to start within 55s (last error: {})",
         last_error
     );
 
@@ -303,9 +306,12 @@ async fn test_mesh_status_with_license_e2e() {
     let client = Client::new();
     let mut started = false;
     let mut last_error = "no request attempted".to_string();
-    for _ in 0..240 {
+    // Bounded readiness budget: 55s overall, each request (incl. body) capped at 1s.
+    let deadline = std::time::Instant::now() + Duration::from_secs(55);
+    while std::time::Instant::now() < deadline {
         match client
             .get(format!("http://127.0.0.1:{port}/ready"))
+            .timeout(Duration::from_secs(1))
             .send()
             .await
         {
@@ -324,7 +330,7 @@ async fn test_mesh_status_with_license_e2e() {
     }
     assert!(
         started,
-        "Server failed to start within 60s (last error: {})",
+        "Server failed to start within 55s (last error: {})",
         last_error
     );
 
