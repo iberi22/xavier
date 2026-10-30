@@ -61,3 +61,5 @@ mod ready_gate_startup;
 mod billing_status_test;
 #[path = "config_cli.rs"]
 mod config_cli;
+#[path = "billing_cloud_usage_e2e.rs"]
+mod billing_cloud_usage_e2e;
