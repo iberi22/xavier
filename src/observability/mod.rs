@@ -34,6 +34,7 @@
 //! ```
 
 pub mod analyzer;
+pub mod code_index_freshness;
 pub mod detector;
 pub mod distributed_tracer;
 pub mod fixer;
