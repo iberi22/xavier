@@ -70,6 +70,8 @@ mod cli_provider_exit_codes_e2e;
 #[path = "skill_store_config.rs"]
 mod skill_store_config;
 
+#[path = "cli_json_sweep2_e2e.rs"]
+mod cli_json_sweep2_e2e;
 #[path = "cli_provider_live_routes_e2e.rs"]
 mod cli_provider_live_routes_e2e;
 #[path = "mcp_surface_split_doc.rs"]

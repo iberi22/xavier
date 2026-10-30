@@ -171,8 +171,6 @@ def evaluate(document, evidence, history, root, streak):
         common.append('missing full verifier run URL')
     if not chain or chain[0] != sha or len(set(chain)) != len(chain):
         common.append('invalid consecutive main SHA sequence')
-    if evidence.get('evidence_complete') is not True:
-        common.append('evidence collection incomplete')
     indexed = rust_tests(root)
     targets = set(evidence.get('integration_targets_passed', []))
     per_feature = evidence.get('per_feature_test_results', {})
@@ -270,8 +268,8 @@ def evaluate(document, evidence, history, root, streak):
             declared = []
         if status == 'beta':
             reasons = list(lane_common)
-            if result.get('evidence_complete') is False:
-                reasons.append('incomplete evidence')
+            if evidence.get('evidence_complete') is not True:
+                reasons.append('evidence collection incomplete')
             reasons.extend(completeness_reasons(feature))
             reasons.extend(missing_list)
             evaluated_passed, evaluated_failed = gating_passed, gating_failed
@@ -280,8 +278,8 @@ def evaluate(document, evidence, history, root, streak):
         else:
             blocking, informational = beta_completeness_split(feature)
             reasons = list(lane_common) + blocking + missing_list
-            if result.get('evidence_complete') is False:
-                reasons.append('incomplete evidence')
+            if evidence.get('evidence_complete') is not True:
+                reasons.append('evidence collection incomplete')
             informational = list(informational)
             # Planned/in_progress lane: candidate sets, plus gating sets for
             # names shared with gating features (those names are skipped by
@@ -438,12 +436,18 @@ def main():
     review_flagged_fids = sorted(fid for fid, r in results.items() if r.get('review_flagged'))
     review_dict = {'stable->beta': review_flagged_fids}
 
-    report = dict(sha=evidence.get('sha'), dry_run=not getattr(args, 'apply', False),
+    report = dict(sha=evidence.get('sha'), main_head=evidence.get('main_head'),
+                  skipped_pending_shas=evidence.get('skipped_pending_shas', []),
+                  dry_run=not getattr(args, 'apply', False),
                   promotions=promotions, review=review_dict, features=results)
     report['demotions_applied'] = demotions_applied
 
     print(json.dumps(report, indent=2, sort_keys=True))
     print('# Ledger promotion\n', file=sys.stderr)
+    print(f"Evaluated SHA: {evidence.get('sha') or 'none (no completed commit)'}", file=sys.stderr)
+    print(f"Main HEAD SHA: {evidence.get('main_head')}", file=sys.stderr)
+    print('Skipped pending SHAs: ' + (', '.join(evidence.get('skipped_pending_shas', [])) or 'none'),
+          file=sys.stderr)
     for transition in ('beta->stable', 'planned->beta', 'in_progress->beta'):
         members = sorted(fid for fid in eligible
                          if results[fid].get('transition') == transition)
