@@ -154,6 +154,7 @@
 |----------|------|---------|-------------|--------|
 | `XAVIER_CONFIG_SOURCE_CHILD` | `bool` | (unset) | Test-only marker for the config-source child-process test; not read in production | ❌ |
 | `XAVIER_CONTRACT_LITERAL` | `string` | (unset) | Test-only value used to verify env-contract values are loaded literally; not read in production | ❌ |
+| `XAVIER_TEST_MODE` | `bool` | (unset) | Alias of XAVIER_TEST: when set, `xavier doctor` treats a data dir under the system temp dir as an expected test setup instead of reporting test pollution | ❌ |
 
 ## Training Jobs API
 
