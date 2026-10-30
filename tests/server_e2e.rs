@@ -56,8 +56,16 @@ async fn test_health_endpoint_via_xavier_binary() {
     for _ in 0..120 {
         match client.get(&health_url).send().await {
             Ok(response) if response.status().is_success() => {
-                assert!(response.headers().contains_key("x-request-id"));
+                let has_request_id = response.headers().contains_key("x-request-id");
                 let body = response.text().await.expect("health body");
+                // The ready gate (src/server/http/ready_gate.rs) answers 200
+                // {"status":"starting"} before the app router is installed; that is
+                // not "booted" yet, so keep polling.
+                if body.contains("\"status\":\"starting\"") {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    continue;
+                }
+                assert!(has_request_id);
                 assert!(
                     body.contains("\"status\":\"healthy\"")
                         || body.contains("\"status\":\"degraded\"")

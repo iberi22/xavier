@@ -371,7 +371,7 @@
       "github_issue": 115,
       "last_tested": "2026-08-31",
       "notes": "Public readiness gate: P2P network & Data Commons functional; operational maturity libp2p/onchain in beta (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]",
-      "implemented_in": "src/mesh/libp2p_transport.rs, src/mesh/iroh_transport.rs, src/mesh/fallback_transport.rs",
+      "implemented_in": "src/mesh/iroh_transport.rs, src/mesh/fallback_transport.rs",
       "tests": [
         "test_mesh_handshake_and_sync",
         "test_heartbeat_service_with_peer_count",
