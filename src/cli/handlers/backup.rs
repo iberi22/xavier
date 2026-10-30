@@ -37,9 +37,26 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
     }
 
     if dest_dir.exists() {
-        let is_empty = fs::read_dir(&dest_dir)
-            .map(|mut d| d.next().is_none())
-            .unwrap_or(true);
+        // An unreadable destination must not be treated as empty: we would
+        // overwrite existing backup files and the manifest without knowing.
+        let is_empty = match fs::read_dir(&dest_dir) {
+            Ok(mut d) => d.next().is_none(),
+            Err(e) => {
+                if json_output {
+                    println!(
+                        "{}",
+                        json!({"ok": false, "error": format!("cannot inspect destination directory: {}", e)})
+                    );
+                    std::process::exit(1);
+                } else {
+                    anyhow::bail!(
+                        "Cannot inspect destination directory {}: {}",
+                        dest_dir.display(),
+                        e
+                    );
+                }
+            }
+        };
         if !is_empty {
             if json_output {
                 println!(
