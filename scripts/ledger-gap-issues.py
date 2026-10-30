@@ -85,8 +85,20 @@ def find_gaps(features_json, report_json):
             "sha": report.get("sha", "unknown"),
         }
 
-    evaluated_fids = set(report.get("features", {}).keys())
-    return gaps, set(security_needs_owner), report.get("evidence_complete", False), report.get("sha", "unknown"), evaluated_fids
+    # Membership alone is not resolution: stable features carry review results
+    # separately from promotion reasons, and skipped reviews are inconclusive.
+    gap_free_fids = set()
+    for fid, result in report.get("features", {}).items():
+        if fid not in features_doc.get("features", {}) or fid in gaps:
+            continue
+        if result.get("review_flagged") or result.get("review_reasons"):
+            continue
+        if features_doc["features"][fid].get("status") == "stable":
+            if result.get("review_flagged") is False and result.get("review_reasons") == []:
+                gap_free_fids.add(fid)
+        elif result.get("reasons") == [] and result.get("eligible") is True:
+            gap_free_fids.add(fid)
+    return gaps, set(security_needs_owner), report.get("evidence_complete") is True, report.get("sha", "unknown"), gap_free_fids
 
 
 def format_issue_body(fid, gap):
@@ -113,7 +125,10 @@ def format_issue_body(fid, gap):
     return "\n".join(body)
 
 
-def manage_issues(runner, gaps, security_fids, evidence_complete, sha, max_jules, main_red, evaluated_fids):
+def manage_issues(runner, gaps, security_fids, evidence_complete, sha, max_jules, main_red, gap_free_fids):
+    if not evidence_complete or main_red:
+        return
+
     runner.create_label_if_missing("ledger-gap", "Ledger feature gap", "ff0000")
 
     issues_out = runner.gh("issue", "list", "--repo", runner.repo, "--label", "ledger-gap",
@@ -170,7 +185,7 @@ def manage_issues(runner, gaps, security_fids, evidence_complete, sha, max_jules
                         runner.gh("issue", "edit", str(issue["number"]), "--add-label", "jules", "--repo", runner.repo)
                         jules_applied += 1
         else:
-            if is_open and evidence_complete and not main_red and fid in evaluated_fids:
+            if is_open and evidence_complete and not main_red and fid in gap_free_fids:
                 runner.gh("issue", "close", str(issue["number"]), "--comment",
                           f"Feature is now stable or no longer has gaps on SHA {sha}.", "--repo", runner.repo)
 
@@ -211,9 +226,9 @@ def main():
 
     runner = GithubRunner(args.repo, args.dry_run)
 
-    gaps, sec_needs_owner, evidence_complete, sha, evaluated_fids = find_gaps(args.features, args.report)
+    gaps, sec_needs_owner, evidence_complete, sha, gap_free_fids = find_gaps(args.features, args.report)
 
-    manage_issues(runner, gaps, sec_needs_owner, evidence_complete, sha, args.max_jules, args.main_red, evaluated_fids)
+    manage_issues(runner, gaps, sec_needs_owner, evidence_complete, sha, args.max_jules, args.main_red, gap_free_fids)
 
     if sec_needs_owner:
         print("## Security features needing owner")

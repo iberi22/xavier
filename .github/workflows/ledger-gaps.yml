@@ -26,14 +26,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Get run ID
+      - name: Validate promoter run provenance
         id: run-id
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "id=${{ inputs.run_id }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
+            RUN_ID="$INPUT_RUN_ID"
           else
-            echo "id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
+            RUN_ID="$EVENT_RUN_ID"
           fi
+          if [[ ! "$RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "Run ID must be numeric."
+            exit 1
+          fi
+          HEAD_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" |
+            jq -e --arg sha "$HEAD_SHA" '
+              .name == "Ledger Promoter" and .conclusion == "success" and
+              .head_branch == "main" and .head_sha == $sha' > /dev/null
+          echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
       - uses: actions/download-artifact@v8
         with:
@@ -44,9 +61,11 @@ jobs:
 
       - name: Extract SHA
         id: extract-sha
+        env:
+          EXPECTED_SHA: ${{ steps.run-id.outputs.sha }}
         run: |
-          SHA=$(jq -r '.sha' /tmp/ledger-report.json)
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          jq -e --arg sha "$EXPECTED_SHA" '.sha == $sha' /tmp/ledger-report.json > /dev/null
+          echo "sha=$EXPECTED_SHA" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v7
         with:
@@ -56,9 +75,8 @@ jobs:
       - name: Determine main red status and run
         env:
           GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.extract-sha.outputs.sha }}
         run: |
-          SHA=${{ steps.extract-sha.outputs.sha }}
-
           # Fetch repository for checkout validation matching SHA
           if [ -z "$SHA" ] || [ "$SHA" == "null" ]; then
             echo "Failed to extract SHA from ledger report."

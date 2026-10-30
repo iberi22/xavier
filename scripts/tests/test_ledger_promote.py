@@ -827,11 +827,30 @@ class PlannedBetaPromotionTests(unittest.TestCase):
         self.assertEqual(4, meta.get('total_features', 0))
         self.assertEqual(1, meta.get('features_complete', 0))
 
+    def test_run_failures_clear_evidence_complete_in_report(self):
+        from test_ledger_gap_issues import FakeRunner, lgi
+
+        for field, value in (('ledger_run_conclusion', 'failure'),
+                             ('e2e_run_conclusion', None),
+                             ('e2e_run_conclusion', 'pending')):
+            with self.subTest(field=field, value=value):
+                original = self.evidence.pop(field)
+                if value is not None:
+                    self.evidence[field] = value
+                try:
+                    report, _ = self.run_all()
+                    self.assertFalse(report['evidence_complete'])
+                    report_path = self.root / 'report.json'
+                    report_path.write_text(json.dumps(report))
+                    runner = FakeRunner('test/repo', [{
+                        'number': 42, 'state': 'OPEN', 'body': '<!-- ledger-gap:stable -->'
+                    }])
+                    gaps, sec, ev, sha, gap_free = lgi.find_gaps(self.path, report_path)
+                    lgi.manage_issues(runner, gaps, sec, ev, sha, 5, False, gap_free)
+                    self.assertEqual(runner.calls, [])
+                finally:
+                    self.evidence[field] = original
+
+
 if __name__ == '__main__':
     unittest.main()
-
-    def test_run_failures_clear_evidence_complete_in_report(self):
-        self.evidence['evidence_complete'] = True
-        self.evidence['ledger_run_conclusion'] = 'failure'
-        report, _ = self.run_all()
-        self.assertFalse(report['evidence_complete'])

@@ -1,4 +1,6 @@
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -100,7 +102,7 @@ class TestLedgerGapIssues(unittest.TestCase):
         self.write_report({
             "evidence_complete": True,
             "sha": "123",
-            "features": {"feat-1": {}}
+            "features": {"feat-1": {"review_flagged": False, "review_reasons": []}}
         })
 
         runner = FakeRunner("test/repo", [{"number": 42, "state": "OPEN", "body": "<!-- ledger-gap:feat-1 -->"}])
@@ -174,6 +176,41 @@ class TestLedgerGapIssues(unittest.TestCase):
         })
         gaps, _, _, _, _ = lgi.find_gaps(self.features_path, self.report_path)
         self.assertNotIn("feat-1", gaps)
+
+    def test_report_membership_is_not_resolution(self):
+        for status in ("stable", "beta"):
+            for result in (
+                {},
+                {"review_flagged": True, "review_reasons": ["declared tests failed: A"]},
+                {"review_flagged": False, "review_reasons": ["review skipped: missing evidence"]},
+                {"reasons": ["declared tests failed: A"]},
+            ):
+                with self.subTest(status=status, result=result):
+                    self.write_features({"feat-1": {"status": status}})
+                    self.write_report({"evidence_complete": True, "features": {"feat-1": result}})
+                    runner = FakeRunner("test/repo", [{
+                        "number": 42, "state": "OPEN", "body": "<!-- ledger-gap:feat-1 -->"
+                    }])
+                    gaps, sec, ev, sha, gap_free = lgi.find_gaps(self.features_path, self.report_path)
+                    lgi.manage_issues(runner, gaps, sec, ev, sha, 5, False, gap_free)
+                    self.assertFalse(any(c[:2] == ("issue", "close") for c in runner.calls))
+
+    def test_eligible_gap_free_feature_closes(self):
+        self.write_features({"feat-1": {"status": "beta"}})
+        self.write_report({"evidence_complete": True, "features": {
+            "feat-1": {"eligible": True, "reasons": []}
+        }})
+        runner = FakeRunner("test/repo", [{
+            "number": 42, "state": "OPEN", "body": "<!-- ledger-gap:feat-1 -->"
+        }])
+        gaps, sec, ev, sha, gap_free = lgi.find_gaps(self.features_path, self.report_path)
+        lgi.manage_issues(runner, gaps, sec, ev, sha, 5, False, gap_free)
+        self.assertTrue(any(c[:2] == ("issue", "close") for c in runner.calls))
+
+    def test_incomplete_evidence_makes_no_calls(self):
+        runner = FakeRunner("test/repo")
+        lgi.manage_issues(runner, {}, set(), False, "123", 5, False, {"feat-1"})
+        self.assertEqual(runner.calls, [])
 
     def test_main_red_no_creates(self):
         self.write_features({"feat-1": {"status": "beta"}})
@@ -262,15 +299,15 @@ class TestLedgerGapIssues(unittest.TestCase):
                 "feat-sec": {"reasons": ["declared tests failed: S"]}
             }
         })
-        runner = FakeRunner("test/repo", [{"number": 99, "state": "OPEN", "body": "<!-- ledger-gap:feat-sec -->", "labels": [{"name": "security"}]}])
         gaps, sec, ev, sha, eval_fids = lgi.find_gaps(self.features_path, self.report_path)
-        lgi.manage_issues(runner, gaps, sec, ev, sha, 5, False, eval_fids)
-
-        modifications = [c for c in runner.calls if c[0] == "issue" and c[1] in ("create", "edit", "close", "reopen")]
-        self.assertEqual(len(modifications), 0)
-        # Verify it wasn't re-created because it was correctly marked as handled
-        creates = [c for c in runner.calls if c[0] == "issue" and c[1] == "create"]
-        self.assertEqual(len(creates), 0)
+        for label in ("security", "security-report"):
+            for state in ("OPEN", "CLOSED"):
+                with self.subTest(label=label, state=state):
+                    runner = FakeRunner("test/repo", [{"number": 99, "state": state,
+                        "body": "<!-- ledger-gap:feat-sec -->", "labels": [{"name": label}]}])
+                    lgi.manage_issues(runner, gaps, sec, ev, sha, 5, False, eval_fids)
+                    modifications = [c for c in runner.calls if c[0] == "issue" and c[1] in ("create", "edit", "close", "reopen")]
+                    self.assertEqual(modifications, [])
 
 
 
@@ -323,6 +360,52 @@ class TestLedgerGapIssues(unittest.TestCase):
         # Only 1 jules label added (to issue 1, not 2)
         self.assertEqual(len(adds), 1)
         self.assertIn("1", adds[0])
+        removes = [c for c in runner.calls if "--remove-label" in c]
+        self.assertEqual(len(removes), 1)
+        self.assertEqual(removes[0][2], "1")
+        self.assertLess(runner.calls.index(removes[0]), runner.calls.index(adds[0]))
+
+
+class TestPromoterRunProvenance(unittest.TestCase):
+    def test_provenance_checked_before_download(self):
+        workflow = (SCRIPTS.parent / '.github/workflows/ledger-gaps.yml').read_text()
+        self.assertLess(workflow.index('actions/runs/$RUN_ID'), workflow.index('actions/download-artifact'))
+        # Execute the actual validation block with a fake gh; no network calls.
+        block = workflow.split('        run: |\n', 1)[1].split('\n      - uses:', 1)[0]
+        block = '\n'.join(line[10:] for line in block.splitlines())
+        self.assertNotIn('${{', block)
+        fake_gh = '''gh() {
+          echo call >> "$CALL_LOG"
+          case "$2" in
+            */git/ref/heads/main) echo current-main ;;
+            */actions/runs/*) echo "$RUN_JSON" ;;
+            *) return 1 ;;
+          esac
+        }
+        '''
+        valid = dict(name='Ledger Promoter', conclusion='success', head_branch='main', head_sha='current-main')
+        cases = [(valid, '123', True)]
+        for field, value in (('name', 'Other workflow'), ('conclusion', 'failure'),
+                             ('head_branch', 'topic'), ('head_sha', 'stale')):
+            cases.append((dict(valid, **{field: value}), '123', False))
+        for run_id in ('', 'abc', '123/other', '123\nid=456', '$(touch injected)'):
+            cases.append((valid, run_id, False))
+        with tempfile.TemporaryDirectory() as tmp:
+            for event in ('workflow_dispatch', 'workflow_run'):
+                for run, run_id, succeeds in cases:
+                    with self.subTest(event=event, run=run, run_id=run_id):
+                        output, calls = Path(tmp) / 'output', Path(tmp) / 'calls'
+                        output.write_text('')
+                        calls.write_text('')
+                        env = dict(os.environ, EVENT_NAME=event, INPUT_RUN_ID=run_id,
+                                   EVENT_RUN_ID=run_id, GITHUB_REPOSITORY='test/repo',
+                                   RUN_JSON=json.dumps(run), GITHUB_OUTPUT=str(output), CALL_LOG=str(calls))
+                        result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', fake_gh + block],
+                                                env=env, cwd=tmp, capture_output=True, text=True)
+                        self.assertEqual(result.returncode == 0, succeeds, result.stderr)
+                        self.assertEqual(bool(output.read_text()), succeeds)
+                        if not run_id.isascii() or not run_id.isdigit():
+                            self.assertEqual(calls.read_text(), '')
 
 # if __name__ == '__main__':
 #     unittest.main()
