@@ -4,6 +4,7 @@ use code_graph::db::CodeGraphDB;
 use code_graph::indexer::Indexer;
 use code_graph::query::QueryEngine;
 use std::fs;
+use std::process::Command;
 use std::sync::Arc;
 use tempfile::tempdir;
 use xavier::cli::state::CodeGraphState;
@@ -43,6 +44,10 @@ impl Drop for EnvRestorer {
     }
 }
 
+fn get_cargo() -> String {
+    std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string())
+}
+
 #[tokio::test]
 #[serial_test::serial]
 async fn test_fingerprint_stable_unchanged() {
@@ -73,29 +78,55 @@ async fn test_fingerprint_stable_unchanged() {
     state.indexer.index(&root, true).await.unwrap();
 
     let path_str = src_dir.join("lib.rs").to_str().unwrap().to_string();
-    let code_content = fs::read_to_string(&path_str).unwrap();
-    let fp = code_graph::fingerprint::fingerprint_source(
-        &code_content,
-        code_graph::types::Language::Rust,
-        &path_str,
-        &[],
-    );
+
+    let output1 = Command::new(get_cargo())
+        .args(&[
+            "run",
+            "-p",
+            "code-graph",
+            "--",
+            "fingerprint",
+            "--lang",
+            "rust",
+            &path_str,
+        ])
+        .output()
+        .expect("failed to execute cargo run");
+    assert!(output1.status.success());
+    let fp1_json = String::from_utf8_lossy(&output1.stdout);
+    let mut fp1: serde_json::Value = serde_json::from_str(&fp1_json).unwrap();
 
     // stable
     state.indexer.index(&root, true).await.unwrap();
 
-    let fp2 = code_graph::fingerprint::fingerprint_source(
-        &code_content,
-        code_graph::types::Language::Rust,
-        &path_str,
-        &[],
-    );
+    let output2 = Command::new(get_cargo())
+        .args(&[
+            "run",
+            "-p",
+            "code-graph",
+            "--",
+            "fingerprint",
+            "--lang",
+            "rust",
+            &path_str,
+        ])
+        .output()
+        .expect("failed to execute cargo run");
+    assert!(output2.status.success());
+    let fp2_json = String::from_utf8_lossy(&output2.stdout);
+    let mut fp2: serde_json::Value = serde_json::from_str(&fp2_json).unwrap();
 
-    assert_eq!(fp.functions.len(), 1);
-    assert_eq!(
-        code_graph::fingerprint::to_json_sorted(&fp),
-        code_graph::fingerprint::to_json_sorted(&fp2)
-    );
+    let functions = fp1.get("functions").unwrap().as_array().unwrap();
+    assert_eq!(functions.len(), 1);
+
+    // Sort functions arrays by name if they exist so we can compare
+    if let Some(f1) = fp1.get_mut("functions").and_then(|v| v.as_array_mut()) {
+        f1.sort_by_key(|f| f.get("name").unwrap().as_str().unwrap().to_string());
+    }
+    if let Some(f2) = fp2.get_mut("functions").and_then(|v| v.as_array_mut()) {
+        f2.sort_by_key(|f| f.get("name").unwrap().as_str().unwrap().to_string());
+    }
+    assert_eq!(fp1, fp2);
 }
 
 #[tokio::test]
@@ -120,56 +151,64 @@ async fn test_fingerprint_changes() {
 
     fs::write(&lib_rs, code1).unwrap();
 
-    let fp1 = {
-        let db = Arc::new(CodeGraphDB::in_memory().unwrap());
-        let indexer = Arc::new(Indexer::new(Arc::clone(&db)));
-        let query = Arc::new(QueryEngine::new(Arc::clone(&db)));
-        let state = CodeGraphState {
-            db: Arc::clone(&db),
-            indexer,
-            query,
-        };
-
-        state.indexer.index(&root, true).await.unwrap();
-
-        let path_str = lib_rs.to_str().unwrap().to_string();
-        let code_content = fs::read_to_string(&path_str).unwrap();
-
-        let fp_doc = code_graph::fingerprint::fingerprint_source(
-            &code_content,
-            code_graph::types::Language::Rust,
-            &path_str,
-            &[],
-        );
-        code_graph::fingerprint::to_json_sorted(&fp_doc)
+    let db = Arc::new(CodeGraphDB::in_memory().unwrap());
+    let indexer = Arc::new(Indexer::new(Arc::clone(&db)));
+    let query = Arc::new(QueryEngine::new(Arc::clone(&db)));
+    let state = CodeGraphState {
+        db: Arc::clone(&db),
+        indexer,
+        query,
     };
+
+    state.indexer.index(&root, true).await.unwrap();
+
+    let path_str = lib_rs.to_str().unwrap().to_string();
+
+    let output1 = Command::new(get_cargo())
+        .args(&[
+            "run",
+            "-p",
+            "code-graph",
+            "--",
+            "fingerprint",
+            "--lang",
+            "rust",
+            &path_str,
+        ])
+        .output()
+        .expect("failed to execute cargo run");
+    assert!(output1.status.success());
+    let fp1_json = String::from_utf8_lossy(&output1.stdout);
+    let mut fp1: serde_json::Value = serde_json::from_str(&fp1_json).unwrap();
 
     // change the source
     fs::write(&lib_rs, code2).unwrap();
 
-    let fp2 = {
-        let db2 = Arc::new(CodeGraphDB::in_memory().unwrap());
-        let indexer2 = Arc::new(Indexer::new(Arc::clone(&db2)));
-        let query2 = Arc::new(QueryEngine::new(Arc::clone(&db2)));
-        let state2 = CodeGraphState {
-            db: Arc::clone(&db2),
-            indexer: indexer2,
-            query: query2,
-        };
+    state.indexer.index(&root, true).await.unwrap();
 
-        state2.indexer.index(&root, true).await.unwrap();
-
-        let path_str = lib_rs.to_str().unwrap().to_string();
-        let code_content = fs::read_to_string(&path_str).unwrap();
-
-        let fp_doc = code_graph::fingerprint::fingerprint_source(
-            &code_content,
-            code_graph::types::Language::Rust,
+    let output2 = Command::new(get_cargo())
+        .args(&[
+            "run",
+            "-p",
+            "code-graph",
+            "--",
+            "fingerprint",
+            "--lang",
+            "rust",
             &path_str,
-            &[],
-        );
-        code_graph::fingerprint::to_json_sorted(&fp_doc)
-    };
+        ])
+        .output()
+        .expect("failed to execute cargo run");
+    assert!(output2.status.success());
+    let fp2_json = String::from_utf8_lossy(&output2.stdout);
+    let mut fp2: serde_json::Value = serde_json::from_str(&fp2_json).unwrap();
+
+    if let Some(f1) = fp1.get_mut("functions").and_then(|v| v.as_array_mut()) {
+        f1.sort_by_key(|f| f.get("name").unwrap().as_str().unwrap().to_string());
+    }
+    if let Some(f2) = fp2.get_mut("functions").and_then(|v| v.as_array_mut()) {
+        f2.sort_by_key(|f| f.get("name").unwrap().as_str().unwrap().to_string());
+    }
 
     assert_ne!(fp1, fp2);
 }
