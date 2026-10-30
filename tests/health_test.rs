@@ -10,12 +10,15 @@ use xavier::mesh::{acl::MeshAcl, node::NodeId};
 struct ChildGuard {
     child: Child,
     db_paths: Vec<String>,
+    _temp_dir: tempfile::TempDir,
 }
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        // _temp_dir will be dropped here automatically, cleaning up its contents.
+        // We still attempt to remove explicitly tracked paths for good measure.
         for path in &self.db_paths {
             let _ = std::fs::remove_file(path);
             let _ = std::fs::remove_file(format!("{}-wal", path));
@@ -32,9 +35,15 @@ async fn test_health_endpoints_e2e() {
         .expect("local addr")
         .port();
 
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    let config_dir = temp_dir.path().join("config");
+    let data_dir = temp_dir.path().join("data");
+    std::fs::create_dir_all(&home_dir).unwrap();
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&data_dir).unwrap();
     // Create temporary config file with mesh_accepted = false
-    let temp_config_path =
-        std::env::temp_dir().join(format!("xavier-test-config-no-mesh-{port}.json"));
+    let temp_config_path = config_dir.join("config.json");
     let config_json = serde_json::json!({
         "license": {
             "mesh_accepted": false,
@@ -47,11 +56,21 @@ async fn test_health_endpoints_e2e() {
     // probe deterministically reports absent (never the developer's real dir).
     let acl_dir = tempfile::tempdir().expect("acl tempdir");
 
-    let code_db = format!("data/health-test-code-{port}.db");
-    let mem_db = format!("data/health-test-mem-{port}.db");
+    let code_db = data_dir
+        .join(format!("data/health-test-code-{port}.db"))
+        .to_string_lossy()
+        .into_owned();
+    let mem_db = data_dir
+        .join(format!("data/health-test-mem-{port}.db"))
+        .to_string_lossy()
+        .into_owned();
 
     let _child = ChildGuard {
         child: std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
+            .env("HOME", &home_dir)
+            .env("XAVIER_RUNTIME_STATE_PATH", config_dir.join("state.json"))
+            .env("XAVIER_DATA_DIR", &data_dir)
+            .current_dir(temp_dir.path())
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", port.to_string())
             .env("XAVIER_TOKEN", "test-token")
@@ -65,6 +84,7 @@ async fn test_health_endpoints_e2e() {
             .spawn()
             .expect("failed to start xavier binary"),
         db_paths: vec![code_db, mem_db],
+        _temp_dir: temp_dir,
     };
 
     let client = Client::new();
@@ -196,8 +216,15 @@ async fn test_mesh_status_with_license_e2e() {
         .expect("local addr")
         .port();
 
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    let config_dir = temp_dir.path().join("config");
+    let data_dir = temp_dir.path().join("data");
+    std::fs::create_dir_all(&home_dir).unwrap();
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&data_dir).unwrap();
     // Create a temporary config file with mesh_accepted = true
-    let temp_config_path = std::env::temp_dir().join(format!("xavier-test-config-{port}.json"));
+    let temp_config_path = config_dir.join("config.json");
     let config_json = serde_json::json!({
         "license": {
             "mesh_accepted": true,
@@ -223,11 +250,21 @@ async fn test_mesh_status_with_license_e2e() {
         )
         .expect("acl seed");
 
-    let code_db = format!("data/health-test-code-{port}.db");
-    let mem_db = format!("data/health-test-mem-{port}.db");
+    let code_db = data_dir
+        .join(format!("data/health-test-code-{port}.db"))
+        .to_string_lossy()
+        .into_owned();
+    let mem_db = data_dir
+        .join(format!("data/health-test-mem-{port}.db"))
+        .to_string_lossy()
+        .into_owned();
 
     let _child = ChildGuard {
         child: std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
+            .env("HOME", &home_dir)
+            .env("XAVIER_RUNTIME_STATE_PATH", config_dir.join("state.json"))
+            .env("XAVIER_DATA_DIR", &data_dir)
+            .current_dir(temp_dir.path())
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", port.to_string())
             .env("XAVIER_TOKEN", "test-token")
@@ -241,6 +278,7 @@ async fn test_mesh_status_with_license_e2e() {
             .spawn()
             .expect("failed to start xavier binary"),
         db_paths: vec![code_db, mem_db],
+        _temp_dir: temp_dir,
     };
 
     let client = Client::new();
