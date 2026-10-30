@@ -3406,7 +3406,12 @@
         "test_observability_degraded_status_logic",
         "test_observability_embedding_coverage_anomaly",
         "test_observability_version_match",
-        "test_observability_mcp_stats_surface"
+        "test_observability_mcp_stats_surface",
+        "tests/observability_contract.rs::test_observability_embedding_consistency",
+        "tests/observability_contract.rs::test_observability_degraded_status_logic",
+        "tests/observability_contract.rs::test_observability_embedding_coverage_anomaly",
+        "tests/observability_contract.rs::test_observability_version_match",
+        "tests/observability_contract.rs::test_observability_mcp_stats_surface"
       ],
       "req_ids": [
         "REQ-075"
