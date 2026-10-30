@@ -220,10 +220,22 @@ Retention: {}",
                 bail!("Failed to accept invite: {}", resp.text().await?);
             }
         }
-        SpaceCommand::Lock { id: _ } => {
-            // Documented error: lock is not implemented
-            println!("Error: lock is not implemented on this version.");
-            bail!("not implemented");
+        SpaceCommand::Lock { id: _, json } => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "ok": false,
+                        "error": "unsupported",
+                        "command": "space lock",
+                        "reason": "spaces runtime lock not available in this version"
+                    })
+                );
+                std::process::exit(1);
+            } else {
+                eprintln!("Error: lock is not implemented on this version.");
+                std::process::exit(1);
+            }
         }
     }
 
@@ -239,6 +251,7 @@ mod tests {
     fn test_lock_not_implemented() {
         let cmd = SpaceCommand::Lock {
             id: "test".to_string(),
+            json: false,
         };
         assert!(matches!(cmd, SpaceCommand::Lock { .. }));
     }

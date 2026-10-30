@@ -647,8 +647,10 @@ pub enum SpaceCommand {
         /// Display name for the peer
         display: String,
     },
-    /// Lock a space
+    /// Lock a space (Not available yet)
     Lock {
+        #[arg(long)]
+        json: bool,
         /// The space ID
         id: String,
     },

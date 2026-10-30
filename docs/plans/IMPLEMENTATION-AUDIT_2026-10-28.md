@@ -119,7 +119,7 @@ To re-measure, update the status of a row and recompute. No build is needed.
 | `--json` coverage | partial | 23% of leaf commands (audit), sweep P2-1 in progress | Reach 100% of read commands |
 | Health / stats parity | partial | ledger `feat-cli-health-stats-parity` = beta | Promote |
 | Bounded `doctor` / `improve` | partial | ledger beta | Promote |
-| `xavier space lock` | stub | `src/cli/commands/space.rs`: "lock is not implemented on this version" | Implement with spaces runtime |
+| `xavier space lock` | stub | `src/cli/commands/space.rs`: "lock is not implemented on this version" (exits 1) | Implement with spaces runtime |
 
 ### LLM and provider configuration: 53% (weight 7)
 
