@@ -3562,7 +3562,13 @@
         "legacy_records_without_integrity_marker_still_load",
         "tests/memory_write_integrity_e2e.rs::http_add_rejects_corrupt_content_without_persisting",
         "tests/memory_write_integrity_e2e.rs::http_add_retry_preserves_id_and_metadata_change_appends",
-        "tests/memory_write_integrity_e2e.rs::http_canonical_metadata_change_increments_persisted_revision"
+        "tests/memory_write_integrity_e2e.rs::http_canonical_metadata_change_increments_persisted_revision",
+        "tests/memory_fts_check_e2e.rs::fts_check_ok",
+        "tests/memory_fts_check_e2e.rs::fts_check_corrupt",
+        "tests/memory_fts_check_e2e.rs::fts_check_missing_db",
+        "tests/memory_fts_check_e2e.rs::fts_check_json_escaping",
+        "tests/memory_fts_check_e2e.rs::fts_check_operational_error",
+        "tests/memory_fts_check_e2e.rs::fts_check_not_a_database_is_corruption"
       ],
       "req_ids": [
         "REQ-074"
