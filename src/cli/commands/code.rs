@@ -383,14 +383,20 @@ async fn handle_code_repos_command(cmd: CodeReposCommand) -> Result<()> {
                 }));
             }
 
-            // Per-repo storage lives under the resolved repository root (not the raw
-            // cwd, which may be a subdirectory); an explicit XAVIER_CODE_GRAPH_DB_PATH
-            // override wins, matching the rest of the code-graph CLI.
-            let db_path = std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
-                .ok()
-                .filter(|p| !p.trim().is_empty())
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| code_graph_db_path_for_root(&resolved_workspace));
+            // Same resolution as `code sync`/`code index`: the canonical helper
+            // (XAVIER_CODE_GRAPH_DB_PATH override, else XAVIER_DATA_DIR/code_graph.db).
+            // Fall back to the legacy per-repo `<repo root>/.xavier/code_graph.db`
+            // (resolved from the repo root, not the raw cwd) only when the canonical
+            // DB does not exist.
+            let canonical_db = xavier::codebase::codegraph_paths::code_graph_db_path_for(
+                std::path::Path::new("."),
+            );
+            let repo_local_db = code_graph_db_path_for_root(&resolved_workspace);
+            let db_path = if !canonical_db.exists() && repo_local_db.exists() {
+                repo_local_db
+            } else {
+                canonical_db
+            };
             let mut repos = Vec::new();
 
             if db_path.exists() {

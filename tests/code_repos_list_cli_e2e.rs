@@ -32,6 +32,7 @@ fn test_code_repos_list_cli_e2e() {
     cmd.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
     cmd.env("XAVIER_RUNTIME_STATE_PATH", &state);
     cmd.env("XAVIER_DATA_DIR", &data);
+    cmd.env_remove("XAVIER_CODE_GRAPH_DB_PATH");
     cmd.env("XAVIER_CODE_EXTRA_ROOTS", &extra_root);
     // we will set envs on cmd
 
@@ -43,6 +44,7 @@ fn test_code_repos_list_cli_e2e() {
     cmd.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
     cmd.env("XAVIER_RUNTIME_STATE_PATH", &state);
     cmd.env("XAVIER_DATA_DIR", &data);
+    cmd.env_remove("XAVIER_CODE_GRAPH_DB_PATH");
     cmd.env("XAVIER_CODE_EXTRA_ROOTS", &extra_root);
 
     let out = cmd.output().unwrap();
@@ -68,6 +70,7 @@ fn test_code_repos_list_cli_e2e() {
     cmd_plain.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
     cmd_plain.env("XAVIER_RUNTIME_STATE_PATH", &state);
     cmd_plain.env("XAVIER_DATA_DIR", &data);
+    cmd_plain.env_remove("XAVIER_CODE_GRAPH_DB_PATH");
     cmd_plain.env("XAVIER_CODE_EXTRA_ROOTS", &extra_root);
 
     let out = cmd_plain.output().unwrap();
@@ -99,6 +102,7 @@ fn test_code_repos_list_cli_e2e() {
     cmd.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
     cmd.env("XAVIER_RUNTIME_STATE_PATH", &state);
     cmd.env("XAVIER_DATA_DIR", &data);
+    cmd.env_remove("XAVIER_CODE_GRAPH_DB_PATH");
     cmd.env("XAVIER_CODE_EXTRA_ROOTS", &extra_root);
 
     let out = cmd.output().unwrap();
@@ -139,6 +143,7 @@ fn test_code_repos_list_cli_e2e() {
     cmd_plain.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
     cmd_plain.env("XAVIER_RUNTIME_STATE_PATH", &state);
     cmd_plain.env("XAVIER_DATA_DIR", &data);
+    cmd_plain.env_remove("XAVIER_CODE_GRAPH_DB_PATH");
     cmd_plain.env("XAVIER_CODE_EXTRA_ROOTS", &extra_root);
 
     let out = cmd_plain.output().unwrap();
@@ -151,6 +156,47 @@ fn test_code_repos_list_cli_e2e() {
     // Explicit checkpoint wal for shutdown
     db.checkpoint_wal().unwrap();
     drop(db); // Drop the DB so we can corrupt the file
+
+    // 3b. A DB under the configured data dir (what `code sync` writes) wins over
+    // the legacy repo-local one.
+    let canonical = CodeGraphDB::create_new(&data.join("code_graph.db")).unwrap();
+    canonical
+        .register_project("/app/canonical-svc", "Canonical Svc")
+        .unwrap();
+    canonical.checkpoint_wal().unwrap();
+    drop(canonical);
+    let mut cmd_canon = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd_canon
+        .current_dir(&src_dir)
+        .args(["code", "repos", "list", "--json"]);
+    cmd_canon.env("HOME", &home);
+    cmd_canon.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
+    cmd_canon.env("XAVIER_RUNTIME_STATE_PATH", &state);
+    cmd_canon.env("XAVIER_DATA_DIR", &data);
+    cmd_canon.env_remove("XAVIER_CODE_GRAPH_DB_PATH");
+    cmd_canon.env("XAVIER_CODE_EXTRA_ROOTS", &extra_root);
+    let out_canon = cmd_canon.output().unwrap();
+    assert!(
+        out_canon.status.success(),
+        "Command failed: {:?}",
+        out_canon
+    );
+    let jc: serde_json::Value = serde_json::from_slice(&out_canon.stdout).unwrap();
+    let idx: Vec<&str> = jc["repos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["source"] == "index")
+        .map(|r| r["root"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        idx,
+        vec!["/app/canonical-svc"],
+        "data-dir DB must be used: {jc}"
+    );
+    std::fs::remove_file(data.join("code_graph.db")).unwrap();
+    let _ = std::fs::remove_file(data.join("code_graph.db-wal"));
+    let _ = std::fs::remove_file(data.join("code_graph.db-shm"));
 
     // 4. Test error propagation when DB is corrupt
     std::fs::write(
@@ -167,6 +213,7 @@ fn test_code_repos_list_cli_e2e() {
     cmd_corrupt.env("XAVIER_CONFIG_PATH", config.join("config.toml"));
     cmd_corrupt.env("XAVIER_RUNTIME_STATE_PATH", &state);
     cmd_corrupt.env("XAVIER_DATA_DIR", &data);
+    cmd_corrupt.env_remove("XAVIER_CODE_GRAPH_DB_PATH");
     cmd_corrupt.env("XAVIER_CODE_EXTRA_ROOTS", &extra_root);
 
     let out_corrupt = cmd_corrupt.output().unwrap();
