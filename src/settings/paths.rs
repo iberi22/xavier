@@ -11,7 +11,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn resolve_state_dir_matches_maloca_and_default() {
-        let _env = crate::test_support::TempEnv::new();
+        let _env = crate::settings::tests::TempEnv::new();
         std::env::remove_var("XAVIER_STATE_DIR");
         let expected_temp_dir =
             std::env::temp_dir().join(format!("xavier-test-state-{}", std::process::id()));
