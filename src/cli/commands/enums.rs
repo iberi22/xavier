@@ -32,6 +32,11 @@ pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 /// Each variant maps to a distinct subcommand exposed to the user.
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
+    /// Local snapshot backup of the Xavier data dir
+    Backup {
+        #[command(subcommand)]
+        cmd: BackupCommand,
+    },
     /// Manage XAVIER projects
     Projects {
         #[command(subcommand)]
@@ -2223,6 +2228,17 @@ pub mod memory {
             json: bool,
         },
 
+        /// Rebuild the memory_fts index. Exits 0 on ok, 2 on missing DB or operational errors.
+        #[command(name = "fts-rebuild")]
+        FtsRebuild {
+            /// Path to the memory SQLite database (defaults to the resolved data directory)
+            #[arg(long)]
+            db: Option<PathBuf>,
+            /// Output result in JSON format
+            #[arg(long)]
+            json: bool,
+        },
+
         /// Prune low-utility or stale memories
         Prune {
             /// Filter memories by path prefix
@@ -2442,6 +2458,20 @@ pub enum RecoveryCommand {
     },
     /// Disconnect the local Google Drive credential.
     Disconnect,
+}
+
+/// Local backup operations
+#[derive(Subcommand, Debug, Clone)]
+pub enum BackupCommand {
+    /// Create a local snapshot backup of the Xavier data directory
+    Create {
+        /// Output directory (defaults to <data_dir>/backups/<UTC timestamp YYYYmmddTHHMMSSZ>)
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]

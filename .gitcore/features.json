@@ -3639,6 +3639,8 @@
       "notes": "WAVE-29.09 (observability honesty). Spec: .gitcore/waves/wave-29/issue-09.md. No status hand-promotion: green verify-pipeline run promotes.",
       "implemented_in": "src/memory/sanitizer.rs, src/memory/qmd/writer.rs",
       "tests": [
+        "tests/memory_fts_rebuild_e2e.rs::fts_rebuild_ok",
+        "tests/memory_fts_rebuild_e2e.rs::fts_rebuild_missing_db",
         "create_rejects_mixed_script_corruption",
         "create_accepts_multilingual_valid_content",
         "suspect_content_is_stored_and_flagged",
