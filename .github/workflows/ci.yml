@@ -588,6 +588,9 @@ jobs:
       - name: Test ledger promoter
         run: python3 -m unittest discover -s scripts/tests -p 'test_ledger_*.py'
 
+      - name: Ledger docs in sync
+        run: python3 scripts/ledger-docs-sync.py --check
+
       - name: Run Secret Scan
         run: bash scripts/check-secrets.sh
 

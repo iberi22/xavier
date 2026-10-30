@@ -72,6 +72,7 @@ machine never builds. PRs must be mergeable as-is:
 ## 5. Modifying features.json
 
 - Never change `status` to a higher value by hand — only the Ledger Promoter may propose planned/in_progress → beta (built and tested, still incomplete) and beta → stable (complete) on green main evidence; a green run promotes it.
+- After editing the ledger run `python3 scripts/ledger-docs-sync.py --write`.
 - New feature: PR that adds the spec (`docs/features/specs/FEATURE-*.md`) +
   the ledger entry (`status: planned`) + implementation + tests.
 
