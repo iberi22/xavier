@@ -49,6 +49,13 @@ async fn mcp_surface_split_drift_test() {
         "failed to parse tools from markdown"
     );
 
+    // PageIndex tools are only registered on :8100 when the `pageindex` feature is
+    // compiled in (src/server/mcp/server.rs); drop them from the documented
+    // expectation otherwise so the drift test holds for every feature set.
+    if !cfg!(feature = "pageindex") {
+        doc_tools_8100.retain(|name| !name.starts_with("pageindex_"));
+    }
+
     // 2. Fetch the actual tools for :8100
     // The table lists all tools, including telecom tools, so we pass has_telecom = true
     let actual_tools_8100: HashSet<String> =

@@ -72,7 +72,7 @@ Both JSON-RPC transports use the same `dispatch_mcp_value` dispatcher and expose
 | `pageindex_browse_documents` | No | Yes | List indexed documents (newest first); optional query matches names and secti... |
 | `pageindex_get_document` | No | Yes | Document status, page count and whether to read its structure first. |
 | `pageindex_get_document_structure` | No | Yes | Section tree of a document (titles and page ranges, no page text); use it to ... |
-| `pageindex_get_page_content` | No | Yes | Text of pages such as \ |
+| `pageindex_get_page_content` | No | Yes | Text of pages such as `5-7,12` (max 20 pages per call, 1-based). |
 | `pageindex_index_document` | No | Yes | Index a document from inline content or an allowed file path (write access re... |
 | `pageindex_search` | No | Yes | BM25 search across documents (or in one if doc_name is given): ranked pages w... |
 | `recovery_status` | No | Yes | Report whether the memory store's encryption keys can actually be recovered. ... |
@@ -102,7 +102,7 @@ Both JSON-RPC transports use the same `dispatch_mcp_value` dispatcher and expose
 | `xavier_skill_usage` | No | Yes | Read skill lifecycle counts and harness acknowledgment coverage |
 | `xavier_token_savings` | No | Yes | Report token savings achieved through Xavier context regeneration |
 
-The smaller subset on `:8006` is a deprecated legacy REST endpoint retained for backward compatibility with older clients. Agents and modern clients must use the JSON-RPC interface on `:8100`, which contains the full, canonical 59-tool surface. The `:8100` tool list is assembled dynamically in `src/server/mcp/server.rs` (`get_xavier_tools`), whereas the `:8006` list is hardcoded in `src/cli/handlers/workspace.rs` (`mcp_tools_handler`).
+The smaller subset on `:8006` is a deprecated legacy REST endpoint retained for backward compatibility with older clients. Agents and modern clients must use the JSON-RPC interface on `:8100`, which contains the full, canonical 59-tool surface (the six `pageindex_*` tools require the `pageindex` feature, and the telecom tools require an initialized telecom backend). The `:8100` tool list is assembled dynamically in `src/server/mcp/server.rs` (`get_xavier_tools`), whereas the `:8006` list is hardcoded in `src/cli/handlers/workspace.rs` (`mcp_tools_handler`).
 
 
 ## Canonical agent loop
