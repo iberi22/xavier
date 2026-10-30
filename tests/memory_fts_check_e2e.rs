@@ -2,6 +2,8 @@
 
 use tempfile::tempdir;
 
+xavier::isolate_test_process!();
+
 #[test]
 fn fts_check_ok() {
     let tmp = tempdir().unwrap();
@@ -20,6 +22,10 @@ fn fts_check_ok() {
 
     let exe = env!("CARGO_BIN_EXE_xavier");
     let output = std::process::Command::new(exe)
+        .env("HOME", tmp.path())
+        .env("XAVIER_DATA_DIR", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config.toml"))
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp.path().join("runtime.json"))
         .arg("memory")
         .arg("fts-check")
         .arg("--db")
@@ -46,12 +52,19 @@ fn fts_check_corrupt() {
     ).unwrap();
 
     // Corrupt index
-    conn.execute("DELETE FROM memory_fts_data WHERE id > 1", [])
-        .unwrap_or_default();
+    assert_eq!(
+        conn.execute("DELETE FROM memory_fts_data WHERE id > 1", [])
+            .unwrap(),
+        2
+    );
     conn.close().unwrap();
 
     let exe = env!("CARGO_BIN_EXE_xavier");
     let output = std::process::Command::new(exe)
+        .env("HOME", tmp.path())
+        .env("XAVIER_DATA_DIR", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config.toml"))
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp.path().join("runtime.json"))
         .arg("memory")
         .arg("fts-check")
         .arg("--db")
@@ -69,6 +82,37 @@ fn fts_check_missing_db() {
 
     let exe = env!("CARGO_BIN_EXE_xavier");
     let output = std::process::Command::new(exe)
+        .env("HOME", tmp.path())
+        .env("XAVIER_DATA_DIR", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config.toml"))
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp.path().join("runtime.json"))
+        .arg("memory")
+        .arg("fts-check")
+        .arg("--db")
+        .arg(&db_path)
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn fts_check_operational_error() {
+    let tmp = tempdir().unwrap();
+    let db_path = tmp.path().join("memory-store.sqlite3");
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    // Create a non-FTS table, this will cause `SELECT count(*) FROM memory_fts WHERE memory_fts MATCH 'test'` to fail with operational error
+    conn.execute("CREATE TABLE memory_fts (id INTEGER);", [])
+        .unwrap();
+    conn.close().unwrap();
+
+    let exe = env!("CARGO_BIN_EXE_xavier");
+    let output = std::process::Command::new(exe)
+        .env("HOME", tmp.path())
+        .env("XAVIER_DATA_DIR", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config.toml"))
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp.path().join("runtime.json"))
         .arg("memory")
         .arg("fts-check")
         .arg("--db")
@@ -87,6 +131,10 @@ fn fts_check_json_escaping() {
 
     let exe = env!("CARGO_BIN_EXE_xavier");
     let output = std::process::Command::new(exe)
+        .env("HOME", tmp.path())
+        .env("XAVIER_DATA_DIR", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config.toml"))
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp.path().join("runtime.json"))
         .arg("memory")
         .arg("fts-check")
         .arg("--json")

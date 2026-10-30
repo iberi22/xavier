@@ -3559,7 +3559,8 @@
         "tests/memory_write_integrity_e2e.rs::http_canonical_metadata_change_increments_persisted_revision",
         "tests/memory_fts_check_e2e.rs::fts_check_ok",
         "tests/memory_fts_check_e2e.rs::fts_check_corrupt",
-        "tests/memory_fts_check_e2e.rs::fts_check_missing_db"
+        "tests/memory_fts_check_e2e.rs::fts_check_missing_db",
+        "tests/memory_fts_check_e2e.rs::fts_check_json_escaping"
       ],
       "req_ids": [
         "REQ-074"

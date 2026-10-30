@@ -117,6 +117,23 @@ async fn run_import_markdown(dir: &std::path::Path) -> Result<()> {
     }
 }
 
+fn op_err(e: rusqlite::Error, db_path: &std::path::Path, json: bool) -> Result<()> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(&serde_json::json!({
+                "status": "error",
+                "error": format!("Operational error: {}", e),
+                "db": db_path.display().to_string()
+            }))
+            .unwrap()
+        );
+    } else {
+        eprintln!("Error: Operational error: {}", e);
+    }
+    std::process::exit(2);
+}
+
 async fn run_fts_check(db: Option<std::path::PathBuf>, json: bool) -> Result<()> {
     let db_path = db.unwrap_or_else(|| {
         crate::settings::XavierSettings::resolve_data_dir().join("vec-store.sqlite3")
@@ -146,19 +163,36 @@ async fn run_fts_check(db: Option<std::path::PathBuf>, json: bool) -> Result<()>
         Ok(conn) => {
             let mut check_error = None;
 
-            if let Err(e) = conn.query_row("PRAGMA quick_check", [], |row| row.get::<_, String>(0))
-            {
-                check_error = Some(e);
-            } else if let Err(e) = conn.query_row("SELECT count(*) FROM memory_fts", [], |row| {
-                row.get::<_, i64>(0)
-            }) {
-                check_error = Some(e);
-            } else if let Err(e) = conn.query_row(
-                "SELECT count(*) FROM memory_fts WHERE memory_fts MATCH 'test'",
-                [],
-                |row| row.get::<_, i64>(0),
-            ) {
-                check_error = Some(e);
+            // PRAGMA quick_check returns 1 or more rows.
+            // If the single row is "ok", there's no corruption.
+            match conn.prepare("PRAGMA quick_check") {
+                Ok(mut stmt) => match stmt.query_map([], |row| row.get::<_, String>(0)) {
+                    Ok(rows) => {
+                        let mut msgs = Vec::new();
+                        for r in rows.flatten() {
+                            msgs.push(r);
+                        }
+                        if msgs != ["ok"] {
+                            check_error = Some(msgs.join("\n"));
+                        }
+                    }
+                    Err(e) => return op_err(e, &db_path, json),
+                },
+                Err(e) => return op_err(e, &db_path, json),
+            }
+
+            if check_error.is_none() {
+                if let Err(e) = conn.query_row("SELECT count(*) FROM memory_fts", [], |row| {
+                    row.get::<_, i64>(0)
+                }) {
+                    return op_err(e, &db_path, json);
+                } else if let Err(e) = conn.query_row(
+                    "SELECT count(*) FROM memory_fts WHERE memory_fts MATCH 'test'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                ) {
+                    return op_err(e, &db_path, json);
+                }
             }
 
             if let Some(e) = check_error {
@@ -167,7 +201,7 @@ async fn run_fts_check(db: Option<std::path::PathBuf>, json: bool) -> Result<()>
                         "{}",
                         serde_json::to_string(&serde_json::json!({
                             "status": "corrupt",
-                            "error": e.to_string(),
+                            "error": e,
                             "db": db_path.display().to_string()
                         }))
                         .unwrap()

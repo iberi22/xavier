@@ -2153,7 +2153,7 @@ pub mod memory {
             online: bool,
         },
 
-        /// Check the memory_fts index for corruption
+        /// Check the memory_fts index for corruption. Exits 0 on ok, 1 on corruption, 2 on operational errors.
         FtsCheck {
             /// Path to the memory SQLite database (defaults to the resolved data directory)
             #[arg(long)]
