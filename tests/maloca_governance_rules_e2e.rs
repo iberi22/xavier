@@ -17,10 +17,11 @@ fn mk_vote(choice: VoteChoice, weight: f64) -> Vote {
 
 #[test]
 fn weighted_majority_with_quorum_is_approved() {
-    let mut votes = vec![];
-    votes.push(mk_vote(VoteChoice::Yes, 5.0));
-    votes.push(mk_vote(VoteChoice::No, 2.0));
-    votes.push(mk_vote(VoteChoice::Abstain, 1.0));
+    let votes = vec![
+        mk_vote(VoteChoice::Yes, 5.0),
+        mk_vote(VoteChoice::No, 2.0),
+        mk_vote(VoteChoice::Abstain, 1.0),
+    ];
 
     let t = tally(&votes, 10.0);
     assert_eq!(t.participation_pct, 80.0); // 8 weight out of 10 eligible
@@ -32,9 +33,7 @@ fn weighted_majority_with_quorum_is_approved() {
 
 #[test]
 fn abstentions_count_for_quorum_not_for_decision() {
-    let mut votes = vec![];
-    votes.push(mk_vote(VoteChoice::Yes, 1.0));
-    votes.push(mk_vote(VoteChoice::No, 1.0));
+    let mut votes = vec![mk_vote(VoteChoice::Yes, 1.0), mk_vote(VoteChoice::No, 1.0)];
     for _ in 0..4 {
         votes.push(mk_vote(VoteChoice::Abstain, 1.0));
     }
