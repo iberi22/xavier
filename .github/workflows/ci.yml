@@ -371,6 +371,9 @@ jobs:
           source scripts/xavier-test-target.sh
           xavier_cargo_test ci-safe observability_contract
 
+      - name: Run code-graph db_row_errors Integration Test
+        run: cargo test -p code-graph --test db_row_errors
+
       - name: Run Clavis HTTP, Keygen & Vault E2E Tests
         run: |
           source scripts/xavier-test-target.sh
@@ -583,7 +586,7 @@ jobs:
           fetch-depth: 0
 
       - name: Test ledger promoter
-        run: python3 -m unittest discover -s scripts/tests -p 'test_ledger_promote.py'
+        run: python3 -m unittest discover -s scripts/tests -p 'test_ledger_*.py'
 
       - name: Run Secret Scan
         run: bash scripts/check-secrets.sh

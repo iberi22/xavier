@@ -226,7 +226,7 @@ src/
 ├── codebase/      — Code GraphDB (Tree-sitter AST symbol extraction & call dependency graphs)
 ├── mesh/          — P2P Mesh Network (QUIC/Iroh transport, offline SQLite queue, keychains)
 ├── agents/        — Agent lifecycle, Provider Router (Ollama / Cloud LLM switching), Rate limits
-├── server/        — Axum HTTP REST server, MCP Server (HTTP+SSE & Stdio), GPU sidecar
+├── server/        — Axum HTTP REST server, MCP Server (HTTP+SSE & Stdio)
 ├── maloca/        — Maloca presentation bridge, HumanChallenge engine, Backlog & App Registry
 └── storage/       — Centralized SQLite connection management & PRAGMA configuration
 ```

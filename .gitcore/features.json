@@ -43,7 +43,8 @@
       "implemented_in": "src/storage/, src/memory/, src/adapters/outbound/",
       "tests": [
         "test_multi_db_manager_lifecycle",
-        "test_invalid_db_id"
+        "test_invalid_db_id",
+        "codebase::connection_manager::tests::memory_project_id_respects_data_dir"
       ],
       "req_ids": [
         "REQ-005",
@@ -169,7 +170,9 @@
       "implemented_in": "src/server/http/, src/server/mcp/, src/cli/server.rs",
       "tests": [
         "test_get_code_graph_success",
-        "test_mcp_compact_outputs"
+        "test_mcp_compact_outputs",
+        "tests/mcp_telecom_tools_visibility_e2e.rs::default_server_hides_telecom_tools",
+        "tests/mcp_surface_split_doc.rs::mcp_surface_split_drift_test"
       ],
       "req_ids": [
         "REQ-005",
@@ -203,8 +206,8 @@
       "tests": [
         "test_fts5_symbols_search_and_sync",
         "test_extract_call_names",
-        "code-graph/src/db/mod.rs::test_find_by_file_propagates_row_errors",
-        "code-graph/src/db/mod.rs::test_find_edges_to_propagates_row_errors"
+        "test_find_by_file_propagates_row_errors",
+        "test_find_edges_to_propagates_row_errors"
       ],
       "req_ids": [
         "REQ-011"
@@ -371,7 +374,7 @@
       "github_issue": 115,
       "last_tested": "2026-08-31",
       "notes": "Public readiness gate: P2P network & Data Commons functional; operational maturity libp2p/onchain in beta (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]",
-      "implemented_in": "src/mesh/libp2p_transport.rs, src/mesh/iroh_transport.rs, src/mesh/fallback_transport.rs",
+      "implemented_in": "src/mesh/iroh_transport.rs, src/mesh/fallback_transport.rs",
       "tests": [
         "test_mesh_handshake_and_sync",
         "test_heartbeat_service_with_peer_count",
@@ -774,7 +777,8 @@
       "tests": [
         "test_auto_respects_explicit_local_signal",
         "test_auto_triggers_probe_ollama_reachable_with_embeddinggemma",
-        "test_cloud_config_priorities"
+        "test_cloud_config_priorities",
+        "tests/cli_provider_live_routes_e2e.rs::test_provider_live_routes"
       ],
       "req_ids": [
         "REQ-017"
@@ -1414,6 +1418,7 @@
       "req_ids": [],
       "user_stories": [],
       "tests": [
+        "tests/maloca_models_unsupported_e2e.rs::maloca_models_unsupported_e2e",
         "test_classify_operation",
         "test_default_query_functions",
         "test_event_to_dto",
@@ -1458,7 +1463,12 @@
         "maloca::support_flow::tests::close_only_from_resolved",
         "maloca::support_flow::tests::backward_and_same_state_moves_are_rejected",
         "maloca::support_flow::tests::closed_is_terminal",
-        "maloca::support_flow::tests::error_carries_from_and_to"
+        "maloca::support_flow::tests::error_carries_from_and_to",
+        "tests/maloca_governance_rules_e2e.rs::weighted_majority_with_quorum_is_approved",
+        "tests/maloca_governance_rules_e2e.rs::abstentions_count_for_quorum_not_for_decision",
+        "tests/maloca_governance_rules_e2e.rs::below_quorum_is_no_quorum",
+        "tests/maloca_governance_rules_e2e.rs::zero_eligible_weight_has_zero_participation_and_no_quorum",
+        "tests/maloca_governance_rules_e2e.rs::expiry_boundary"
       ],
       "user_stories": []
     },
@@ -1535,10 +1545,10 @@
         "server::http::ready_gate::tests::ready_reports_starting_with_503_while_closed",
         "server::http::ready_gate::tests::other_routes_return_503_with_retry_after_while_closed",
         "server::http::ready_gate::tests::requests_pass_through_once_open",
-        "ready_gate_startup::health_answers_within_one_second_while_init_is_slow",
-        "ready_gate_startup::protected_route_answers_503_without_hanging_while_starting",
-        "ready_gate_startup::ready_turns_200_once_the_gate_opens",
-        "ready_gate_startup::graceful_shutdown_ends_serving_while_still_starting"
+        "tests/ready_gate_startup.rs::health_answers_within_one_second_while_init_is_slow",
+        "tests/ready_gate_startup.rs::protected_route_answers_503_without_hanging_while_starting",
+        "tests/ready_gate_startup.rs::ready_turns_200_once_the_gate_opens",
+        "tests/ready_gate_startup.rs::graceful_shutdown_ends_serving_while_still_starting"
       ],
       "user_stories": []
     },
@@ -1691,7 +1701,8 @@
         "karma_uses_ivn_root_and_imports_legacy_once_without_writing_it",
         "atomic_json_publishes_complete_private_documents",
         "atomic_json_preserves_previous_file_and_cleans_failed_temporary_files",
-        "json_load_reports_corruption_and_read_errors"
+        "json_load_reports_corruption_and_read_errors",
+        "tests/ivn_storage_persistence.rs::corrupt_exclusions_are_not_overwritten"
       ],
       "spec": "docs/features/specs/FEATURE-feat-ivn-karma.md"
     },
@@ -1817,7 +1828,9 @@
         "explain::model::tests::explain_key_file_readable_by_others_is_not_configured",
         "explain::model::tests::explain_without_provider_uses_global_config",
         "explain::model::tests::explain_unsupported_provider_is_not_configured",
-        "explain::model::tests::explain_anthropic_without_model_is_not_configured"
+        "explain::model::tests::explain_anthropic_without_model_is_not_configured",
+        "tests/explain_isolated_llm_e2e.rs::explain_uses_isolated_llm_settings_and_fails_on_network",
+        "tests/explain_isolated_llm_e2e.rs::explain_falls_back_to_global_when_isolated_not_configured"
       ],
       "user_stories": []
     },
@@ -1974,7 +1987,9 @@
         "explain::context::tests::unreadable_fragment_is_recorded_not_fatal",
         "explain::context::tests::rejects_paths_escaping_the_repo",
         "explain::history::tests::lists_commits_touching_the_range_newest_first",
-        "explain::history::tests::non_repo_directory_is_an_error"
+        "explain::history::tests::non_repo_directory_is_an_error",
+        "tests/code_explain_context_e2e.rs::code_explain_context_assembles_evidence_from_code_and_git_history",
+        "tests/code_explain_context_e2e.rs::code_explain_context_handles_missing_git_repo_gracefully"
       ],
       "user_stories": []
     },
@@ -2273,7 +2288,8 @@
         "walk_skips_nul_masquerading_as_source",
         "walk_skips_oversize_files_without_reading_them",
         "walk_reports_zero_skips_for_clean_tree",
-        "parse_file_rejects_oversize_explicit_paths"
+        "parse_file_rejects_oversize_explicit_paths",
+        "tests/codegraph_walk_hardening_e2e.rs::test_codegraph_walk_hardening_e2e"
       ],
       "req_ids": [
         "REQ-005",
@@ -2643,7 +2659,8 @@
         "maloca::governance::tests::majority_at_exact_threshold_passes",
         "maloca::tests::support_patch_maps_moves_to_200_409_and_404",
         "tests/maloca_governance_wiring_e2e.rs::proposal_lifecycle_e2e",
-        "tests/maloca_governance_wiring_e2e.rs::governance_proposal_rejection_e2e"
+        "tests/maloca_governance_wiring_e2e.rs::governance_proposal_rejection_e2e",
+        "tests/maloca_wiring_routes_e2e.rs::maloca_wiring_e2e"
       ],
       "user_stories": []
     },
@@ -3117,7 +3134,8 @@
         "out_of_scope_memories_and_decisions_are_excluded",
         "test_secret_finding_blocks_publication_without_creating_link",
         "release_removes_unchanged_entries_and_owned_directory",
-        "test_live_composition_hash_matches_composer_without_files"
+        "test_live_composition_hash_matches_composer_without_files",
+        "tests/skill_dispatch_ephemeral_e2e.rs::skill_dispatch_ephemeral_lifecycle"
       ],
       "implemented_in": "src/context/skill_controller/composer.rs, src/context/skill_controller/lease.rs, src/context/skill_dispatcher.rs, src/server/mcp/tools_context.rs, src/server/http/context.rs, src/cli/commands/spawn.rs"
     },
@@ -3315,7 +3333,8 @@
         "stats_reports_semantic_layer_state",
         "tests/cli_health_stats_parity.rs::degraded_health_prints_server_reason_and_version",
         "tests/cli_health_stats_parity.rs::degraded_health_exits_zero_per_documented_contract",
-        "tests/cli_health_stats_parity.rs::unhealthy_health_exits_nonzero"
+        "tests/cli_health_stats_parity.rs::unhealthy_health_exits_nonzero",
+        "tests/memory_stats_route_e2e.rs::memory_stats_routes_match_cli_mcp"
       ],
       "req_ids": [
         "REQ-072"
@@ -3393,7 +3412,12 @@
         "test_observability_degraded_status_logic",
         "test_observability_embedding_coverage_anomaly",
         "test_observability_version_match",
-        "test_observability_mcp_stats_surface"
+        "test_observability_mcp_stats_surface",
+        "tests/observability_contract.rs::test_observability_embedding_consistency",
+        "tests/observability_contract.rs::test_observability_degraded_status_logic",
+        "tests/observability_contract.rs::test_observability_embedding_coverage_anomaly",
+        "tests/observability_contract.rs::test_observability_version_match",
+        "tests/observability_contract.rs::test_observability_mcp_stats_surface"
       ],
       "req_ids": [
         "REQ-075"
@@ -3556,7 +3580,13 @@
         "legacy_records_without_integrity_marker_still_load",
         "tests/memory_write_integrity_e2e.rs::http_add_rejects_corrupt_content_without_persisting",
         "tests/memory_write_integrity_e2e.rs::http_add_retry_preserves_id_and_metadata_change_appends",
-        "tests/memory_write_integrity_e2e.rs::http_canonical_metadata_change_increments_persisted_revision"
+        "tests/memory_write_integrity_e2e.rs::http_canonical_metadata_change_increments_persisted_revision",
+        "tests/memory_fts_check_e2e.rs::fts_check_ok",
+        "tests/memory_fts_check_e2e.rs::fts_check_corrupt",
+        "tests/memory_fts_check_e2e.rs::fts_check_missing_db",
+        "tests/memory_fts_check_e2e.rs::fts_check_json_escaping",
+        "tests/memory_fts_check_e2e.rs::fts_check_operational_error",
+        "tests/memory_fts_check_e2e.rs::fts_check_not_a_database_is_corruption"
       ],
       "req_ids": [
         "REQ-074"
@@ -3757,7 +3787,8 @@
         "declared_project_id_wins_over_directory_name",
         "codegraph_repo_isolation_a_b_evict_reopen",
         "truncated_and_malformed_containers_are_rejected",
-        "empty_file_roundtrips"
+        "empty_file_roundtrips",
+        "tests/repo_memory_instance_cli_e2e.rs::offline_cli_add_search_uses_global_store_fallback"
       ],
       "req_ids": [],
       "user_stories": []
@@ -3829,7 +3860,13 @@
         "test_space_manager_directory_and_namespace_isolation",
         "test_invite_lifecycle_roundtrip",
         "test_invite_expiry_and_space_listing",
-        "test_membership_permissions_end_to_end"
+        "test_membership_permissions_end_to_end",
+        "tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_stderr",
+        "tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_json",
+        "tests/space_cli_e2e.rs::test_space_create_success",
+        "tests/space_cli_e2e.rs::test_space_create_conflict",
+        "tests/space_cli_e2e.rs::test_space_list_json_success",
+        "tests/space_cli_e2e.rs::test_space_list_json_invalid"
       ],
       "req_ids": [],
       "user_stories": [],
@@ -3877,7 +3914,9 @@
         "server::explain_route::tests::explain_rejects_parent_and_absolute_paths",
         "server::explain_route::tests::explain_rejects_inverted_and_oversized_ranges",
         "server::explain_route::tests::explain_rejects_symlink_escaping_the_repo",
-        "server::explain_route::tests::explain_maps_model_failure_to_502"
+        "server::explain_route::tests::explain_maps_model_failure_to_502",
+        "tests/explain_render_route_e2e.rs::explain_resolves_nested_repo",
+        "tests/explain_render_route_e2e.rs::explain_maps_model_failure_to_502"
       ],
       "user_stories": []
     },
@@ -4018,7 +4057,11 @@
         "tests::invalid_empty_or_oversized_identity_and_nonce_rejected",
         "tests::sqlite_open_or_transaction_error_is_not_fresh",
         "tests::timestamp_extremes_are_rejected_without_overflow",
-        "tests::concurrent_cap_and_duplicate_claims"
+        "tests::concurrent_cap_and_duplicate_claims",
+        "tests/mesh_replay_store_e2e.rs::fresh_then_replayed_across_reopen",
+        "tests/mesh_replay_store_e2e.rs::senders_are_isolated_across_reopen",
+        "tests/mesh_replay_store_e2e.rs::stale_timestamp_rejected",
+        "tests/mesh_replay_store_e2e.rs::two_handles_same_file"
       ],
       "passes": false,
       "spec_reference": "docs/features/specs/FEATURE-MESH-REPLAY-STORE.md",
@@ -4052,7 +4095,10 @@
         "packaging_contract::installer_rejects_tampered_archive",
         "packaging_contract::installer_user_mode_installs_binary_and_private_token",
         "tests/headless_packaging_contract_e2e.rs::installer_rejects_tampered_archive",
-        "tests/headless_packaging_contract_e2e.rs::installer_user_mode_installs_binary_and_private_token"
+        "tests/headless_packaging_contract_e2e.rs::installer_user_mode_installs_binary_and_private_token",
+        "tests/headless_unsupported_contract_e2e.rs::headless_unsupported_tool_returns_contract",
+        "tests/headless_unsupported_contract_e2e.rs::headless_supported_tool_does_not_return_501",
+        "tests/headless_unsupported_contract_e2e.rs::headless_agent_endpoints_return_contract"
       ],
       "user_stories": []
     },
@@ -4082,6 +4128,23 @@
         "tests/maloca_store_atomic_persist_e2e.rs::persist_replaces_store_file_by_rename_not_in_place_e2e"
       ],
       "user_stories": []
+    },
+    "feat-multi-tenant": {
+      "id": "feat-multi-tenant",
+      "name": "Enterprise Multi-Tenant",
+      "category": "enterprise",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Enterprise core (tenants, RBAC, audit, rate limits, API keys).",
+      "steps": [],
+      "tests": [
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_list_text",
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_list_json",
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_show_text",
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_show_json",
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_show_not_found",
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code"
+      ]
     }
   },
   "verification_commands": {

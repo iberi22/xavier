@@ -36,6 +36,7 @@ pub mod mirror;
 pub mod navigation;
 pub mod node;
 pub mod nodes;
+pub mod projects;
 pub mod provider;
 pub mod recovery;
 pub mod regen;
@@ -243,6 +244,7 @@ impl Cli {
                 space::run_space_command(cmd.clone(), &base_url, &token).await
             }
             Command::Telecom(args) => telecom::execute_telecom_command(args.clone()).await,
+            Command::Projects { cmd } => projects::run_projects_command(cmd),
             Command::Exec {
                 command,
                 session,
@@ -399,6 +401,9 @@ impl Cli {
             Command::Keys { cmd } => secrets::handle_keys_command(cmd.clone()).await,
             Command::Quota => crate::cli::handlers::quota::handle_quota_command().await,
             Command::Tasks { cmd } => tasks::handle_tasks_command(cmd.clone()).await,
+            Command::Tenants { cmd } => {
+                crate::cli::handlers::tenants::handle_tenants_command(cmd.clone()).await
+            }
             Command::Billing { cmd } => {
                 crate::cli::handlers::billing::handle_billing_command(cmd.clone()).await
             }
