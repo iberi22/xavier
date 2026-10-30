@@ -1841,7 +1841,7 @@ async fn start_http_server_inner(
     let event_bus = XavierEventBus::new(100);
     // Durable mirror of the in-memory bus; a failure here must not stop boot.
     match xavier::coordination::event_log::EventLog::open(
-        &crate::settings::XavierSettings::resolve_state_dir(),
+        &crate::settings::paths::state_dir(),
         xavier::coordination::event_log::RetentionConfig::from_env(),
     ) {
         Ok(log) => {
@@ -2079,9 +2079,7 @@ async fn start_http_server_inner(
 
     // Espacio: one long-lived SpaceManager under the daemon data dir. Key
     // init failure or XAVIER_SPACES=off leaves espacio disabled, never a crash.
-    let space_manager = crate::cli::state::open_space_manager(
-        &crate::settings::XavierSettings::resolve_state_dir(),
-    );
+    let space_manager = crate::cli::state::open_space_manager(&crate::settings::paths::state_dir());
     if let Some(m) = &space_manager {
         xavier::adapters::inbound::http::routes::init_space_manager(m.clone());
         // Start background retention sweep task if configured
@@ -2182,7 +2180,7 @@ async fn start_http_server_inner(
         // position of these constructors. This stays inside the enabled branch:
         // `XAVIER_INGESTION_INTERVAL_SECS=0` does not build importers or cursor
         // files.
-        let ingestion_data_dir = crate::settings::XavierSettings::resolve_state_dir();
+        let ingestion_data_dir = crate::settings::paths::state_dir();
         let SessionImporters {
             antigravity: ag_importer,
             opencode: oc_importer,
@@ -2330,9 +2328,8 @@ async fn start_http_server_inner(
         workspace_id: state.workspace_id.clone(),
         workspace: workspace_state.clone(),
     };
-    let working_snapshot_path = xavier::memory::working::snapshot_path(
-        &crate::settings::XavierSettings::resolve_state_dir(),
-    );
+    let working_snapshot_path =
+        xavier::memory::working::snapshot_path(&crate::settings::paths::state_dir());
     xavier::memory::working::spawn_persistence(
         Arc::clone(&workspace_state.working_memory),
         working_snapshot_path.clone(),
@@ -2354,7 +2351,7 @@ async fn start_http_server_inner(
     // dir resolution as the Maloca store). On failure fall back to in-memory (None) so the
     // daemon still boots, but say so loudly.
     let hc_store = {
-        let hc_dir = crate::settings::XavierSettings::resolve_state_dir();
+        let hc_dir = crate::settings::paths::state_dir();
         let _ = std::fs::create_dir_all(&hc_dir);
         let hc_path = hc_dir.join("humanchallenge.db");
         match xavier::humanchallenge::HumanChallengeStore::new(&hc_path) {
