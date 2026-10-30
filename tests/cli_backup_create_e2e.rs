@@ -465,3 +465,51 @@ fn test_backup_create_contention() {
     let error_msg = parsed["error"].as_str().unwrap().to_lowercase();
     assert!(error_msg.contains("locked") || error_msg.contains("busy"));
 }
+
+#[test]
+#[serial_test::serial]
+fn test_backup_create_directory_sidecar_regression() {
+    let tmp = TempDir::new().unwrap();
+    let data_dir = tmp.path().join("data");
+    fs::create_dir_all(&data_dir).unwrap();
+    let runtime_state_path = tmp.path().join("runtime.json");
+    fs::write(&runtime_state_path, "{}").unwrap();
+
+    // Create a directory named "report.db"
+    let report_db_dir = data_dir.join("report.db");
+    fs::create_dir_all(&report_db_dir).unwrap();
+    fs::write(report_db_dir.join("inside"), "inside dir").unwrap();
+
+    // Create a file named "report.db-journal"
+    let report_journal_path = data_dir.join("report.db-journal");
+    fs::write(&report_journal_path, "journal content").unwrap();
+
+    let out_dir = tmp.path().join("backup_out");
+
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd.env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config"))
+        .env("XAVIER_RUNTIME_STATE_PATH", &runtime_state_path)
+        .env("XAVIER_DATA_DIR", &data_dir)
+        .arg("backup")
+        .arg("create")
+        .arg("--out")
+        .arg(&out_dir)
+        .arg("--json");
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let parsed: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).unwrap();
+    assert_eq!(parsed["ok"], true);
+
+    // The backup should include report.db-journal because report.db is a directory, not a snapshotted database.
+    let journal_backup = out_dir.join("report.db-journal");
+    assert!(journal_backup.exists());
+    assert_eq!(
+        fs::read_to_string(&journal_backup).unwrap(),
+        "journal content"
+    );
+}

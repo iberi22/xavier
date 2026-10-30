@@ -4129,25 +4129,6 @@
       ],
       "user_stories": []
     },
-    "feat-cli-backup-local": {
-      "id": "feat-cli-backup-local",
-      "name": "Local CLI backup create",
-      "category": "cli",
-      "status": "planned",
-      "progress_pct": 0,
-      "passes": false,
-      "description": "xavier backup create writes a local backup (default dest, recursive walk, sidecar exclusion) with a manifest.",
-      "steps": [],
-      "tests": [
-        "tests/cli_backup_create_e2e.rs::test_backup_create_success",
-        "tests/cli_backup_create_e2e.rs::test_backup_create_unwritable_path",
-        "tests/cli_backup_create_e2e.rs::test_backup_create_out_rejection",
-        "tests/cli_backup_create_e2e.rs::test_backup_create_refuses_non_empty_dest",
-        "tests/cli_backup_create_e2e.rs::test_backup_create_skips_unreadable_backups_dir",
-        "tests/cli_backup_create_e2e.rs::test_backup_create_manifest_collision",
-        "tests/cli_backup_create_e2e.rs::test_backup_create_contention"
-      ]
-    },
     "feat-multi-tenant": {
       "id": "feat-multi-tenant",
       "name": "Enterprise Multi-Tenant",

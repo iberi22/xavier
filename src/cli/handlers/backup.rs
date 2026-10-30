@@ -202,7 +202,7 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
                         == Some("db")
                         || base_path.extension().and_then(|e| e.to_str()) == Some("sqlite3");
 
-                    if is_base_sqlite && base_path.exists() {
+                    if is_base_sqlite && base_path.is_file() {
                         continue;
                     }
                 }
