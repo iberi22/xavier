@@ -47,6 +47,42 @@ async fn handle_backup_create(out: Option<PathBuf>, json_output: bool) -> Result
         }
     }
 
+    let data_dir_canon = match fs::canonicalize(&data_dir) {
+        Ok(c) => c,
+        Err(e) => {
+            let msg = format!("Cannot canonicalize data dir {:?}: {}", data_dir, e);
+            if json_output {
+                println!("{}", json!({"ok": false, "error": msg}));
+                std::process::exit(1);
+            } else {
+                anyhow::bail!("{}", msg);
+            }
+        }
+    };
+
+    let dest_dir_canon = match fs::canonicalize(&dest_dir) {
+        Ok(c) => c,
+        Err(e) => {
+            let msg = format!("Cannot canonicalize output dir {:?}: {}", dest_dir, e);
+            if json_output {
+                println!("{}", json!({"ok": false, "error": msg}));
+                std::process::exit(1);
+            } else {
+                anyhow::bail!("{}", msg);
+            }
+        }
+    };
+
+    if dest_dir_canon == data_dir_canon || dest_dir_canon.starts_with(&data_dir_canon) {
+        let msg = "Output directory cannot be inside the data directory";
+        if json_output {
+            println!("{}", json!({"ok": false, "error": msg}));
+            std::process::exit(1);
+        } else {
+            anyhow::bail!("{}", msg);
+        }
+    }
+
     let mut files_copied = Vec::new();
 
     let entries = match fs::read_dir(&data_dir) {
