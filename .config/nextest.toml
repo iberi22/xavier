@@ -40,7 +40,7 @@ filter = 'binary(=suite_04) & test(/^(guardian_truth_test|skill_drift_audit_e2e|
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_05) & test(/^(http_auth_edge_test|ivn_api|ivn_karma|ivn_marketplace_authorization|ivn_storage_persistence|maloca_roadmap_route_e2e|maloca_wiring_routes_e2e)::/)'
+filter = 'binary(=suite_05) & test(/^(http_auth_edge_test|ivn_api|ivn_karma|ivn_marketplace_authorization|ivn_storage_persistence|ivn_verdict|maloca_roadmap_route_e2e|maloca_wiring_routes_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -80,7 +80,7 @@ filter = 'binary(=suite_04) & test(/^(guardian_truth_test|skill_drift_audit_e2e|
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_05) & test(/^(http_auth_edge_test|ivn_api|ivn_karma|ivn_marketplace_authorization|ivn_storage_persistence|maloca_roadmap_route_e2e|maloca_wiring_routes_e2e)::/)'
+filter = 'binary(=suite_05) & test(/^(http_auth_edge_test|ivn_api|ivn_karma|ivn_marketplace_authorization|ivn_storage_persistence|ivn_verdict|maloca_roadmap_route_e2e|maloca_wiring_routes_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]

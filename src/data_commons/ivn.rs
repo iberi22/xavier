@@ -508,6 +508,13 @@ pub fn sanction_validator_with_config(
     }
 }
 
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub fn reset_exclusion_store_for_tests() {
+    let mut store = EXCLUSION_STORE.write().unwrap();
+    *store = None;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -695,11 +702,4 @@ mod tests {
             std::env::remove_var("XAVIER_DATA_DIR");
         }
     }
-}
-
-#[cfg(feature = "test-utils")]
-#[doc(hidden)]
-pub fn reset_exclusion_store_for_tests() {
-    let mut store = EXCLUSION_STORE.write().unwrap();
-    *store = None;
 }
