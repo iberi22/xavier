@@ -15,7 +15,14 @@ use xavier::agents::mini_experts::{
     OllamaRunner,
 };
 
-fn print_records(list: &[ExpertRecord]) {
+fn print_records(list: &[ExpertRecord], json: bool) {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(list).unwrap_or_else(|_| "[]".to_string())
+        );
+        return;
+    }
     if list.is_empty() {
         println!("No mini-experts registered.");
         return;
@@ -37,7 +44,23 @@ fn print_records(list: &[ExpertRecord]) {
 
 /// Handles mini-expert CLI subcommands.
 pub async fn handle_mini_expert_command(cmd: MiniExpertCommand) -> Result<()> {
-    let store = ExpertStore::open_default()?;
+    let store = match ExpertStore::open_default() {
+        Ok(s) => s,
+        Err(e) => {
+            let is_json = match cmd {
+                MiniExpertCommand::List { json } => json,
+                _ => false,
+            };
+            if is_json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&serde_json::json!({ "error": e.to_string() })).unwrap()
+                );
+                std::process::exit(1);
+            }
+            return Err(e);
+        }
+    };
     run_command(&store, &CliOllamaRunner::from_env(), cmd).await
 }
 
@@ -100,7 +123,23 @@ pub async fn run_command(
                 println!("Run `xavier mini-expert serve` to make sure Ollama has it.");
             }
         }
-        MiniExpertCommand::List => print_records(&store.list()?),
+        MiniExpertCommand::List { json } => {
+            let list = match store.list() {
+                Ok(l) => l,
+                Err(e) => {
+                    if json {
+                        println!(
+                            "{}",
+                            serde_json::to_string(&serde_json::json!({ "error": e.to_string() }))
+                                .unwrap()
+                        );
+                        std::process::exit(1);
+                    }
+                    return Err(e);
+                }
+            };
+            print_records(&list, json)
+        }
         MiniExpertCommand::Activate { name, version } => {
             store.activate(&name, &version)?;
             println!("Activated {name}@{version}.");
@@ -344,7 +383,7 @@ mod tests {
         .await
         .unwrap();
         assert!(store.active("e").unwrap().is_none());
-        run_command(&store, &runner, MiniExpertCommand::List)
+        run_command(&store, &runner, MiniExpertCommand::List { json: false })
             .await
             .unwrap();
     }

@@ -4,6 +4,51 @@
 
 Current product label: `0.0.1` — **Status computed from the ledger: 70 stable, 17 beta, 2 in_progress, 28 planned. See [Implementation Audit](plans/IMPLEMENTATION-AUDIT_2026-10-28.md) for details.**
 
+<!-- ledger:summary:start -->
+Ledger: 80 stable, 32 beta, 0 in_progress, 6 planned (118 total, 67.8% stable). Generated from .gitcore/features.json by scripts/ledger-docs-sync.py; do not edit by hand.
+
+| category | stable | beta | in_progress | planned | total |
+|---|---|---|---|---|---|
+| ai | 2 | 0 | 0 | 0 | 2 |
+| auto-improvement | 1 | 0 | 0 | 0 | 1 |
+| cli | 2 | 0 | 0 | 0 | 2 |
+| code-graph | 5 | 2 | 0 | 0 | 7 |
+| cognitive | 4 | 0 | 0 | 0 | 4 |
+| context | 5 | 0 | 0 | 0 | 5 |
+| core | 6 | 0 | 0 | 0 | 6 |
+| cost | 1 | 0 | 0 | 0 | 1 |
+| data | 1 | 0 | 0 | 0 | 1 |
+| docs | 1 | 0 | 0 | 0 | 1 |
+| documentation | 2 | 0 | 0 | 0 | 2 |
+| enterprise | 3 | 2 | 0 | 0 | 5 |
+| explain | 0 | 4 | 0 | 3 | 7 |
+| governance | 3 | 0 | 0 | 0 | 3 |
+| identity | 1 | 0 | 0 | 3 | 4 |
+| infra | 1 | 0 | 0 | 0 | 1 |
+| integration | 7 | 0 | 0 | 0 | 7 |
+| local-first | 1 | 0 | 0 | 0 | 1 |
+| maloca | 1 | 4 | 0 | 0 | 5 |
+| marketplace | 1 | 0 | 0 | 0 | 1 |
+| mcp | 1 | 0 | 0 | 0 | 1 |
+| memory | 2 | 2 | 0 | 0 | 4 |
+| mesh | 1 | 3 | 0 | 0 | 4 |
+| observability | 2 | 0 | 0 | 0 | 2 |
+| packaging | 0 | 1 | 0 | 0 | 1 |
+| platform | 1 | 0 | 0 | 0 | 1 |
+| process | 0 | 2 | 0 | 0 | 2 |
+| retrieval | 3 | 0 | 0 | 0 | 3 |
+| runtime | 1 | 0 | 0 | 0 | 1 |
+| search | 5 | 0 | 0 | 0 | 5 |
+| security | 9 | 2 | 0 | 0 | 11 |
+| self-manage | 0 | 2 | 0 | 0 | 2 |
+| self-management | 1 | 0 | 0 | 0 | 1 |
+| server | 0 | 1 | 0 | 0 | 1 |
+| skills | 0 | 6 | 0 | 0 | 6 |
+| testing | 2 | 0 | 0 | 0 | 2 |
+| ui | 1 | 1 | 0 | 0 | 2 |
+| uncategorized | 3 | 0 | 0 | 0 | 3 |
+<!-- ledger:summary:end -->
+
 This matrix is the operational truth for the repository as of v0.0.1 stabilization.
 As of v0.0.1 stabilization, features declared in `.gitcore/features.json` were `stable` with automated verification. See the file for current status.
 
@@ -50,9 +95,19 @@ See `tests/xtsp/` for the complete integration test suite.
 | Ecosystem App Registry | Stable | `GET /v1/maloca/registry[/{app_id}]`, ETag-cached. |
 | Alignment audit | Stable | `GET /v1/maloca/alignment[/goals]` — GOAL.md compliance. |
 | Unified backlog | Stable | `GET /v1/maloca/backlog/unified|summary` — multi-repo aggregation, TTL cache. |
-| Model Router | Stable | `POST /v1/maloca/models/infer`, `GET list|health` — Ollama/cloud providers. |
+| <a name="maloca-model-router"></a>Model Router | Unsupported | `/v1/maloca/models/*` return 501. Use `/v1/providers` instead. |
 | HumanChallenge engine | Stable | `POST challenges/generate|answer`, `GET list|stats`. |
 | Panel UI tabs | Stable | Registry / Goals / Backlog / Challenges / Models in `panel-ui/src/maloca/MalocaView.tsx`. |
+
+**Model Router unsupported contract.** `POST /v1/maloca/models/infer`, `GET /v1/maloca/models/list` and `GET /v1/maloca/models/health` all answer `501 Not Implemented`. `POST /v1/maloca/models/infer` needs `Authorization: Bearer <token>` like the other authenticated API routes (without it the auth middleware answers `401` first). The JSON body has five fields:
+
+| Field | Value |
+|---|---|
+| `status` | `"unsupported"` |
+| `feature` | `"maloca-model-router"` |
+| `route` | the requested path, e.g. `"/v1/maloca/models/infer"` |
+| `use_instead` | `"/v1/providers"` |
+| `docs` | `"docs/FEATURE_STATUS.md#maloca-model-router"` |
 
 Verified by `test_maloca_http_e2e` (5/5), `test_hc_e2e` (1/1), `maloca-core` unit suite (59/59) and the backoffice E2E `e2e_maloca_flow.spec.ts` (4/4).
 

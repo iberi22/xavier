@@ -25,6 +25,86 @@ Both JSON-RPC transports use the same `dispatch_mcp_value` dispatcher and expose
 | Session Header | `mcp-session-id` | N/A |
 | Auth | `X-Xavier-Token` header | Inherits from env |
 
+## Tool surfaces
+
+| Tool Name | :8006 | :8100 | Purpose |
+|---|---|---|---|
+| `agent_heartbeat` | Yes | No | Send heartbeat for an agent |
+| `agent_list` | Yes | No | List active agents |
+| `agent_push_context` | Yes | No | Push context document to an agent |
+| `agent_register` | Yes | No | Register a new AI agent |
+| `agent_unregister` | Yes | No | Unregister an agent |
+| `ask_expert` | No | Yes | Ask a local mini-expert. Routes the prompt to the active expert whose \ domai... |
+| `code_context` | Yes | No | Get surrounding context for a code symbol |
+| `code_find` | Yes | No | Find code symbols by name, kind, or file path |
+| `code_scan` | Yes | No | Scan a codebase and index symbols into the code graph |
+| `code_stats` | Yes | No | Get code graph statistics |
+| `codegraph_explore` | No | Yes | Search the code graph for symbols matching a query |
+| `codegraph_gods` | No | Yes | Get god/hub nodes (top structurally central and connected symbols excluding b... |
+| `codegraph_route` | No | Yes | Route a search query through the code graph, combining exact matches and cent... |
+| `create_memory` | No | Yes | Create a new memory document in Xavier |
+| `drive_connect_status` | No | Yes | Report the Google Drive connection used for encrypted backups: whether an \ e... |
+| `env_status` | No | Yes | Check systemd services, TCP network connectivity, PSI metrics, and swap memor... |
+| `espacio_channel_create` | No | Yes | Post a message to a space's channel. Each call appends a new message (identic... |
+| `espacio_channel_list` | No | Yes | List channels/messages for a specified space |
+| `get_code_graph` | No | Yes | Get the portable code graph dump (.xavier/codegraph.json) |
+| `get_memory` | No | Yes | Get a specific memory by ID |
+| `get_project_context` | No | Yes | Get full context for a project with configurable limits |
+| `get_recent_fragments` | No | Yes | Get recent memories for an agent |
+| `health_check` | No | Yes | Report Xavier system health (status, system resources, database, embedding, m... |
+| `list_projects` | No | Yes | List all projects in Xavier |
+| `log_scan` | No | Yes | Scan logs under ~/.xavier/logs or fallback. Supports incremental cursor, rege... |
+| `mem_context` | No | Yes | Alias of memory_context (progressive-disclosure step 2 page-in) |
+| `mem_search` | No | Yes | Search memory with semantic + lexical hybrid search |
+| `memory_add` | Yes | No | Add a new memory entry with metadata and zone tagging |
+| `memory_context` | No | Yes | Page-in full/partial content for specific memory ids (preferred progressive-d... |
+| `memory_delete` | Yes | No | Delete a memory entry by path |
+| `memory_export` | Yes | No | Export all memories as JSON |
+| `memory_prune` | No | Yes | Prune stale or duplicate memories by kind, age, or path prefix |
+| `memory_save` | No | Yes | Save a memory document (text) with optional metadata and namespace |
+| `memory_search` | Yes | Yes | [DEPRECATED — use mem_search instead] Fat index search (same structured candi... |
+| `memory_stats` | Yes | No | Get memory statistics and counts |
+| `memoryfragment_delete` | No | Yes | Delete a specific memory fragment by ID |
+| `memoryfragment_get` | No | Yes | Get a specific memory fragment by ID |
+| `memoryfragment_recent` | No | Yes | Alias for get_recent_fragments |
+| `memoryfragment_save` | No | Yes | Alias for save_fragment |
+| `memoryfragment_search` | No | Yes | Alias for search_fragments |
+| `pageindex_browse_documents` | No | Yes | List indexed documents (newest first); optional query matches names and secti... |
+| `pageindex_get_document` | No | Yes | Document status, page count and whether to read its structure first. |
+| `pageindex_get_document_structure` | No | Yes | Section tree of a document (titles and page ranges, no page text); use it to ... |
+| `pageindex_get_page_content` | No | Yes | Text of pages such as `5-7,12` (max 20 pages per call, 1-based). |
+| `pageindex_index_document` | No | Yes | Index a document from inline content or an allowed file path (write access re... |
+| `pageindex_search` | No | Yes | BM25 search across documents (or in one if doc_name is given): ranked pages w... |
+| `recovery_status` | No | Yes | Report whether the memory store's encryption keys can actually be recovered. ... |
+| `save_fragment` | No | Yes | Save a new memory fragment |
+| `search_fragments` | No | Yes | Search memory fragments |
+| `search_memory` | No | Yes | [DEPRECATED — use mem_search instead] Search memory documents in Xavier |
+| `secret_exec` | No | Yes | Execute a command with an ephemeral secret injected into its environment |
+| `secret_lend` | No | Yes | Lend a secret lease from the vault and return token and metadata (never value) |
+| `stats` | No | Yes | Get Xavier memory statistics |
+| `sync_gitcore` | No | Yes | Sync documentation from GitCore project |
+| `sys_health` | No | Yes | Snapshot del HOST (guardian del nodo): PSI (cpu/memory/io avg10/60/300), swap... |
+| `telecom_create_group` | No | Yes | Create a multi-peer telecom group room with specific clearance level |
+| `telecom_get_chat_history` | No | Yes | Retrieve chronological chat history and delivery receipts from a telecom room |
+| `telecom_list_peers` | No | Yes | List discovered and connected peer nodes in the telecom mesh |
+| `telecom_send_packet` | No | Yes | Store a text message for a telecom room on this node. Payloads are saved as p... |
+| `ticket_create` | No | Yes | Create GitHub issue or Maloca backlog entry safely with fingerprint-based ded... |
+| `trace_path` | No | Yes | Trace the dependency path or call chain of a given symbol |
+| `xavier_context_restore` | No | Yes | Retrieve an optimized context block for a session (wraps regenerate) |
+| `xavier_context_save` | No | Yes | Save current session context as a checkpoint in Xavier |
+| `xavier_context_search` | No | Yes | Search within saved session contexts |
+| `xavier_dispatch_skill` | No | Yes | Dispatch a task to the best skill |
+| `xavier_issue_context_package` | No | Yes | Analyze a GitHub issue (title, body, repo) and produce a PreciseChange contex... |
+| `xavier_local_status` | No | Yes | Report Xavier local-first operation mode and reachability. \ Returns: mode (l... |
+| `xavier_run_command` | No | Yes | Execute a shell command via Xavier RTK Kernel Proxy with output condensation ... |
+| `xavier_skill_ack` | No | Yes | Acknowledge that a delivered skill was invoked or completed (idempotent) |
+| `xavier_skill_list` | No | Yes | List indexed skills with costs |
+| `xavier_skill_usage` | No | Yes | Read skill lifecycle counts and harness acknowledgment coverage |
+| `xavier_token_savings` | No | Yes | Report token savings achieved through Xavier context regeneration |
+
+The smaller subset on `:8006` is a deprecated legacy REST endpoint retained for backward compatibility with older clients. Agents and modern clients must use the JSON-RPC interface on `:8100`, which contains the full, canonical 59-tool surface (the six `pageindex_*` tools require the `pageindex` feature, and the telecom tools require an initialized telecom backend). The `:8100` tool list is assembled dynamically in `src/server/mcp/server.rs` (`get_xavier_tools`), whereas the `:8006` list is hardcoded in `src/cli/handlers/workspace.rs` (`mcp_tools_handler`).
+
+
 ## Canonical agent loop
 
 Progressive disclosure (required for agents):

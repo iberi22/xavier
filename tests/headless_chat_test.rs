@@ -6,12 +6,15 @@ use std::time::Duration;
 struct ChildGuard {
     child: Child,
     db_paths: Vec<String>,
+    _temp_dir: tempfile::TempDir,
 }
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        // _temp_dir will be dropped here automatically, cleaning up its contents.
+        // We still attempt to remove explicitly tracked paths for good measure.
         for path in &self.db_paths {
             let _ = std::fs::remove_file(path);
             let _ = std::fs::remove_file(format!("{}-wal", path));
@@ -30,11 +33,30 @@ async fn test_headless_chat_completions() {
 
     let url = format!("http://127.0.0.1:{port}/v1/chat/completions");
 
-    let code_db = format!("data/headless-chat-code-{port}.db");
-    let mem_db = format!("data/headless-chat-mem-{port}.db");
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    let config_dir = temp_dir.path().join("config");
+    let data_dir = temp_dir.path().join("data");
+    std::fs::create_dir_all(&home_dir).unwrap();
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let code_db = data_dir
+        .join(format!("data/headless-chat-code-{port}.db"))
+        .to_string_lossy()
+        .into_owned();
+    let mem_db = data_dir
+        .join(format!("data/headless-chat-mem-{port}.db"))
+        .to_string_lossy()
+        .into_owned();
 
     let _child = ChildGuard {
         child: std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
+            .env("HOME", &home_dir)
+            .env("XAVIER_CONFIG_PATH", config_dir.join("config.json"))
+            .env("XAVIER_RUNTIME_STATE_PATH", config_dir.join("state.json"))
+            .env("XAVIER_DATA_DIR", &data_dir)
+            .current_dir(temp_dir.path())
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", port.to_string())
             .env("XAVIER_TOKEN", "test-token")
@@ -46,24 +68,39 @@ async fn test_headless_chat_completions() {
             .spawn()
             .expect("failed to start xavier binary"),
         db_paths: vec![code_db, mem_db],
+        _temp_dir: temp_dir,
     };
 
     let client = Client::new();
     let mut started = false;
-    for _ in 0..30 {
-        if let Ok(resp) = client
-            .get(format!("http://127.0.0.1:{port}/health"))
+    let mut last_error = "no request attempted".to_string();
+    // Bounded readiness budget: 55s overall, each request (incl. body) capped at 1s.
+    let deadline = std::time::Instant::now() + Duration::from_secs(55);
+    while std::time::Instant::now() < deadline {
+        match client
+            .get(format!("http://127.0.0.1:{port}/ready"))
+            .timeout(Duration::from_secs(1))
             .send()
             .await
         {
-            if resp.status().is_success() {
+            Ok(resp) if resp.status().is_success() => {
                 started = true;
                 break;
             }
+            Ok(resp) => {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                last_error = format!("GET /ready -> HTTP {status} body: {body}");
+            }
+            Err(err) => last_error = err.to_string(),
         }
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(250)).await;
     }
-    assert!(started, "Headless server failed to start");
+    assert!(
+        started,
+        "Headless server failed to start within 55s (last error: {})",
+        last_error
+    );
 
     // 1. POST /v1/chat/completions (No Auth) -> 401
     let resp = client
@@ -75,7 +112,9 @@ async fn test_headless_chat_completions() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    let status = resp.status();
+    let body_text = resp.text().await.unwrap_or_default();
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "body: {}", body_text);
 
     // 2. POST /v1/chat/completions (Valid Token, No Lease)
     // Note: This will reach the proxy use case but likely fail with 429 (RateLimited)
@@ -91,11 +130,15 @@ async fn test_headless_chat_completions() {
         .await
         .unwrap();
 
+    let status = resp.status();
+    let body_text = resp.text().await.unwrap_or_default();
+
     // We mostly care that it's NOT a 404 or 401.
     assert!(
-        resp.status() == StatusCode::TOO_MANY_REQUESTS
-            || resp.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || resp.status() == StatusCode::OK
+        status == StatusCode::TOO_MANY_REQUESTS
+            || status == StatusCode::INTERNAL_SERVER_ERROR
+            || status == StatusCode::OK,
+        "unexpected status {status}, body: {body_text}"
     );
 
     // 3. POST /v1/chat/completions (Valid Token, Invalid Lease)
@@ -113,9 +156,12 @@ async fn test_headless_chat_completions() {
         .send()
         .await
         .unwrap();
+    let status = resp.status();
+    let body_bytes = resp.bytes().await.unwrap();
+    let body_text = String::from_utf8_lossy(&body_bytes);
+    assert_eq!(status, StatusCode::OK, "body: {}", body_text);
 
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body: serde_json::Value = resp.json().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(body["model"], "memory-fallback");
 }
 

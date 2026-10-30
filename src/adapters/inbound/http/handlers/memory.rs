@@ -439,17 +439,6 @@ pub async fn delete_handler(
     }
 }
 
-/// Stats handler.
-pub async fn stats_handler(State(state): State<AppState>) -> Json<serde_json::Value> {
-    // Note: MemoryQueryPort doesn't have stats() yet, might need to add it or use storage directly
-    // For now returning placeholder or calling list
-    Json(serde_json::json!({
-        "status": "ok",
-        "workspace_id": state.workspace_id,
-        "message": "Memory stats not yet implemented in port interface",
-    }))
-}
-
 /// Memory query handler.
 pub async fn memory_query_handler(
     State(state): State<AppState>,
