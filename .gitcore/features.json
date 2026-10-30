@@ -4096,6 +4096,23 @@
         "tests/maloca_store_atomic_persist_e2e.rs::persist_replaces_store_file_by_rename_not_in_place_e2e"
       ],
       "user_stories": []
+    },
+    "feat-multi-tenant": {
+      "id": "feat-multi-tenant",
+      "name": "Enterprise Multi-Tenant",
+      "category": "enterprise",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Enterprise core (tenants, RBAC, audit, rate limits, API keys).",
+      "steps": [],
+      "tests": [
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_list_text",
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_list_json",
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_show_text",
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_show_json",
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_show_not_found",
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code"
+      ]
     }
   },
   "verification_commands": {
