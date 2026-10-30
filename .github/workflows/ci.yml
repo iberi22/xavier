@@ -4,8 +4,16 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, 'sprint/**']
+    branches: [main, 'sprint/**', 'integration/**']
   workflow_dispatch:
+
+# Integration-branch workflow (Brahyan t177s1179): PRs that target
+# integration/** run only the fast lane (changes, fmt, clippy/check, lib unit
+# tests, secret scan, frontend build, version gate) plus CI Gate, so the
+# required check still reports. Heavy suites (MSRV, local-gllm, affected and
+# integration suites, hygiene tripwire, marketplace/espacios/repo-memory, full
+# ledger) are skipped there and run on PRs to main and on main pushes, i.e.
+# once on the single integration -> main PR and on the merge commit.
 
 # Pull requests: one group per PR, so a newer push cancels the superseded run.
 # Pushes to main and manual runs: one group per commit SHA and never cancelled.
@@ -121,7 +129,7 @@ jobs:
   rust-msrv:
     name: Rust MSRV Check
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -153,7 +161,7 @@ jobs:
   rust-local-gllm-check:
     name: Rust local-gllm Check
     needs: changes
-    if: needs.changes.outputs.embedding == 'true'
+    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.embedding == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -226,7 +234,7 @@ jobs:
   rust-affected:
     name: Affected Rust Tests
     needs: changes
-    if: (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.rust == 'true'
+    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && ((github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -300,7 +308,7 @@ jobs:
   rust-test-hygiene:
     name: Test Hygiene Tripwire
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -345,7 +353,7 @@ jobs:
   rust-integration:
     name: Rust Integration (Observability Contract & Vault)
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -468,7 +476,7 @@ jobs:
   market-v2-tests:
     name: Marketplace V2 Integration Tests
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -503,7 +511,7 @@ jobs:
   espacio-tests:
     name: Espacios Integration Tests
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -535,7 +543,7 @@ jobs:
   repo-memory-isolation:
     name: repo-memory-isolation
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
