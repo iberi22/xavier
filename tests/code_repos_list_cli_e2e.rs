@@ -24,6 +24,7 @@ fn test_code_repos_list_cli_e2e() {
 
     let extra_root = tmp.path().join("extra_root");
     std::fs::create_dir_all(&extra_root).unwrap();
+    std::fs::create_dir_all(extra_root.join(".git")).unwrap();
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
     cmd.current_dir(&workspace)
