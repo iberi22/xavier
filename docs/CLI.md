@@ -1294,3 +1294,14 @@ xavier users totp-enroll --email admin@example.com
 | `xavier telecom <subcommand>` | Private node-to-node telecom. |
 | `xavier index-self` | Index foundational documentation into the memory store. |
 | `xavier nav telemetry [kind]` | Navigation telemetry; pass `hotspots` for the top-10 visited nodes. |
+
+## `xavier backup`
+
+`xavier backup create [--out DIR] [--json]`
+
+Creates a local snapshot of the Xavier data directory.
+
+* The backup process uses SQLite's backup API to snapshot all `*.db` and `*.sqlite3` SQLite files to the output directory to ensure consistent backups.
+* Regular files are copied as-is.
+* A `manifest.json` file is written out that records file hashes, sizes, the creation time and Xavier version.
+* If `--out` is not specified, it defaults to `<data_dir>/backups/<UTC timestamp>` (with a numeric suffix if already taken). An explicit `--out` must not already exist.

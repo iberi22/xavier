@@ -67,3 +67,6 @@ mod maloca_models_unsupported_e2e;
 
 #[path = "maloca_store_atomic_persist_e2e.rs"]
 mod maloca_store_atomic_persist_e2e;
+
+#[path = "maloca_governance_rules_e2e.rs"]
+mod maloca_governance_rules_e2e;

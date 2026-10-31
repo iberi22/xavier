@@ -47,6 +47,9 @@ mod telecom_agent_fallback_test;
 #[path = "telecom_concurrency_stress_test.rs"]
 mod telecom_concurrency_stress_test;
 
+#[allow(clippy::module_inception)]
+#[path = "cli_backup_create_e2e.rs"]
+mod cli_backup_create_e2e;
 #[path = "telecom_file_transfer_e2e_test.rs"]
 mod telecom_file_transfer_e2e_test;
 
@@ -58,3 +61,6 @@ mod code_explain_context_e2e;
 
 #[path = "explain_isolated_llm_e2e.rs"]
 mod explain_isolated_llm_e2e;
+
+#[path = "code_repos_list_cli_e2e.rs"]
+mod code_repos_list_cli_e2e;
