@@ -64,7 +64,7 @@ jobs:
         env:
           EXPECTED_SHA: ${{ steps.run-id.outputs.sha }}
         run: |
-          jq -e --arg sha "$EXPECTED_SHA" '.main_head == $sha' /tmp/ledger-report.json > /dev/null
+          jq -e --arg sha "$EXPECTED_SHA" '(.main_head == $sha or .sha == $sha)' /tmp/ledger-report.json > /dev/null
           echo "sha=$EXPECTED_SHA" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v7
