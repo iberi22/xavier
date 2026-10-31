@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
 import zipfile
 
 spec = importlib.util.spec_from_file_location('promoter', Path(__file__).with_name('ledger-promote.py'))
@@ -29,8 +30,19 @@ STREAK = 3
 
 
 def gh(endpoint, binary=False):
-    data = subprocess.check_output(['gh', 'api', endpoint])
-    return data if binary else json.loads(data)
+    attempts = 4
+    for attempt in range(attempts):
+        try:
+            data = subprocess.check_output(['gh', 'api', endpoint], stderr=subprocess.PIPE)
+            return data if binary else json.loads(data)
+        except subprocess.CalledProcessError as e:
+            if attempt == attempts - 1:
+                raise
+            stderr = e.stderr.decode('utf-8', errors='replace') if e.stderr else ''
+            if re.search(r'HTTP (?:5[0-9]{2}|429)(?!\d)|timeout|connection reset', stderr, re.IGNORECASE):
+                time.sleep(2 ** (attempt + 1))
+            else:
+                raise
 
 
 CANDIDATE_MARKER = re.compile(r'\s*\[(?:candidate|planned[-\s]?beta)\]\s*$|\s*\(candidate\)\s*$',

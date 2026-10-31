@@ -79,7 +79,9 @@
         "explain::codegraph::tests::empty_file_or_range_returns_ok_empty",
         "explain::codegraph::tests::symbol_name_narrows_the_choice",
         "explain::codegraph::tests::limit_caps_total_edges_callers_first",
-        "explain::codegraph::tests::broken_graph_yields_no_evidence"
+        "explain::codegraph::tests::broken_graph_yields_no_evidence",
+        "tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_callers_and_callees_of_symbol_in_range_get_source_refs",
+        "tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_empty_file_or_range_returns_ok_empty"
       ],
       "user_stories": []
     },
@@ -514,7 +516,9 @@
         "explain::memory::tests::search_error_surfaces_as_err",
         "explain::memory::tests::empty_result_is_ok_and_empty",
         "explain::memory::tests::collect_works_inside_spawn_blocking",
-        "explain::memory::tests::qmd_search_adapter_returns_no_hits_for_empty_store"
+        "explain::memory::tests::qmd_search_adapter_returns_no_hits_for_empty_store",
+        "tests/explain_memory_source_e2e.rs::e2e_memory_source_decision_query_filters_by_kind_and_file",
+        "tests/explain_memory_source_e2e.rs::e2e_memory_source_duplicate_ids_across_queries_appear_once"
       ],
       "user_stories": []
     },
@@ -1821,7 +1825,7 @@
       "implemented_in": "src/explain/model.rs, src/cli/server.rs",
       "name": "Explain Isolated LLM",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3560",
       "status": "beta",
@@ -1840,7 +1844,7 @@
         "tests/explain_isolated_llm_e2e.rs::explain_falls_back_to_global_when_isolated_not_configured"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests explain::model::tests::explain_provider_builds_anthropic_config_from_0600_key_file, explain::model::tests::explain_key_file_readable_by_others_is_not_configured, explain::model::tests::explain_without_provider_uses_global_config, explain::model::tests::explain_unsupported_provider_is_not_configured, explain::model::tests::explain_anthropic_without_model_is_not_configured, tests/explain_isolated_llm_e2e.rs::explain_uses_isolated_llm_settings_and_fails_on_network, tests/explain_isolated_llm_e2e.rs::explain_falls_back_to_global_when_isolated_not_configured"
     },
     "feat-data-node-consent": {
       "id": "feat-data-node-consent",
@@ -1977,7 +1981,7 @@
       "implemented_in": "src/explain/context.rs, src/explain/history.rs, src/explain/mod.rs",
       "name": "Code Explain Context",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3517",
       "status": "beta",
@@ -2000,7 +2004,7 @@
         "tests/code_explain_context_e2e.rs::code_explain_context_handles_missing_git_repo_gracefully"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests explain::context::tests::code_fragment_is_first_and_sources_ordered_by_score, explain::context::tests::duplicates_keep_highest_score, explain::context::tests::budget_truncates_total_text, explain::context::tests::failing_source_is_recorded_and_others_still_used, explain::context::tests::unreadable_fragment_is_recorded_not_fatal, explain::context::tests::rejects_paths_escaping_the_repo, explain::history::tests::lists_commits_touching_the_range_newest_first, explain::history::tests::non_repo_directory_is_an_error, tests/code_explain_context_e2e.rs::code_explain_context_assembles_evidence_from_code_and_git_history, tests/code_explain_context_e2e.rs::code_explain_context_handles_missing_git_repo_gracefully"
     },
     "fix-explain-repo-resolution": {
       "category": "explain",
@@ -2733,6 +2737,7 @@
         "incremental_indexing_removes_deleted_files",
         "test_god_guard_drops_scattered_low_confidence",
         "test_default_project_keeps_legacy_ids",
+        "tests/codegraph_indexed_symbol_project_root_e2e.rs::test_indexed_symbol_project_root",
         "tests/codegraph_multilang_reindex_e2e.rs::test_codegraph_multilang_reindex_e2e"
       ],
       "req_ids": [
@@ -3029,12 +3034,13 @@
       "name": "Configurable Skill Store and Roots",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 66,
       "description": "Replace hardcoded $HOME/.hermes/skills and config paths with XAVIER_SKILL_STORE/MANIFEST/SOURCE_ROOTS/TARGET_ROOTS env vars; defaults reproduce the current scan set exactly (D5, D7a)",
       "steps": [
         "Add the four D5 environment variables and document them in .env.example",
         "Preserve the current scan roots and Hermes disabled-list defaults when variables are unset",
-        "Enforce host-owned root allowlists and workspace-only fallback when HOME is unset"
+        "Enforce host-owned root allowlists and workspace-only fallback when HOME is unset",
+        "pending: missing XAVIER_SKILL_SOURCE_ROOTS and XAVIER_SKILL_TARGET_ROOTS implementation and .env.example documentation"
       ],
       "passes": false,
       "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-store-config.md (Configurable Skill Store and Scan Paths). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D5, D7a). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
@@ -3056,7 +3062,7 @@
       "implemented_in": "src/self_manage/mod.rs",
       "name": "Ticket Dedup While Open",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3531",
       "status": "beta",
@@ -3075,14 +3081,14 @@
         "self_manage::ticket_create_tests::support_status_open_unless_terminal"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests self_manage::ticket_create_tests::ticket_open_fingerprint_dedupes, tests/ticket_dedup_while_open_e2e.rs::ticket_dedup_creates_new_ticket_when_previous_is_resolved, tests/ticket_dedup_while_open_e2e.rs::ticket_dedup_deduplicates_when_open, self_manage::ticket_create_tests::ticket_closed_fingerprint_creates_new_ticket, self_manage::ticket_create_tests::ticket_unknown_status_dedupes, self_manage::ticket_create_tests::ticket_closed_recurrence_still_rate_limited, self_manage::ticket_create_tests::support_status_open_unless_terminal"
     },
     "feat-skill-registry-unify": {
       "id": "feat-skill-registry-unify",
       "name": "Single Skill Registry Construction",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "One build_skill_registry(workspace) used by REST, MCP and session fusion; named, documented dispatch (0.40) and fusion (0.5) confidence constants (D7b, D7c)",
       "steps": [
         "Use one build_skill_registry(workspace) constructor across REST, MCP and session fusion",
@@ -3090,7 +3096,7 @@
         "Verify candidate parity and preserve existing response shapes"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-registry-unify.md (Unified Skill Registry Constructor and Thresholds). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D7b, D7c). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-registry-unify.md (Unified Skill Registry Constructor and Thresholds). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D7b, D7c). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests test_mcp_skill_list_matches_rest_on_same_fixture, test_mcp_context_tools_own_no_registry_constructor, test_build_skill_registry_indexes_every_discovery_root, test_fusion_e2e_seeded_thread_injects_skill, test_confidence_calibration_range, tests/skill_registry_unify_parity_e2e.rs::test_build_skill_registry_indexes_every_discovery_root",
       "tests": [
         "test_mcp_skill_list_matches_rest_on_same_fixture",
         "test_mcp_context_tools_own_no_registry_constructor",
@@ -3106,7 +3112,7 @@
       "name": "Declarative Skill Manifest and Projector",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "TOML v1 manifest + CLI plan/apply/rollback projecting one symlink per selected skill into allowlisted tool roots; dry-run default, journal, backups, atomic swap (D1-D4, D9)",
       "steps": [
         "Parse TOML v1 explicit placements and reject globs or whole-directory links",
@@ -3114,7 +3120,7 @@
         "Verify symlink ownership, backups, atomic swaps and idempotent rollback"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md (Declarative Skill Manifest and Projector). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D1-D4, D9). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md (Declarative Skill Manifest and Projector). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D1-D4, D9). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests test_manifest_rejections, test_dry_run_apply_reports_without_touching_disk, test_atomic_write_creates_and_overwrites, test_symlink_backup_preserves_readlink_without_dereferencing, test_apply_rejects_unmanaged_regular_file_collision_without_touching_it, test_rejects_empty_allowlist_and_unauthorized_target, tests/skill_controller_core_adapters.rs::codex_project_projection_remains_readable_offline, tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage, test_repeated_rollback_is_idempotent",
       "tests": [
         "test_manifest_rejections",
         "test_dry_run_apply_reports_without_touching_disk",
@@ -3123,7 +3129,8 @@
         "test_apply_rejects_unmanaged_regular_file_collision_without_touching_it",
         "test_rejects_empty_allowlist_and_unauthorized_target",
         "tests/skill_controller_core_adapters.rs::codex_project_projection_remains_readable_offline",
-        "tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage"
+        "tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage",
+        "test_repeated_rollback_is_idempotent"
       ],
       "implemented_in": "src/context/skill_controller/manifest.rs, src/context/skill_controller/policy.rs, src/context/skill_controller/backup.rs, src/context/skill_controller/projector.rs, src/context/skill_controller/rollback.rs, src/cli/handlers/skills.rs, src/cli/commands/mod.rs"
     },
@@ -3132,7 +3139,7 @@
       "name": "Task-Scoped Ephemeral Skills",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Deterministic, bounded, provenance-stamped composition of registry skills + scoped memories + Code-Graph into <worktree>/.agents/skills/eph-<task>; same pack over MCP for live sessions (D11)",
       "steps": [
         "Compose bounded deterministic context from authorized workspace skills, memories and CodeGraph",
@@ -3140,7 +3147,7 @@
         "Deliver live MCP packs without files and clean up only journaled unchanged ephemeral paths"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-ephemeral.md (Deterministic Ephemeral Skill Composer). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D4, D10, D11). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-ephemeral.md (Deterministic Ephemeral Skill Composer). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D4, D10, D11). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-31 by tests composition_stays_within_the_token_budget, out_of_scope_memories_and_decisions_are_excluded, test_secret_finding_blocks_publication_without_creating_link, release_removes_unchanged_entries_and_owned_directory, test_live_composition_hash_matches_composer_without_files, tests/skill_dispatch_ephemeral_e2e.rs::skill_dispatch_ephemeral_lifecycle",
       "tests": [
         "composition_stays_within_the_token_budget",
         "out_of_scope_memories_and_decisions_are_excluded",
@@ -3156,7 +3163,7 @@
       "name": "Skill Drift and Secret Audit",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Report-only audit: package/projection hashes, frontmatter, dead paths, version contradictions, native secret scan; proposed diffs for human approval (D10, D13)",
       "steps": [
         "Scan whole packages and composed output for secrets while reporting location and kind only",
@@ -3164,7 +3171,7 @@
         "Offer reviewable diffs without automatically rewriting canonical sources"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-drift-audit.md (Skill Drift Audit and Secret Scanner). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D10, D13). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-drift-audit.md (Skill Drift Audit and Secret Scanner). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D10, D13). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-31 by tests test_fixture_reports_description_reference_conflict_and_secret, test_proposal_never_leaks_any_secret_family_the_review_listed, test_proposal_is_a_unified_diff_and_leaves_the_source_byte_identical, test_audit_hash_drift_blocking_and_endpoint_match, tests/skill_drift_audit_e2e.rs::audit_endpoint_returns_json_report, tests/skill_drift_audit_e2e.rs::audit_endpoint_returns_not_found_when_manifest_missing",
       "tests": [
         "test_fixture_reports_description_reference_conflict_and_secret",
         "test_proposal_never_leaks_any_secret_family_the_review_listed",
@@ -3180,7 +3187,7 @@
       "name": "Skill Usage Telemetry",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Local SQLite events (selected/delivered/invoked/completed) with opaque IDs and 30-day retention to inform pruning; never auto-deletes (D12)",
       "steps": [
         "Record selected, delivered, invoked and completed events with opaque IDs in local SQLite",
@@ -3188,7 +3195,7 @@
         "Report observation coverage and prune only event records after 30 days"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-usage-telemetry.md (Local Skill Usage Telemetry). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D12). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-usage-telemetry.md (Local Skill Usage Telemetry). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D12). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests every_stage_round_trips_through_the_schema, record_ack_is_idempotent_for_invoked_and_completed, emit_selected_delivered_has_unknown_ack_coverage_and_no_task_text, prune_removes_expired_events_only, dispatch_telemetry_failure_leaves_result_unchanged, tests/skill_usage_telemetry_e2e.rs::telemetry_dispatch_ack_and_usage_e2e, tests/skill_usage_telemetry_e2e.rs::usage_endpoint_unauthorized",
       "tests": [
         "every_stage_round_trips_through_the_schema",
         "record_ack_is_idempotent_for_invoked_and_completed",
@@ -3418,7 +3425,12 @@
         "doctor_completes_when_a_probe_hangs",
         "doctor_prints_output_even_with_timed_out_checks",
         "doctor_exit_code_reflects_overall_status",
-        "tests/doctor_bounded_test.rs::doctor_reports_before_deadline_when_tcp_peer_never_responds"
+        "tests/doctor_bounded_test.rs::doctor_reports_before_deadline_when_tcp_peer_never_responds",
+        "test_doctor_pollution_clean",
+        "test_doctor_pollution_runtime_overlay",
+        "test_doctor_pollution_file_should_not_exist",
+        "test_doctor_pollution_invalid_json",
+        "test_doctor_pollution_temp_dir_without_test_mode"
       ],
       "req_ids": [
         "REQ-070"
@@ -3475,7 +3487,7 @@
       "implemented_in": "src/scheduler/daemon.rs, src/self_manage/mod.rs",
       "name": "Incident Ticket Dedup",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3516",
       "status": "beta",
@@ -3490,7 +3502,7 @@
         "self_manage::ticket_create_tests::test_ticket_deduplication_and_rate_limiting"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests scheduler::daemon::alert_ticket_tests::repeated_alert_samples_deduplicate_to_one_ticket, tests/incident_ticket_dedup_e2e.rs::incident_ticket_deduplicates_on_same_fingerprint, tests/incident_ticket_dedup_e2e.rs::incident_ticket_creates_fresh_for_different_fingerprint, self_manage::ticket_create_tests::test_ticket_deduplication_and_rate_limiting"
     },
     "feat-guardian-truth": {
       "id": "feat-guardian-truth",
@@ -3652,12 +3664,15 @@
         "tests/memory_write_integrity_e2e.rs::http_add_rejects_corrupt_content_without_persisting",
         "tests/memory_write_integrity_e2e.rs::http_add_retry_preserves_id_and_metadata_change_appends",
         "tests/memory_write_integrity_e2e.rs::http_canonical_metadata_change_increments_persisted_revision",
+        "tests/memory_put_index_atomic_e2e.rs::test_put_index_atomic_rollback",
         "tests/memory_fts_check_e2e.rs::fts_check_ok",
         "tests/memory_fts_check_e2e.rs::fts_check_corrupt",
         "tests/memory_fts_check_e2e.rs::fts_check_missing_db",
         "tests/memory_fts_check_e2e.rs::fts_check_json_escaping",
         "tests/memory_fts_check_e2e.rs::fts_check_operational_error",
-        "tests/memory_fts_check_e2e.rs::fts_check_not_a_database_is_corruption"
+        "tests/memory_fts_check_e2e.rs::fts_check_not_a_database_is_corruption",
+        "tests/core_smoke_cli_e2e.rs::core_smoke_cli_add_then_search",
+        "tests/core_smoke_cli_e2e.rs::core_smoke_cli_restart_persistence"
       ],
       "req_ids": [
         "REQ-074"
@@ -4122,7 +4137,7 @@
       "name": "Mesh Replay Store",
       "category": "mesh",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "A reusable SQLite storage primitive to ensure replay requests are rejected and new ones recorded durably.",
       "steps": [
         "Implement Claim enum and ReplayStore trait",
@@ -4154,7 +4169,7 @@
         "REQ-012"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-31 by tests tests::replay_same_second_after_reopen_rejected, tests::replay_sender_ahead_ts_plus_200_after_reopen_rejected, tests::floor_only_rises_and_pruned_rows_stay_rejected, tests::sender_nonce_namespace_is_isolated, tests::repeated_nonce_with_new_timestamp_is_rejected_while_retained, tests::per_sender_cap_returns_full_without_claiming, tests::invalid_empty_or_oversized_identity_and_nonce_rejected, tests::sqlite_open_or_transaction_error_is_not_fresh, tests::timestamp_extremes_are_rejected_without_overflow, tests::concurrent_cap_and_duplicate_claims, tests/mesh_replay_store_e2e.rs::fresh_then_replayed_across_reopen, tests/mesh_replay_store_e2e.rs::senders_are_isolated_across_reopen, tests/mesh_replay_store_e2e.rs::stale_timestamp_rejected, tests/mesh_replay_store_e2e.rs::two_handles_same_file"
     },
     "feat-headless-server-packaging": {
       "category": "packaging",
@@ -4222,9 +4237,11 @@
       "name": "Enterprise Multi-Tenant",
       "category": "enterprise",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 20,
       "description": "Enterprise core (tenants, RBAC, audit, rate limits, API keys).",
-      "steps": [],
+      "steps": [
+        "pending: missing E2E test coverage for RBAC, audit, rate limits, API keys"
+      ],
       "tests": [
         "tests/cli_tenants_e2e.rs::test_cli_tenants_list_text",
         "tests/cli_tenants_e2e.rs::test_cli_tenants_list_json",

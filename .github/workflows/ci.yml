@@ -734,7 +734,13 @@ jobs:
 
       - name: Run Full Ledger
         timeout-minutes: 80
-        run: bash scripts/verify-pipeline.sh > ledger.log 2>&1 || (cat ledger.log && exit 1)
+        run: |
+          bash scripts/verify-pipeline.sh > ledger.log 2>&1 || VERIFY_FAILED=1
+          python3 scripts/check_stable_tests.py .gitcore/features.json ledger.log || PYTHON_FAILED=1
+          if [ "${VERIFY_FAILED:-0}" -eq 1 ] || [ "${PYTHON_FAILED:-0}" -eq 1 ]; then
+            cat ledger.log
+            exit 1
+          fi
       - name: Upload Logs
         if: always()
         uses: actions/upload-artifact@v7
