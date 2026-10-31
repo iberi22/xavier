@@ -1104,7 +1104,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_tools_list_includes_secret_tools_with_schemas() {
-        let tools = crate::server::mcp::server::get_xavier_tools(false);
+        let tools = crate::server::mcp::server::get_xavier_tools();
         let secret_tools: Vec<_> = tools
             .iter()
             .filter(|tool| super::is_secrets_tool(&tool.name))

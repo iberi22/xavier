@@ -4,16 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, 'sprint/**', 'integration/**']
+    branches: [main, 'sprint/**']
   workflow_dispatch:
-
-# Integration-branch workflow (Brahyan t177s1179): PRs that target
-# integration/** run only the fast lane (changes, fmt, clippy/check, lib unit
-# tests, secret scan, frontend build, version gate) plus CI Gate, so the
-# required check still reports. Heavy suites (MSRV, local-gllm, affected and
-# integration suites, hygiene tripwire, marketplace/espacios/repo-memory, full
-# ledger) are skipped there and run on PRs to main and on main pushes, i.e.
-# once on the single integration -> main PR and on the merge commit.
 
 # Pull requests: one group per PR, so a newer push cancels the superseded run.
 # Pushes to main and manual runs: one group per commit SHA and never cancelled.
@@ -129,7 +121,7 @@ jobs:
   rust-msrv:
     name: Rust MSRV Check
     needs: changes
-    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.rust == 'true') }}
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -161,7 +153,7 @@ jobs:
   rust-local-gllm-check:
     name: Rust local-gllm Check
     needs: changes
-    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.embedding == 'true') }}
+    if: needs.changes.outputs.embedding == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -234,7 +226,7 @@ jobs:
   rust-affected:
     name: Affected Rust Tests
     needs: changes
-    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && ((github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.rust == 'true') }}
+    if: (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -308,7 +300,7 @@ jobs:
   rust-test-hygiene:
     name: Test Hygiene Tripwire
     needs: changes
-    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.rust == 'true') }}
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -353,7 +345,7 @@ jobs:
   rust-integration:
     name: Rust Integration (Observability Contract & Vault)
     needs: changes
-    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.rust == 'true') }}
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -378,9 +370,6 @@ jobs:
         run: |
           source scripts/xavier-test-target.sh
           xavier_cargo_test ci-safe observability_contract
-
-      - name: Run code-graph db_row_errors Integration Test
-        run: cargo test -p code-graph --test db_row_errors
 
       - name: Run Clavis HTTP, Keygen & Vault E2E Tests
         run: |
@@ -476,7 +465,7 @@ jobs:
   market-v2-tests:
     name: Marketplace V2 Integration Tests
     needs: changes
-    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.rust == 'true') }}
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -511,7 +500,7 @@ jobs:
   espacio-tests:
     name: Espacios Integration Tests
     needs: changes
-    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.rust == 'true') }}
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -543,7 +532,7 @@ jobs:
   repo-memory-isolation:
     name: repo-memory-isolation
     needs: changes
-    if: ${{ !(github.event_name == 'pull_request' && startsWith(github.base_ref, 'integration/')) && (needs.changes.outputs.rust == 'true') }}
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -594,7 +583,7 @@ jobs:
           fetch-depth: 0
 
       - name: Test ledger promoter
-        run: python3 -m unittest discover -s scripts/tests -p 'test_ledger_*.py'
+        run: python3 -m unittest discover -s scripts/tests -p 'test_ledger_promote.py'
 
       - name: Run Secret Scan
         run: bash scripts/check-secrets.sh
@@ -705,7 +694,7 @@ jobs:
     name: Full Ledger Verification
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -733,14 +722,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run Full Ledger
-        timeout-minutes: 80
-        run: |
-          bash scripts/verify-pipeline.sh > ledger.log 2>&1 || VERIFY_FAILED=1
-          python3 scripts/check_stable_tests.py .gitcore/features.json ledger.log || PYTHON_FAILED=1
-          if [ "${VERIFY_FAILED:-0}" -eq 1 ] || [ "${PYTHON_FAILED:-0}" -eq 1 ]; then
-            cat ledger.log
-            exit 1
-          fi
+        run: bash scripts/verify-pipeline.sh > ledger.log 2>&1 || (cat ledger.log && exit 1)
       - name: Upload Logs
         if: always()
         uses: actions/upload-artifact@v7

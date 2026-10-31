@@ -41,7 +41,8 @@ SPEC  →  PLAN  →  BUILD  →  VERIFY  →  SHIP
 ## 5. SHIP
 
 - Merge → `CHANGELOG.md` entry → tag → release.
-- `docs/features/implementation-score.json` points to the ledger (`.gitcore/features.json`) instead of claiming 100%.
+- `docs/features/implementation-score.json` is regenerated as a release snapshot
+  (never edited by hand; the pipeline derives it from the ledger).
 
 ## Rules of the Road
 

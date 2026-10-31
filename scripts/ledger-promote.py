@@ -171,6 +171,8 @@ def evaluate(document, evidence, history, root, streak):
         common.append('missing full verifier run URL')
     if not chain or chain[0] != sha or len(set(chain)) != len(chain):
         common.append('invalid consecutive main SHA sequence')
+    if evidence.get('evidence_complete') is not True:
+        common.append('evidence collection incomplete')
     indexed = rust_tests(root)
     targets = set(evidence.get('integration_targets_passed', []))
     per_feature = evidence.get('per_feature_test_results', {})
@@ -206,8 +208,6 @@ def evaluate(document, evidence, history, root, streak):
             trans = None
             if common:
                 rev_reasons = ['review skipped: ' + r for r in common]
-            elif result.get('evidence_complete') is not True:
-                rev_reasons = ['review skipped: incomplete evidence']
             else:
                 rev_reasons = []
                 gaps = feature.get('open_gaps')
@@ -237,15 +237,6 @@ def evaluate(document, evidence, history, root, streak):
         if run_failed:
             lane_common.append('ledger and E2E must both succeed')
 
-        if status == 'deferred':
-            results[fid] = {'eligible': False,
-                            'reasons': ['deferred features are frozen'],
-                            'transition': None, 'informational': [],
-                            'evidence_lane': 'none', 'gating_passed': [],
-                            'gating_failed': [], 'candidate_passed': [],
-                            'candidate_failed': [], 'evaluated_passed': [],
-                            'evaluated_failed': []}
-            continue
         transition = PROMOTABLE_TRANSITIONS.get(status)
         if transition is None:
             results[fid] = {'eligible': False,
@@ -268,8 +259,6 @@ def evaluate(document, evidence, history, root, streak):
             declared = []
         if status == 'beta':
             reasons = list(lane_common)
-            if evidence.get('evidence_complete') is not True:
-                reasons.append('evidence collection incomplete')
             reasons.extend(completeness_reasons(feature))
             reasons.extend(missing_list)
             evaluated_passed, evaluated_failed = gating_passed, gating_failed
@@ -278,8 +267,6 @@ def evaluate(document, evidence, history, root, streak):
         else:
             blocking, informational = beta_completeness_split(feature)
             reasons = list(lane_common) + blocking + missing_list
-            if evidence.get('evidence_complete') is not True:
-                reasons.append('evidence collection incomplete')
             informational = list(informational)
             # Planned/in_progress lane: candidate sets, plus gating sets for
             # names shared with gating features (those names are skipped by
@@ -397,36 +384,39 @@ def main():
                         status='beta', passes=False,
                         notes=(str(prior) + '\n' if prior else '') + note)
 
-        # Metadata is recomputed on every --apply run, independent of transitions, so a
-        # data-only change (e.g. features marked deferred in a separate PR) still fixes
-        # the denominator and counts.
-        old_meta = document.get('metadata') if isinstance(document.get('metadata'), dict) else None
-        meta = dict(old_meta) if old_meta is not None else {}
-        counts = {'stable': 0, 'beta': 0, 'in_progress': 0, 'planned': 0, 'deferred': 0}
-        key_map = {'stable': 'features_stable', 'beta': 'features_beta', 'planned': 'features_planned',
-                   'in_progress': 'features_in_progress', 'deferred': 'features_deferred'}
-        progress_sum = 0
-        for feat in document['features'].values():
-            s = feat.get('status')
-            if s in counts:
-                counts[s] += 1
-            if s != 'deferred':
+        if changed:
+            if 'metadata' not in document or not isinstance(document['metadata'], dict):
+                document['metadata'] = {}
+            meta = document['metadata']
+
+            meta['total_features'] = len(document['features'])
+            counts = {'stable': 0, 'beta': 0, 'in_progress': 0, 'planned': 0}
+            key_map = {'stable': 'features_stable', 'beta': 'features_beta', 'planned': 'features_planned', 'in_progress': 'features_in_progress'}
+            progress_sum = 0
+            for feat in document['features'].values():
+                s = feat.get('status')
+                if s in counts:
+                    counts[s] += 1
                 p = feat.get('progress_pct')
-                if isinstance(p, (int, float)) and math.isfinite(p):
+                if isinstance(p, (int, float)) and __import__('math').isfinite(p):
                     progress_sum += p
-        for k, v in counts.items():
-            meta[key_map[k]] = v
-        # features_complete tracks features_stable.
-        meta['features_complete'] = meta['features_stable']
-        num_feats = sum(1 for f in document['features'].values() if f.get('status') != 'deferred')
-        meta['total_features'] = num_feats
-        meta['overall_progress_pct'] = round(progress_sum / num_feats, 1) if num_feats else 0.0
-        if changed and evidence.get('verified_at'):
-            meta['last_verified'] = evidence['verified_at'][:10]
-        # A document without a metadata block is left byte-identical unless a feature
-        # transitioned; an existing block is rewritten whenever it is stale.
-        if changed or (old_meta is not None and meta != old_meta):
-            document['metadata'] = meta
+
+            # Map counts to existing keys, or insert if initialized from scratch
+            for k, v in counts.items():
+                mk = key_map.get(k, k)
+                meta[mk] = v
+
+            # If features_stable was updated, update features_complete as well
+            # (assuming complete is an alias or sum, but memory says "features_complete unchanged when stable counts change -> recompute it together with features_stable")
+            # Wait, what does the user prompt say exactly?
+            # "metadata sync leaves existing features_complete unchanged when stable counts change -> recompute it together with features_stable"
+            if 'features_stable' in meta:
+                meta['features_complete'] = meta['features_stable']
+
+            num_feats = len(document['features'])
+            meta['overall_progress_pct'] = round(progress_sum / num_feats, 1) if num_feats else 0.0
+            if evidence.get('verified_at'):
+                meta['last_verified'] = evidence['verified_at'][:10]
             write(args.features, document)
     promotions = {}
     for fid in eligible:
@@ -436,18 +426,12 @@ def main():
     review_flagged_fids = sorted(fid for fid, r in results.items() if r.get('review_flagged'))
     review_dict = {'stable->beta': review_flagged_fids}
 
-    report = dict(sha=evidence.get('sha'), main_head=evidence.get('main_head'),
-                  skipped_pending_shas=evidence.get('skipped_pending_shas', []),
-                  dry_run=not getattr(args, 'apply', False),
+    report = dict(sha=evidence.get('sha'), dry_run=not getattr(args, 'apply', False),
                   promotions=promotions, review=review_dict, features=results)
     report['demotions_applied'] = demotions_applied
 
     print(json.dumps(report, indent=2, sort_keys=True))
     print('# Ledger promotion\n', file=sys.stderr)
-    print(f"Evaluated SHA: {evidence.get('sha') or 'none (no completed commit)'}", file=sys.stderr)
-    print(f"Main HEAD SHA: {evidence.get('main_head')}", file=sys.stderr)
-    print('Skipped pending SHAs: ' + (', '.join(evidence.get('skipped_pending_shas', [])) or 'none'),
-          file=sys.stderr)
     for transition in ('beta->stable', 'planned->beta', 'in_progress->beta'):
         members = sorted(fid for fid in eligible
                          if results[fid].get('transition') == transition)

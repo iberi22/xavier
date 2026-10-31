@@ -5,9 +5,6 @@ name: Server Packages
 # in a clean environment and started before it counts as built.
 
 on:
-  # PRs: Cargo.lock-only changes no longer trigger packaging (runner budget,
-  # unblock-1030); they are still verified by the push-to-main run below.
-  # Cargo.toml stays: it carries [package.metadata.deb/generate-rpm].
   pull_request:
     branches: [main, 'sprint/**']
     paths:
@@ -16,6 +13,7 @@ on:
       - 'flake.nix'
       - 'flake.lock'
       - 'Cargo.toml'
+      - 'Cargo.lock'
       - 'docs/DEPLOY/LINUX_SERVER.md'
       - '.github/workflows/server-packages.yml'
   push:

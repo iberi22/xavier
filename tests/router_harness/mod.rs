@@ -135,18 +135,6 @@ impl RestoreEnv {
             .collect();
         Self { saved }
     }
-
-    pub fn clear(keys: &[&'static str]) -> Self {
-        let saved = keys
-            .iter()
-            .map(|key| {
-                let prev = std::env::var_os(key);
-                std::env::remove_var(key);
-                (*key, prev)
-            })
-            .collect();
-        Self { saved }
-    }
 }
 
 impl Drop for RestoreEnv {

@@ -81,7 +81,6 @@ exclude = [
     "panel-ui/src-tauri",
 ]
 members = [
-    "crates/xavier-plugin-protocol",
     "code-graph",
     "crates/xavier-core-logic",
     "crates/xavier-market",
@@ -127,9 +126,11 @@ tauri = ["dep:tauri"]
 telegram = ["teloxide/macros", "teloxide/webhooks-axum", "teloxide/ctrlc_handler"]
 local-gllm = ["dep:gllm", "gllm/wgpu"]
 local-gllm-cuda = ["dep:gllm", "gllm/cuda"]
+dev-mode = []
 # Enterprise features: Cortex Enterprise Cloud integration
 enterprise = []
 mesh = ["dep:iroh"]
+libp2p = []
 dao-evm = ["dep:alloy"]
 espacio-mesh = []
 
@@ -247,7 +248,7 @@ cron = "0.15"
 # State management
 rayon = "1.10"
 parking_lot = "0.12"
-rusqlite = { version = "0.32.0", features = ["bundled", "load_extension", "chrono", "functions", "backup"] }
+rusqlite = { version = "0.32.0", features = ["bundled", "load_extension", "chrono", "functions"] }
 jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 totp-rs = { version = "6.0", features = ["gen_secret", "otpauth"] }
 qrcode = "0.14"
@@ -326,7 +327,6 @@ axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
 tokio-tungstenite = "0.30"
 futures-util = "0.3"
-filetime = "0.2.29"
 
 [[bin]]
 name = "xavier"

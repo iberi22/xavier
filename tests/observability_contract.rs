@@ -137,20 +137,15 @@ async fn start_server() -> (u16, ServerInstance) {
                 server.log_tail()
             );
         }
-        // Since the ready gate (src/server/http/ready_gate.rs) the listener answers
-        // `/health` with 200 `{"status":"starting"}` before the app router is
-        // installed, so a 200 from `/health` does not mean "booted". `/ready` is
-        // routed on the real app (src/cli/server.rs) and returns 503 until both the
-        // gate is open and storage/code graph are ready, so poll it for 2xx.
-        match client.get(format!("{url}/ready")).send().await {
+        match client.get(format!("{url}/health")).send().await {
             Ok(resp) if resp.status().is_success() => return (port, server),
-            Ok(resp) => last_error = format!("GET /ready -> HTTP {}", resp.status()),
+            Ok(resp) => last_error = format!("GET /health -> HTTP {}", resp.status()),
             Err(err) => last_error = err.to_string(),
         }
         tokio::time::sleep(BOOT_POLL_INTERVAL).await;
     }
     panic!(
-        "xavier http did not answer GET /ready with 2xx within {BOOT_TIMEOUT:?} (last: {last_error})\n\
+        "xavier http did not answer GET /health within {BOOT_TIMEOUT:?} (last: {last_error})\n\
          --- server log (tail) ---\n{}",
         server.log_tail()
     );

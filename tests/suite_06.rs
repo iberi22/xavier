@@ -53,6 +53,3 @@ mod memory_sync_unified;
 
 #[path = "repo_memory_instance_e2e.rs"]
 mod repo_memory_instance_e2e;
-
-#[path = "repo_memory_instance_cli_e2e.rs"]
-mod repo_memory_instance_cli_e2e;

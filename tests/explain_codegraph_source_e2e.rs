@@ -110,3 +110,37 @@ fn e2e_codegraph_source_empty_file_or_range_returns_ok_empty() {
     assert!(no_file.is_empty());
     assert!(no_symbol.is_empty());
 }
+
+#[test]
+fn e2e_codegraph_source_symbols_outside_line_range_are_ignored() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = CodeGraphDB::new(&dir.path().join("graph.db")).unwrap();
+    for symbol in [
+        sym("handle", "src/lib.rs", 2, 6),
+        sym("route", "src/lib.rs", 10, 12),
+        sym("unrelated", "src/lib.rs", 50, 60), // OUTSIDE range 3-4
+        sym("helper", "src/util.rs", 1, 3),
+    ] {
+        db.insert_symbol(&symbol).unwrap();
+    }
+    let handle = stable_id(&db, "handle");
+    let route = stable_id(&db, "route");
+    let unrelated = stable_id(&db, "unrelated");
+    let helper = stable_id(&db, "helper");
+    call(&db, &handle, &helper, "src/lib.rs", 4);
+    call(&db, &route, &handle, "src/lib.rs", 11);
+    call(&db, &unrelated, &helper, "src/lib.rs", 55);
+    let engine = Arc::new(QueryEngine::new(Arc::new(db)));
+    let source = CodeGraphSource::new(engine);
+
+    let evidence = source
+        .collect(&target("src/lib.rs", 3, 4, None), 10)
+        .unwrap();
+
+    let refs: Vec<&str> = evidence.iter().map(|e| e.source_ref.as_str()).collect();
+    assert_eq!(
+        refs,
+        vec!["caller:route@src/lib.rs:11", "callee:helper@src/lib.rs:4"]
+    );
+    assert!(!evidence.iter().any(|e| e.text.starts_with("unrelated")));
+}

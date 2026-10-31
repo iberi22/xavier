@@ -1,7 +1,0 @@
-==> Xavier verify pipeline (mode: full, root: /repo)
-  ▶ test_stable
-    ❌ FAILED: test_stable
-  ▶ test_roundtrip
-    ✅ --test integration (passed=2)
-Nextest summary: 1 passed, 1 failed
-  ❌ FAILED: test_stable

@@ -52,6 +52,7 @@ pub mod heartbeat;
 pub mod iroh_transport;
 pub mod join;
 pub mod keystore;
+pub mod libp2p_transport;
 pub mod maturity;
 pub mod namespace;
 pub mod network;

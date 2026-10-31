@@ -15,7 +15,7 @@ This checklist defines mandatory, measurable gates required for public release o
 
 ## Pillar 2: Security & Authentication Gate
 
-- [ ] **No Default Token Fallback**: Running `xavier http` without `XAVIER_TOKEN` fails fast.
+- [ ] **No Default Token Fallback**: Running `xavier http` without `XAVIER_TOKEN` fails fast unless explicitly enabled via `dev-mode`.
 - [ ] **Prompt Guard Sanitization**: `SecurityService` passes 100% of prompt injection detection and sanitization unit tests.
 - [ ] **Secret Redaction**: All sensitive structs (`Claims`, `LoginRequest`, tokens) implement custom `Debug` redaction to prevent secret leakage in logs.
 

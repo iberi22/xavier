@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn test_mcp_pageindex_tools_announced() {
-        let tools = get_xavier_tools(false);
+        let tools = get_xavier_tools();
         for name in PI_TOOLS {
             let t = tools
                 .iter()
@@ -122,9 +122,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mcp_pageindex_search_tool_listed_and_callable() {
-        assert!(get_xavier_tools(false)
-            .iter()
-            .any(|t| t.name == TOOL_SEARCH));
+        assert!(get_xavier_tools().iter().any(|t| t.name == TOOL_SEARCH));
         install_memory_state();
         let (state, workspace) = test_state().await;
         let admin = claims(UserRole::Admin);
@@ -159,10 +157,7 @@ mod tests {
 
     #[test]
     fn test_mcp_existing_tool_names_unchanged() {
-        let names: Vec<String> = get_xavier_tools(false)
-            .into_iter()
-            .map(|t| t.name)
-            .collect();
+        let names: Vec<String> = get_xavier_tools().into_iter().map(|t| t.name).collect();
         for expected in [
             "secret_lend",
             "secret_exec",

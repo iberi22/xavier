@@ -8,7 +8,6 @@ use xavier::data_commons::ivn::{
 use xavier::data_commons::types::WalletAddress;
 
 #[test]
-#[serial_test::serial]
 fn test_validator_selection_weights_by_karma() {
     let mut high_karma_selected_count = 0;
     let total_trials = 100;
@@ -128,7 +127,6 @@ fn test_vote_recording_and_tallying() {
 }
 
 #[test]
-#[serial_test::serial]
 fn test_selection_karma_weighted_distribution() {
     let mut high_karma_selected_count = 0;
     let total_trials = 100;
@@ -193,7 +191,6 @@ fn test_selection_karma_weighted_distribution() {
 }
 
 #[test]
-#[serial_test::serial]
 fn test_exclusion_of_shared_seed_and_insufficient_karma() {
     let mut rng = StdRng::seed_from_u64(42);
 

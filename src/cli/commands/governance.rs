@@ -24,30 +24,14 @@ fn resolve_state_path() -> PathBuf {
 pub async fn handle_governance(command: GovernanceCommand) -> anyhow::Result<()> {
     // License check for Governance features
     let settings = xavier::settings::XavierSettings::current();
-    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
-        let is_json = match &command {
-            GovernanceCommand::List { json } => *json,
-            GovernanceCommand::Status { json, .. } => *json,
-            _ => false,
-        };
-        if is_json {
-            println!(
-                "{}",
-                serde_json::to_string(&serde_json::json!({ "error": e }))?
-            );
-            std::process::exit(1);
-        }
-        return Err(anyhow::anyhow!(e));
-    }
+    xavier::security::license::require_mesh_license(&settings).map_err(|e| anyhow::anyhow!(e))?;
 
     match command {
-        GovernanceCommand::List { json } => list_proposals(json).await,
+        GovernanceCommand::List => list_proposals().await,
         GovernanceCommand::Create { title, description } => {
             create_proposal(title, description).await
         }
-        GovernanceCommand::Status { proposal_id, json } => {
-            show_proposal_status(proposal_id, json).await
-        }
+        GovernanceCommand::Status { proposal_id } => show_proposal_status(proposal_id).await,
         GovernanceCommand::Vote {
             proposal_id,
             approve,
@@ -56,33 +40,13 @@ pub async fn handle_governance(command: GovernanceCommand) -> anyhow::Result<()>
     }
 }
 
-async fn list_proposals(json: bool) -> Result<()> {
-    if !json {
-        println!("Fetching Xavier Governance Proposals (XIPs)...");
-    }
+async fn list_proposals() -> Result<()> {
+    println!("Fetching Xavier Governance Proposals (XIPs)...");
 
     let state_path = resolve_state_path();
     let dao = MockBicameralDao::new(Some(state_path));
 
-    let proposals = match dao.list_proposals().await {
-        Ok(p) => p,
-        Err(e) => {
-            if json {
-                println!(
-                    "{}",
-                    serde_json::to_string(&serde_json::json!({ "error": e }))?
-                );
-                std::process::exit(1);
-            }
-            return Err(anyhow::anyhow!(e));
-        }
-    };
-
-    if json {
-        // Output raw list of Proposal structures
-        println!("{}", serde_json::to_string(&proposals)?);
-        return Ok(());
-    }
+    let proposals = dao.list_proposals().await.map_err(|e| anyhow::anyhow!(e))?;
 
     if proposals.is_empty() {
         println!("\nNo active proposals found in the governance board.");
@@ -140,32 +104,16 @@ async fn create_proposal(title: String, description: String) -> Result<()> {
     Ok(())
 }
 
-async fn show_proposal_status(proposal_id: String, json: bool) -> Result<()> {
-    if !json {
-        println!("Retrieving status for proposal: {}...", proposal_id);
-    }
+async fn show_proposal_status(proposal_id: String) -> Result<()> {
+    println!("Retrieving status for proposal: {}...", proposal_id);
 
     let state_path = resolve_state_path();
     let dao = MockBicameralDao::new(Some(state_path));
 
-    let proposal = match dao.get_proposal(&proposal_id).await {
-        Ok(p) => p,
-        Err(e) => {
-            if json {
-                println!(
-                    "{}",
-                    serde_json::to_string(&serde_json::json!({ "error": e }))?
-                );
-                std::process::exit(1);
-            }
-            return Err(anyhow::anyhow!(e));
-        }
-    };
-
-    if json {
-        println!("{}", serde_json::to_string(&proposal)?);
-        return Ok(());
-    }
+    let proposal = dao
+        .get_proposal(&proposal_id)
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     println!("\nProposal Details:");
     println!("--------------------------------------------------");

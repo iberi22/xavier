@@ -290,7 +290,7 @@ xavier/
 │   │   └── README.md
 │   ├── features/
 │   │   ├── README.md
-│   │   ├── implementation-score.json (points to ledger)
+│   │   ├── implementation-score.json
 │   │   ├── messaging-integrations.md
 │   │   └── specs/
 │   │       └── FEATURE-generative-ui.md

@@ -1,8 +1,9 @@
 name: Rust Coverage (tarpaulin)
 
-# Report-only tarpaulin run: nightly + manual only (moved off main pushes to free
-# runners for required checks, unblock-1030). Not a required check.
+# Report-only tarpaulin run: on main pushes and nightly, not on every PR.
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:

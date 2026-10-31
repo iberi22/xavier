@@ -67,7 +67,26 @@ impl MalocaStore {
     /// 3. `"data"` — matches `MemorySettings::default()` when no config file
     ///    or env var is present.
     pub fn resolve_state_dir() -> PathBuf {
-        crate::settings::paths::state_dir()
+        if let Ok(dir) = std::env::var("XAVIER_STATE_DIR") {
+            if !dir.trim().is_empty() {
+                return PathBuf::from(dir);
+            }
+        }
+
+        // Unit tests never touch the real store: without an explicit
+        // `XAVIER_STATE_DIR` they get a per-process temp dir. Before this guard,
+        // tests like `ticket_create_tests` wrote ~385 fake tickets into the
+        // production `data/maloca/store.json`.
+        if cfg!(test) {
+            std::env::temp_dir().join(format!("xavier-test-state-{}", std::process::id()))
+        } else {
+            let data_dir = crate::settings::XavierSettings::current().memory.data_dir;
+            if !data_dir.trim().is_empty() {
+                PathBuf::from(data_dir)
+            } else {
+                PathBuf::from("data")
+            }
+        }
     }
 
     /// Open the store at the canonical resolved directory (see

@@ -2723,11 +2723,9 @@ name = "demo"
     const PUBLIC_READS: &[&str] = &[
         "/v1/maloca/challenges/stats",
         "/v1/maloca/challenges/training-gate",
+        "/v1/maloca/models/health",
         "/v1/maloca/registry",
     ];
-    /// Public (no token needed) but answers 501: the model router is a
-    /// documented placeholder (docs/FEATURE_STATUS.md#maloca-model-router).
-    const PUBLIC_UNSUPPORTED_READS: &[&str] = &["/v1/maloca/models/health"];
 
     async fn maloca_app() -> (Router, tempfile::TempDir) {
         std::env::set_var("XAVIER_TOKEN", ROOT);
@@ -2841,13 +2839,6 @@ name = "demo"
                 call(&app, "GET", path, "").await,
                 StatusCode::OK,
                 "{path} must stay public"
-            );
-        }
-        for path in PUBLIC_UNSUPPORTED_READS {
-            assert_eq!(
-                call(&app, "GET", path, "").await,
-                StatusCode::NOT_IMPLEMENTED,
-                "{path} must stay public (no 401) and report 501 unsupported"
             );
         }
     }

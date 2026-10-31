@@ -68,13 +68,12 @@ for f in feats:
     assert fid, f"feature missing id: {f}"
     assert fid not in ids, f"duplicate id: {fid}"
     ids.add(fid)
-    assert f.get("status") in ("planned", "beta", "stable", "active", "implemented", "in_progress", "deferred"), \
+    assert f.get("status") in ("planned", "beta", "stable", "active", "implemented", "in_progress"), \
         f"{fid}: bad status {f.get('status')}"
     assert isinstance(norm_list(f.get("tests")), list), f"{fid}: tests must be a list or string"
     assert isinstance(norm_list(f.get("implemented_in")), list), f"{fid}: implemented_in must be a list or string"
 print(f"  ✅ ledger OK: {len(feats)} features")
 PY
-echo "==> [1/5] finished, elapsed: ${SECONDS}s"
 
 # ---------------------------------------------------------------- existence
 echo "==> [2/5] Checking implemented_in[] paths..."
@@ -101,7 +100,6 @@ if bad:
     sys.exit(1)
 print("  ✅ all paths exist")
 PY
-echo "==> [2/5] finished, elapsed: ${SECONDS}s"
 
 # ---------------------------------------------------------------- score
 echo "==> [3/5] Computing implementation score..."
@@ -110,15 +108,12 @@ import json, sys
 ledger = json.load(open(sys.argv[1]))
 raw = ledger.get("features", [])
 feats = list(raw.values()) if isinstance(raw, dict) else raw
-deferred = sum(1 for f in feats if f.get("status") == "deferred")
 n = len(feats)
-den = n - deferred
 stable = sum(1 for f in feats if f.get("status") == "stable")
 beta = sum(1 for f in feats if f.get("status") in ("beta", "implemented", "active"))
-pct = round(sum(f.get("progress_pct", 0) for f in feats if f.get("status") != "deferred") / den, 1) if den > 0 else 0
-print(f"  stable={stable} beta={beta} planned={n-stable-beta-deferred} deferred={deferred} total={n} real%={pct}")
+pct = round(sum(f.get("progress_pct", 0) for f in feats) / n, 1) if n else 0
+print(f"  stable={stable} beta={beta} planned={n-stable-beta} total={n} real%={pct}")
 PY
-echo "==> [3/5] finished, elapsed: ${SECONDS}s"
 
 # ---------------------------------------------------------------- tests
 if [ "$MODE" = "full" ] && command -v cargo >/dev/null 2>&1; then
@@ -376,9 +371,6 @@ PY
       ZERO_MATCH=1
     fi
   done < "$TEST_LIST"
-  # Gating lane done: checkpoint here (before [4b/5]) so the elapsed time is
-  # the gating cost alone, and it is printed even when gating failed.
-  echo "==> [4/5] finished, elapsed: ${SECONDS}s"
   # Candidate lane (planned only, NON-GATING): execute the declared tests of
   # `planned` features so the promoter has evidence for planned->beta. The
   # lane runs AFTER the gating result is decided and never changes it:
@@ -391,7 +383,6 @@ PY
   # remaining names report "skipped (budget)".
   if [ "$FAILED" -ne 0 ]; then
     echo "==> [4b/5] Skipping candidate lane (gating failed)..."
-    echo "==> [4b/5] finished, elapsed: ${SECONDS}s"
   else
   echo "==> [4b/5] Executing candidate tests (planned, non-gating)..."
   CAND_TIMEOUT="${CANDIDATE_TEST_TIMEOUT:-300}"
@@ -409,17 +400,7 @@ PY
         return 1 ;;
     esac
     fnname="${testname##*::}"
-    # A path-qualified id (`tests/foo_e2e.rs::fn`) names its owning file: use it
-    # directly. Grepping the bare fn name picks the first match, which can be a
-    # same-named unit test under src/ -> lib run with a path filter -> 0 tests.
-    files=""
-    case "$testname" in
-      *.rs::*)
-        if [ -f "$ROOT/${testname%%::*}" ]; then files="${testname%%::*}"; fi ;;
-    esac
-    if [ -z "$files" ]; then
-      files="$(cd "$ROOT" && grep -rl --include='*.rs' -e "fn $fnname" src code-graph crates tests 2>/dev/null | head -1)"
-    fi
+    files="$(cd "$ROOT" && grep -rl --include='*.rs' -e "fn $fnname" src code-graph crates tests 2>/dev/null | head -1)"
     if [ -n "$files" ]; then
       for f in $files; do
         file_to_invocation "$f"
@@ -486,10 +467,8 @@ PY
   rm -f "$CAND_LIST"
   if [ "$CAND_FAILED" -ne 0 ]; then
     echo "  ⚠ candidate lane had failures (non-gating — pipeline result unchanged)"
-    echo "==> [4b/5] finished, elapsed: ${SECONDS}s"
   else
     echo "  ✅ candidate lane complete"
-    echo "==> [4b/5] finished, elapsed: ${SECONDS}s"
   fi
   fi
   rm -f "$TEST_LIST"

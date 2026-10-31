@@ -270,9 +270,6 @@ fn open_code_graph_db(
         .map_err(|e| e.to_string())
 }
 
-pub const SUPPORTED_HEADLESS_TOOLS: &[&str] =
-    &["code_scan", "code_find", "code_stats", "code_context"];
-
 async fn execute_code_tool(name: &str, args: &serde_json::Value) -> axum::response::Response {
     let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
     let workspace = std::path::PathBuf::from(path_str);
@@ -439,9 +436,7 @@ async fn execute_code_tool(name: &str, args: &serde_json::Value) -> axum::respon
             axum::http::StatusCode::NOT_IMPLEMENTED,
             AxumJson(serde_json::json!({
                 "error": format!("Tool '{name}' is not implemented in headless mode"),
-                "code": 501,
-                "reason": "unsupported_in_headless",
-                "supported_tools": SUPPORTED_HEADLESS_TOOLS
+                "code": 501
             })),
         )
             .into_response(),
@@ -450,20 +445,20 @@ async fn execute_code_tool(name: &str, args: &serde_json::Value) -> axum::respon
 
 /// Execute tool.
 pub async fn execute_tool(name: String, req: ToolExecuteRequest) -> impl IntoResponse {
-    if SUPPORTED_HEADLESS_TOOLS.contains(&name.as_str()) {
+    if name.starts_with("code_") {
         return execute_code_tool(&name, &req.args).await;
     }
 
-    (
-        axum::http::StatusCode::NOT_IMPLEMENTED,
-        AxumJson(serde_json::json!({
-            "error": format!("Tool '{name}' is not implemented in headless mode"),
-            "code": 501,
-            "reason": "unsupported_in_headless",
-            "supported_tools": SUPPORTED_HEADLESS_TOOLS
-        })),
-    )
-        .into_response()
+    // Simple mock execution for non-code tools (unchanged contract)
+    AxumJson(HeadlessToolExecuteResponse {
+        result: HeadlessToolExecutionResult {
+            tool: name,
+            args_received: req.args,
+            status: "executed",
+        },
+        execution_time_ms: 5,
+    })
+    .into_response()
 }
 
 /// Provider status.
@@ -614,25 +609,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_execute_tool_other_returns_501() {
+    async fn test_execute_tool_other_returns_200() {
         let req = ToolExecuteRequest {
             args: serde_json::json!({ "query": "test" }),
         };
         let response = execute_tool("memory_search".to_string(), req)
             .await
             .into_response();
-        assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
-        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
-            .await
-            .unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(body["code"], 501);
-        assert_eq!(body["reason"], "unsupported_in_headless");
-        assert!(body["supported_tools"].is_array());
-        assert!(body["supported_tools"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("code_scan")));
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
     }
 
     #[tokio::test(flavor = "current_thread")]

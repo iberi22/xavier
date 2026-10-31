@@ -8,7 +8,6 @@ use xavier::data_commons::reputation::{EigenTrustEngine, ReputationConfig};
 use xavier::data_commons::types::WalletAddress;
 
 #[test]
-#[serial_test::serial]
 fn test_reward_application_exact_deltas() {
     let mut engine = EigenTrustEngine::new(ReputationConfig::default(), vec![]);
 
@@ -42,7 +41,6 @@ fn test_reward_application_exact_deltas() {
 }
 
 #[test]
-#[serial_test::serial]
 fn test_sanction_application_and_eigentrust_routing() {
     // NOTE: wallet names below are unique per test; do NOT call clear_exclusions()
     // here — EXCLUSION_STORE is a process-global and clearing it races with other
@@ -87,7 +85,6 @@ fn test_sanction_application_and_eigentrust_routing() {
 }
 
 #[test]
-#[serial_test::serial]
 fn test_exclusion_window_integration_with_selection() {
     // NOTE: no clear_exclusions() here — unique wallet names keep tests disjoint;
     // the global store is shared across tests in this binary (parallel execution).

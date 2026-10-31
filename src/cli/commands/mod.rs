@@ -36,7 +36,6 @@ pub mod mirror;
 pub mod navigation;
 pub mod node;
 pub mod nodes;
-pub mod projects;
 pub mod provider;
 pub mod recovery;
 pub mod regen;
@@ -95,9 +94,6 @@ impl Cli {
                 }
                 let port = port.unwrap_or_else(resolve_http_port);
                 start_http_server(port, *mcp_port, *no_ui).await
-            }
-            Command::Backup { cmd } => {
-                crate::cli::handlers::backup::handle_backup_command(cmd.clone()).await
             }
             Command::Config(args) => {
                 let code = config::run(args);
@@ -247,7 +243,6 @@ impl Cli {
                 space::run_space_command(cmd.clone(), &base_url, &token).await
             }
             Command::Telecom(args) => telecom::execute_telecom_command(args.clone()).await,
-            Command::Projects { cmd } => projects::run_projects_command(cmd),
             Command::Exec {
                 command,
                 session,
@@ -404,9 +399,6 @@ impl Cli {
             Command::Keys { cmd } => secrets::handle_keys_command(cmd.clone()).await,
             Command::Quota => crate::cli::handlers::quota::handle_quota_command().await,
             Command::Tasks { cmd } => tasks::handle_tasks_command(cmd.clone()).await,
-            Command::Tenants { cmd } => {
-                crate::cli::handlers::tenants::handle_tenants_command(cmd.clone()).await
-            }
             Command::Billing { cmd } => {
                 crate::cli::handlers::billing::handle_billing_command(cmd.clone()).await
             }
@@ -427,9 +419,7 @@ impl Cli {
                 PluginCommand::Install { name } => {
                     crate::cli::handlers::plugins::install_plugin(name.clone()).await
                 }
-                PluginCommand::List { json } => {
-                    crate::cli::handlers::plugins::list_plugins(*json).await
-                }
+                PluginCommand::List => crate::cli::handlers::plugins::list_plugins().await,
             },
             Command::MiniExpert { cmd } => {
                 crate::cli::handlers::mini_experts::handle_mini_expert_command(cmd.clone()).await

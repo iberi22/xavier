@@ -17,7 +17,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -44,6 +44,9 @@ use xavier::secrets::audit::QmdAuditLogger;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 
 const ROOT: &str = "wp13e-root-token";
+
+/// Serializes the process-global env (`XAVIER_TOKEN`, `XAVIER_SPACES`).
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn kek() -> Arc<dyn NodeKek> {
     Arc::new(StaticNodeKek::new([9u8; 32]))
@@ -200,7 +203,7 @@ async fn create_two(app: &Router) -> (String, String) {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn espacio_production_wiring_auth_tokens_and_restart() {
-    let _g = crate::SUITE_ENV_LOCK.lock().await;
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("XAVIER_TOKEN", ROOT);
     std::env::remove_var("XAVIER_SPACES");
     let tmp = TempDir::new().unwrap();
@@ -321,7 +324,7 @@ async fn espacio_production_wiring_auth_tokens_and_restart() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn espacio_off_boots_and_routes_answer_503() {
-    let _g = crate::SUITE_ENV_LOCK.lock().await;
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("XAVIER_TOKEN", ROOT);
     std::env::set_var("XAVIER_SPACES", "off");
     let tmp = TempDir::new().unwrap();
@@ -383,7 +386,7 @@ const ADMIN_PATHS: [(&str, &str); 3] = [
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn espacio_admin_plane_is_root_only_for_every_credential() {
-    let _g = crate::SUITE_ENV_LOCK.lock().await;
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("XAVIER_TOKEN", ROOT);
     std::env::remove_var("XAVIER_SPACES");
     let jwt_secret = "wp13e-test-jwt-secret-0123456789abcdef";
@@ -452,7 +455,7 @@ async fn espacio_admin_plane_is_root_only_for_every_credential() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn espacio_delete_moves_to_trash_and_requires_confirm() {
-    let _g = crate::SUITE_ENV_LOCK.lock().await;
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("XAVIER_TOKEN", ROOT);
     std::env::remove_var("XAVIER_SPACES");
     let tmp = TempDir::new().unwrap();
@@ -546,7 +549,7 @@ async fn espacio_delete_moves_to_trash_and_requires_confirm() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn espacio_create_honours_password_required() {
-    let _g = crate::SUITE_ENV_LOCK.lock().await;
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("XAVIER_TOKEN", ROOT);
     std::env::remove_var("XAVIER_SPACES");
     let tmp = TempDir::new().unwrap();
@@ -596,7 +599,7 @@ async fn espacio_create_honours_password_required() {
 #[allow(clippy::await_holding_lock)]
 async fn espacio_install_keeps_a_single_authoritative_manager() {
     use xavier::adapters::inbound::http::routes::get_space_manager;
-    let _g = crate::SUITE_ENV_LOCK.lock().await;
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::remove_var("XAVIER_SPACES");
     let tmp = TempDir::new().unwrap();
     let state = create_test_cli_state(&tmp).await;
@@ -615,7 +618,7 @@ async fn espacio_install_keeps_a_single_authoritative_manager() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn espacio_mesh_sync_happy_path_and_error_cases() {
-    let _g = crate::SUITE_ENV_LOCK.lock().await;
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("XAVIER_TOKEN", ROOT);
     std::env::remove_var("XAVIER_SPACES");
 

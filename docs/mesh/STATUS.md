@@ -8,7 +8,7 @@ Last reviewed: `a44fd8a0a` (2026-10-15). Statuses are from reading the code. No 
 |---|---|---|
 | Peer discovery | PARTIAL: static peer registry and add-peer | (`src/cli/commands/mesh.rs`) |
 | NAT traversal | UNVERIFIED: a module exists, behaviour not measured | (`src/mesh/p2p/nat_traversal.rs`) |
-| libp2p transport | REMOVED | (`Cargo.toml` `libp2p` removed) |
+| libp2p transport | STUB: compiled, reports 0 in health | (`src/mesh/maturity.rs`, `Cargo.toml` `libp2p = []`) |
 | iroh/QUIC transport | PARTIAL, opt-in: behind feature `mesh`, off by default | (`Cargo.toml` `mesh = ["dep:iroh"]`) |
 | Node identity (Ed25519) | BUILT | (`src/mesh/node.rs`) |
 | ML-DSA signing | NOT SHIPPED: a 32-byte commitment field only | (`src/mesh/node.rs`) |

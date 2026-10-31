@@ -31,10 +31,6 @@ impl IntoResponse for ProxyErrorWrapper {
     }
 }
 
-/// Exit code for a command that exists but is not supported on this version
-/// (distinct from `1`, a failed operation). Documented in docs/reference/CLI.md.
-pub const EXIT_UNSUPPORTED: i32 = 5;
-
 /// Calculate exit code based on HTTP result.
 pub fn exit_code_for(result: &Result<reqwest::Response, reqwest::Error>) -> i32 {
     match result {

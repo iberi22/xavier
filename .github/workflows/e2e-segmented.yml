@@ -16,11 +16,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-  # PRs into integration/** skip E2E (fast lane only); the integration -> main
-  # PR and the main push run it in full.
   pull_request:
-    branches-ignore:
-      - 'integration/**'
     paths:
       - 'src/**'
       - 'tests/**'
@@ -85,6 +81,7 @@ jobs:
             'server_e2e'
             'stress_tests'
             'telecom_file_transfer_e2e_test'
+            'test_gpud_sidecar'
             'test_store_path_hierarchy'
             'v1_memories_add_path_traversal'
             'workspace_federation_test'

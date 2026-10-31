@@ -174,7 +174,7 @@ pub struct CreateTenant {
     pub plan: Plan,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct TenantResponse {
     pub id: TenantId,
     pub name: String,

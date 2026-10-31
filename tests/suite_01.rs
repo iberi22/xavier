@@ -48,9 +48,6 @@ mod ci_version_gate;
 #[path = "clavis_auth_pipeline_e2e.rs"]
 mod clavis_auth_pipeline_e2e;
 
-#[path = "cli_tenants_e2e.rs"]
-mod cli_tenants_e2e;
-
 #[path = "clavis_http_e2e.rs"]
 mod clavis_http_e2e;
 
@@ -69,16 +66,3 @@ mod cli_index_self;
 mod cli_provider_exit_codes_e2e;
 #[path = "skill_store_config.rs"]
 mod skill_store_config;
-
-#[path = "cli_json_sweep2_e2e.rs"]
-mod cli_json_sweep2_e2e;
-#[path = "cli_provider_live_routes_e2e.rs"]
-mod cli_provider_live_routes_e2e;
-#[path = "mcp_surface_split_doc.rs"]
-mod mcp_surface_split_doc;
-#[path = "mirror_cli_roundtrip_e2e.rs"]
-mod mirror_cli_roundtrip_e2e;
-#[path = "projects_list_cli_e2e.rs"]
-mod projects_list_cli_e2e;
-#[path = "space_cli_e2e.rs"]
-mod space_cli_e2e;

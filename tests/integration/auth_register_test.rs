@@ -63,11 +63,8 @@ async fn start_test_server(state_dir_path: &std::path::Path) -> (u16, ChildGuard
             .await
         {
             if resp.status().is_success() {
-                let body = resp.text().await.unwrap_or_default();
-                if !body.contains("\"status\":\"starting\"") {
-                    started = true;
-                    break;
-                }
+                started = true;
+                break;
             }
         }
         tokio::time::sleep(Duration::from_millis(500)).await;

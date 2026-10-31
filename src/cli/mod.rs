@@ -8,7 +8,6 @@ pub mod commands;
 pub(crate) mod config;
 pub mod handlers;
 pub mod http_setup;
-pub mod maloca_wiring;
 pub(crate) mod mcp;
 pub mod onboarding;
 pub mod proxy;

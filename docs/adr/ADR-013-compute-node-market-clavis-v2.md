@@ -2,9 +2,6 @@
 
 *Status: PARTIALLY ACCEPTED / REWRITTEN | Date: 2026-07-18*
 
-## Notes
-- the in-tree HTTP sidecar stub was removed on 2026-10-29; the `xavier-gpud` binary remains future work.
-
 ---
 
 ## Contexto

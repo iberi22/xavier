@@ -1,7 +1,7 @@
 //! Maloca Model Inference and Listing REST Routes.
 //!
 //! Provides placeholder Axum HTTP handlers for model dispatching, listing available local and cloud models,
-//! and reporting provider health under `/v1/maloca/models/*`. These routes are unsupported stubs returning 501 NOT_IMPLEMENTED.
+//! and reporting provider health under `/v1/maloca/models/*`. These routes are placeholders and not a working router.
 
 use axum::{
     extract::{Json, State},
@@ -27,11 +27,8 @@ pub async fn infer_handler(State(_service): State<ModelRouterService>) -> impl I
     (
         StatusCode::NOT_IMPLEMENTED,
         Json(serde_json::json!({
-            "status": "unsupported",
-            "feature": "maloca-model-router",
-            "route": "/v1/maloca/models/infer",
-            "use_instead": "/v1/providers",
-            "docs": "docs/FEATURE_STATUS.md#maloca-model-router"
+            "status": "error",
+            "error": "/v1/maloca/models/infer is a placeholder and does not run inference"
         })),
     )
 }
@@ -41,26 +38,21 @@ pub async fn list_handler(State(_service): State<ModelRouterService>) -> impl In
     (
         StatusCode::NOT_IMPLEMENTED,
         Json(serde_json::json!({
-            "status": "unsupported",
-            "feature": "maloca-model-router",
-            "route": "/v1/maloca/models/list",
-            "use_instead": "/v1/providers",
-            "docs": "docs/FEATURE_STATUS.md#maloca-model-router"
+            "status": "error",
+            "error": "/v1/maloca/models/list is a placeholder and does not list models"
         })),
     )
 }
 
 /// GET `/v1/maloca/models/health`: public liveness of the placeholder router.
-/// Answers 501.
+/// Answers 200 (the route is up) but says plainly that no provider is checked.
 pub async fn health_handler(State(_service): State<ModelRouterService>) -> impl IntoResponse {
     (
-        StatusCode::NOT_IMPLEMENTED,
+        StatusCode::OK,
         Json(serde_json::json!({
-            "status": "unsupported",
-            "feature": "maloca-model-router",
-            "route": "/v1/maloca/models/health",
-            "use_instead": "/v1/providers",
-            "docs": "docs/FEATURE_STATUS.md#maloca-model-router"
+            "status": "unavailable",
+            "implemented": false,
+            "message": "/v1/maloca/models/health is a placeholder and does not check provider health"
         })),
     )
 }
@@ -110,11 +102,11 @@ mod tests {
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
-        assert_eq!(json["status"], "unsupported");
-        assert_eq!(json["feature"], "maloca-model-router");
-        assert_eq!(json["route"], "/v1/maloca/models/infer");
-        assert_eq!(json["use_instead"], "/v1/providers");
-        assert_eq!(json["docs"], "docs/FEATURE_STATUS.md#maloca-model-router");
+        assert_eq!(json["status"], "error");
+        assert_eq!(
+            json["error"],
+            "/v1/maloca/models/infer is a placeholder and does not run inference"
+        );
     }
 
     #[tokio::test]
@@ -139,11 +131,11 @@ mod tests {
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
-        assert_eq!(json["status"], "unsupported");
-        assert_eq!(json["feature"], "maloca-model-router");
-        assert_eq!(json["route"], "/v1/maloca/models/list");
-        assert_eq!(json["use_instead"], "/v1/providers");
-        assert_eq!(json["docs"], "docs/FEATURE_STATUS.md#maloca-model-router");
+        assert_eq!(json["status"], "error");
+        assert_eq!(
+            json["error"],
+            "/v1/maloca/models/list is a placeholder and does not list models"
+        );
     }
 
     #[tokio::test]
@@ -161,17 +153,14 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+        assert_eq!(response.status(), StatusCode::OK);
 
         let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
-        assert_eq!(json["status"], "unsupported");
-        assert_eq!(json["feature"], "maloca-model-router");
-        assert_eq!(json["route"], "/v1/maloca/models/health");
-        assert_eq!(json["use_instead"], "/v1/providers");
-        assert_eq!(json["docs"], "docs/FEATURE_STATUS.md#maloca-model-router");
+        assert_eq!(json["status"], "unavailable");
+        assert_eq!(json["implemented"], false);
     }
 }

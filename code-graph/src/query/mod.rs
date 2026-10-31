@@ -701,13 +701,9 @@ impl QueryEngine {
                 continue;
             }
 
-            let edges = match self.db.find_edges_to(&curr_id, Some(EdgeType::Calls), 1000) {
-                Ok(edges) => edges,
-                Err(e) => {
-                    tracing::warn!("find_edges_to failed for route_to: {}", e);
-                    continue;
-                }
-            };
+            let edges = self
+                .db
+                .find_edges_to(&curr_id, Some(EdgeType::Calls), 1000)?;
             for edge in edges {
                 let caller_id = edge.from_symbol;
                 if caller_id.starts_with("file:") || caller_id.starts_with("module:") {
@@ -805,13 +801,7 @@ impl QueryEngine {
             if curr_depth >= max_depth {
                 continue;
             }
-            let edges = match self.db.find_edges_to(&curr_id, None, 1000) {
-                Ok(edges) => edges,
-                Err(e) => {
-                    tracing::warn!("find_edges_to failed for blast_radius: {}", e);
-                    continue;
-                }
-            };
+            let edges = self.db.find_edges_to(&curr_id, None, 1000)?;
             for edge in edges {
                 if !BLAST_EDGE_TYPES.contains(&edge.edge_type) {
                     continue;
@@ -1398,13 +1388,7 @@ impl QueryEngine {
             }
 
             let edges = if reverse {
-                match self.db.find_edges_to(&node, edge_type.clone(), max_edges) {
-                    Ok(edges) => edges,
-                    Err(e) => {
-                        tracing::warn!("find_edges_to failed for symbol_linked: {}", e);
-                        continue;
-                    }
-                }
+                self.db.find_edges_to(&node, edge_type.clone(), max_edges)?
             } else {
                 self.db
                     .find_edges_from(&node, edge_type.clone(), max_edges)?
@@ -1469,13 +1453,7 @@ impl QueryEngine {
 
     /// Find by file
     pub fn in_file(&self, file_path: &str) -> Result<Vec<Symbol>> {
-        match self.db.find_by_file(file_path) {
-            Ok(symbols) => Ok(symbols),
-            Err(e) => {
-                tracing::warn!("find_by_file failed for in_file: {}", e);
-                Ok(Vec::new())
-            }
-        }
+        self.db.find_by_file(file_path)
     }
 
     /// by_language query filter symbols WHERE lang = ? COLLATE NOCASE
