@@ -1619,7 +1619,8 @@
       "implemented_in": "crates/xavier-market/src/ivn.rs, src/market_v2/ivn.rs, src/market_v2/mod.rs",
       "tests": [
         "market_v2::tests::ivn_routes_are_off_without_the_flag",
-        "market_v2::tests::ivn_state_survives_a_restart_and_unsigned_votes_are_refused"
+        "market_v2::tests::ivn_state_survives_a_restart_and_unsigned_votes_are_refused",
+        "tests/ivn_api.rs::test_ivn_api_full_lifecycle"
       ],
       "spec": "docs/features/specs/FEATURE-feat-ivn-api.md"
     },
@@ -1803,7 +1804,23 @@
         "validator_keys_are_checked_and_registration_is_once",
         "vote_signature_is_bound_to_the_vote_domain",
         "state_survives_a_restart_and_voting_resumes",
-        "evaluate_follows_the_quorum_rule"
+        "evaluate_follows_the_quorum_rule",
+        "tests/ivn_storage_persistence.rs::karma_uses_ivn_root_and_imports_legacy_once_without_writing_it",
+        "tests/ivn_storage_persistence.rs::atomic_json_publishes_complete_private_documents",
+        "tests/ivn_storage_persistence.rs::atomic_json_preserves_previous_file_and_cleans_failed_temporary_files",
+        "tests/ivn_storage_persistence.rs::json_load_reports_corruption_and_read_errors",
+        "tests/ivn_storage_persistence.rs::corrupt_karma_is_not_overwritten_after_reward_or_decay",
+        "tests/ivn_storage_persistence.rs::corrupt_exclusions_are_not_overwritten",
+        "tests/ivn_verdict.rs::test_validator_selection_weights_by_karma",
+        "tests/ivn_verdict.rs::test_dynamic_quorum_calculation",
+        "tests/ivn_verdict.rs::test_sanction_application",
+        "tests/ivn_verdict.rs::test_vote_recording_and_tallying",
+        "tests/ivn_verdict.rs::test_selection_karma_weighted_distribution",
+        "tests/ivn_verdict.rs::test_exclusion_of_shared_seed_and_insufficient_karma",
+        "tests/ivn_verdict.rs::test_quorum_4_of_5_pass_and_fail",
+        "tests/ivn_verdict.rs::test_abstention_handling_in_verdict",
+        "tests/ivn_verdict.rs::test_dynamic_quorum_integration_with_ivn",
+        "tests/ivn_verdict.rs::test_sanction_validator_penalties"
       ],
       "test_names": [
         "unsigned_and_forged_votes_are_rejected_and_change_nothing",
@@ -4183,8 +4200,8 @@
         "test_delete_thread_unknown",
         "test_delete_thread_respects_project_scope",
         "test_delete_thread_rolls_back_messages_on_failure",
-        "production_chat_persists_ui_render_agent_output",
-        "production_chat_fallback_also_renders_actual_answer"
+        "tests/panel_openui_backend.rs::production_chat_persists_ui_render_agent_output",
+        "tests/panel_openui_backend.rs::production_chat_fallback_also_renders_actual_answer"
       ],
       "req_ids": [],
       "user_stories": []
