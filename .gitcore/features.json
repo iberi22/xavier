@@ -3137,7 +3137,7 @@
       "name": "Task-Scoped Ephemeral Skills",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Deterministic, bounded, provenance-stamped composition of registry skills + scoped memories + Code-Graph into <worktree>/.agents/skills/eph-<task>; same pack over MCP for live sessions (D11)",
       "steps": [
         "Compose bounded deterministic context from authorized workspace skills, memories and CodeGraph",
@@ -3145,7 +3145,7 @@
         "Deliver live MCP packs without files and clean up only journaled unchanged ephemeral paths"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-ephemeral.md (Deterministic Ephemeral Skill Composer). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D4, D10, D11). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-ephemeral.md (Deterministic Ephemeral Skill Composer). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D4, D10, D11). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-31 by tests composition_stays_within_the_token_budget, out_of_scope_memories_and_decisions_are_excluded, test_secret_finding_blocks_publication_without_creating_link, release_removes_unchanged_entries_and_owned_directory, test_live_composition_hash_matches_composer_without_files, tests/skill_dispatch_ephemeral_e2e.rs::skill_dispatch_ephemeral_lifecycle",
       "tests": [
         "composition_stays_within_the_token_budget",
         "out_of_scope_memories_and_decisions_are_excluded",
@@ -3161,7 +3161,7 @@
       "name": "Skill Drift and Secret Audit",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Report-only audit: package/projection hashes, frontmatter, dead paths, version contradictions, native secret scan; proposed diffs for human approval (D10, D13)",
       "steps": [
         "Scan whole packages and composed output for secrets while reporting location and kind only",
@@ -3169,7 +3169,7 @@
         "Offer reviewable diffs without automatically rewriting canonical sources"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-drift-audit.md (Skill Drift Audit and Secret Scanner). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D10, D13). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-drift-audit.md (Skill Drift Audit and Secret Scanner). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D10, D13). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-31 by tests test_fixture_reports_description_reference_conflict_and_secret, test_proposal_never_leaks_any_secret_family_the_review_listed, test_proposal_is_a_unified_diff_and_leaves_the_source_byte_identical, test_audit_hash_drift_blocking_and_endpoint_match, tests/skill_drift_audit_e2e.rs::audit_endpoint_returns_json_report, tests/skill_drift_audit_e2e.rs::audit_endpoint_returns_not_found_when_manifest_missing",
       "tests": [
         "test_fixture_reports_description_reference_conflict_and_secret",
         "test_proposal_never_leaks_any_secret_family_the_review_listed",
