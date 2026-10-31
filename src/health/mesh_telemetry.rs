@@ -3,7 +3,7 @@
 //! Tracks peer uptime, message count, latency, and consensus agreement ratio
 //! using an in-memory sliding window.
 
-use crate::mesh::NodeId;
+use crate::domain::cycle_breaks::w30_04::NodeId;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
