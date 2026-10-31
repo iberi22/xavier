@@ -28,11 +28,11 @@ filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red|health_truth_e2e|incident_ticket_dedup_e2e|mcp_telecom_tools_visibility_e2e|ticket_dedup_while_open_e2e)::/)'
+filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red|health_truth_e2e|incident_ticket_dedup_e2e|mcp_telecom_tools_visibility_e2e|ticket_dedup_while_open_e2e|codegraph_indexed_symbol_project_root_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard)::/)'
+filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard|doctor_test_pollution_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -56,7 +56,7 @@ filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|test_backup_create_manifest_collision|test_backup_create_contention|code_explain_context_e2e|explain_isolated_llm_e2e)::/)'
+filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|test_backup_create_manifest_collision|test_backup_create_contention|code_explain_context_e2e|explain_isolated_llm_e2e|explain_memory_source_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -68,11 +68,11 @@ filter = 'binary(=suite_01) & test(/^(access_flush_drain|adversarial_challenge_2
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red|health_truth_e2e|incident_ticket_dedup_e2e|mcp_telecom_tools_visibility_e2e|ticket_dedup_while_open_e2e)::/)'
+filter = 'binary(=suite_02) & test(/^(clearance_audit_sqlite|d1_clavis_vault_leak_red|health_truth_e2e|incident_ticket_dedup_e2e|mcp_telecom_tools_visibility_e2e|ticket_dedup_while_open_e2e|codegraph_indexed_symbol_project_root_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard)::/)'
+filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard|doctor_test_pollution_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
@@ -96,7 +96,7 @@ filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|test_backup_create_manifest_collision|test_backup_create_contention|code_explain_context_e2e|explain_isolated_llm_e2e)::/)'
+filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|test_backup_create_manifest_collision|test_backup_create_contention|code_explain_context_e2e|explain_isolated_llm_e2e|explain_memory_source_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]

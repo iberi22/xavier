@@ -2713,6 +2713,14 @@ category = "Testing (internal)"
 secret = false
 
 [[variables]]
+name = "XAVIER_TEST_MODE"
+type = "bool"
+default = "(unset)"
+description = "Alias of XAVIER_TEST: when set, `xavier doctor` treats a data dir under the system temp dir as an expected test setup instead of reporting test pollution"
+category = "Testing (internal)"
+secret = false
+
+[[variables]]
 name = "XAVIER_CONTRACT_LITERAL"
 type = "string"
 default = "(unset)"

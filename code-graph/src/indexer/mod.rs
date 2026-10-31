@@ -583,8 +583,15 @@ impl Indexer {
                 })
                 .collect()
         };
+        let resolved_root = if self.project_id != "default" {
+            Some(self.project_id.clone())
+        } else {
+            std::fs::canonicalize(root)
+                .ok()
+                .map(|p| p.to_string_lossy().into_owned())
+        };
         let stats = tokio::task::spawn_blocking(move || {
-            db.insert_symbols(&new_symbols)?;
+            db.insert_symbols_with_root(&new_symbols, resolved_root.as_deref())?;
             db.insert_edges(&edges)?;
             if !symbol_embeddings.is_empty() {
                 let batch_refs: Vec<(&str, &[f32])> = symbol_embeddings
