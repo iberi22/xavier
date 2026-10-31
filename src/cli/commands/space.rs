@@ -13,6 +13,7 @@ pub async fn run_space_command(cmd: SpaceCommand, base_url: &str, token: &str) -
                 .header("X-Xavier-Token", token)
                 .json(&serde_json::json!({
                     "id": id,
+                    "name": id,
                     "description": label.join(" "),
                     "owner_node": "CLI",
                     "is_public": false
@@ -27,7 +28,7 @@ pub async fn run_space_command(cmd: SpaceCommand, base_url: &str, token: &str) -
         }
         SpaceCommand::List { json } => {
             let resp = client
-                .get(format!("{}/api/v1/espacio/spaces", base_url))
+                .get(format!("{}/api/v1/espacio/admin/spaces", base_url))
                 .header("X-Xavier-Token", token)
                 .send()
                 .await?;
