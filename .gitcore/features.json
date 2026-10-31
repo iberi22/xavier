@@ -1981,7 +1981,7 @@
       "implemented_in": "src/explain/context.rs, src/explain/history.rs, src/explain/mod.rs",
       "name": "Code Explain Context",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3517",
       "status": "beta",
@@ -2004,7 +2004,7 @@
         "tests/code_explain_context_e2e.rs::code_explain_context_handles_missing_git_repo_gracefully"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests explain::context::tests::code_fragment_is_first_and_sources_ordered_by_score, explain::context::tests::duplicates_keep_highest_score, explain::context::tests::budget_truncates_total_text, explain::context::tests::failing_source_is_recorded_and_others_still_used, explain::context::tests::unreadable_fragment_is_recorded_not_fatal, explain::context::tests::rejects_paths_escaping_the_repo, explain::history::tests::lists_commits_touching_the_range_newest_first, explain::history::tests::non_repo_directory_is_an_error, tests/code_explain_context_e2e.rs::code_explain_context_assembles_evidence_from_code_and_git_history, tests/code_explain_context_e2e.rs::code_explain_context_handles_missing_git_repo_gracefully"
     },
     "fix-explain-repo-resolution": {
       "category": "explain",
