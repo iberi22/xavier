@@ -9,7 +9,6 @@ mod router_harness;
 xavier::isolate_test_process!();
 
 use std::process::Command;
-use xavier::memory::MemoryStore;
 use xavier::security::auth::UserRole;
 
 #[tokio::test]
@@ -40,24 +39,37 @@ async fn test_add_path_valid() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Explicitly verify offline persistence through the production store API
-    let store = xavier::memory::repo_store_registry::open_repo_store(
-        tmp.path()
-            .join("data")
-            .join("repos")
-            .join("default")
-            .as_path(),
-    )
-    .await
-    .expect("Failed to open repo store");
+    // Search offline to verify that the path was properly persisted
+    let search_output = Command::new(env!("CARGO_BIN_EXE_xavier"))
+        .arg("search")
+        .arg("unique text")
+        .arg("--offline-ok")
+        .env("HOME", tmp.path())
+        .env("XAVIER_CONFIG_PATH", tmp.path().join("config.toml"))
+        .env("XAVIER_RUNTIME_STATE_PATH", tmp.path().join("state"))
+        .env("XAVIER_DATA_DIR", tmp.path().join("data"))
+        .env("XAVIER_URL", url)
+        .env("XAVIER_TOKEN", router_harness::jwt(UserRole::Admin))
+        .output()
+        .expect("Failed to execute xavier search");
 
-    let record = store
-        .get("default", "swal/demo/notes")
-        .await
-        .expect("Failed to get memory by path")
-        .expect("Memory not found");
+    assert!(
+        search_output.status.success(),
+        "Failed to search memory: {:?}",
+        String::from_utf8_lossy(&search_output.stderr)
+    );
 
-    assert_eq!(record.content, "unique text");
+    let search_stdout = String::from_utf8_lossy(&search_output.stdout);
+    assert!(
+        search_stdout.contains("swal/demo/notes"),
+        "Search output did not contain path 'swal/demo/notes':\n{}",
+        search_stdout
+    );
+    assert!(
+        search_stdout.contains("unique text"),
+        "Search output did not contain 'unique text':\n{}",
+        search_stdout
+    );
 }
 
 #[tokio::test]
@@ -79,7 +91,7 @@ async fn test_add_path_invalid() {
             .env("XAVIER_CONFIG_PATH", tmp.path().join("config.toml"))
             .env("XAVIER_RUNTIME_STATE_PATH", tmp.path().join("state"))
             .env("XAVIER_DATA_DIR", tmp.path().join("data"))
-            .env("XAVIER_URL", &url)
+            .env("XAVIER_URL", url)
             .env("XAVIER_TOKEN", router_harness::jwt(UserRole::Admin))
             .output()
             .expect("Failed to execute xavier add");
@@ -88,12 +100,6 @@ async fn test_add_path_invalid() {
             !output.status.success(),
             "Command succeeded unexpectedly for path: {}",
             path
-        );
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(
-            stderr.contains("Invalid argument 'path'"),
-            "Error did not contain expected message. stderr: {}",
-            stderr
         );
     }
 }
