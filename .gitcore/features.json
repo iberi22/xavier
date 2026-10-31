@@ -3897,7 +3897,7 @@
       "category": "memory",
       "status": "beta",
       "progress_pct": 0,
-      "description": "Espacios (memory vaults). Built: each space has its own directory with space.json, keystore.json and espacio.sqlite (own SQLite file, own data key, own tokens); per-space DEK with node, password or recovery unlock; locked spaces fail closed; space-scoped xsp_ tokens stored only as SHA-256; one-way read links managed by the grantor's admin; HTTP create, get, delete, isolation and links under /api/v1/espacio; root-only admin plane; espacio_channel_list and espacio_channel_create MCP tools; XAVIER_SPACES=off switch. Not built: per-space SpaceProtocol (espacio does not consume it), retention_days enforcement, member and token management over HTTP/MCP, invite routes, the `xavier space` CLI, node-to-node transport, channel replication. Status stays planned until those land; progress is not claimed.",
+      "description": "Espacios (memory vaults). Built: each space has its own directory with space.json, keystore.json and espacio.sqlite (own SQLite file, own data key, own tokens); per-space DEK with node, password or recovery unlock; locked spaces fail closed; space-scoped xsp_ tokens stored only as SHA-256; one-way read links managed by the grantor's admin; HTTP create, get, delete, isolation and links under /api/v1/espacio; root-only admin plane; espacio_channel_list and espacio_channel_create MCP tools; XAVIER_SPACES=off switch. Not built: per-space SpaceProtocol (espacio does not consume it), retention_days enforcement, member and token management over HTTP/MCP, invite routes, node-to-node transport, channel replication. Status stays planned until those land; progress is not claimed.",
       "steps": [
         "Per-space directory with space.json, keystore.json and espacio.sqlite (src/espacio/store.rs, keys.rs)",
         "Per-space data key with node, password and recovery unlock modes; locked spaces refuse every store access (src/espacio/keys.rs)",
@@ -3964,7 +3964,8 @@
         "tests/space_cli_e2e.rs::test_space_create_success",
         "tests/space_cli_e2e.rs::test_space_create_conflict",
         "tests/space_cli_e2e.rs::test_space_list_json_success",
-        "tests/space_cli_e2e.rs::test_space_list_json_invalid"
+        "tests/space_cli_e2e.rs::test_space_list_json_invalid",
+        "tests/space_cli_real_e2e.rs::test_space_cli_real_e2e"
       ],
       "req_ids": [],
       "user_stories": [],
