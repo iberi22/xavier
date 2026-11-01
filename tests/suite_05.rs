@@ -70,3 +70,6 @@ mod maloca_store_atomic_persist_e2e;
 
 #[path = "maloca_governance_rules_e2e.rs"]
 mod maloca_governance_rules_e2e;
+
+#[path = "cli_backup_restore_e2e.rs"]
+mod cli_backup_restore_e2e;
