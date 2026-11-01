@@ -339,6 +339,18 @@ impl Inspection {
             .filter_map(|key| self.entry(key).ok())
             .collect()
     }
+    pub fn effective(&self) -> &Value {
+        &self.effective
+    }
+    pub fn runtime(&self) -> &Value {
+        &self.runtime
+    }
+    pub fn set_json(&self, key: &str, value: Value) -> Result<()> {
+        self.require_valid()?;
+        let mut runtime = self.runtime.clone();
+        insert(&mut runtime, key, value);
+        self.persist(&runtime)
+    }
     pub fn require_valid(&self) -> Result<()> {
         if !self.problems.is_empty() {
             return Err(failure(

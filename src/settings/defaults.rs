@@ -142,7 +142,6 @@ impl Default for ModelSettings {
             routes: std::collections::HashMap::new(),
             llm_api_key: None,
             cloud_llm_model: None,
-            routes: std::collections::HashMap::new(),
             cloud_llm_url: None,
             local_llm_api_key: None,
             local_anthropic_url: None,

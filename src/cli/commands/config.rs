@@ -100,7 +100,7 @@ fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
                 inspection.require_valid()?;
                 body["operation"] = json!("list_routes");
                 let routes = inspection
-                    .effective
+                    .effective()
                     .pointer("/models/routes")
                     .cloned()
                     .unwrap_or(json!({}));
@@ -108,9 +108,12 @@ fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
             }
             ConfigLlmRouteCommand::Set { task, target } => {
                 inspection.require_valid()?;
-                let mut runtime = inspection.runtime.clone();
                 let pointer = "/models/routes";
-                let mut routes = runtime.pointer(pointer).cloned().unwrap_or(json!({}));
+                let mut routes = inspection
+                    .runtime()
+                    .pointer(pointer)
+                    .cloned()
+                    .unwrap_or(json!({}));
                 if let Some(map) = routes.as_object_mut() {
                     map.insert(task.clone(), json!(target));
                 } else {
@@ -118,8 +121,7 @@ fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
                     map.insert(task.clone(), json!(target));
                     routes = json!(map);
                 }
-                crate::settings::inspection::insert(&mut runtime, "models.routes", routes);
-                inspection.persist(&runtime)?;
+                inspection.set_json("models.routes", routes)?;
                 body["operation"] = json!("set_route");
                 body["task"] = json!(task);
                 body["target"] = json!(target);
