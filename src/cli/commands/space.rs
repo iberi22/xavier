@@ -98,20 +98,25 @@ pub async fn run_space_command(cmd: SpaceCommand, base_url: &str, token: &str) -
                 }
             }
         }
-        SpaceCommand::Delete { id, local } => {
+        SpaceCommand::Delete { id, json, local } => {
             let mut use_local = local;
             if !use_local {
-                // Let's assume there is a delete endpoint on `espacio` ? Actually the fallback deletes from `multi_db`.
-                // Let's try HTTP first for completeness.
                 let resp = client
-                    .delete(format!("{}/api/v1/espacio/admin/spaces/{}", base_url, id))
+                    .delete(format!(
+                        "{}/api/v1/espacio/admin/spaces/{}?confirm={}",
+                        base_url, id, id
+                    ))
                     .header("X-Xavier-Token", token)
                     .send()
                     .await;
                 match resp {
                     Ok(r) => {
                         if r.status().is_success() {
-                            println!("Deleted space {}", id);
+                            if json {
+                                println!("{}", serde_json::json!({ "ok": true }));
+                            } else {
+                                println!("Deleted space {}", id);
+                            }
                         } else {
                             bail!("Failed to delete space {}: {}", id, r.text().await?);
                         }
@@ -127,18 +132,36 @@ pub async fn run_space_command(cmd: SpaceCommand, base_url: &str, token: &str) -
                 let multi_db = MultiDbManager::open(&data_dir)?;
                 let deleted = multi_db.delete_database(&id).await?;
                 if deleted {
-                    println!("Deleted space {}", id);
+                    if json {
+                        println!("{}", serde_json::json!({ "ok": true }));
+                    } else {
+                        println!("Deleted space {}", id);
+                    }
                 } else {
                     bail!("Space not found");
                 }
             }
         }
-        SpaceCommand::Use { id } => {
+        SpaceCommand::Use { id, json } => {
             let data_dir = crate::settings::XavierSettings::resolve_data_dir();
-            std::fs::create_dir_all(&data_dir)?;
+            let _ = std::fs::create_dir_all(&data_dir);
             let path = data_dir.join("active_space");
-            std::fs::write(&path, &id)?;
-            println!("Active space set to {}", id);
+            let _ = std::fs::write(&path, &id);
+
+            let state_dir = std::env::var("XAVIER_STATE_DIR").unwrap_or_else(|_| ".".to_string());
+            let active_space_file = std::path::PathBuf::from(state_dir)
+                .join(".xavier")
+                .join("active_space");
+            if let Some(parent) = active_space_file.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            std::fs::write(&active_space_file, &id)?;
+
+            if json {
+                println!("{}", serde_json::json!({ "ok": true, "id": id }));
+            } else {
+                println!("Active space set to {}", id);
+            }
         }
         SpaceCommand::Unlock { id, mode } => {
             let (password, recovery_code) = match mode {
@@ -321,40 +344,6 @@ Retention: {}",
                 println!("Accepted invite {}", invite_id);
             } else {
                 bail!("Failed to accept invite: {}", resp.text().await?);
-            }
-        }
-        SpaceCommand::Delete { id, json } => {
-            let resp = client
-                .delete(format!(
-                    "{}/api/v1/espacio/admin/spaces/{}?confirm={}",
-                    base_url, id, id
-                ))
-                .header("X-Xavier-Token", token)
-                .send()
-                .await?;
-            if resp.status().is_success() {
-                if json {
-                    println!("{}", serde_json::json!({ "ok": true }));
-                } else {
-                    println!("Deleted space {}", id);
-                }
-            } else {
-                bail!("Failed to delete space {}: {}", id, resp.text().await?);
-            }
-        }
-        SpaceCommand::Use { id, json } => {
-            let state_dir = std::env::var("XAVIER_STATE_DIR").unwrap_or_else(|_| ".".to_string());
-            let active_space_file = std::path::PathBuf::from(state_dir)
-                .join(".xavier")
-                .join("active_space");
-            if let Some(parent) = active_space_file.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            std::fs::write(&active_space_file, &id)?;
-            if json {
-                println!("{}", serde_json::json!({ "ok": true, "id": id }));
-            } else {
-                println!("Active space set to {}", id);
             }
         }
         SpaceCommand::Lock { id: _, json } => {

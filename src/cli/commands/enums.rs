@@ -630,6 +630,9 @@ pub enum SpaceCommand {
     },
     /// Delete a space
     Delete {
+        /// Output in JSON format
+        #[arg(long, default_value_t = false)]
+        json: bool,
         /// The space ID
         id: String,
         /// Force local mode (bypass daemon)
@@ -638,6 +641,9 @@ pub enum SpaceCommand {
     },
     /// Use a space (set as active)
     Use {
+        /// Output in JSON format
+        #[arg(long, default_value_t = false)]
+        json: bool,
         /// The space ID
         id: String,
     },
@@ -686,20 +692,6 @@ pub enum SpaceCommand {
         invite_id: String,
         /// Display name for the peer
         display: String,
-    },
-    /// Delete a space
-    Delete {
-        #[arg(long)]
-        json: bool,
-        /// The space ID
-        id: String,
-    },
-    /// Export a space to the environment
-    Use {
-        #[arg(long)]
-        json: bool,
-        /// The space ID
-        id: String,
     },
     /// Lock a space (Not available yet)
     Lock {

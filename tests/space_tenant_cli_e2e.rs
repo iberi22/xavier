@@ -1,13 +1,9 @@
-use assert_cmd::Command;
 use axum::extract::State;
 use axum::http::HeaderMap;
-use axum::{
-    routing::{get, post},
-    Json, Router,
-};
+use axum::{routing::post, Json, Router};
 use serde_json::{json, Value};
 use std::fs;
-use std::net::SocketAddr;
+use std::process::Command;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::Mutex;
@@ -27,20 +23,36 @@ async fn test_q5_spaces_tenants_cli() {
     let state = MockState::default();
 
     let app = Router::new()
-        .route("/v1/memory/add", post(
-            |headers: HeaderMap, State(st): State<MockState>, Json(_body): Json<Value>| async move {
-                let ws = headers.get("X-Workspace-Id").map(|v| v.to_str().unwrap().to_string()).unwrap_or("default".to_string());
-                st.memory_spaces.lock().await.push(ws);
-                Json(json!({"status": "ok"}))
-            }
-        ))
-        .route("/v1/memory/search", post(
-            |headers: HeaderMap, State(st): State<MockState>, Json(_body): Json<Value>| async move {
-                let ws = headers.get("X-Workspace-Id").map(|v| v.to_str().unwrap().to_string()).unwrap_or("default".to_string());
-                st.searched_spaces.lock().await.push(ws);
-                Json(json!({"results": []}))
-            }
-        ))
+        .route(
+            "/v1/memory/add",
+            post(
+                |headers: HeaderMap,
+                 State(st): State<MockState>,
+                 Json(_body): Json<Value>| async move {
+                    let ws = headers
+                        .get("X-Workspace-Id")
+                        .map(|v| v.to_str().unwrap().to_string())
+                        .unwrap_or_else(|| "default".to_string());
+                    st.memory_spaces.lock().await.push(ws);
+                    Json(json!({"status": "ok"}))
+                },
+            ),
+        )
+        .route(
+            "/v1/memory/search",
+            post(
+                |headers: HeaderMap,
+                 State(st): State<MockState>,
+                 Json(_body): Json<Value>| async move {
+                    let ws = headers
+                        .get("X-Workspace-Id")
+                        .map(|v| v.to_str().unwrap().to_string())
+                        .unwrap_or_else(|| "default".to_string());
+                    st.searched_spaces.lock().await.push(ws);
+                    Json(json!({"results": []}))
+                },
+            ),
+        )
         .with_state(state.clone());
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -51,95 +63,88 @@ async fn test_q5_spaces_tenants_cli() {
         axum::serve(listener, app).await.unwrap();
     });
 
+    let xavier_bin = env!("CARGO_BIN_EXE_xavier");
     let space_id = "test-space-id";
 
     // Create
-    Command::cargo_bin("xavier")
-        .unwrap()
+    let status = Command::new(xavier_bin)
         .env("XAVIER_DATA_DIR", data_dir.to_str().unwrap())
         .arg("space")
         .arg("create")
         .arg(space_id)
         .arg("--local")
-        .assert()
-        .success();
+        .status()
+        .expect("failed to execute xavier space create");
+    assert!(status.success());
 
     // List
-    let out = Command::cargo_bin("xavier")
-        .unwrap()
+    let out = Command::new(xavier_bin)
         .env("XAVIER_DATA_DIR", data_dir.to_str().unwrap())
         .arg("space")
         .arg("list")
         .arg("--json")
         .arg("--local")
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    assert!(String::from_utf8_lossy(&out).contains(space_id));
+        .output()
+        .expect("failed to execute xavier space list");
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains(space_id));
 
     // Use
-    Command::cargo_bin("xavier")
-        .unwrap()
+    let out_use = Command::new(xavier_bin)
         .env("XAVIER_DATA_DIR", data_dir.to_str().unwrap())
         .arg("space")
         .arg("use")
         .arg(space_id)
-        .assert()
-        .success()
-        .stdout(predicates::str::contains(format!(
-            "Active space set to {}",
-            space_id
-        )));
+        .output()
+        .expect("failed to execute xavier space use");
+    assert!(out_use.status.success());
+    assert!(String::from_utf8_lossy(&out_use.stdout)
+        .contains(&format!("Active space set to {}", space_id)));
 
     // Store memory in it
-    Command::cargo_bin("xavier")
-        .unwrap()
+    let out_add = Command::new(xavier_bin)
         .env("XAVIER_DATA_DIR", data_dir.to_str().unwrap())
         .env("XAVIER_URL", &url) // offline tests override URL via XAVIER_URL
         .arg("add")
         .arg("hello memory")
-        .assert()
-        .success();
+        .status()
+        .expect("failed to execute xavier add");
+    assert!(out_add.success());
 
     assert_eq!(state.memory_spaces.lock().await.last().unwrap(), space_id);
 
     // Search scoped to it
-    Command::cargo_bin("xavier")
-        .unwrap()
+    let out_search = Command::new(xavier_bin)
         .env("XAVIER_DATA_DIR", data_dir.to_str().unwrap())
         .env("XAVIER_URL", &url)
         .arg("search")
         .arg("hello")
-        .assert()
-        .success();
+        .status()
+        .expect("failed to execute xavier search");
+    assert!(out_search.success());
 
     assert_eq!(state.searched_spaces.lock().await.last().unwrap(), space_id);
 
     // Delete
-    Command::cargo_bin("xavier")
-        .unwrap()
+    let status_del = Command::new(xavier_bin)
         .env("XAVIER_DATA_DIR", data_dir.to_str().unwrap())
         .arg("space")
         .arg("delete")
         .arg(space_id)
         .arg("--local")
-        .assert()
-        .success();
+        .status()
+        .expect("failed to execute xavier space delete");
+    assert!(status_del.success());
 
     // List lacks it
-    let out2 = Command::cargo_bin("xavier")
-        .unwrap()
+    let out2 = Command::new(xavier_bin)
         .env("XAVIER_DATA_DIR", data_dir.to_str().unwrap())
         .arg("space")
         .arg("list")
         .arg("--json")
         .arg("--local")
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    assert!(!String::from_utf8_lossy(&out2).contains(space_id));
+        .output()
+        .expect("failed to execute xavier space list after delete");
+    assert!(out2.status.success());
+    assert!(!String::from_utf8_lossy(&out2.stdout).contains(space_id));
 }
