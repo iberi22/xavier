@@ -141,7 +141,7 @@ fn billing_wiring_plan_lookup_success() {
 
     let mock_thread = std::thread::spawn(move || {
         if let Some(mut stream) = accept_with_timeout(&listener, Duration::from_secs(5)) {
-            let body = r#"{"version":"1","currency":"usd","payment_provider":"stripe","plans":[{"id":"pro","title":"Pro","tier":"paid","prices":[{"id":"p1","currency":"usd","amount":1000,"interval":"month"}],"limits":{"storage_bytes":0,"ai_tokens_per_day":0}}]}"#;
+            let body = r#"{"version":"1","currency":"usd","payment_provider":"stripe","plans":[{"id":"pro","name":"Pro","status":"available","price":{"monthly_usd":10.0},"limits":{"storage_bytes":0,"ai_tokens_per_day":0}}]}"#;
             handle_mock_request(&mut stream, "200 OK", body);
         }
     });
@@ -165,7 +165,7 @@ fn billing_wiring_usage_report_success() {
 
     let mock_thread = std::thread::spawn(move || {
         if let Some(mut stream) = accept_with_timeout(&listener, Duration::from_secs(5)) {
-            let body = r#"{"version":"1","currency":"usd","payment_provider":"stripe","plans":[{"id":"pro","title":"Pro","tier":"paid","prices":[{"id":"p1","currency":"usd","amount":1000,"interval":"month"}],"limits":{"storage_bytes":0,"ai_tokens_per_day":0}}]}"#;
+            let body = r#"{"version":"1","currency":"usd","payment_provider":"stripe","plans":[{"id":"pro","name":"Pro","status":"available","price":{"monthly_usd":10.0},"limits":{"storage_bytes":0,"ai_tokens_per_day":0}}]}"#;
             handle_mock_request(&mut stream, "200 OK", body);
         }
     });
