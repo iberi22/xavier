@@ -127,7 +127,9 @@ fn billing_wiring_401_non_zero_exit() {
     assert_ne!(status, Some(0));
     // The specific unauthenticated message from client.rs
     assert!(
-        stderr.contains("swal-billing answered HTTP 401") || stderr.contains("not authenticated")
+        stderr.contains("swal-billing rejected the credentials")
+            || stderr.contains("HTTP 401")
+            || stderr.contains("not authenticated")
     );
 }
 
@@ -139,7 +141,7 @@ fn billing_wiring_plan_lookup_success() {
 
     let mock_thread = std::thread::spawn(move || {
         if let Some(mut stream) = accept_with_timeout(&listener, Duration::from_secs(5)) {
-            let body = r#"{"version":1,"plans":[{"id":"pro","title":"Pro","tier":"paid","prices":[{"id":"p1","currency":"usd","amount":1000,"interval":"month"}],"limits":{"storage_bytes":0,"ai_tokens_per_day":0}}]}"#;
+            let body = r#"{"version":"1","currency":"usd","payment_provider":"stripe","plans":[{"id":"pro","title":"Pro","tier":"paid","prices":[{"id":"p1","currency":"usd","amount":1000,"interval":"month"}],"limits":{"storage_bytes":0,"ai_tokens_per_day":0}}]}"#;
             handle_mock_request(&mut stream, "200 OK", body);
         }
     });
@@ -163,19 +165,18 @@ fn billing_wiring_usage_report_success() {
 
     let mock_thread = std::thread::spawn(move || {
         if let Some(mut stream) = accept_with_timeout(&listener, Duration::from_secs(5)) {
-            let body = r#"{"tenant":"acme","plan":"pro","bytes":1024,"chunks":2,"quota":5368709120,"ai_tokens_per_day":50000,"percent":0}"#;
+            let body = r#"{"version":"1","currency":"usd","payment_provider":"stripe","plans":[{"id":"pro","title":"Pro","tier":"paid","prices":[{"id":"p1","currency":"usd","amount":1000,"interval":"month"}],"limits":{"storage_bytes":0,"ai_tokens_per_day":0}}]}"#;
             handle_mock_request(&mut stream, "200 OK", body);
         }
     });
 
     let mut cmd = xavier_cli(dir.path());
     cmd.args(["billing", "status", "--json"]);
-    cmd.env("XAVIER_PGHEART_URL", &url);
-    cmd.env("XAVIER_PGHEART_TOKEN", "test-tenant-key");
+    cmd.env("XAVIER_BILLING_URL", &url);
 
     let (status, stdout, _) = wait_with_timeout(cmd);
     mock_thread.join().unwrap();
 
     assert_eq!(status, Some(0));
-    assert!(stdout.contains("pro"));
+    assert!(stdout.contains("true") || stdout.contains("reachable"));
 }

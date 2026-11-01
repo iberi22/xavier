@@ -96,6 +96,7 @@ async fn test_cli_parity_index_and_memory() {
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"));
     cmd.env("XAVIER_STATE_DIR", state_dir.to_str().unwrap());
     cmd.env("XAVIER_URL", &url);
+    cmd.env("XAVIER_TOKEN", "test-token");
     cmd.args(["index", "status", "--json"]);
     let assert = cmd.output().unwrap();
     assert!(assert.status.success());
@@ -107,6 +108,7 @@ async fn test_cli_parity_index_and_memory() {
     let mut cmd2 = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"));
     cmd2.env("XAVIER_STATE_DIR", state_dir.to_str().unwrap());
     cmd2.env("XAVIER_URL", &url);
+    cmd2.env("XAVIER_TOKEN", "test-token");
     cmd2.args(["index", "add", temp.path().to_str().unwrap(), "--json"]);
     let assert2 = cmd2.output().unwrap();
     assert!(assert2.status.success());
@@ -118,6 +120,7 @@ async fn test_cli_parity_index_and_memory() {
     let mut cmd3 = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"));
     cmd3.env("XAVIER_STATE_DIR", state_dir.to_str().unwrap());
     cmd3.env("XAVIER_URL", &url);
+    cmd3.env("XAVIER_TOKEN", "test-token");
     cmd3.args(["memory", "load", temp.path().to_str().unwrap()]);
     assert!(cmd3.status().unwrap().success());
 }

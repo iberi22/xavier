@@ -221,13 +221,8 @@ async fn run_fts_rebuild(db: Option<std::path::PathBuf>, json: bool) -> Result<(
 
 async fn run_import_markdown(dir: &std::path::Path) -> Result<()> {
     let workspace_id = crate::cli::utils::resolve_active_workspace();
-    let memory = crate::cli::commands::spawn::load_spawn_memory().await?;
-    if let Some(store) = memory.store().await {
-        crate::cli::handlers::export::handle_import_markdown(dir, store.as_ref(), &workspace_id)
-            .await
-    } else {
-        anyhow::bail!("Memory store backend unavailable")
-    }
+    let store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await?;
+    crate::cli::handlers::export::handle_import_markdown(dir, &store, &workspace_id).await
 }
 
 /// SQLite failures that mean the database or FTS index is corrupt (exit 1),
@@ -397,18 +392,9 @@ async fn run_fts_check(db: Option<std::path::PathBuf>, json: bool) -> Result<()>
 
 async fn run_export_markdown(dir: &std::path::Path, public_only: bool) -> Result<()> {
     let workspace_id = crate::cli::utils::resolve_active_workspace();
-    let memory = crate::cli::commands::spawn::load_spawn_memory().await?;
-    if let Some(store) = memory.store().await {
-        crate::cli::handlers::export::handle_export_markdown(
-            dir,
-            store.as_ref(),
-            &workspace_id,
-            public_only,
-        )
+    let store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await?;
+    crate::cli::handlers::export::handle_export_markdown(dir, &store, &workspace_id, public_only)
         .await
-    } else {
-        anyhow::bail!("Memory store backend unavailable")
-    }
 }
 
 async fn run_consolidation(nightly: bool) -> Result<()> {

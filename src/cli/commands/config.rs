@@ -133,13 +133,13 @@ async fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
                 }
             },
             ConfigLlmCommand::SetModel { model } => {
-                inspection.set("models.general_model", model, false)?;
+                inspection.set("models.local_llm_model", model, false)?;
                 body["operation"] = json!("set-model");
                 body["model"] = json!(model);
                 body["restart_required"] = json!(true);
             }
             ConfigLlmCommand::Show => {
-                let entry = inspection.entry("models.general_model")?;
+                let entry = inspection.entry("models.local_llm_model")?;
                 inspection.require_valid()?;
                 body["operation"] = json!("show");
                 body["entry"] = serde_json::to_value(entry).expect("entry serializes");
