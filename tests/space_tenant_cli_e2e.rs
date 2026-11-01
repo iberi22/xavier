@@ -16,7 +16,7 @@ struct MockState {
     pub searched_spaces: Arc<Mutex<Vec<String>>>,
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_q5_spaces_tenants_cli() {
     let temp = TempDir::new().unwrap();
     let data_dir = temp.path().join("data");
