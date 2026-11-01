@@ -26,7 +26,7 @@ async fn test_q5_spaces_tenants_cli() {
 
     let app = Router::new()
         .route(
-            "/v1/memory/add",
+            "/memory/add",
             post(
                 |headers: HeaderMap,
                  State(st): State<MockState>,
@@ -41,7 +41,7 @@ async fn test_q5_spaces_tenants_cli() {
             ),
         )
         .route(
-            "/v1/memory/search",
+            "/memory/search",
             post(
                 |headers: HeaderMap,
                  State(st): State<MockState>,

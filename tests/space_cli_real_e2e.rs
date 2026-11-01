@@ -257,6 +257,27 @@ async fn test_space_cli_real_e2e() {
     );
     assert!(run.stdout.contains("Active space set to demo"));
 
+    // Attempt second create (should fail because space 'demo' already exists)
+    let run = sandbox.run(
+        sandbox
+            .command(&d.url)
+            .arg("space")
+            .arg("create")
+            .arg("demo")
+            .arg("--label")
+            .arg("a")
+            .env("XAVIER_TOKEN", ROOT),
+        Duration::from_secs(10),
+    );
+    assert!(!run.status.success(), "second create should fail");
+    assert!(
+        run.stderr.contains("already exists")
+            || run.stderr.contains("conflict")
+            || run.stderr.contains("Failed to create space"),
+        "Stderr: {}",
+        run.stderr
+    );
+
     // Delete space
     let run = sandbox.run(
         sandbox
@@ -290,25 +311,4 @@ async fn test_space_cli_real_e2e() {
         run.stderr
     );
     assert!(!run.stdout.contains("\"id\":\"demo\""));
-
-    // Attempt second create
-    let run = sandbox.run(
-        sandbox
-            .command(&d.url)
-            .arg("space")
-            .arg("create")
-            .arg("demo")
-            .arg("--label")
-            .arg("a")
-            .env("XAVIER_TOKEN", ROOT),
-        Duration::from_secs(10),
-    );
-    assert!(!run.status.success(), "second create should fail");
-    assert!(
-        run.stderr.contains("already exists")
-            || run.stderr.contains("conflict")
-            || run.stderr.contains("Failed to create space"),
-        "Stderr: {}",
-        run.stderr
-    );
 }
