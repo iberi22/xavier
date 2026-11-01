@@ -144,7 +144,6 @@ impl Cli {
                             .header("X-Xavier-Token", &token)
                             .send()
                             .await?;
-                        let status = response.status();
                         let body = response
                             .json::<serde_json::Value>()
                             .await
