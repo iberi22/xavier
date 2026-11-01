@@ -391,6 +391,9 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
         non_empty(&settings.advanced.panel_store_dir),
     );
 
+    // Billing settings
+    set_optional_if_absent("XAVIER_BILLING_URL", settings.billing.url.clone());
+
     // PgHeart settings
     set_optional_if_absent("PGHEART_INSTANCE_ID", settings.pgheart.instance_id.clone());
     set_if_absent(
