@@ -39,6 +39,11 @@ pub enum ConfigCommand {
     Unset { key: String },
     /// Check files, environment types and paths that depend on cwd
     Validate,
+    /// Manage LLM configuration
+    Llm {
+        #[command(subcommand)]
+        cmd: LlmConfigCommand,
+    },
     /// Show the config and runtime-state file paths
     Path,
     /// Explain a setting's source, override variable and restart requirement
@@ -78,13 +83,22 @@ pub enum ConfigLlmRouteCommand {
     },
 }
 
+#[derive(Subcommand, Debug, Clone)]
+pub enum LlmConfigCommand {
+    /// Set the LLM model
+    #[command(name = "set-model")]
+    SetModel { model: String },
+    /// Show current LLM configuration
+    Show,
+}
+
 fn error(code: i32, message: &str) -> ConfigError {
     ConfigError {
         code,
         message: message.into(),
     }
 }
-fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
+async fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
     let mut inspection = Inspection::load();
     let mut body = json!({
         "schema_version": 1, "ok": true,
@@ -132,6 +146,21 @@ fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
         ConfigCommand::Path => {
             body["operation"] = json!("path");
         }
+
+        ConfigCommand::Llm { cmd } => match cmd {
+            LlmConfigCommand::SetModel { model } => {
+                inspection.set("models.general_model", &model, false)?;
+                body["operation"] = json!("set-model");
+                body["model"] = json!(model);
+                body["restart_required"] = json!(true);
+            }
+            LlmConfigCommand::Show => {
+                let entry = inspection.entry("models.general_model")?;
+                inspection.require_valid()?;
+                body["operation"] = json!("show");
+                body["entry"] = serde_json::to_value(entry).expect("entry serializes");
+            }
+        },
         ConfigCommand::Validate => {
             inspection.validate();
             body["operation"] = json!("validate");
@@ -210,8 +239,8 @@ fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
 }
 
 /// Config errors follow CLI exit-code conventions and never contain setting values.
-pub fn run(args: &ConfigArgs) -> i32 {
-    let (body, code) = execute(args).unwrap_or_else(|e| {
+pub async fn run(args: &ConfigArgs) -> i32 {
+    let (body, code) = execute(args).await.unwrap_or_else(|e| {
         (
             json!({"schema_version":1,"ok":false,"error":{"code":e.code,"message":e.message}}),
             e.code,

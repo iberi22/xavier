@@ -31,6 +31,10 @@ pub async fn handle_memory_command(
         crate::cli::commands::enums::memory::MemoryCommand::IndexSelf { json } => {
             run_index_self(json).await
         }
+
+        crate::cli::commands::enums::memory::MemoryCommand::Load { path } => {
+            run_import_markdown(&path).await
+        }
         crate::cli::commands::enums::memory::MemoryCommand::ImportMarkdown { dir } => {
             run_import_markdown(&dir).await
         }

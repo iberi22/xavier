@@ -32,6 +32,13 @@ pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 /// Each variant maps to a distinct subcommand exposed to the user.
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
+    /// Index operations
+    Index {
+        #[command(subcommand)]
+        cmd: IndexCommand,
+        #[arg(long, global = true)]
+        json: bool,
+    },
     /// Local snapshot backup of the Xavier data dir
     Backup {
         #[command(subcommand)]
@@ -2123,6 +2130,8 @@ pub mod memory {
 
     #[derive(Subcommand, Debug, Clone)]
     pub enum MemoryCommand {
+        /// Load memory from a file or directory
+        Load { path: std::path::PathBuf },
         /// Index foundational documentation into the memory store
         IndexSelf {
             #[arg(long)]
@@ -2532,4 +2541,12 @@ pub enum ProjectsCommand {
         #[arg(long)]
         all: bool,
     },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum IndexCommand {
+    /// Add path to index
+    Add { path: String },
+    /// Show index status
+    Status,
 }
