@@ -40,8 +40,7 @@ pub async fn run_space_command(cmd: SpaceCommand, base_url: &str, token: &str) -
             }
             if use_local {
                 let data_dir = crate::settings::XavierSettings::resolve_data_dir();
-                let mut multi_db = MultiDbManager::new(&data_dir);
-                multi_db.open().await?;
+                let multi_db = MultiDbManager::open(&data_dir)?;
                 let display_name = if label.is_empty() {
                     id.clone()
                 } else {
@@ -88,8 +87,7 @@ pub async fn run_space_command(cmd: SpaceCommand, base_url: &str, token: &str) -
             }
             if use_local {
                 let data_dir = crate::settings::XavierSettings::resolve_data_dir();
-                let mut multi_db = MultiDbManager::new(&data_dir);
-                multi_db.open().await?;
+                let multi_db = MultiDbManager::open(&data_dir)?;
                 let dbs = multi_db.list_entries().await;
                 if json {
                     println!("{}", serde_json::to_string_pretty(&dbs)?);
@@ -126,8 +124,7 @@ pub async fn run_space_command(cmd: SpaceCommand, base_url: &str, token: &str) -
             }
             if use_local {
                 let data_dir = crate::settings::XavierSettings::resolve_data_dir();
-                let mut multi_db = MultiDbManager::new(&data_dir);
-                multi_db.open().await?;
+                let multi_db = MultiDbManager::open(&data_dir)?;
                 let deleted = multi_db.delete_database(&id).await?;
                 if deleted {
                     println!("Deleted space {}", id);
