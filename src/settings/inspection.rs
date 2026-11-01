@@ -137,6 +137,16 @@ fn read_document(path: &Path, source: &str, problems: &mut Vec<Problem>) -> Valu
 }
 
 fn unknown_fields(schema: &Value, value: &Value, prefix: &str, fields: &mut Vec<String>) {
+    if prefix == "models.routes" {
+        if let Some(object) = value.as_object() {
+            for (key, val) in object {
+                if !val.is_string() {
+                    fields.push(format!("{prefix}.{key}"));
+                }
+            }
+        }
+        return;
+    }
     match (schema, value) {
         (Value::Object(shape), Value::Object(object)) => {
             for (key, value) in object {
@@ -194,6 +204,16 @@ fn parse_value(defaults: &Value, key: &str, raw: &str) -> Result<Value> {
 
 fn check_document(defaults: &Value, document: &Value, source: &str, problems: &mut Vec<Problem>) {
     fn visit(schema: &Value, value: &Value, prefix: &str, out: &mut Vec<(String, Value)>) {
+        if prefix == "models.routes" {
+            if let Some(object) = value.as_object() {
+                for (key, val) in object {
+                    if !val.is_string() {
+                        out.push((format!("{prefix}.{key}"), val.clone()));
+                    }
+                }
+            }
+            return;
+        }
         match (schema.as_object(), value.as_object()) {
             (Some(shape), Some(object)) => {
                 for (key, value) in object {
@@ -338,6 +358,18 @@ impl Inspection {
             .keys()
             .filter_map(|key| self.entry(key).ok())
             .collect()
+    }
+    pub fn effective(&self) -> &Value {
+        &self.effective
+    }
+    pub fn runtime(&self) -> &Value {
+        &self.runtime
+    }
+    pub fn set_json(&self, key: &str, value: Value) -> Result<()> {
+        self.require_valid()?;
+        let mut runtime = self.runtime.clone();
+        insert(&mut runtime, key, value);
+        self.persist(&runtime)
     }
     pub fn require_valid(&self) -> Result<()> {
         if !self.problems.is_empty() {

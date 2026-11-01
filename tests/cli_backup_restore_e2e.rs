@@ -17,20 +17,38 @@ fn test_backup_restore_round_trip() {
 
     let out_dir = tmp.path().join("backup_out");
 
-    // 1. Create state
-    let db_path = data_dir.join("test.db");
+    // 1. Create state: store memories and code-graph index
+    // Memories (store.sqlite3)
+    let db_path = data_dir.join("store.sqlite3");
     let conn = rusqlite::Connection::open(&db_path).unwrap();
     conn.execute(
-        "CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)",
+        "CREATE TABLE memories (id INTEGER PRIMARY KEY, content TEXT)",
         [],
     )
     .unwrap();
-    conn.execute("INSERT INTO test_table (name) VALUES ('hello_restore')", [])
-        .unwrap();
+    conn.execute(
+        "INSERT INTO memories (content) VALUES ('searchable_memory_test')",
+        [],
+    )
+    .unwrap();
     drop(conn);
 
-    let txt_path = data_dir.join("hello.txt");
-    fs::write(&txt_path, "world").unwrap();
+    // Code-graph index (code_graph.db)
+    let cg_db_path = data_dir.join("code_graph.db");
+    let cg_conn = rusqlite::Connection::open(&cg_db_path).unwrap();
+    cg_conn
+        .execute(
+            "CREATE TABLE symbols (id INTEGER PRIMARY KEY, symbol TEXT)",
+            [],
+        )
+        .unwrap();
+    cg_conn
+        .execute(
+            "INSERT INTO symbols (symbol) VALUES ('test_graph_symbol')",
+            [],
+        )
+        .unwrap();
+    drop(cg_conn);
 
     // 2. Backup create
     let mut cmd_create = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"));
@@ -74,22 +92,28 @@ fn test_backup_restore_round_trip() {
     let output_restore = cmd_restore.output().unwrap();
     assert!(output_restore.status.success());
 
-    // 5. Verify restored state
+    // 5. Verify restored state (assert memories searchable and graph symbols present)
     assert!(data_dir.exists());
-    let restored_db_path = data_dir.join("test.db");
-    assert!(restored_db_path.exists());
 
+    let restored_db_path = data_dir.join("store.sqlite3");
+    assert!(restored_db_path.exists());
     let restored_conn = rusqlite::Connection::open(&restored_db_path).unwrap();
-    let name: String = restored_conn
-        .query_row("SELECT name FROM test_table WHERE id = 1", [], |row| {
+    let memory_content: String = restored_conn
+        .query_row("SELECT content FROM memories WHERE id = 1", [], |row| {
             row.get(0)
         })
         .unwrap();
-    assert_eq!(name, "hello_restore");
+    assert_eq!(memory_content, "searchable_memory_test");
 
-    let restored_txt_path = data_dir.join("hello.txt");
-    assert!(restored_txt_path.exists());
-    assert_eq!(fs::read_to_string(&restored_txt_path).unwrap(), "world");
+    let restored_cg_path = data_dir.join("code_graph.db");
+    assert!(restored_cg_path.exists());
+    let restored_cg_conn = rusqlite::Connection::open(&restored_cg_path).unwrap();
+    let symbol: String = restored_cg_conn
+        .query_row("SELECT symbol FROM symbols WHERE id = 1", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(symbol, "test_graph_symbol");
 }
 
 #[test]

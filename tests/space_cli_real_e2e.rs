@@ -240,7 +240,24 @@ async fn test_space_cli_real_e2e() {
         "space.json should exist under the temp state dir"
     );
 
-    // Attempt second create
+    // Use space
+    let run = sandbox.run(
+        sandbox
+            .command(&d.url)
+            .arg("space")
+            .arg("use")
+            .arg("demo")
+            .env("XAVIER_TOKEN", ROOT),
+        Duration::from_secs(10),
+    );
+    assert!(
+        run.status.success(),
+        "use should succeed. Stderr: {}",
+        run.stderr
+    );
+    assert!(run.stdout.contains("Active space set to demo"));
+
+    // Attempt second create (should fail because space 'demo' already exists)
     let run = sandbox.run(
         sandbox
             .command(&d.url)
@@ -260,4 +277,38 @@ async fn test_space_cli_real_e2e() {
         "Stderr: {}",
         run.stderr
     );
+
+    // Delete space
+    let run = sandbox.run(
+        sandbox
+            .command(&d.url)
+            .arg("space")
+            .arg("delete")
+            .arg("demo")
+            .env("XAVIER_TOKEN", ROOT),
+        Duration::from_secs(10),
+    );
+    assert!(
+        run.status.success(),
+        "delete should succeed. Stderr: {}",
+        run.stderr
+    );
+    assert_eq!(run.stdout.trim(), "Deleted space demo");
+
+    // List spaces after delete
+    let run = sandbox.run(
+        sandbox
+            .command(&d.url)
+            .arg("space")
+            .arg("list")
+            .arg("--json")
+            .env("XAVIER_TOKEN", ROOT),
+        Duration::from_secs(10),
+    );
+    assert!(
+        run.status.success(),
+        "list after delete should succeed. Stderr: {}",
+        run.stderr
+    );
+    assert!(!run.stdout.contains("\"id\":\"demo\""));
 }

@@ -1236,9 +1236,9 @@ pub async fn offline_consolidate(workspace_id: Option<&str>) -> anyhow::Result<s
     use crate::memory::store::MemoryStore;
     use crate::memory::tgd::TgdUtilityPruner;
 
-    let ws_id = workspace_id.map(|s| s.to_string()).unwrap_or_else(|| {
-        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string())
-    });
+    let ws_id = workspace_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(crate::cli::utils::resolve_active_workspace);
 
     let store: Arc<dyn MemoryStore> =
         match crate::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await {
@@ -1291,9 +1291,9 @@ pub async fn offline_prune(
     use crate::memory::store::MemoryStore;
     use crate::memory::tgd::TgdUtilityPruner;
 
-    let ws_id = workspace_id.map(|s| s.to_string()).unwrap_or_else(|| {
-        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string())
-    });
+    let ws_id = workspace_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(crate::cli::utils::resolve_active_workspace);
 
     let store: Arc<dyn MemoryStore> =
         match crate::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await {
@@ -2139,6 +2139,10 @@ pub async fn search_memories_filtered(
     let response = client
         .post(&url)
         .header("X-Xavier-Token", &token)
+        .header(
+            "X-Workspace-Id",
+            crate::cli::utils::resolve_active_workspace(),
+        )
         .json(&serde_json::json!({
             "query": query,
             "limit": limit,
@@ -2305,6 +2309,10 @@ pub async fn add_memory_hierarchical(
     let response = client
         .post(&url)
         .header("X-Xavier-Token", &token)
+        .header(
+            "X-Workspace-Id",
+            crate::cli::utils::resolve_active_workspace(),
+        )
         .json(&body)
         .send()
         .await;

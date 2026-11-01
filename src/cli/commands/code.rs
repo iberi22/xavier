@@ -137,6 +137,25 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 .send()
                 .await?
         }
+        CodeCommand::Reindex { path } => {
+            let p = path.as_deref().unwrap_or(".");
+            client
+                .post(format!("{}/code/reindex", base_url))
+                .header("X-Xavier-Token", &token)
+                .json(&serde_json::json!({
+                    "path": abs_target(p),
+                }))
+                .send()
+                .await?
+        }
+        CodeCommand::IndexSelf => {
+            client
+                .post(format!("{}/code/index-self", base_url))
+                .header("X-Xavier-Token", &token)
+                .json(&serde_json::json!({}))
+                .send()
+                .await?
+        }
         CodeCommand::BlastRadius { query, depth } => {
             client
                 .post(format!("{}/code/blast-radius", base_url))

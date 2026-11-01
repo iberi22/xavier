@@ -63,3 +63,5 @@ mod billing_cloud_usage_e2e;
 mod billing_status_test;
 #[path = "config_cli.rs"]
 mod config_cli;
+#[path = "llm_routes_e2e.rs"]
+mod llm_routes_e2e;

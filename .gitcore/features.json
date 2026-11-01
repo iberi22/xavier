@@ -46,7 +46,8 @@
       "tests": [
         "test_multi_db_manager_lifecycle",
         "test_invalid_db_id",
-        "codebase::connection_manager::tests::memory_project_id_respects_data_dir"
+        "codebase::connection_manager::tests::memory_project_id_respects_data_dir",
+        "tests/suite_13.rs::llm_routes_e2e"
       ],
       "req_ids": [
         "REQ-005",
@@ -2791,7 +2792,8 @@
         "test_god_guard_drops_scattered_low_confidence",
         "test_default_project_keeps_legacy_ids",
         "tests/codegraph_indexed_symbol_project_root_e2e.rs::test_indexed_symbol_project_root",
-        "tests/codegraph_multilang_reindex_e2e.rs::test_codegraph_multilang_reindex_e2e"
+        "tests/codegraph_multilang_reindex_e2e.rs::test_codegraph_multilang_reindex_e2e",
+        "tests/suite_06.rs::test_codegraph_reindex_and_index_self_e2e"
       ],
       "req_ids": [
         "REQ-056"
@@ -4347,7 +4349,8 @@
         "tests/cli_tenants_e2e.rs::test_cli_tenants_show_text",
         "tests/cli_tenants_e2e.rs::test_cli_tenants_show_json",
         "tests/cli_tenants_e2e.rs::test_cli_tenants_show_not_found",
-        "tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code"
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code",
+        "tests/space_tenant_cli_e2e.rs::test_q5_spaces_tenants_cli"
       ],
       "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [tests/cli_tenants_e2e.rs::test_cli_tenants_list_text, tests/cli_tenants_e2e.rs::test_cli_tenants_list_json, tests/cli_tenants_e2e.rs::test_cli_tenants_show_text, tests/cli_tenants_e2e.rs::test_cli_tenants_show_json, tests/cli_tenants_e2e.rs::test_cli_tenants_show_not_found, tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code]",
       "passes": true

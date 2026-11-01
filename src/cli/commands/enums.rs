@@ -624,12 +624,37 @@ pub enum SpaceCommand {
         /// Labels for the space
         #[arg(long)]
         label: Vec<String>,
+        /// Force local mode (bypass daemon)
+        #[arg(long, default_value_t = false)]
+        local: bool,
+    },
+    /// Delete a space
+    Delete {
+        /// Output in JSON format
+        #[arg(long, default_value_t = false)]
+        json: bool,
+        /// The space ID
+        id: String,
+        /// Force local mode (bypass daemon)
+        #[arg(long, default_value_t = false)]
+        local: bool,
+    },
+    /// Use a space (set as active)
+    Use {
+        /// Output in JSON format
+        #[arg(long, default_value_t = false)]
+        json: bool,
+        /// The space ID
+        id: String,
     },
     /// List all spaces
     List {
         /// Output in JSON format
         #[arg(long, default_value_t = false)]
         json: bool,
+        /// Force local mode (bypass daemon)
+        #[arg(long, default_value_t = false)]
+        local: bool,
     },
     /// Unlock a space
     Unlock {
@@ -1348,6 +1373,14 @@ pub enum CodeCommand {
         #[arg(long, default_value_t = false)]
         memory: bool,
     },
+    /// Incrementally reindex changed files in a codebase path
+    Reindex {
+        /// Optional path to the codebase (defaults to .)
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+    /// Index the current workspace or running repo root
+    IndexSelf,
     /// Repository management (list, add, remove)
     Repos {
         #[command(subcommand)]
@@ -1454,6 +1487,9 @@ pub enum TenantsCommand {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+        /// Force local mode (bypass daemon)
+        #[arg(long, default_value_t = false)]
+        local: bool,
     },
     /// Show a specific tenant
     Show {
@@ -1462,6 +1498,9 @@ pub enum TenantsCommand {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+        /// Force local mode (bypass daemon)
+        #[arg(long, default_value_t = false)]
+        local: bool,
     },
 }
 

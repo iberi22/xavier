@@ -279,6 +279,8 @@ pub struct ModelSettings {
     pub local_model_dirs: Vec<String>,
     #[serde(default)]
     pub auto_start_last_model: bool,
+    #[serde(default)]
+    pub routes: std::collections::HashMap<String, String>,
 }
 
 impl fmt::Debug for ModelSettings {
