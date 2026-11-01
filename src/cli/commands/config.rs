@@ -57,6 +57,11 @@ pub enum ConfigLlmCommand {
         #[command(subcommand)]
         cmd: ConfigLlmRouteCommand,
     },
+    /// Set the LLM model
+    #[command(name = "set-model")]
+    SetModel { model: String },
+    /// Show current LLM configuration
+    Show,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -84,7 +89,7 @@ fn error(code: i32, message: &str) -> ConfigError {
         message: message.into(),
     }
 }
-fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
+async fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
     let mut inspection = Inspection::load();
     let mut body = json!({
         "schema_version": 1, "ok": true,
@@ -93,39 +98,51 @@ fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
         "restart_required": false,
     });
     match &args.command {
-        ConfigCommand::Llm {
-            cmd: ConfigLlmCommand::Route { cmd },
-        } => match cmd {
-            ConfigLlmRouteCommand::List => {
-                inspection.require_valid()?;
-                body["operation"] = json!("list_routes");
-                let routes = inspection
-                    .effective()
-                    .pointer("/models/routes")
-                    .cloned()
-                    .unwrap_or(json!({}));
-                body["routes"] = routes;
-            }
-            ConfigLlmRouteCommand::Set { task, target } => {
-                inspection.require_valid()?;
-                let pointer = "/models/routes";
-                let mut routes = inspection
-                    .runtime()
-                    .pointer(pointer)
-                    .cloned()
-                    .unwrap_or(json!({}));
-                if let Some(map) = routes.as_object_mut() {
-                    map.insert(task.clone(), json!(target));
-                } else {
-                    let mut map = serde_json::Map::new();
-                    map.insert(task.clone(), json!(target));
-                    routes = json!(map);
+        ConfigCommand::Llm { cmd } => match cmd {
+            ConfigLlmCommand::Route { cmd } => match cmd {
+                ConfigLlmRouteCommand::List => {
+                    inspection.require_valid()?;
+                    body["operation"] = json!("list_routes");
+                    let routes = inspection
+                        .effective()
+                        .pointer("/models/routes")
+                        .cloned()
+                        .unwrap_or(json!({}));
+                    body["routes"] = routes;
                 }
-                inspection.set_json("models.routes", routes)?;
-                body["operation"] = json!("set_route");
-                body["task"] = json!(task);
-                body["target"] = json!(target);
+                ConfigLlmRouteCommand::Set { task, target } => {
+                    inspection.require_valid()?;
+                    let pointer = "/models/routes";
+                    let mut routes = inspection
+                        .runtime()
+                        .pointer(pointer)
+                        .cloned()
+                        .unwrap_or(json!({}));
+                    if let Some(map) = routes.as_object_mut() {
+                        map.insert(task.clone(), json!(target));
+                    } else {
+                        let mut map = serde_json::Map::new();
+                        map.insert(task.clone(), json!(target));
+                        routes = json!(map);
+                    }
+                    inspection.set_json("models.routes", routes)?;
+                    body["operation"] = json!("set_route");
+                    body["task"] = json!(task);
+                    body["target"] = json!(target);
+                    body["restart_required"] = json!(true);
+                }
+            },
+            ConfigLlmCommand::SetModel { model } => {
+                inspection.set("models.general_model", model, false)?;
+                body["operation"] = json!("set-model");
+                body["model"] = json!(model);
                 body["restart_required"] = json!(true);
+            }
+            ConfigLlmCommand::Show => {
+                let entry = inspection.entry("models.general_model")?;
+                inspection.require_valid()?;
+                body["operation"] = json!("show");
+                body["entry"] = serde_json::to_value(entry).expect("entry serializes");
             }
         },
 
@@ -210,8 +227,8 @@ fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
 }
 
 /// Config errors follow CLI exit-code conventions and never contain setting values.
-pub fn run(args: &ConfigArgs) -> i32 {
-    let (body, code) = execute(args).unwrap_or_else(|e| {
+pub async fn run(args: &ConfigArgs) -> i32 {
+    let (body, code) = execute(args).await.unwrap_or_else(|e| {
         (
             json!({"schema_version":1,"ok":false,"error":{"code":e.code,"message":e.message}}),
             e.code,
