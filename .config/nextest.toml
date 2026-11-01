@@ -52,7 +52,7 @@ filter = 'binary(=suite_08) & test(/^(production_router_smoke)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
+filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e|billing_cloud_wiring_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -92,7 +92,7 @@ filter = 'binary(=suite_08) & test(/^(production_router_smoke)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
+filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e|billing_cloud_wiring_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]

@@ -39,11 +39,6 @@ pub enum ConfigCommand {
     Unset { key: String },
     /// Check files, environment types and paths that depend on cwd
     Validate,
-    /// Manage LLM configuration
-    Llm {
-        #[command(subcommand)]
-        cmd: LlmConfigCommand,
-    },
     /// Show the config and runtime-state file paths
     Path,
     /// Explain a setting's source, override variable and restart requirement
@@ -62,6 +57,11 @@ pub enum ConfigLlmCommand {
         #[command(subcommand)]
         cmd: ConfigLlmRouteCommand,
     },
+    /// Set the LLM model
+    #[command(name = "set-model")]
+    SetModel { model: String },
+    /// Show current LLM configuration
+    Show,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -83,15 +83,6 @@ pub enum ConfigLlmRouteCommand {
     },
 }
 
-#[derive(Subcommand, Debug, Clone)]
-pub enum LlmConfigCommand {
-    /// Set the LLM model
-    #[command(name = "set-model")]
-    SetModel { model: String },
-    /// Show current LLM configuration
-    Show,
-}
-
 fn error(code: i32, message: &str) -> ConfigError {
     ConfigError {
         code,
@@ -107,60 +98,57 @@ async fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
         "restart_required": false,
     });
     match &args.command {
-        ConfigCommand::Llm {
-            cmd: ConfigLlmCommand::Route { cmd },
-        } => match cmd {
-            ConfigLlmRouteCommand::List => {
-                inspection.require_valid()?;
-                body["operation"] = json!("list_routes");
-                let routes = inspection
-                    .effective()
-                    .pointer("/models/routes")
-                    .cloned()
-                    .unwrap_or(json!({}));
-                body["routes"] = routes;
-            }
-            ConfigLlmRouteCommand::Set { task, target } => {
-                inspection.require_valid()?;
-                let pointer = "/models/routes";
-                let mut routes = inspection
-                    .runtime()
-                    .pointer(pointer)
-                    .cloned()
-                    .unwrap_or(json!({}));
-                if let Some(map) = routes.as_object_mut() {
-                    map.insert(task.clone(), json!(target));
-                } else {
-                    let mut map = serde_json::Map::new();
-                    map.insert(task.clone(), json!(target));
-                    routes = json!(map);
-                }
-                inspection.set_json("models.routes", routes)?;
-                body["operation"] = json!("set_route");
-                body["task"] = json!(task);
-                body["target"] = json!(target);
-                body["restart_required"] = json!(true);
-            }
-        },
-
-        ConfigCommand::Path => {
-            body["operation"] = json!("path");
-        }
-
         ConfigCommand::Llm { cmd } => match cmd {
-            LlmConfigCommand::SetModel { model } => {
-                inspection.set("models.general_model", &model, false)?;
+            ConfigLlmCommand::Route { cmd } => match cmd {
+                ConfigLlmRouteCommand::List => {
+                    inspection.require_valid()?;
+                    body["operation"] = json!("list_routes");
+                    let routes = inspection
+                        .effective()
+                        .pointer("/models/routes")
+                        .cloned()
+                        .unwrap_or(json!({}));
+                    body["routes"] = routes;
+                }
+                ConfigLlmRouteCommand::Set { task, target } => {
+                    inspection.require_valid()?;
+                    let pointer = "/models/routes";
+                    let mut routes = inspection
+                        .runtime()
+                        .pointer(pointer)
+                        .cloned()
+                        .unwrap_or(json!({}));
+                    if let Some(map) = routes.as_object_mut() {
+                        map.insert(task.clone(), json!(target));
+                    } else {
+                        let mut map = serde_json::Map::new();
+                        map.insert(task.clone(), json!(target));
+                        routes = json!(map);
+                    }
+                    inspection.set_json("models.routes", routes)?;
+                    body["operation"] = json!("set_route");
+                    body["task"] = json!(task);
+                    body["target"] = json!(target);
+                    body["restart_required"] = json!(true);
+                }
+            },
+            ConfigLlmCommand::SetModel { model } => {
+                inspection.set("models.general_model", model, false)?;
                 body["operation"] = json!("set-model");
                 body["model"] = json!(model);
                 body["restart_required"] = json!(true);
             }
-            LlmConfigCommand::Show => {
+            ConfigLlmCommand::Show => {
                 let entry = inspection.entry("models.general_model")?;
                 inspection.require_valid()?;
                 body["operation"] = json!("show");
                 body["entry"] = serde_json::to_value(entry).expect("entry serializes");
             }
         },
+
+        ConfigCommand::Path => {
+            body["operation"] = json!("path");
+        }
         ConfigCommand::Validate => {
             inspection.validate();
             body["operation"] = json!("validate");
