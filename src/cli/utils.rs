@@ -62,6 +62,30 @@ pub fn exit_code_for(result: &Result<reqwest::Response, reqwest::Error>) -> i32 
     }
 }
 
+pub fn resolve_active_workspace() -> String {
+    if let Ok(val) = std::env::var("XAVIER_WORKSPACE_ID") {
+        if !val.is_empty() {
+            return val;
+        }
+    }
+    if let Ok(val) = std::env::var("XAVIER_DEFAULT_WORKSPACE_ID") {
+        if !val.is_empty() {
+            return val;
+        }
+    }
+    let data_dir = crate::settings::XavierSettings::resolve_data_dir();
+    let path = data_dir.join("active_space");
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let id = content.trim();
+            if !id.is_empty() {
+                return id.to_string();
+            }
+        }
+    }
+    "default".to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

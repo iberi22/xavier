@@ -67,3 +67,6 @@ mod memory_put_index_atomic_e2e;
 
 #[path = "mesh_replay_store_e2e.rs"]
 mod mesh_replay_store_e2e;
+
+#[path = "space_tenant_cli_e2e.rs"]
+mod space_tenant_cli_e2e;

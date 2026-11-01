@@ -659,8 +659,7 @@ pub struct TimeMetricResponse {
 
 /// Time metric handler.
 pub async fn time_metric_handler(Json(payload): Json<TimeMetricDto>) -> Json<TimeMetricResponse> {
-    let workspace_id =
-        std::env::var("XAVIER_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
+    let workspace_id = crate::cli::utils::resolve_active_workspace();
 
     // Try to save via TimeMetricsStore if available
     if let Some(time_store) = TIME_STORE.get() {

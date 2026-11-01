@@ -4349,7 +4349,8 @@
         "tests/cli_tenants_e2e.rs::test_cli_tenants_show_text",
         "tests/cli_tenants_e2e.rs::test_cli_tenants_show_json",
         "tests/cli_tenants_e2e.rs::test_cli_tenants_show_not_found",
-        "tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code"
+        "tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code",
+        "tests/space_tenant_cli_e2e.rs::test_q5_spaces_tenants_cli"
       ],
       "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [tests/cli_tenants_e2e.rs::test_cli_tenants_list_text, tests/cli_tenants_e2e.rs::test_cli_tenants_list_json, tests/cli_tenants_e2e.rs::test_cli_tenants_show_text, tests/cli_tenants_e2e.rs::test_cli_tenants_show_json, tests/cli_tenants_e2e.rs::test_cli_tenants_show_not_found, tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code]",
       "passes": true

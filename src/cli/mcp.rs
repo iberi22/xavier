@@ -24,8 +24,7 @@ pub const DEFAULT_MCP_PORT: u16 = 8100;
 /// Used by both the stdio and HTTP+SSE transports so they share identical
 /// initialization and core wiring (memory store, security service, workspace).
 pub async fn build_mcp_state() -> Result<(AppState, xavier::workspace::WorkspaceContext)> {
-    let workspace_id =
-        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
+    let workspace_id = crate::cli::utils::resolve_active_workspace();
 
     // Build the shared application state so the unified MCP dispatcher has
     // everything it needs (security service, workspace registry, etc.).

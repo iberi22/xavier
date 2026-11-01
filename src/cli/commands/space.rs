@@ -1,52 +1,166 @@
 use crate::cli::commands::enums::{
     SpaceCommand, SpaceInviteAction, SpaceMemberAction, UnlockMode, CLI_HTTP_CLIENT,
 };
+use crate::storage::multi_db::MultiDbManager;
+use crate::workspace::WorkspaceDbKind;
 use anyhow::{bail, Result};
 
 pub async fn run_space_command(cmd: SpaceCommand, base_url: &str, token: &str) -> Result<()> {
     let client = CLI_HTTP_CLIENT.clone();
 
     match cmd {
-        SpaceCommand::Create { id, label } => {
-            let resp = client
-                .post(format!("{}/api/v1/espacio/admin/spaces", base_url))
-                .header("X-Xavier-Token", token)
-                .json(&serde_json::json!({
-                    "id": id,
-                    "name": id,
-                    "description": label.join(" "),
-                    "owner_node": "CLI",
-                    "is_public": false
-                }))
-                .send()
-                .await?;
-            if resp.status().is_success() {
+        SpaceCommand::Create { id, label, local } => {
+            let mut use_local = local;
+            if !use_local {
+                let resp = client
+                    .post(format!("{}/api/v1/espacio/admin/spaces", base_url))
+                    .header("X-Xavier-Token", token)
+                    .json(&serde_json::json!({
+                        "id": id,
+                        "name": id,
+                        "description": label.join(" "),
+                        "owner_node": "CLI",
+                        "is_public": false
+                    }))
+                    .send()
+                    .await;
+                match resp {
+                    Ok(r) => {
+                        if r.status().is_success() {
+                            println!("Created space {}", id);
+                        } else {
+                            bail!("Failed to create space {}: {}", id, r.text().await?);
+                        }
+                        return Ok(());
+                    }
+                    Err(_) => {
+                        use_local = true; // Fallback
+                    }
+                }
+            }
+            if use_local {
+                let data_dir = crate::settings::XavierSettings::resolve_data_dir();
+                let multi_db = MultiDbManager::open(&data_dir)?;
+                let display_name = if label.is_empty() {
+                    id.clone()
+                } else {
+                    label.join(" ")
+                };
+                let _db = multi_db
+                    .create_database(id.clone(), display_name.clone(), WorkspaceDbKind::Personal)
+                    .await?;
                 println!("Created space {}", id);
-            } else {
-                bail!("Failed to create space {}: {}", id, resp.text().await?);
             }
         }
-        SpaceCommand::List { json } => {
-            let resp = client
-                .get(format!("{}/api/v1/espacio/admin/spaces", base_url))
-                .header("X-Xavier-Token", token)
-                .send()
-                .await?;
-            if resp.status().is_success() {
-                let text = resp.text().await?;
-                if json {
-                    match serde_json::from_str::<serde_json::Value>(&text) {
-                        Ok(val) => {
-                            let compact = serde_json::to_string(&val)?;
-                            println!("{}", compact);
+        SpaceCommand::List { json, local } => {
+            let mut use_local = local;
+            if !use_local {
+                let resp = client
+                    .get(format!("{}/api/v1/espacio/admin/spaces", base_url))
+                    .header("X-Xavier-Token", token)
+                    .send()
+                    .await;
+                match resp {
+                    Ok(r) => {
+                        if r.status().is_success() {
+                            let text = r.text().await?;
+                            if json {
+                                match serde_json::from_str::<serde_json::Value>(&text) {
+                                    Ok(val) => {
+                                        let compact = serde_json::to_string(&val)?;
+                                        println!("{}", compact);
+                                    }
+                                    Err(_) => bail!("Failed to parse response as JSON: {}", text),
+                                }
+                            } else {
+                                println!("{}", text);
+                            }
+                        } else {
+                            bail!("Failed to list spaces: {}", r.text().await?);
                         }
-                        Err(_) => bail!("Failed to parse response as JSON: {}", text),
+                        return Ok(());
+                    }
+                    Err(_) => {
+                        use_local = true; // Fallback
+                    }
+                }
+            }
+            if use_local {
+                let data_dir = crate::settings::XavierSettings::resolve_data_dir();
+                let multi_db = MultiDbManager::open(&data_dir)?;
+                let dbs = multi_db.list_entries().await;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&dbs)?);
+                } else {
+                    for db in dbs {
+                        println!("- {} ({})", db.db_id, db.display_name);
+                    }
+                }
+            }
+        }
+        SpaceCommand::Delete { id, json, local } => {
+            let mut use_local = local;
+            if !use_local {
+                let resp = client
+                    .delete(format!(
+                        "{}/api/v1/espacio/admin/spaces/{}?confirm={}",
+                        base_url, id, id
+                    ))
+                    .header("X-Xavier-Token", token)
+                    .send()
+                    .await;
+                match resp {
+                    Ok(r) => {
+                        if r.status().is_success() {
+                            if json {
+                                println!("{}", serde_json::json!({ "ok": true }));
+                            } else {
+                                println!("Deleted space {}", id);
+                            }
+                        } else {
+                            bail!("Failed to delete space {}: {}", id, r.text().await?);
+                        }
+                        return Ok(());
+                    }
+                    Err(_) => {
+                        use_local = true; // Fallback
+                    }
+                }
+            }
+            if use_local {
+                let data_dir = crate::settings::XavierSettings::resolve_data_dir();
+                let multi_db = MultiDbManager::open(&data_dir)?;
+                let deleted = multi_db.delete_database(&id).await?;
+                if deleted {
+                    if json {
+                        println!("{}", serde_json::json!({ "ok": true }));
+                    } else {
+                        println!("Deleted space {}", id);
                     }
                 } else {
-                    println!("{}", text);
+                    bail!("Space not found");
                 }
+            }
+        }
+        SpaceCommand::Use { id, json } => {
+            let data_dir = crate::settings::XavierSettings::resolve_data_dir();
+            let _ = std::fs::create_dir_all(&data_dir);
+            let path = data_dir.join("active_space");
+            let _ = std::fs::write(&path, &id);
+
+            let state_dir = std::env::var("XAVIER_STATE_DIR").unwrap_or_else(|_| ".".to_string());
+            let active_space_file = std::path::PathBuf::from(state_dir)
+                .join(".xavier")
+                .join("active_space");
+            if let Some(parent) = active_space_file.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            std::fs::write(&active_space_file, &id)?;
+
+            if json {
+                println!("{}", serde_json::json!({ "ok": true, "id": id }));
             } else {
-                bail!("Failed to list spaces: {}", resp.text().await?);
+                println!("Active space set to {}", id);
             }
         }
         SpaceCommand::Unlock { id, mode } => {
@@ -232,40 +346,6 @@ Retention: {}",
                 bail!("Failed to accept invite: {}", resp.text().await?);
             }
         }
-        SpaceCommand::Delete { id, json } => {
-            let resp = client
-                .delete(format!(
-                    "{}/api/v1/espacio/admin/spaces/{}?confirm={}",
-                    base_url, id, id
-                ))
-                .header("X-Xavier-Token", token)
-                .send()
-                .await?;
-            if resp.status().is_success() {
-                if json {
-                    println!("{}", serde_json::json!({ "ok": true }));
-                } else {
-                    println!("Deleted space {}", id);
-                }
-            } else {
-                bail!("Failed to delete space {}: {}", id, resp.text().await?);
-            }
-        }
-        SpaceCommand::Use { id, json } => {
-            let state_dir = std::env::var("XAVIER_STATE_DIR").unwrap_or_else(|_| ".".to_string());
-            let active_space_file = std::path::PathBuf::from(state_dir)
-                .join(".xavier")
-                .join("active_space");
-            if let Some(parent) = active_space_file.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            std::fs::write(&active_space_file, &id)?;
-            if json {
-                println!("{}", serde_json::json!({ "ok": true, "id": id }));
-            } else {
-                println!("Active space set to {}", id);
-            }
-        }
         SpaceCommand::Lock { id: _, json } => {
             if json {
                 println!(
@@ -322,6 +402,7 @@ mod tests {
         let cmd = SpaceCommand::Create {
             id: "test".to_string(),
             label: vec!["a".to_string()],
+            local: false,
         };
         assert!(matches!(cmd, SpaceCommand::Create { .. }));
     }
