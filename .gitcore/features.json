@@ -500,7 +500,7 @@
       "implemented_in": "src/explain/memory.rs, src/explain/mod.rs",
       "name": "Explain Memory Source",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3528",
       "status": "planned",
@@ -520,7 +520,12 @@
         "tests/explain_memory_source_e2e.rs::e2e_memory_source_decision_query_filters_by_kind_and_file",
         "tests/explain_memory_source_e2e.rs::e2e_memory_source_duplicate_ids_across_queries_appear_once"
       ],
-      "user_stories": []
+      "user_stories": [],
+      "files": [
+        "src/explain/memory.rs",
+        "tests/explain_memory_source_e2e.rs"
+      ],
+      "notes": "progress 100: verified 2026-11-01 by tests [explain::memory::tests::decision_query_filters_by_kind_and_file, explain::memory::tests::decisions_outrank_memories_at_equal_score, explain::memory::tests::duplicate_ids_across_queries_appear_once, explain::memory::tests::search_error_surfaces_as_err, explain::memory::tests::empty_result_is_ok_and_empty, explain::memory::tests::collect_works_inside_spawn_blocking, explain::memory::tests::qmd_search_adapter_returns_no_hits_for_empty_store, tests/explain_memory_source_e2e.rs::e2e_memory_source_decision_query_filters_by_kind_and_file, tests/explain_memory_source_e2e.rs::e2e_memory_source_duplicate_ids_across_queries_appear_once]"
     },
     "feat-governance-dao": {
       "id": "feat-governance-dao",
