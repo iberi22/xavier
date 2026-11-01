@@ -1,2 +1,0 @@
-Wait, is there a custom `assert_cmd`? Or do we just use `std::process::Command` directly? The prompt says "drive each subcommand via `assert_cmd`", maybe it meant `std::process::Command`? But I cannot use `assert_cmd::Command` if the crate is not there. Wait, `assert-cmd` is not in `Cargo.toml`. The prompt might just mean "use the `std::process::Command` to assert on it". Actually I can use `std::process::Command`. But wait! In tests there is often a helper `assert_cmd!` or something?
-Let's search for `assert_cmd` or `cargo_bin` in the codebase.

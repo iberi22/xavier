@@ -1,3 +1,0 @@
-feat(cli): add config llm, index, and memory load parity
-
-Adds `config llm set-model`, `config llm show`, `index add`, `index status`, and `memory load` to `xavier` CLI for feature parity and automation without raw API calls. Tests included.

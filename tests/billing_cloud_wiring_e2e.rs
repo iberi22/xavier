@@ -3,6 +3,8 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
+xavier::isolate_test_process!();
+
 fn bind_mock_server() -> (TcpListener, String) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
