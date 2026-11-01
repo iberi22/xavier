@@ -1778,7 +1778,7 @@
       "name": "Identity Verification Core (selection + verdict + sanctions)",
       "category": "identity",
       "status": "planned",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Deterministic validator assignment, ed25519-signed votes, and append-only SQLite storage in xavier_market behind market-v2 / XAVIER_MARKET_V2=beta.",
       "steps": [
         "IvnConfig in xavier_market (quorum_ratio default 0.8, validators_per_request default 5)",
@@ -1790,10 +1790,8 @@
       ],
       "passes": false,
       "github_issue": 1380,
-      "notes": "Wave I (MKT-20 / #3225). Re-scoped to marketplace v2 IVN core path in xavier_market (persistent SQLite store, ed25519-signed validator votes, deterministic validator assignment). Legacy in-memory IVN engine in src/ kept for backward compatibility. Demoted to planned per docs/plans/IMPLEMENTATION-AUDIT_2026-10-28.md contradiction.",
-      "open_gaps": [
-        "Legacy IVN core in src/ is in memory without signature checks; v2 IVN core is in xavier_market behind market-v2 / XAVIER_MARKET_V2=beta default-off"
-      ],
+      "notes": "progress 100: verified 2026-11-01 by tests [tests/ivn_verdict.rs::test_validator_selection_weights_by_karma, tests/ivn_verdict.rs::test_dynamic_quorum_calculation, tests/ivn_verdict.rs::test_sanction_application, tests/ivn_verdict.rs::test_vote_recording_and_tallying, tests/ivn_verdict.rs::test_quorum_4_of_5_pass_and_fail, tests/ivn_storage_persistence.rs::atomic_json_publishes_complete_private_documents]",
+      "open_gaps": [],
       "spec": "docs/features/specs/FEATURE-feat-ivn.md",
       "tests": [
         "unsigned_and_forged_votes_are_rejected_and_change_nothing",
@@ -1833,7 +1831,12 @@
         "state_survives_a_restart_and_voting_resumes",
         "evaluate_follows_the_quorum_rule"
       ],
-      "implemented_in": "crates/xavier-market/src/ivn.rs, src/market_v2/ivn.rs"
+      "implemented_in": "crates/xavier-market/src/ivn.rs, src/market_v2/ivn.rs",
+      "files": [
+        "crates/xavier-market/src/ivn.rs",
+        "tests/ivn_verdict.rs",
+        "tests/ivn_storage_persistence.rs"
+      ]
     },
     "feat-explain-isolated-llm": {
       "category": "explain",
