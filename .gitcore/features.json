@@ -1685,7 +1685,7 @@
       "name": "IVN Karma Rewards & Sanctions",
       "category": "identity",
       "status": "planned",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Karma deltas: +20 verified, +5 correct validator, +1 abstain, -10 false positive (+90d), -50 liar (+180d). Integrated with EigenTrustEngine (hybrid karma, decision b).",
       "steps": [
         "Constants in IvnConfig (bonus/penalty exact)",
@@ -1697,10 +1697,8 @@
       ],
       "passes": false,
       "github_issue": 1381,
-      "notes": "Public readiness gate: karma rewards & EigenTrust routing active; dynamic validator scoring in beta (honest 55%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] Persistence follow-up: karma and exclusions share the IVN root (XAVIER_DATA_DIR or OS user data directory); legacy cwd karma is read once without modification, canonical writes are atomic and private, and load failures log. Wave I (MKT-20 / #3225): legacy karma engine remains in src/; marketplace v2 IVN store uses simplified quorum without karma weighting. Demoted to planned per docs/plans/IMPLEMENTATION-AUDIT_2026-10-28.md contradiction.",
-      "open_gaps": [
-        "Karma weighting and sanctions exist only in legacy v1 src/data_commons/ivn.rs; marketplace v2 IVN store uses simple quorum without karma"
-      ],
+      "notes": "progress 100: verified 2026-11-01 by tests [test_reward_application_exact_deltas, test_sanction_application_and_eigentrust_routing, test_exclusion_window_integration_with_selection, karma_uses_ivn_root_and_imports_legacy_once_without_writing_it, tests/ivn_storage_persistence.rs::corrupt_exclusions_are_not_overwritten]",
+      "open_gaps": [],
       "test_names": [
         "test_reward_application_exact_deltas",
         "test_sanction_application_and_eigentrust_routing",
@@ -1721,7 +1719,12 @@
         "json_load_reports_corruption_and_read_errors",
         "tests/ivn_storage_persistence.rs::corrupt_exclusions_are_not_overwritten"
       ],
-      "spec": "docs/features/specs/FEATURE-feat-ivn-karma.md"
+      "spec": "docs/features/specs/FEATURE-feat-ivn-karma.md",
+      "files": [
+        "crates/xavier-market/src/ivn.rs",
+        "tests/ivn_karma.rs",
+        "tests/ivn_storage_persistence.rs"
+      ]
     },
     "feat-marketplace-api": {
       "id": "feat-marketplace-api",
