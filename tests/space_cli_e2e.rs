@@ -87,7 +87,7 @@ async fn test_space_list_json_success() {
     let mut server = Server::new_async().await;
     let json_body = serde_json::json!([{"id": "demo"}]);
     let mock = server
-        .mock("GET", "/api/v1/espacio/spaces")
+        .mock("GET", "/api/v1/espacio/admin/spaces")
         .with_status(200)
         .with_body(serde_json::to_string(&json_body).unwrap())
         .create_async()
@@ -114,7 +114,7 @@ async fn test_space_list_json_invalid() {
     xavier::isolate_test_process!();
     let mut server = Server::new_async().await;
     let mock = server
-        .mock("GET", "/api/v1/espacio/spaces")
+        .mock("GET", "/api/v1/espacio/admin/spaces")
         .with_status(200)
         .with_body("not a json")
         .create_async()

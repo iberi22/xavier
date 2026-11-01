@@ -130,13 +130,13 @@ async fn e2e_memory_source_real_qmd_search() {
     use xavier::memory::qmd::types::MemoryDocument;
     use xavier::memory::qmd_memory::QmdMemory;
 
-    let rt = runtime();
+    let handle = tokio::runtime::Handle::current();
 
     let docs = Arc::new(RwLock::new(vec![
         MemoryDocument {
             id: Some("doc-match".to_string()),
             path: "src/lib.rs".to_string(),
-            content: "decision text match".to_string(),
+            content: "alpha bravo demo".to_string(),
             metadata: serde_json::json!({
                 "kind": "decision",
                 "symbol": "demo"
@@ -146,10 +146,10 @@ async fn e2e_memory_source_real_qmd_search() {
         },
         MemoryDocument {
             id: Some("doc-exclude".to_string()),
-            path: "src/other.rs".to_string(),
-            content: "decision text exclude".to_string(),
+            path: "unrelated_notes".to_string(),
+            content: "zeta theta omega".to_string(),
             metadata: serde_json::json!({
-                "kind": "decision",
+                "kind": "document",
                 "symbol": "other"
             }),
             embedding: vec![],
@@ -160,7 +160,7 @@ async fn e2e_memory_source_real_qmd_search() {
     let qmd = Arc::new(QmdMemory::new_with_workspace(docs, "explain-test"));
     let search = Arc::new(QmdMemorySearch::new(qmd));
 
-    let source = MemorySource::new(search, rt.handle().clone());
+    let source = MemorySource::new(search, handle);
 
     let evidence = tokio::task::spawn_blocking(move || source.collect(&target(), 5))
         .await

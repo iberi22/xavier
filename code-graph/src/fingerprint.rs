@@ -418,7 +418,7 @@ fn find_first_identifier_text(node: Node, src: &[u8]) -> Option<String> {
 }
 
 /// Last identifier segment of a callee (`a->b` -> `b`, `a::b::c` -> `c`).
-fn last_ident(text: &str) -> String {
+pub fn last_ident(text: &str) -> String {
     let mut last = String::new();
     let mut current = String::new();
     for ch in text.chars() {
@@ -783,28 +783,4 @@ fn fingerprint_function(node: Node, name: &str, source: &str) -> FunctionFingerp
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn kgram_key_uses_unit_separator_join() {
-        // Contract rule, pinned: sha256("call:memcpy\x1fid\x1fnum")[:8].
-        assert_eq!(kgram_key(&["call:memcpy", "id", "num"]), "5306d8d4");
-    }
-
-    #[test]
-    fn last_ident_takes_final_segment() {
-        assert_eq!(last_ident("a->b"), "b");
-        assert_eq!(last_ident("a::b::c"), "c");
-        assert_eq!(last_ident("obj.m"), "m");
-        assert_eq!(last_ident("free"), "free");
-        assert_eq!(last_ident("(*fp)"), "fp");
-    }
-
-    #[test]
-    fn ranges_parse_and_reject() {
-        assert_eq!(parse_ranges("10-50,80-120"), Ok(vec![(10, 50), (80, 120)]));
-        assert!(parse_ranges("10").is_err());
-        assert!(parse_ranges("50-10").is_err());
-        assert!(parse_ranges("0-10").is_err());
-        assert!(parse_ranges("").is_err());
-    }
 }

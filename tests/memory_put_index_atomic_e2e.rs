@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use xavier::memory::connection_provider::InMemoryProvider;
+use xavier::memory::connection_provider::{ConnectionProvider, InMemoryProvider};
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 use xavier::memory::store::{MemoryRecord, MemoryStore};
 
@@ -18,7 +18,8 @@ async fn test_put_index_atomic_rollback() {
         embedding_dimensions: 3,
     };
 
-    let store = VecSqliteMemoryStore::new_with_provider(config, Arc::new(InMemoryProvider::new()))
+    let provider: Arc<dyn ConnectionProvider> = Arc::new(InMemoryProvider::new());
+    let store = VecSqliteMemoryStore::new_with_provider(config, provider.clone())
         .await
         .unwrap();
 
@@ -45,13 +46,26 @@ async fn test_put_index_atomic_rollback() {
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].content, "valid content that works");
 
-    // Create an invalid record (overwrite)
+    // Force failure in the embedding insert using a trigger to prove atomic rollback
+    let project_id = store.connection_project_id().to_string();
+    provider
+        .with_conn(&project_id, |conn| {
+            conn.execute(
+                "CREATE TRIGGER fail_emb BEFORE INSERT ON memory_embeddings BEGIN SELECT RAISE(ABORT, 'forced'); END;",
+                [],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    // Create an update record
     let record_invalid = MemoryRecord {
         id: "atomic_test_id".to_string(),
         workspace_id: workspace_id.to_string(),
         path: "test/atomic".to_string(),
         content: "new content that fails".to_string(),
-        embedding: vec![0.0], // Invalid length 1, config expects 3
+        embedding: vec![0.1, 0.2, 0.3],
         ..Default::default()
     };
 
@@ -59,7 +73,7 @@ async fn test_put_index_atomic_rollback() {
     let result = store.put(record_invalid.clone()).await;
     assert!(
         result.is_err(),
-        "Put should fail due to invalid embedding dimension"
+        "Put should fail due to forced trigger rollback"
     );
 
     // Verify the FTS index rolled back: searching for new content finds nothing

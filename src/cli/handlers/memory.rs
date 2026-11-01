@@ -2255,7 +2255,19 @@ pub async fn add_memory_hierarchical(
     cluster_id: Option<&str>,
     level: Option<&str>,
     relation: Option<&str>,
+    path: Option<&str>,
 ) -> anyhow::Result<()> {
+    if let Some(p) = path {
+        if p.trim().is_empty() {
+            anyhow::bail!("Invalid argument 'path': path cannot be empty");
+        }
+        if p.starts_with('/') {
+            anyhow::bail!("Invalid argument 'path': path cannot be absolute");
+        }
+        if p.split(['/', '\\']).any(|seg| seg == "..") {
+            anyhow::bail!("Invalid argument 'path': path cannot contain '..' traversal segments");
+        }
+    }
     let content = secure_cli_input("memory content", content, 1_000_000)?;
     let title = title
         .map(|title| secure_cli_input("memory title", title, 512))
@@ -2269,6 +2281,9 @@ pub async fn add_memory_hierarchical(
         "metadata": {}
     });
 
+    if let Some(p) = path {
+        body["path"] = serde_json::json!(p);
+    }
     if let Some(t) = title.as_deref() {
         body["metadata"]["title"] = serde_json::json!(t);
     }
@@ -2321,6 +2336,7 @@ pub async fn add_memory_hierarchical(
                 cluster_id,
                 level,
                 relation,
+                path,
             )
             .await
         }
@@ -2336,6 +2352,7 @@ pub async fn add_memory_hierarchical(
                 cluster_id,
                 level,
                 relation,
+                path,
             )
             .await
         }
@@ -2349,10 +2366,13 @@ async fn offline_add_memory(
     cluster_id: Option<&str>,
     level: Option<&str>,
     relation: Option<&str>,
+    path: Option<&str>,
 ) -> anyhow::Result<()> {
     match load_spawn_memory().await {
         Ok(memory) => {
-            let path = format!("cli/add/{}", chrono::Utc::now().timestamp());
+            let path = path
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("cli/add/{}", chrono::Utc::now().timestamp()));
             let mut metadata = serde_json::json!({});
             if let Some(t) = title {
                 metadata["title"] = serde_json::json!(t);

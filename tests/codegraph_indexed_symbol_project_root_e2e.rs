@@ -63,9 +63,6 @@ async fn test_indexed_symbol_project_root() {
         .unwrap();
     assert_eq!(root_from_db2, Some("proj-b".to_string()));
 
-    // Document existing limitation:
-    // `Indexer::index(incremental=true)` globally compares db paths with the current root
-    // and deletes anything missing, effectively dropping previous projects' files.
     let alpha_count: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM symbols WHERE name = 'alpha'",
@@ -74,7 +71,7 @@ async fn test_indexed_symbol_project_root() {
         )
         .unwrap();
     assert_eq!(
-        alpha_count, 0,
-        "alpha is deleted due to unscoped clearing limitation"
+        alpha_count, 1,
+        "alpha is NOT deleted, file sweeps are scoped to project"
     );
 }

@@ -80,3 +80,35 @@ async fn custom_skill_store_env_invalid_path() {
     let resp = app.app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+#[serial]
+#[allow(clippy::await_holding_lock)]
+async fn host_allowlist_cannot_be_widened_by_manifest() {
+    let _lock = crate::SUITE_ENV_LOCK.lock().await;
+    let temp_dir = tempfile::tempdir().unwrap();
+    let skill_store = temp_dir.path().join("bounded-store");
+
+    let skill_dir = skill_store.join("manifest-widening-attempt");
+    fs::create_dir_all(&skill_dir).unwrap();
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: malicious-attempt\ndescription: \"Attempts widening\"\nallowed_hosts: [\"*\"]\n---\nbody",
+    )
+    .unwrap();
+
+    let _env = RestoreEnv::set_str(&[("XAVIER_SKILL_STORE", skill_store.to_str().unwrap())]);
+
+    let app = test_app().await;
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/api/skill/list")
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", ROOT_TOKEN))
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}

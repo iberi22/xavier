@@ -407,6 +407,142 @@ fn reserve_destination(base: &Path, explicit: bool) -> std::io::Result<PathBuf> 
     }
 }
 
+async fn handle_backup_restore(from: PathBuf) -> Result<()> {
+    let data_dir = XavierSettings::resolve_data_dir();
+
+    // Validate backup directory
+    if !from.exists() || !from.is_dir() {
+        anyhow::bail!("Backup directory does not exist: {}", from.display());
+    }
+
+    let manifest_path = from.join("manifest.json");
+    if !manifest_path.exists() {
+        anyhow::bail!(
+            "Invalid backup: manifest.json not found in {}",
+            from.display()
+        );
+    }
+
+    // Read manifest to ensure it is valid json
+    let manifest_content = fs::read_to_string(&manifest_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read manifest.json: {}", e))?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_content)
+        .map_err(|e| anyhow::anyhow!("Corrupted backup: invalid manifest.json: {}", e))?;
+
+    let files = manifest
+        .get("files")
+        .and_then(|f| f.as_array())
+        .ok_or_else(|| {
+            anyhow::anyhow!("Corrupted backup: missing or invalid 'files' array in manifest")
+        })?;
+
+    // Validate files against manifest
+    for file_entry in files {
+        let rel_path_str = file_entry
+            .get("path")
+            .and_then(|p| p.as_str())
+            .ok_or_else(|| {
+                anyhow::anyhow!("Corrupted backup: missing or invalid file path in manifest")
+            })?;
+
+        let expected_hash = file_entry
+            .get("sha256")
+            .and_then(|h| h.as_str())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Corrupted backup: missing or invalid sha256 for {}",
+                    rel_path_str
+                )
+            })?;
+
+        let backup_file_path = from.join(rel_path_str);
+        if !backup_file_path.exists() {
+            anyhow::bail!(
+                "Corrupted backup: file {} listed in manifest but missing from backup",
+                rel_path_str
+            );
+        }
+
+        if backup_file_path.is_file() {
+            let file_content = fs::read(&backup_file_path).map_err(|e| {
+                anyhow::anyhow!("Failed to read backup file {}: {}", rel_path_str, e)
+            })?;
+
+            let mut hasher = Sha256::new();
+            hasher.update(&file_content);
+            let actual_hash = hasher
+                .finalize()
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>();
+
+            if actual_hash != expected_hash {
+                anyhow::bail!(
+                    "Corrupted backup: hash mismatch for {}. Expected {}, got {}",
+                    rel_path_str,
+                    expected_hash,
+                    actual_hash
+                );
+            }
+        }
+    }
+
+    // Wipe current state
+    if data_dir.exists() {
+        let read_dir = fs::read_dir(&data_dir)
+            .map_err(|e| anyhow::anyhow!("Failed to read data directory: {}", e))?;
+
+        for entry in read_dir {
+            let entry =
+                entry.map_err(|e| anyhow::anyhow!("Failed to read directory entry: {}", e))?;
+            let path = entry.path();
+
+            if path.is_file() {
+                fs::remove_file(&path).map_err(|e| {
+                    anyhow::anyhow!("Failed to remove file {}: {}", path.display(), e)
+                })?;
+            } else if path.is_dir() {
+                if let Err(e) = fs::remove_dir_all(&path) {
+                    anyhow::bail!("Failed to remove directory {}: {}", path.display(), e);
+                }
+            }
+        }
+    } else {
+        fs::create_dir_all(&data_dir)
+            .map_err(|e| anyhow::anyhow!("Failed to create data dir: {}", e))?;
+    }
+
+    // Restore files
+    for file_entry in files {
+        let rel_path_str = file_entry.get("path").unwrap().as_str().unwrap();
+        let backup_file_path = from.join(rel_path_str);
+        let dest_path = data_dir.join(rel_path_str);
+
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                anyhow::anyhow!("Failed to create directory {}: {}", parent.display(), e)
+            })?;
+        }
+
+        // Just copy files back.
+        if backup_file_path.is_file() {
+            fs::copy(&backup_file_path, &dest_path).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to copy file {} to {}: {}",
+                    backup_file_path.display(),
+                    dest_path.display(),
+                    e
+                )
+            })?;
+        }
+    }
+
+    // Copy manifest as well for completeness if we want, or not. The task just says "wipe state -> xavier backup restore"
+
+    println!("Backup restored successfully from {}", from.display());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
