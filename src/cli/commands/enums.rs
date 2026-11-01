@@ -668,6 +668,20 @@ pub enum SpaceCommand {
         /// Display name for the peer
         display: String,
     },
+    /// Delete a space
+    Delete {
+        #[arg(long)]
+        json: bool,
+        /// The space ID
+        id: String,
+    },
+    /// Export a space to the environment
+    Use {
+        #[arg(long)]
+        json: bool,
+        /// The space ID
+        id: String,
+    },
     /// Lock a space (Not available yet)
     Lock {
         #[arg(long)]
