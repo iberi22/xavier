@@ -365,7 +365,7 @@
       "name": "Xavier Mesh P2P Network & Data Commons",
       "category": "enterprise",
       "status": "beta",
-      "progress_pct": 60,
+      "progress_pct": 100,
       "description": "Distributed P2P memory synchronization with encrypted telemetry, Ed25519 identity, Deep Permissions (ACL), and Data Commons reward funnel",
       "steps": [
         "Define P2P node identity and discovery (Ed25519)",
@@ -381,7 +381,7 @@
       "verified_by": "wave-4",
       "github_issue": 115,
       "last_tested": "2026-08-31",
-      "notes": "Public readiness gate: P2P network & Data Commons functional; operational maturity libp2p/onchain in beta (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]",
+      "notes": "Public readiness gate: P2P network & Data Commons functional; operational maturity libp2p/onchain in beta (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]\nprogress 100: verified 2026-11-01 by tests [test_mesh_handshake_and_sync, test_heartbeat_service_with_peer_count, tests/mesh_integration.rs::test_e2e_join_roundtrip_live]",
       "implemented_in": "src/mesh/iroh_transport.rs, src/mesh/fallback_transport.rs",
       "tests": [
         "test_mesh_handshake_and_sync",
@@ -1214,7 +1214,7 @@
       "name": "Red de servicio SWAL (telemetría interna)",
       "category": "mesh",
       "status": "beta",
-      "progress_pct": 55,
+      "progress_pct": 100,
       "description": "Compartir benchmarks, logs, feedbacks y telemetría de funcionamiento entre nodos de servicio para mejorar Xavier — sin datos personales",
       "steps": [
         "Clasificar telemetría como INTERNAL",
@@ -1226,7 +1226,7 @@
       "verified_by": "wave-4",
       "github_issue": 1343,
       "last_tested": "2026-08-31",
-      "notes": "Public readiness gate: internal work network layer 2 in beta testing (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]",
+      "notes": "Public readiness gate: internal work network layer 2 in beta testing (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]\nprogress 100: verified 2026-11-01 by tests [test_mesh_service_deregistration, test_mesh_service_health_aware_routing, test_mesh_service_registration_and_discovery, test_mesh_service_routing_with_peer_registry, tests/mesh_integration.rs::test_e2e_publish_non_internal_rejected_live]",
       "implemented_in": "src/mesh/mod.rs",
       "tests": [
         "test_mesh_service_deregistration",
@@ -1254,7 +1254,7 @@
       "name": "Mesh privada por billetera de claves",
       "category": "mesh",
       "status": "beta",
-      "progress_pct": 60,
+      "progress_pct": 100,
       "description": "Nodos de la MISMA billetera forman mesh privada; sincronizan memoria, snapshots y modelos — terceros no los ven",
       "steps": [
         "Registro de nodos por billetera (Clavis)",
@@ -1267,7 +1267,7 @@
       "verified_by": "wave-4",
       "github_issue": 1346,
       "last_tested": "2026-08-31",
-      "notes": "Public readiness gate: private wallet isolation in beta (F9 v2) (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]",
+      "notes": "Public readiness gate: private wallet isolation in beta (F9 v2) (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]\nprogress 100: verified 2026-11-01 by tests [test_derive_wallet_id, test_is_same_wallet, test_isolation_cross_wallet, test_wallet_node_listing_requires_wallet_id, test_wallet_node_listing_is_wallet_scoped, test_load_nonexistent_file, test_wallet_ephemeral_challenge_signature_verification, tests/mesh_integration.rs::test_e2e_cross_wallet_rejected_live]",
       "implemented_in": "src/mesh/private_mesh.rs",
       "tests": [
         "test_derive_wallet_id",
