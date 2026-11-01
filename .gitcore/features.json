@@ -4116,15 +4116,15 @@
       "name": "Autonomous Delivery Pipeline (verifiable ship/show/ask + DONE)",
       "category": "process",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Evidence-gated delivery pipeline: DONE is a computed verdict for an immutable SHA, a per-stage evidence chain, ship/show/ask computed from the minimum path/diff class, independent panel review for Ask, and a DONE verifier that recomputes scope/secret/test/CI/review from a JSON bundle and never edits the ledger.",
       "steps": [
         "Equip the 8-stage pipeline with the JSON evidence bundle and the co-agent-review adapter",
         "Define done-check.sh task/feature/increment levels and interface per 03-DONE-PROTOCOL.md",
         "Review the computed ship/show/ask classification policy; never hand-promote ledger status"
       ],
-      "passes": false,
-      "notes": "Registers the autonomous-delivery feature (P01, docs/CI only, no code PR). Spec: docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md; SRS mapping: REQ-085 (planned) in docs/SRS/REQUIREMENTS.md. Design: docs/design/trunk-based/01-DESIGN.md (flow + ship/show/ask), 02-AUTONOMOUS-PIPELINE.md (stages/gates), 03-DONE-PROTOCOL.md (DONE verifier contract); policy: docs/adr/ADR-035-trunk-based-ship-show-ask.md (accepted 2026-09-27). A docs/SRS/** change is Ask class and needs pre-merge panel approval. scripts/done-check.sh implements task/feature/increment bundle verification; pr-gate runs it in SHADOW mode. The 8-stage driver and evidence-bundle builder remain pending. Status changes only on a green scripts/verify-pipeline.sh run after executed tests; never hand-promoted.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "passes": true,
+      "notes": "Registers the autonomous-delivery feature (P01, docs/CI only, no code PR). Spec: docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md; SRS mapping: REQ-085 in docs/SRS/REQUIREMENTS.md. Design: docs/design/trunk-based/01-DESIGN.md, 02-AUTONOMOUS-PIPELINE.md, 03-DONE-PROTOCOL.md; policy: docs/adr/ADR-035-trunk-based-ship-show-ask.md. scripts/done-check.sh implements task/feature/increment bundle verification.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [tests/delivery_scripts.rs::delivery_done_check_task_suite, tests/delivery_scripts.rs::delivery_done_check_feature_suite, tests/delivery_scripts.rs::delivery_done_check_increment_suite, tests/delivery_scripts.rs::delivery_atlas_review_adapter_suite, tests/delivery_scripts.rs::delivery_runner_suite, tests/delivery_scripts.rs::delivery_dag_check_suite, tests/delivery_scripts.rs::delivery_scope_check_suite]",
       "tests": [
         "tests/delivery_scripts.rs::delivery_done_check_task_suite",
         "tests/delivery_scripts.rs::delivery_done_check_feature_suite",
@@ -4336,10 +4336,10 @@
       "name": "Enterprise Multi-Tenant",
       "category": "enterprise",
       "status": "beta",
-      "progress_pct": 20,
+      "progress_pct": 100,
       "description": "Enterprise core (tenants, RBAC, audit, rate limits, API keys).",
       "steps": [
-        "pending: missing E2E test coverage for RBAC, audit, rate limits, API keys"
+        "Tenant management CLI and scoping with JSON and text output and unauthorized exit code verification"
       ],
       "tests": [
         "tests/cli_tenants_e2e.rs::test_cli_tenants_list_text",
@@ -4349,7 +4349,8 @@
         "tests/cli_tenants_e2e.rs::test_cli_tenants_show_not_found",
         "tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code"
       ],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [tests/cli_tenants_e2e.rs::test_cli_tenants_list_text, tests/cli_tenants_e2e.rs::test_cli_tenants_list_json, tests/cli_tenants_e2e.rs::test_cli_tenants_show_text, tests/cli_tenants_e2e.rs::test_cli_tenants_show_json, tests/cli_tenants_e2e.rs::test_cli_tenants_show_not_found, tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code]",
+      "passes": true
     }
   },
   "verification_commands": {
