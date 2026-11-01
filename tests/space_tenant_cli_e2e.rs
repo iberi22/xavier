@@ -102,7 +102,6 @@ async fn test_q5_spaces_tenants_cli() {
     assert!(out_use.status.success());
     assert!(String::from_utf8_lossy(&out_use.stdout)
         .contains(&format!("Active space set to {}", space_id)));
-
     // Store memory in it
     let out_add = Command::new(xavier_bin)
         .env("XAVIER_DATA_DIR", data_dir.to_str().unwrap())
