@@ -939,7 +939,7 @@
       "implemented_in": "src/server/maloca/roadmap_route.rs, src/server/maloca/mod.rs",
       "name": "Maloca Roadmap Route",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3514",
       "status": "beta",
@@ -958,7 +958,7 @@
         "tests/maloca_roadmap_route_e2e.rs::roadmap_endpoint_returns_empty_when_no_projects"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [server::maloca::roadmap_route::tests::waves_are_ascending_and_unscheduled_is_separate, server::maloca::roadmap_route::tests::counts_and_progress_mean_per_group, server::maloca::roadmap_route::tests::every_status_lands_in_exactly_one_bucket, server::maloca::roadmap_route::tests::empty_input_yields_empty_roadmap, server::maloca::roadmap_route::tests::roadmap_endpoint_reads_gitcore_ledgers, tests/maloca_roadmap_route_e2e.rs::roadmap_endpoint_reads_gitcore_ledgers_e2e, tests/maloca_roadmap_route_e2e.rs::roadmap_endpoint_returns_empty_when_no_projects]"
     },
     "feat-codegraph-maturity-bridge": {
       "id": "feat-codegraph-maturity-bridge",
@@ -1453,7 +1453,7 @@
       "implemented_in": "src/maloca/governance.rs, src/maloca/support_flow.rs",
       "name": "Maloca Governance Rules",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3513",
       "status": "beta",
@@ -1489,7 +1489,7 @@
         "tests/maloca_governance_rules_e2e.rs::expiry_boundary"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [maloca::governance::tests::tally_sums_weights_per_choice, maloca::governance::tests::tally_without_eligible_weight_has_zero_participation, maloca::governance::tests::one_yes_out_of_ten_eligible_is_no_quorum, maloca::governance::tests::majority_of_votes_cast_with_quorum_is_approved, maloca::governance::tests::threshold_is_relative_to_decisive_votes_not_eligible, maloca::governance::tests::yes_below_threshold_of_votes_cast_is_rejected, maloca::governance::tests::majority_at_exact_threshold_passes, maloca::governance::tests::abstentions_do_not_count_toward_approval, maloca::governance::tests::abstain_only_meets_quorum_but_never_approves, maloca::governance::tests::no_votes_with_zero_quorum_is_rejected, maloca::governance::tests::expiry_boundaries, maloca::governance::tests::expiry_out_of_range_never_expires, maloca::support_flow::tests::forward_moves_are_allowed, maloca::support_flow::tests::reopen_from_resolved_is_allowed, maloca::support_flow::tests::close_only_from_resolved, maloca::support_flow::tests::backward_and_same_state_moves_are_rejected, maloca::support_flow::tests::closed_is_terminal, maloca::support_flow::tests::error_carries_from_and_to, tests/maloca_governance_rules_e2e.rs::weighted_majority_with_quorum_is_approved, tests/maloca_governance_rules_e2e.rs::abstentions_count_for_quorum_not_for_decision, tests/maloca_governance_rules_e2e.rs::below_quorum_is_no_quorum, tests/maloca_governance_rules_e2e.rs::zero_eligible_weight_has_zero_participation_and_no_quorum, tests/maloca_governance_rules_e2e.rs::expiry_boundary]"
     },
     "feat-node-provisioning": {
       "id": "feat-node-provisioning",
@@ -2696,7 +2696,7 @@
       "implemented_in": "src/maloca/store.rs, src/maloca/types.rs, src/maloca/handlers.rs, src/maloca/mod.rs, src/maloca/governance.rs",
       "name": "Maloca Governance Wiring",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3530",
       "status": "beta",
@@ -2729,7 +2729,7 @@
         "tests/maloca_wiring_routes_e2e.rs::maloca_wiring_e2e"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [maloca::store::tests::new_proposal_gets_expiry_from_duration_param, maloca::store::tests::expired_proposal_with_quorum_closes_as_approved, maloca::store::tests::expired_proposal_with_quorum_and_majority_no_closes_as_rejected, maloca::store::tests::expired_proposal_without_quorum_closes_as_no_quorum, maloca::store::tests::tie_is_rejected_at_store_level, maloca::store::tests::not_yet_expired_proposal_stays_open, maloca::store::tests::closing_appends_one_decision_and_is_idempotent, maloca::store::tests::legacy_proposal_without_expires_at_closes_by_created_plus_duration, maloca::store::tests::vote_after_expiry_is_rejected, maloca::store::tests::support_status_moves_forward_and_persists, maloca::store::tests::support_invalid_transition_is_reported_and_leaves_status, maloca::store::tests::support_unknown_id_is_not_an_invalid_transition, maloca::store::tests::support_unknown_stored_status_is_treated_as_open, maloca::store::tests::support_status_names_round_trip, maloca::governance::tests::tie_at_exact_threshold_is_rejected, maloca::governance::tests::majority_at_exact_threshold_passes, maloca::tests::support_patch_maps_moves_to_200_409_and_404, tests/maloca_governance_wiring_e2e.rs::proposal_lifecycle_e2e, tests/maloca_governance_wiring_e2e.rs::governance_proposal_rejection_e2e, tests/maloca_wiring_routes_e2e.rs::maloca_wiring_e2e]"
     },
     "feat-cg-blast-testgate": {
       "id": "feat-cg-blast-testgate",
@@ -4310,7 +4310,7 @@
       "implemented_in": "src/maloca/store.rs",
       "name": "Maloca Store Atomic Persist",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3512",
       "status": "beta",
@@ -4329,7 +4329,7 @@
         "tests/maloca_store_atomic_persist_e2e.rs::persist_replaces_store_file_by_rename_not_in_place_e2e"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [maloca::store::tests::persisted_store_json_is_valid_json_after_write, maloca::store::tests::persist_leaves_no_tmp_files_after_success, maloca::store::tests::persist_replaces_store_file_by_rename_not_in_place, maloca::store::tests::persist_into_read_only_directory_returns_error_without_panicking, tests/maloca_store_atomic_persist_e2e.rs::persist_leaves_no_tmp_files_after_success_e2e, tests/maloca_store_atomic_persist_e2e.rs::persisted_store_json_is_valid_json_after_write_e2e, tests/maloca_store_atomic_persist_e2e.rs::persist_replaces_store_file_by_rename_not_in_place_e2e]"
     },
     "feat-multi-tenant": {
       "id": "feat-multi-tenant",
