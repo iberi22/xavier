@@ -16,9 +16,6 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 /// Env var with the swal-billing base URL.
 pub const BILLING_URL_ENV: &str = "XAVIER_BILLING_URL";
-/// Default swal-billing URL: the `wrangler dev` address. swal-billing has no
-/// public deployment yet; set [`BILLING_URL_ENV`] to point somewhere else.
-pub const DEFAULT_BILLING_URL: &str = "http://127.0.0.1:8787";
 /// Default xavier-cloud URL (production) when neither `PGHEART_URL` nor
 /// `XAVIER_PGHEART_URL` is set.
 pub const DEFAULT_CLOUD_URL: &str = "https://xavier-cloud.swal.network";
@@ -32,7 +29,7 @@ pub const CLOUD_TOKEN_ENVS: [&str; 2] = ["PGHEART_TOKEN", "XAVIER_PGHEART_TOKEN"
 #[derive(Clone, PartialEq, Eq)]
 pub struct BillingEndpoints {
     /// swal-billing base URL (no trailing slash).
-    pub billing_url: String,
+    pub billing_url: Option<String>,
     pub billing_url_source: &'static str,
     /// xavier-cloud base URL (no trailing slash).
     pub cloud_url: String,
@@ -70,14 +67,14 @@ impl BillingEndpoints {
     pub fn resolve_with(lookup: &dyn Fn(&str) -> Option<String>) -> Self {
         let (billing_url, billing_url_source) =
             if let Some(url) = first_non_empty(lookup, &[BILLING_URL_ENV]) {
-                (url, "env")
+                (Some(url), "env")
             } else {
-                (DEFAULT_BILLING_URL.to_string(), "default")
+                (None, "default")
             };
         let cloud_url = first_non_empty(lookup, &CLOUD_URL_ENVS)
             .unwrap_or_else(|| DEFAULT_CLOUD_URL.to_string());
         Self {
-            billing_url: normalize_url(&billing_url),
+            billing_url: billing_url.map(|u| normalize_url(&u)),
             billing_url_source,
             cloud_url: normalize_url(&cloud_url),
             cloud_token: first_non_empty(lookup, &CLOUD_TOKEN_ENVS),
@@ -103,6 +100,8 @@ pub enum BillingClientError {
     Unauthenticated { service: &'static str, status: u16 },
     /// No tenant API key configured for xavier-cloud.
     MissingToken,
+    /// No swal-billing URL configured.
+    MissingBillingUrl,
     /// The plan id is not in the catalog served by swal-billing (HTTP 400).
     UnknownPlan { plan: String },
     /// Request rejected as invalid (HTTP 400) for another reason.
@@ -147,6 +146,10 @@ Check that PGHEART_TOKEN (or XAVIER_PGHEART_TOKEN) is a valid tenant API key"
                 f,
                 "not authenticated: set PGHEART_TOKEN (or XAVIER_PGHEART_TOKEN) to your \
 xavier-cloud tenant API key"
+            ),
+            Self::MissingBillingUrl => write!(
+                f,
+                "billing not configured: set XAVIER_BILLING_URL to the swal-billing endpoint"
             ),
             Self::UnknownPlan { plan } => write!(
                 f,
@@ -415,7 +418,19 @@ impl BillingClient {
     /// `GET {billing}/v1/xavier/plans` with a 5s timeout to check reachability.
     pub async fn check_reachability(&self) -> Reachability {
         let source = self.endpoints.billing_url_source.to_string();
-        let url = format!("{}/v1/xavier/plans", self.endpoints.billing_url);
+        let billing_url = match &self.endpoints.billing_url {
+            Some(u) => u,
+            None => {
+                return Reachability {
+                    url: "(unconfigured)".to_string(),
+                    source,
+                    reachable: false,
+                    status: None,
+                    error: Some("XAVIER_BILLING_URL is not configured".to_string()),
+                }
+            }
+        };
+        let url = format!("{}/v1/xavier/plans", billing_url);
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
             .build()
@@ -424,14 +439,14 @@ impl BillingClient {
         let resp = http.get(&url).send().await;
         match resp {
             Ok(r) => Reachability {
-                url: redact_url(&self.endpoints.billing_url),
+                url: redact_url(billing_url),
                 source,
                 reachable: true,
                 status: Some(r.status().as_u16()),
                 error: None,
             },
             Err(e) => Reachability {
-                url: redact_url(&self.endpoints.billing_url),
+                url: redact_url(billing_url),
                 source,
                 reachable: false,
                 status: e.status().map(|s| s.as_u16()),
@@ -442,18 +457,23 @@ impl BillingClient {
 
     /// `GET {billing}/v1/xavier/plans`.
     pub async fn plans(&self) -> Result<PlansResponse, BillingClientError> {
-        let url = format!("{}/v1/xavier/plans", self.endpoints.billing_url);
+        let billing_url = self
+            .endpoints
+            .billing_url
+            .as_ref()
+            .ok_or(BillingClientError::MissingBillingUrl)?;
+        let url = format!("{}/v1/xavier/plans", billing_url);
         let resp = self
             .http
             .get(&url)
             .send()
             .await
-            .map_err(|e| offline(SWAL_BILLING, &self.endpoints.billing_url, &e))?;
+            .map_err(|e| offline(SWAL_BILLING, billing_url, &e))?;
         let status = resp.status().as_u16();
         let body = resp
             .text()
             .await
-            .map_err(|e| offline(SWAL_BILLING, &self.endpoints.billing_url, &e))?;
+            .map_err(|e| offline(SWAL_BILLING, billing_url, &e))?;
         if !(200..300).contains(&status) {
             return Err(generic_status_error(SWAL_BILLING, &url, status, &body));
         }
@@ -468,19 +488,24 @@ impl BillingClient {
         &self,
         req: &CheckoutRequest,
     ) -> Result<CheckoutOutcome, BillingClientError> {
-        let url = format!("{}/v1/xavier/checkout", self.endpoints.billing_url);
+        let billing_url = self
+            .endpoints
+            .billing_url
+            .as_ref()
+            .ok_or(BillingClientError::MissingBillingUrl)?;
+        let url = format!("{}/v1/xavier/checkout", billing_url);
         let resp = self
             .http
             .post(&url)
             .json(req)
             .send()
             .await
-            .map_err(|e| offline(SWAL_BILLING, &self.endpoints.billing_url, &e))?;
+            .map_err(|e| offline(SWAL_BILLING, billing_url, &e))?;
         let status = resp.status().as_u16();
         let body = resp
             .text()
             .await
-            .map_err(|e| offline(SWAL_BILLING, &self.endpoints.billing_url, &e))?;
+            .map_err(|e| offline(SWAL_BILLING, billing_url, &e))?;
         let json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
         let field = |k: &str| {
             json.as_ref()
@@ -702,7 +727,7 @@ mod tests {
 
     fn endpoints(billing: &str, cloud: &str, token: Option<&str>) -> BillingEndpoints {
         BillingEndpoints {
-            billing_url: billing.to_string(),
+            billing_url: Some(billing.to_string()),
             billing_url_source: "env",
             cloud_url: cloud.to_string(),
             cloud_token: token.map(str::to_string),
@@ -721,7 +746,7 @@ mod tests {
     #[test]
     fn resolve_defaults_when_nothing_is_set() {
         let e = BillingEndpoints::resolve_with(&|_| None);
-        assert_eq!(e.billing_url, DEFAULT_BILLING_URL);
+        assert_eq!(e.billing_url, None);
         assert_eq!(e.cloud_url, DEFAULT_CLOUD_URL);
         assert_eq!(e.cloud_token, None);
     }
@@ -738,7 +763,7 @@ mod tests {
         .into_iter()
         .collect();
         let e = BillingEndpoints::resolve_with(&|k| vars.get(k).map(|v| v.to_string()));
-        assert_eq!(e.billing_url, "https://billing.test");
+        assert_eq!(e.billing_url.as_deref(), Some("https://billing.test"));
         // Empty PGHEART_URL is ignored -> alias wins.
         assert_eq!(e.cloud_url, "https://alias.test");
         assert_eq!(e.cloud_token.as_deref(), Some("primary-token"));

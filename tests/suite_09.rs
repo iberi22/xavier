@@ -53,3 +53,6 @@ mod router_proxy_agents_auth;
 
 #[path = "llm_cli.rs"]
 mod llm_cli;
+
+#[path = "billing_cloud_wiring_e2e.rs"]
+mod billing_cloud_wiring_e2e;
