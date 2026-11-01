@@ -47,7 +47,7 @@
         "test_multi_db_manager_lifecycle",
         "test_invalid_db_id",
         "codebase::connection_manager::tests::memory_project_id_respects_data_dir",
-        "tests/suite_13.rs::llm_routes_e2e"
+        "tests/llm_routes_e2e.rs::test_llm_routing_config"
       ],
       "req_ids": [
         "REQ-005",
