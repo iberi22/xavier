@@ -154,8 +154,7 @@ fn compose_task_content(
     task: &str,
     skill_bodies: &[(String, String)],
 ) -> Result<String> {
-    let workspace_id =
-        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
+    let workspace_id = crate::cli::utils::resolve_active_workspace();
     let scope = CompositionScope::new(&workspace_id, None)?;
     let input = CompositionInput {
         task_id: task_id.to_string(),
@@ -359,8 +358,7 @@ pub async fn run_swarm(config_path: PathBuf, parallel: usize) -> Result<()> {
 /// Load a memory store for spawned agents.
 pub async fn load_spawn_memory() -> Result<Arc<QmdMemory>> {
     let store = VecSqliteMemoryStore::from_env().await?;
-    let workspace_id =
-        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
+    let workspace_id = crate::cli::utils::resolve_active_workspace();
     let durable_state = store.load_workspace_state(&workspace_id).await?;
     let docs = Arc::new(RwLock::new(
         durable_state

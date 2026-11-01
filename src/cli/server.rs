@@ -1637,7 +1637,7 @@ async fn start_http_server_inner(
         }
     });
 
-    let workspace_id = XavierSettings::current().workspace.default_workspace_id;
+    let workspace_id = crate::cli::utils::resolve_active_workspace();
 
     // LAZY LOADING: Skip loading all 30K+ documents into RAM at startup.
     // The pool is loaded on first access (search, get, ls, etc.) instead.

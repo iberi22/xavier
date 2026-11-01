@@ -624,12 +624,31 @@ pub enum SpaceCommand {
         /// Labels for the space
         #[arg(long)]
         label: Vec<String>,
+        /// Force local mode (bypass daemon)
+        #[arg(long, default_value_t = false)]
+        local: bool,
+    },
+    /// Delete a space
+    Delete {
+        /// The space ID
+        id: String,
+        /// Force local mode (bypass daemon)
+        #[arg(long, default_value_t = false)]
+        local: bool,
+    },
+    /// Use a space (set as active)
+    Use {
+        /// The space ID
+        id: String,
     },
     /// List all spaces
     List {
         /// Output in JSON format
         #[arg(long, default_value_t = false)]
         json: bool,
+        /// Force local mode (bypass daemon)
+        #[arg(long, default_value_t = false)]
+        local: bool,
     },
     /// Unlock a space
     Unlock {
@@ -1454,6 +1473,9 @@ pub enum TenantsCommand {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+        /// Force local mode (bypass daemon)
+        #[arg(long, default_value_t = false)]
+        local: bool,
     },
     /// Show a specific tenant
     Show {
@@ -1462,6 +1484,9 @@ pub enum TenantsCommand {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+        /// Force local mode (bypass daemon)
+        #[arg(long, default_value_t = false)]
+        local: bool,
     },
 }
 
