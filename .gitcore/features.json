@@ -1595,7 +1595,7 @@
       "name": "Identity Verification HTTP API + Storage",
       "category": "identity",
       "status": "planned",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "REST API for identity verification: requests, validator votes, verified nodes. Persistent storage in marketplace v2 SQLite store (ivn_* tables).",
       "steps": [
         "POST /v2/ivn/requests",
@@ -1608,9 +1608,12 @@
       ],
       "passes": false,
       "github_issue": 1382,
-      "notes": "Wave I (MKT-20 / #3225). Re-scoped to marketplace v2 IVN routes (/v2/ivn/*) backed by xavier_market persistent SQLite tables and ed25519-signed validator votes behind market-v2 / XAVIER_MARKET_V2=beta. Legacy v1 routes in src/ remain untouched. Demoted to planned per docs/plans/IMPLEMENTATION-AUDIT_2026-10-28.md contradiction.",
-      "open_gaps": [
-        "Legacy /v1/identity/* routes in src/ remain in memory without signature verification; v2 IVN routes (/v2/ivn/*) are behind market-v2 and XAVIER_MARKET_V2=beta default-off"
+      "notes": "progress 100: verified 2026-11-01 by tests [tests/ivn_api.rs::test_ivn_api_full_lifecycle, market_v2::tests::ivn_routes_are_off_without_the_flag, market_v2::tests::ivn_state_survives_a_restart_and_unsigned_votes_are_refused]",
+      "open_gaps": [],
+      "files": [
+        "crates/xavier-market/src/ivn.rs",
+        "tests/ivn_api.rs",
+        "tests/market_v2_router_restart.rs"
       ],
       "test_names": [
         "ivn_routes_are_off_without_the_flag",
