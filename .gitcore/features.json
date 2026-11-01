@@ -4127,7 +4127,7 @@
       "name": "code-graph fingerprint (ksm-sfp/1) for the KSM vulnerability atlas",
       "category": "code-graph",
       "status": "beta",
-      "progress_pct": 80,
+      "progress_pct": 100,
       "description": "Owner-requested (2026-10-11): `code-graph fingerprint <FILE> [--lang] [--ranges]` prints per-function structural fingerprints (hashed syntax-tree 3-grams, 64-value MinHash, calls with argument variables, guard conditions with their variables, variable lines; no source text). Contract: kernel-security-memory docs/design/VULN-ATLAS.md section 1. KSM CI builds code-graph at a pinned Xavier commit to fingerprint fix commits; the `ksm scan` CLI uses it to compare local code with vulnerable/fixed versions. C/C++ preprocessor conditionals are neutralised (first branch, #else for #if 0) with line numbers preserved, because tree-sitter split curl's do_SOCKS5 into fake `if` definitions.",
       "steps": [
         "Subcommand + module behind native-parsers (done)",
@@ -4143,18 +4143,18 @@
         "code-graph/tests/fingerprint.rs::output_is_byte_stable",
         "code-graph/tests/fingerprint.rs::cli_fingerprint_creates_no_database",
         "code-graph/tests/fingerprint.rs::c_preprocessor_split_else_if_keeps_function_whole",
-        "fingerprint::tests::kgram_key_uses_unit_separator_join",
-        "fingerprint::tests::last_ident_takes_final_segment",
-        "fingerprint::tests::ranges_parse_and_reject"
+        "code-graph/tests/fingerprint.rs::kgram_key_uses_unit_separator_join",
+        "code-graph/tests/fingerprint.rs::last_ident_takes_final_segment",
+        "code-graph/tests/fingerprint.rs::ranges_parse_and_reject"
       ],
-      "notes": "promoted in_progress->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted in_progress->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [code-graph/tests/fingerprint.rs::c_function_shape, code-graph/tests/fingerprint.rs::golden_kgram_key_pins_hash_rule, code-graph/tests/fingerprint.rs::output_is_byte_stable, code-graph/tests/fingerprint.rs::cli_fingerprint_creates_no_database, code-graph/tests/fingerprint.rs::c_preprocessor_split_else_if_keeps_function_whole, code-graph/tests/fingerprint.rs::kgram_key_uses_unit_separator_join, code-graph/tests/fingerprint.rs::last_ident_takes_final_segment, code-graph/tests/fingerprint.rs::ranges_parse_and_reject]"
     },
     "chore-oss-scanner-enrollment": {
       "id": "chore-oss-scanner-enrollment",
       "name": "OSS Scanner enrolment files (build/scan configuration only)",
       "category": "process",
       "status": "beta",
-      "progress_pct": 90,
+      "progress_pct": 100,
       "description": "Configuration for Anthropic's OSS Scanner (github.com/anthropics/oss-scanner): .oss-scanner/Dockerfile builds /src with network (cargo fetch, debug build, test --no-run) so the scanner can build and test offline; .oss-scanner/threat_model.md is generated deterministically by kernel-security-memory scripts/oss_scanner/threat_model.py from .oss-scanner/ksm-context.yaml plus KSM evidence. No Rust/TS code changes (feature freeze respected).",
       "steps": [
         "Dockerfile follows the scanner contract (COPY . /src) and is built the way the scanner does it (clean clone, root .dockerignore removed)",
@@ -4169,7 +4169,7 @@
         "tests/oss_scanner_config.rs::oss_scanner_threat_model_exists"
       ],
       "passes": false,
-      "notes": "Validated: project.yaml for xavier passes the upstream tools/validate.py (check_project) from oss-scanner 2cef161; KSM defensive_auditor on src/ reports 0 findings after the Rust unsafe-only rule fix (previously 11 false positives). Scanner-like build (clean clone, root .dockerignore removed as tools/check_build.py does): docker build OK (~16 min, image 32.5 GB, debug target dir). Inside --network none with a login shell: cargo build --offline OK, cargo test --offline --no-run OK, cargo test --offline --lib -- --test-threads=1: 3662 passed, 0 failed, 1 ignored (351 s). In parallel (--test-threads=4) 1-4 different tests fail per run and each passes alone: flaky under parallelism (seen: tools_secrets temp-file cleanup, connection_manager fd/eviction counts, conversations_db CRUD, qmd bus quota). Stabilizing them is follow-up work. Status moves to stable after the enrolment PR to anthropics/oss-scanner (needs an owner-provided public security contact).\npromoted in_progress->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "Validated: project.yaml for xavier passes the upstream tools/validate.py (check_project) from oss-scanner 2cef161; KSM defensive_auditor on src/ reports 0 findings after the Rust unsafe-only rule fix (previously 11 false positives). Scanner-like build (clean clone, root .dockerignore removed as tools/check_build.py does): docker build OK (~16 min, image 32.5 GB, debug target dir). Inside --network none with a login shell: cargo build --offline OK, cargo test --offline --no-run OK, cargo test --offline --lib -- --test-threads=1: 3662 passed, 0 failed, 1 ignored (351 s). In parallel (--test-threads=4) 1-4 different tests fail per run and each passes alone: flaky under parallelism (seen: tools_secrets temp-file cleanup, connection_manager fd/eviction counts, conversations_db CRUD, qmd bus quota). Stabilizing them is follow-up work. Status moves to stable after the enrolment PR to anthropics/oss-scanner (needs an owner-provided public security contact).\npromoted in_progress->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [tests/oss_scanner_config.rs::oss_scanner_dockerfile_contract, tests/oss_scanner_config.rs::oss_scanner_toolchain_matches_ci_msrv, tests/oss_scanner_config.rs::oss_scanner_threat_model_exists]"
     },
     "feat-generative-ui": {
       "id": "feat-generative-ui",
