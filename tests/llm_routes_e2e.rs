@@ -72,9 +72,10 @@ async fn test_llm_routing_config() {
         let output = command.output().unwrap();
         assert!(
             output.status.success(),
-            "CLI failed with status {:?} stderr: {}",
+            "CLI failed with status {:?} stderr: {} stdout: {}",
             output.status.code(),
-            String::from_utf8_lossy(&output.stderr)
+            String::from_utf8_lossy(&output.stderr),
+            String::from_utf8_lossy(&output.stdout)
         );
         let value: Value =
             serde_json::from_slice(&output.stdout).expect("stdout is one JSON document");
