@@ -3971,7 +3971,7 @@
       "name": "Memory vaults (espacios) runtime: per-space stores, keys, tokens, links, HTTP and MCP",
       "category": "memory",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 85,
       "description": "Espacios (memory vaults). Built: each space has its own directory with space.json, keystore.json and espacio.sqlite (own SQLite file, own data key, own tokens); per-space DEK with node, password or recovery unlock; locked spaces fail closed; space-scoped xsp_ tokens stored only as SHA-256; one-way read links managed by the grantor's admin; HTTP create, get, delete, isolation and links under /api/v1/espacio; root-only admin plane; espacio_channel_list and espacio_channel_create MCP tools; XAVIER_SPACES=off switch. Not built: per-space SpaceProtocol (espacio does not consume it), retention_days enforcement, member and token management over HTTP/MCP, invite routes, node-to-node transport, channel replication. Status stays planned until those land; progress is not claimed.",
       "steps": [
         "Per-space directory with space.json, keystore.json and espacio.sqlite (src/espacio/store.rs, keys.rs)",
@@ -3983,8 +3983,8 @@
         "Per-space rules: SpaceProtocol consumed by the espacio store builder (pending)",
         "retention_days enforced for spaces (pending)",
         "HTTP and MCP routes to add and remove members and issue member tokens (pending)",
-        "HTTP routes to create and accept invites (pending)",
-        "xavier space CLI (pending)",
+        "HTTP routes to create and accept invites",
+        "xavier space CLI",
         "Node-to-node transport for espacios over the mesh (pending)",
         "Channel replication (pending)"
       ],
@@ -4044,21 +4044,15 @@
       ],
       "req_ids": [],
       "user_stories": [],
-      "implemented_in": [
-        "src/espacio/mod.rs",
-        "src/espacio/manager.rs",
+      "files": [
         "src/espacio/store.rs",
         "src/espacio/keys.rs",
         "src/espacio/tokens.rs",
         "src/espacio/link.rs",
-        "src/espacio/channel.rs",
-        "src/espacio/invite.rs",
-        "src/adapters/inbound/http/routes.rs",
-        "src/cli/http_setup.rs",
-        "src/cli/state.rs",
-        "src/server/mcp/tools_core.rs"
+        "src/cli/commands/space.rs",
+        "tests/space_cli_real_e2e.rs"
       ],
-      "notes": "ADR-018 (docs/adr/ADR-018-espacio-architecture.md) and the guide docs/ARCHITECTURE/espacio-guide.md describe the model. The 45 declared tests are the 6 CI suites in .github/workflows/ci.yml (espacio-tests job) plus tests/integration/espacio_lifecycle_test.rs. Their names are the evidence for what is built; they do not show that the pending items exist. Not stable: no full verify-pipeline run has promoted it.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "progress 85: verified 2026-11-01 by tests [tests/space_cli_real_e2e.rs::test_space_cli_real_e2e, tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_stderr, test_channel_manager_full_lifecycle_and_merge, test_space_manager_directory_and_namespace_isolation, test_invite_lifecycle_roundtrip, test_membership_permissions_end_to_end]"
     },
     "feat-explain-render-route": {
       "category": "explain",
