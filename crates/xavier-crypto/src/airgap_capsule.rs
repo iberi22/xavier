@@ -108,8 +108,8 @@ impl AirgapCapsule {
             original_filename,
             author,
             created_at: Utc::now(),
-            salt: crate::crypto::hex_encode(salt),
-            nonce: crate::crypto::hex_encode(nonce_bytes),
+            salt: crate::hex_encode(salt),
+            nonce: crate::hex_encode(nonce_bytes),
             ciphertext_length: ciphertext.len(),
         };
 
@@ -149,8 +149,8 @@ impl AirgapCapsule {
         let header: AirgapCapsuleHeader =
             serde_json::from_slice(header_slice).context("Invalid capsule header JSON")?;
 
-        let salt = crate::crypto::hex_decode(&header.salt).context("Invalid capsule salt")?;
-        let nonce = crate::crypto::hex_decode(&header.nonce).context("Invalid capsule nonce")?;
+        let salt = crate::hex_decode(&header.salt).context("Invalid capsule salt")?;
+        let nonce = crate::hex_decode(&header.nonce).context("Invalid capsule nonce")?;
         if salt.len() != 16 || nonce.len() != 12 {
             bail!("Invalid salt or nonce dimensions in capsule header");
         }
@@ -171,9 +171,8 @@ impl AirgapCapsule {
             bail!("Ciphertext length mismatch: capsule header corrupt or truncated");
         }
 
-        let salt = crate::crypto::hex_decode(&header.salt).context("Failed to decode salt hex")?;
-        let nonce_bytes =
-            crate::crypto::hex_decode(&header.nonce).context("Failed to decode nonce hex")?;
+        let salt = crate::hex_decode(&header.salt).context("Failed to decode salt hex")?;
+        let nonce_bytes = crate::hex_decode(&header.nonce).context("Failed to decode nonce hex")?;
 
         if salt.len() != 16 || nonce_bytes.len() != 12 {
             bail!("Invalid salt or nonce dimensions in capsule header");

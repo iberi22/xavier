@@ -13,8 +13,10 @@ mod crypto {
     pub use xavier::crypto::{hex_decode, hex_encode};
 }
 #[allow(dead_code)]
-#[path = "../src/crypto/airgap_capsule.rs"]
-mod capsule_engine;
+#[path = "../crates/xavier-crypto/src/airgap_capsule.rs"]
+mod capsule_engine {
+    include!("../crates/xavier-crypto/src/airgap_capsule.rs");
+}
 use capsule_engine::{AirgapCapsule, CapsulePayloadKind};
 
 const PASS: &str = "airgap test passphrase";
