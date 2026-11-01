@@ -1,5 +1,7 @@
 //! feat-codegraph-reindex: Incremental reindexing tests
 
+xavier::isolate_test_process!();
+
 use std::fs;
 use std::process::Command;
 use tempfile::tempdir;

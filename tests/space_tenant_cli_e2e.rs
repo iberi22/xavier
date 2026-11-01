@@ -1,3 +1,5 @@
+xavier::isolate_test_process!();
+
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::{routing::post, Json, Router};
