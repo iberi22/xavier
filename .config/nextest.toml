@@ -36,7 +36,7 @@ filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard|do
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_04) & test(/^(guardian_truth_test|headless_unsupported_contract_e2e|skill_drift_audit_e2e|skill_store_config_e2e|skill_usage_telemetry_e2e|skill_registry_unify_parity_e2e|skill_dispatch_ephemeral_e2e)::/)'
+filter = 'binary(=suite_04) & test(/^(guardian_truth_test|headless_unsupported_contract_e2e|skill_drift_audit_e2e|skill_store_config_e2e|skill_usage_telemetry_e2e|skill_registry_unify_parity_e2e|skill_dispatch_ephemeral_e2e|cli_add_path_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -56,7 +56,7 @@ filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
-filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|test_backup_create_manifest_collision|test_backup_create_contention|code_explain_context_e2e|explain_isolated_llm_e2e|explain_memory_source_e2e)::/)'
+filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|cli_backup_restore_e2e|test_backup_create_manifest_collision|test_backup_create_contention|code_explain_context_e2e|explain_isolated_llm_e2e|explain_memory_source_e2e)::/)'
 test-group = "serial"
 
 [[profile.default.overrides]]
@@ -76,7 +76,7 @@ filter = 'binary(=suite_03) & test(/^(embedding_fallback_resilience|env_guard|do
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_04) & test(/^(guardian_truth_test|headless_unsupported_contract_e2e|skill_drift_audit_e2e|skill_store_config_e2e|skill_usage_telemetry_e2e|skill_registry_unify_parity_e2e|skill_dispatch_ephemeral_e2e)::/)'
+filter = 'binary(=suite_04) & test(/^(guardian_truth_test|headless_unsupported_contract_e2e|skill_drift_audit_e2e|skill_store_config_e2e|skill_usage_telemetry_e2e|skill_registry_unify_parity_e2e|skill_dispatch_ephemeral_e2e|cli_add_path_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
@@ -96,7 +96,7 @@ filter = 'binary(=suite_09) & test(/^(recovery_cli_e2e|recovery_unseal_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]
-filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|test_backup_create_manifest_collision|test_backup_create_contention|code_explain_context_e2e|explain_isolated_llm_e2e|explain_memory_source_e2e)::/)'
+filter = 'binary(=suite_11) & test(/^(skill_route_clearance|cli_backup_create_e2e|cli_backup_restore_e2e|test_backup_create_manifest_collision|test_backup_create_contention|code_explain_context_e2e|explain_isolated_llm_e2e|explain_memory_source_e2e)::/)'
 test-group = "serial"
 
 [[profile.ci.overrides]]

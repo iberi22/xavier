@@ -130,6 +130,8 @@ pub enum Command {
         level: Option<String>,
         #[arg(long)]
         relation: Option<String>,
+        #[arg(long)]
+        path: Option<String>,
     },
     /// Recall memories with score-based display
     Recall {
@@ -2471,6 +2473,12 @@ pub enum BackupCommand {
         /// Output in JSON format
         #[arg(long)]
         json: bool,
+    },
+    /// Restore a local snapshot backup to the Xavier data directory
+    Restore {
+        /// Backup directory to restore from
+        #[arg(long)]
+        from: std::path::PathBuf,
     },
 }
 

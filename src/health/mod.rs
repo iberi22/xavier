@@ -211,6 +211,48 @@ pub struct EmbeddingHealth {
     pub fallback_success: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct MeshMaturitySummary {
+    pub http_transport: bool,
+    pub http_transport_percent: u8,
+    pub libp2p: bool,
+    pub libp2p_percent: u8,
+    pub acl: bool,
+    pub acl_percent: u8,
+    pub tokenomics: bool,
+    pub tokenomics_percent: u8,
+    pub onchain_gov: bool,
+    pub onchain_gov_percent: u8,
+    #[serde(default)]
+    pub measured: bool,
+}
+
+impl MeshMaturitySummary {
+    pub fn unmeasured() -> Self {
+        Self {
+            http_transport: false,
+            http_transport_percent: 0,
+            libp2p: false,
+            libp2p_percent: 0,
+            acl: false,
+            acl_percent: 0,
+            tokenomics: false,
+            tokenomics_percent: 0,
+            onchain_gov: false,
+            onchain_gov_percent: 0,
+            measured: false,
+        }
+    }
+}
+
+pub type MeshMaturityProviderFn = fn(&crate::settings::XavierSettings) -> MeshMaturitySummary;
+pub static MESH_MATURITY_PROVIDER: std::sync::OnceLock<MeshMaturityProviderFn> =
+    std::sync::OnceLock::new();
+
+pub fn set_mesh_maturity_provider(provider: MeshMaturityProviderFn) {
+    let _ = MESH_MATURITY_PROVIDER.set(provider);
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MeshHealth {
     pub peers_count: u32,
@@ -220,7 +262,7 @@ pub struct MeshHealth {
     pub latency_ms: f64,
     pub connectivity: String,
     #[serde(default)]
-    pub maturity: crate::mesh::MeshMaturityReport,
+    pub maturity: MeshMaturitySummary,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -380,7 +422,7 @@ impl Default for HealthState {
                 sync_lag_ms: 0.0,
                 latency_ms: 0.0,
                 connectivity: "unknown".to_string(),
-                maturity: crate::mesh::MeshMaturityReport::unmeasured(),
+                maturity: MeshMaturitySummary::unmeasured(),
             },
             telegram: TelegramHealth::default(),
             dependency_graph: ComponentDependencyGraph::default(),
@@ -518,7 +560,7 @@ pub(crate) fn fast_degraded_health_fallback() -> HealthResponse {
             sync_lag_ms: 0.0,
             latency_ms: 0.0,
             connectivity: "unknown".to_string(),
-            maturity: crate::mesh::MeshMaturityReport::unmeasured(),
+            maturity: MeshMaturitySummary::unmeasured(),
         },
         telegram: TelegramHealth::default(),
         auth: crate::security::auth::AuthHealth::default(),
@@ -961,16 +1003,10 @@ async fn collect_health_impl(
             } else {
                 "no peers".to_string()
             },
-            maturity: crate::mesh::maturity::MeshMaturityReport::from_checks(
-                &crate::mesh::maturity::MeshMaturityChecks {
-                    http_routes_enabled: settings.license.mesh_accepted,
-                    acl_loaded: crate::mesh::maturity::acl_store_loaded(),
-                    // No runtime engine to probe: unmeasured, not claimed.
-                    tokenomics_engine_present: None,
-                    // Governance is unchecked; feature presence is not a capability check.
-                    onchain_gov_present: None,
-                },
-            ),
+            maturity: MESH_MATURITY_PROVIDER
+                .get()
+                .map(|f| f(settings))
+                .unwrap_or_else(MeshMaturitySummary::unmeasured),
         }
     } else {
         MeshHealth {
@@ -988,16 +1024,10 @@ async fn collect_health_impl(
                 "disabled (mesh license not accepted)"
             }
             .to_string(),
-            maturity: crate::mesh::maturity::MeshMaturityReport::from_checks(
-                &crate::mesh::maturity::MeshMaturityChecks {
-                    http_routes_enabled: settings.license.mesh_accepted,
-                    acl_loaded: crate::mesh::maturity::acl_store_loaded(),
-                    // No runtime engine to probe: unmeasured, not claimed.
-                    tokenomics_engine_present: None,
-                    // Governance is unchecked; feature presence is not a capability check.
-                    onchain_gov_present: None,
-                },
-            ),
+            maturity: MESH_MATURITY_PROVIDER
+                .get()
+                .map(|f| f(settings))
+                .unwrap_or_else(MeshMaturitySummary::unmeasured),
         }
     };
     mesh.latency_ms = mesh_start.elapsed().as_secs_f64() * 1000.0;

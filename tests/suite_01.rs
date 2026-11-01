@@ -82,3 +82,5 @@ mod mirror_cli_roundtrip_e2e;
 mod projects_list_cli_e2e;
 #[path = "space_cli_e2e.rs"]
 mod space_cli_e2e;
+#[path = "space_cli_real_e2e.rs"]
+mod space_cli_real_e2e;
