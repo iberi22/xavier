@@ -2474,6 +2474,12 @@ pub enum BackupCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Restore a local snapshot backup to the Xavier data directory
+    Restore {
+        /// Backup directory to restore from
+        #[arg(long)]
+        from: std::path::PathBuf,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
