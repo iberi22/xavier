@@ -10,7 +10,7 @@
 - **Priority:** High
 - **SRS Status:** `verified`
 - **Files:** `AGENTS.md`, `docs/SRS/ARCHITECTURE.md`, `.git-core-protocol-version`, `docs/SRC.md`, `docs/SRS/`
-- **Features:** `feat-src-reference`, `feat-documentation-site`
+- **Features:** `feat-documentation-site`, `feat-src-reference`, `feat-universal-agent-sessions`
 
 ### Description
 The repository complies with GitCore 3.8.0: agent read order, local planning, SRC and SRS present.
@@ -30,7 +30,7 @@ The repository complies with GitCore 3.8.0: agent read order, local planning, SR
 - **Priority:** High
 - **SRS Status:** `verified`
 - **Files:** `docs/SRC.md`, *(Removed deleted module .gitcore/SRC_CONFIG.md)*
-- **Features:** `feat-src-reference`, `feat-documentation-site`
+- **Features:** `feat-documentation-site`, `feat-src-reference`
 
 ### Description
 SRC.md describes the real tree, build/test commands, and links to SRS/.gitcore.
@@ -89,7 +89,7 @@ Scope until the memory store routing lands (XAV-REPO step T10, #3205): this requ
 - **Priority:** High
 - **SRS Status:** `verified`
 - **Files:** `src/memory/`, `src/storage/`, `src/server/http/`, `src/server/mcp/`
-- **Features:** `feat-unified-storage`, `feat-mcp-server`
+- **Features:** `feat-codegraph-walk-hardening`, `feat-mcp-server`, `feat-unified-storage`, `feat-universal-agent-sessions`
 
 ### Description
 Agentic memory via Xavier HTTP (`:8006`) and/or MCP, outside business DB.
@@ -128,6 +128,7 @@ No secrets in git; `.env.example` without real values; encryption at rest AES-25
 - **Priority:** Medium
 - **SRS Status:** `implemented`
 - **Files:** `.github/workflows/`, `.gitcore/scripts/verify-pipeline.sh`
+- **Features:** None
 
 ### Description
 GitHub Actions disabled by default in private SWAL era; local tests preferred.
@@ -145,7 +146,7 @@ GitHub Actions disabled by default in private SWAL era; local tests preferred.
 - **Priority:** High
 - **SRS Status:** `implemented` (**95%** — E2E+unit green; residual Amoy ops + Maloca UI)
 - **Files:** `src/node_identity/`, `src/polygon_anchor/`, `src/mesh/challenge.rs`, `src/mesh/namespace.rs`, `src/mesh/pro_gate.rs`, `src/cli/commands/node.rs`
-- **Features:** `feat-decentralized-login` · Issues: `.gitcore/issues/login/`
+- **Features:** `feat-decentralized-login`
 
 ### Description
 Local login without central account: BIP39-24 + Shamir 2-of-3 + vault; mesh challenge; Polygon anchors (hashes only); hybrid Ed25519+ML-DSA signatures. Pro = active node, never Stripe. Mesh ≠ blockchain.
@@ -178,7 +179,7 @@ Local login without central account: BIP39-24 + Shamir 2-of-3 + vault; mesh chal
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `src/storage/`, `src/memory/`, `src/search/`, `src/retrieval/`, `src/memory/entity_graph/`, `src/domain/belief/`
-- **Features:** `feat-unified-storage` (90%), `feat-hybrid-search` (85%), `feat-belief-graph` (95%)
+- **Features:** `feat-belief-graph`, `feat-codegraph-walk-hardening`, `feat-hybrid-search`, `feat-unified-storage`
 
 ### Description
 Unified SQLite + SQLite-vec storage; BM25 + vector hybrid search with RRF; belief/entity graph with inference, decay, serialization.
@@ -198,7 +199,7 @@ Unified SQLite + SQLite-vec storage; BM25 + vector hybrid search with RRF; belie
 - **Priority:** High
 - **SRS Status:** `verified`
 - **Files:** `src/server/http/`, `src/server/mcp/`, `src/cli/server.rs`
-- **Features:** `feat-mcp-server` (95%)
+- **Features:** `feat-mcp-server`
 
 ### Description
 REST API v1 (`:8006`) + MCP streamable HTTP (`:8100`) with progressive disclosure contract and 15+ tools.
@@ -218,7 +219,7 @@ REST API v1 (`:8006`) + MCP streamable HTTP (`:8100`) with progressive disclosur
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `code-graph/`, `src/codebase/`, `src/api/graph.rs`, `src/server/panel/storage.rs`, `src/cli/code_dump.rs`, `src/maturity/scanner/code_graph.rs`, `src/chronicle/auto_docs.rs`
-- **Features:** `feat-code-graph-index` (90%), `feat-plugin-system` (70%), `feat-graph-explorer` (90%), `feat-codegraph-maturity-bridge` (90%)
+- **Features:** `feat-code-graph-index`, `feat-codegraph-maturity-bridge`, `feat-graph-explorer`, `feat-plugin-system`
 
 ### Description
 AST/symbol indexing via `code-graph` sidecar: `/code/scan`, `/code/find`, `/code/stats`, force-graph views; plugin system; maturity/docs bridge.
@@ -239,7 +240,7 @@ AST/symbol indexing via `code-graph` sidecar: `/code/scan`, `/code/find`, `/code
 - **Priority:** High
 - **SRS Status:** `verified` (**100%** — WAVE-3 + WAVE-4 stable)
 - **Files:** `src/mesh/` (fallback_transport, iroh_transport, mesh_service, heartbeat, namespace, pro_gate), `src/data_commons/`, `tests/mesh_integration.rs`
-- **Features:** `feat-mesh-network` (100% stable) · EPIC: #115
+- **Features:** `feat-mesh-network`, `feat-mesh-replay-store`
 
 ### Description
 Distributed P2P memory sync: Ed25519 identity, encrypted transport (AES-GCM+X25519 envelope), ACL, Data Commons. Phase 2 (Iroh/QUIC NAT traversal) shipped in WAVE-3. The libp2p/gossipsub wire is not implemented (verified in Cargo.toml and src/mesh/mod.rs); Phase hardening (gossipsub wire, mesh service, heartbeat) in WAVE-4.
@@ -263,7 +264,7 @@ Distributed P2P memory sync: Ed25519 identity, encrypted transport (AES-GCM+X255
 - **Priority:** Medium
 - **SRS Status:** `implemented`
 - **Files:** `src/notifications/`, `src/telegram/`, `src/observability/notifier.rs`, `src/cli/server.rs`
-- **Features:** `feat-notification-system` (95%), `feat-telegram-bot` (60%)
+- **Features:** `feat-notification-system`, `feat-telegram-bot`
 
 ### Description
 Persistent notifications with 3 channels (Email, Webhook, In-App), SQLite storage, REST API, webhook subscriptions. Telegram module with memory commands.
@@ -283,7 +284,7 @@ Persistent notifications with 3 channels (Email, Webhook, In-App), SQLite storag
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `src/data_commons/governance.rs`, `src/data_commons/reputation.rs`, `src/data_commons/types.rs`, `src/governance/mod.rs`, `src/cli/commands/governance.rs`
-- **Features:** `feat-governance-dao` (90%)
+- **Features:** `feat-governance-dao`
 
 ### Description
 Bicameral DAO: 50% community (reputation-weighted) + 50% council; XIP lifecycle; council veto 66%; community overrule 75%; alloy-based on-chain (`dao-evm` feature).
@@ -304,7 +305,7 @@ Bicameral DAO: 50% community (reputation-weighted) + 50% council; XIP lifecycle;
 - **Priority:** Medium
 - **SRS Status:** `verified`
 - **Files:** `src/health/`, `src/app/health_service.rs`
-- **Features:** `feat-runtime-health` (90%)
+- **Features:** `feat-runtime-health`
 
 ### Description
 Native runtime loop monitoring system health, DB integrity, embedding providers, mesh peers; auto-VACUUM threshold; `/health` endpoint.
@@ -324,7 +325,7 @@ Native runtime loop monitoring system health, DB integrity, embedding providers,
 - **Priority:** Medium
 - **SRS Status:** `implemented`
 - **Files:** `src/context/pipeline.rs`, `tests/integration/context_regen_test.rs`, `src/auto_improvement/`, `src/agents/hormer/`, `src/retrieval/navigation.rs`, `src/server/mcp/tools_memory.rs`, `src/context/token_estimate.rs`, `src/memory/episodic.rs`
-- **Features:** `feat-context-regeneration` (90%), `feat-hormer-navigation` (90%), `feat-auto-improvement` (55%), `feat-token-savings` (85%)
+- **Features:** `feat-auto-improvement`, `feat-context-regeneration`, `feat-hormer-navigation`, `feat-token-savings`
 
 ### Description
 Continuous context regeneration driving recall@k toward 100%; HORMER hierarchical navigation with RL; token-saving progressive disclosure; closed-loop auto-improvement.
@@ -344,7 +345,7 @@ Continuous context regeneration driving recall@k toward 100%; HORMER hierarchica
 - **Priority:** High
 - **SRS Status:** `verified`
 - **Files:** `src/embedding/`
-- **Features:** `feat-local-first` (90%)
+- **Features:** `feat-local-first`
 
 ### Description
 100% local operation: LLM + embeddings via Ollama with cloud fallback and graceful degradation.
@@ -363,7 +364,7 @@ Continuous context regeneration driving recall@k toward 100%; HORMER hierarchica
 - **Priority:** Medium
 - **SRS Status:** `verified`
 - **Files:** `src/security/license.rs`, `.reuse/dep5`, `LICENSE`
-- **Features:** `feat-dual-license` (95%)
+- **Features:** `feat-dual-license`
 
 ### Description
 MIT for standalone use; Mesh License activates governance opt-in, data commons, and network participation rights.
@@ -382,7 +383,7 @@ MIT for standalone use; Mesh License activates governance opt-in, data commons, 
 - **Priority:** Medium
 - **SRS Status:** `implemented`
 - **Files:** `src/memory/openclaw_scanner.rs`, `src/memory/openclaw_indexer.rs`, `src/cli/commands/enums.rs`, `src/cli/handlers/agent_cli.rs`, `src/cli/server.rs`
-- **Features:** `feat-openclaw-scanner` (85%), `feat-agent-cli-commands` (85%)
+- **Features:** `feat-agent-cli-commands`, `feat-openclaw-scanner`
 
 ### Description
 Scan/Index/Push/Pull/Status/Sync for OpenClaw agent memory (MEMORY.md, SOUL.md, USER.md, daily logs); CLI + HTTP routes.
@@ -402,7 +403,7 @@ Scan/Index/Push/Pull/Status/Sync for OpenClaw agent memory (MEMORY.md, SOUL.md, 
 - **Priority:** High
 - **SRS Status:** `verified` (**100%** — WAVE-3.02 verified, WAVE-4 E2E green)
 - **Files:** `src/security/clearance.rs`, `src/security/redaction.rs`, `src/memory/mod.rs`
-- **Features:** `feat-clearance-levels` (100% stable)
+- **Features:** `feat-clearance-levels`
 - **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §3
 
 ### Description
@@ -423,7 +424,7 @@ Classify documents like government classified material: UNCLASSIFIED → TOPSECR
 - **Priority:** High
 - **SRS Status:** `verified` (**100%** — WAVE-3.03 verified, WAVE-4 E2E green)
 - **Files:** `src/security/groups.rs`, `src/security/clearance.rs`
-- **Features:** `feat-groups-permissions` (100% stable)
+- **Features:** `feat-groups-permissions`
 - **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §4
 
 ### Description
@@ -444,7 +445,7 @@ Information groups (core-xavier-dev, service-nodes, family) with rigorous ACL (r
 - **Priority:** High
 - **SRS Status:** `verified` (**100%** — WAVE-4.01 PR #1766, E2E green)
 - **Files:** `src/data_commons/training.rs`, `src/adapters/inbound/http/handlers/training.rs`
-- **Features:** `feat-training-datasets-api` (100% stable)
+- **Features:** `feat-training-datasets-api`
 - **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §1
 
 ### Description
@@ -465,7 +466,7 @@ Serve training datasets over REST: /v1/training/datasets + train/eval splits (JS
 - **Priority:** Medium
 - **SRS Status:** `verified` (**100%** — WAVE-4.02 PR 1758, E2E green)
 - **Files:** `src/agents/mini_experts.rs`, `src/cli/handlers/mini_experts.rs`, `src/agents/provider_router.rs`
-- **Features:** `feat-mini-experts` (100% stable)
+- **Features:** `feat-mini-experts`
 - **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §5
 
 ### Description
@@ -486,7 +487,7 @@ Small models (1-3B) trained with the user's own curated data, only the user's la
 - **Priority:** Medium
 - **SRS Status:** `verified` (**100%** — WAVE-4.03 PR #1754, E2E green)
 - **Files:** *(Removed deleted module src/mesh/mesh_service.rs)*, `src/mesh/heartbeat.rs`, `src/data_commons/sources/telemetry.rs`
-- **Features:** `feat-mesh-service-network` (100% stable)
+- **Features:** `feat-mesh-service-network`
 - **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §2 Capa 2
 
 ### Description
@@ -506,7 +507,7 @@ Share benchmarks, logs, feedbacks, operational telemetry among service nodes to 
 - **Priority:** Medium
 - **SRS Status:** `verified` (**100%** — WAVE-4.04 PR #1753, E2E green)
 - **Files:** `src/mesh/private_mesh.rs`, `src/clavis/manager.rs`, `src/secrets/lending.rs`
-- **Features:** `feat-mesh-private-wallet` (100% stable)
+- **Features:** `feat-mesh-private-wallet`
 - **Design:** `docs/design/F9-MESH-SWAL-PUBLICO-PRIVADO.md` §3.7
 
 ### Description
@@ -527,7 +528,7 @@ Nodes anchored to the SAME key wallet form a private mesh: sync memory, snapshot
 - **Priority:** High
 - **SRS Status:** `verified` (**100%** — WAVE-3.02 verified, WAVE-4.10 hardening)
 - **Files:** `src/security/clearance.rs`, `src/security/redaction.rs`
-- **Features:** `feat-content-redaction` (100% stable)
+- **Features:** `feat-content-redaction`
 - **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §3
 
 ### Description
@@ -547,7 +548,7 @@ Documents with REDACTED sections: server serves censored version per requester c
 - **Priority:** Medium
 - **SRS Status:** `verified` (**100%** — WAVE-4.05 PR #1756, E2E green)
 - **Files:** `src/agents/curation.rs`, *(Removed deleted module handlers/curation.rs)*
-- **Features:** `feat-human-curation` (100% stable)
+- **Features:** `feat-human-curation`
 - **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §1
 
 ### Description
@@ -567,7 +568,7 @@ Humans are curators: review, approve, classify the information Xavier preserves.
 - **Priority:** High
 - **SRS Status:** `verified` (**100%** — feat-node-provisioning stable, 24/24 tests PASS 2026-08-14, WAVE-4 E2E green)
 - **Files:** `src/nodes/mod.rs`, `src/clavis/mod.rs`, `src/secrets/lending.rs`, `src/adapters/inbound/http/handlers/nodes.rs`
-- **Features:** `feat-node-provisioning` (100% stable)
+- **Features:** `feat-node-provisioning`
 - **Design:** `docs/design/F9-MESH-SWAL-PUBLICO-PRIVADO.md` §3.8 (Ola M6)
 
 ### Description
@@ -594,7 +595,7 @@ Register a cloud service as a SWAL node by pasting its API token (Supabase/Neon)
 - **Priority:** High
 - **SRS Status:** `verified` (**100%** — feat-node-provisioning stable, 24/24 tests PASS 2026-08-14, WAVE-4 E2E green)
 - **Files:** `src/nodes/mod.rs`, `src/clavis/mod.rs`, `src/secrets/lending.rs`
-- **Features:** `feat-node-provisioning` (100% stable)
+- **Features:** `feat-node-provisioning`
 - **Design:** `docs/design/F9-MESH-SWAL-PUBLICO-PRIVADO.md` §3.9 (Ola M7)
 
 ### Description
@@ -618,7 +619,7 @@ Register a VPS as a private SWAL node over SSH. Xavier **genera un keypair SSH d
 - **Category:** Mesh
 - **Priority:** High
 - **SRS Status:** `planned`
-- **Features:** `feat-mesh-network`
+- **Features:** None
 - **Files:** `src/mesh/maturity.rs` (reports libp2p unavailable)
 - **Docs:** Wave-3 Docs — enterprise mesh hardening
 
@@ -634,7 +635,7 @@ Mesh libp2p gossipsub is not implemented. Evidence of its absence is tracked in 
 - **Category:** Security
 - **Priority:** High
 - **SRS Status:** `implemented`
-- **Features:** `feat-clearance-levels`
+- **Features:** None
 - **Files:** `src/security/clearance.rs`, `src/security/redaction.rs`
 - **Docs:** Docs — clearance levels 6-tier enforcement
 
@@ -654,7 +655,7 @@ Clearance 6 levels (UNCLASSIFIED→TOPSECRET) enforced on all reads. `ClearanceE
 - **Category:** Security
 - **Priority:** High
 - **SRS Status:** `implemented`
-- **Features:** `feat-groups-permissions`
+- **Features:** None
 - **Files:** `src/security/groups.rs`
 - **Docs:** Docs — groups strict permissions with audit trail
 
@@ -674,7 +675,7 @@ Information groups with ACL read/write/audit enforced on ALL reads, audited. `Gr
 - **Category:** Security
 - **Priority:** High
 - **SRS Status:** `implemented`
-- **Features:** `feat-encryption-at-rest`
+- **Features:** `feat-clavis-lease`
 - **Files:** `src/clavis/manager.rs`, `src/clavis/mod.rs`, `src/secrets/lending.rs`
 - **Docs:** Docs — Clavis auto-lend on task_start with TTL
 
@@ -694,7 +695,7 @@ Information groups with ACL read/write/audit enforced on ALL reads, audited. `Gr
 - **Category:** Security
 - **Priority:** High
 - **SRS Status:** `implemented`
-- **Features:** `feat-encryption-at-rest`
+- **Features:** `feat-e2e-clavis-http`, `feat-e2e-keygen`, `feat-e2e-smoke-ci`, `feat-vault-hardening`, `fix-clavis-vault-namespace`
 - **Files:** `src/secrets/lending.rs`, `src/coordination/secrets.rs`, `src/cli/handlers/secrets.rs`
 - **Docs:** Docs — Vault anti-exfiltration + MCP + lease list/history contract
 
@@ -717,7 +718,7 @@ Information groups with ACL read/write/audit enforced on ALL reads, audited. `Gr
 - **Category:** Integration
 - **Priority:** Medium
 - **SRS Status:** `implemented`
-- **Features:** `feat-code-graph-index`
+- **Features:** `feat-snippet-writethrough`
 - **Files:** `src/memory/snippet_writethrough.rs`, `src/memory/mod.rs`
 - **Docs:** Docs — CodeGraph writethrough unified with cascade delete
 
@@ -736,7 +737,7 @@ Information groups with ACL read/write/audit enforced on ALL reads, audited. `Gr
 - **Category:** AI
 - **Priority:** High
 - **SRS Status:** `implemented`
-- **Features:** `feat-hybrid-search`
+- **Features:** `feat-rag-hyde`
 - **Files:** `src/search/rerank.rs`
 - **Docs:** Docs — RAG hybrid RRF + local reranker + HyDE
 
@@ -755,7 +756,7 @@ RAG pipeline combines BM25 + vector + code_tokens via RRF (`rrf_k=60`, `code_tok
 - **Category:** Cognitive
 - **Priority:** Medium
 - **SRS Status:** `implemented`
-- **Features:** `feat-belief-graph`, `feat-graph-explorer`
+- **Features:** `feat-knowledge-consolidation`
 - **Files:** `src/memory/entity_graph/mod.rs`
 - **Docs:** Docs — Knowledge graph consolidation with dedup + decay + 4-tier zones
 
@@ -774,7 +775,7 @@ RAG pipeline combines BM25 + vector + code_tokens via RRF (`rrf_k=60`, `code_tok
 - **Category:** Platform
 - **Priority:** Medium
 - **SRS Status:** `implemented`
-- **Features:** `feat-wasm` (new)
+- **Features:** `feat-wasm`
 - **Files:** `crates/xavier-wasm/Cargo.toml`, `crates/xavier-wasm/src/lib.rs`
 - **Docs:** Docs — WASM crate limpio sin rusqlite, IndexedDB + XenBench 6 slices
 
@@ -792,7 +793,7 @@ New crate `xavier-wasm` (cdylib+rlib) without `rusqlite`, reuses `xavier-core-lo
 - **Category:** Process
 - **Priority:** Medium
 - **SRS Status:** `verified`
-- **Features:** `feat-documentation-site`
+- **Features:** None
 - **Files:** `docs/SRS/REQUIREMENTS.md`, *(Removed deleted module docs/ARCH_WAVE3.md)*, `.gitcore/features.json`
 - **Docs:** Docs — SRS update + features 46→52 + harness verification
 
@@ -811,7 +812,7 @@ SRS updated REQ-031..040, features.json 46→52 with 4 promotions (mesh-network,
 - **Category:** Functional / Frontend
 - **Priority:** High
 - **SRS Status:** `implemented`
-- **Features:** `feat-panel-browser-compat`
+- **Features:** None
 - **Files:** `panel-ui/src/`
 - **Docs:** `docs/adr/ADR-030-panel-browser-compat.md`
 
@@ -831,7 +832,7 @@ El panel-ui DEBE funcionar en browser sin Tauri: sin TypeError invoke/transformC
 - **Category:** Packaging / Distribution
 - **Priority:** High
 - **SRS Status:** `in_progress`
-- **Features:** `feat-desktop-bundle`
+- **Features:** None
 - **Files:** `panel-ui/src-tauri/tauri.conf.json`, `panel-ui/src-tauri/src/lib.rs`
 - **Docs:** Issue #1891, Issue #1893
 
@@ -850,7 +851,7 @@ Xavier desktop app DEBE ofrecer instaladores one-click para usuarios no técnico
 - **Category:** Cloud / Persistence
 - **Priority:** High
 - **SRS Status:** `in_progress`
-- **Features:** `feat-cloudflare-edge-backend`
+- **Features:** None
 - **Files:** `src/memory/cloud_sync.rs`, `panel-ui/wrangler.toml`, `docs/features/specs/FEATURE-070-cloudflare-vectorize-backend.md`
 - **Docs:** Issue #1892, Issue #1895
 
@@ -886,6 +887,7 @@ Xavier provee un Kernel Proxy CLI en Rust que intercepta subprocesos de herramie
 ## REQ-048: HumanChallenge → Curation → Training Pipeline
 
 **Status:** Planned | **Wave:** 8 | **Module:** humanchallenge, data_commons
+**Features:** None
 **SRS Reference:** IEEE 830 §3.2
 
 ### Description
@@ -905,6 +907,7 @@ gates which challenge responses become training data. Minimum thresholds: 10 eli
 ## REQ-049: Human Introspection Mode (LLM as Guide)
 
 **Status:** Planned | **Wave:** 8 | **Module:** humanchallenge/introspection
+**Features:** None
 **SRS Reference:** IEEE 830 §3.3
 
 ### Description
@@ -924,6 +927,7 @@ produces insights; the LLM facilitates depth through targeted questions.
 ## REQ-050: Privacy Pipeline P2/P3/P4
 
 **Status:** Planned | **Wave:** 8 | **Module:** data_commons/privacy
+**Features:** None
 **SRS Reference:** IEEE 830 §3.4 (Privacy Requirements)
 
 ### Description
@@ -946,6 +950,7 @@ REQ-051: retired 2026-10-15 (feature removed by the owner).
 ## REQ-052: Informed Consent for P3 (Colab) Training Export
 
 **Status:** Planned | **Wave:** 8 | **Module:** panel-ui, humanchallenge
+**Features:** None
 **SRS Reference:** IEEE 830 §3.6 (User Consent Requirements)
 
 ### Description
@@ -1212,7 +1217,7 @@ REQ-060..064 SHALL cite merged code evidence (`file:line`); the six `FEATURE-fea
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `src/health/mod.rs`, `src/adapters/inbound/http/routes.rs`
-- **Features:** `feat-health-truth` (PR #2568)
+- **Features:** `feat-health-truth`
 
 ### Description
 
@@ -1229,7 +1234,7 @@ REQ-060..064 SHALL cite merged code evidence (`file:line`); the six `FEATURE-fea
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `src/server/mcp/tools_core.rs`, `src/health/mod.rs`
-- **Features:** `feat-mcp-health-honesty` (PR #2577)
+- **Features:** `feat-mcp-health-honesty`
 
 ### Description
 
@@ -1246,7 +1251,7 @@ MCP `sys_health` SHALL report unmeasured benchmark metrics with a `-1.0` sentine
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `src/self_manage/mod.rs`
-- **Features:** `feat-guardian-truth` (PR #2575)
+- **Features:** `feat-guardian-truth`
 
 ### Description
 
@@ -1263,7 +1268,7 @@ MCP `sys_health` SHALL report unmeasured benchmark metrics with a `-1.0` sentine
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `src/context/skill_dispatcher.rs`, `src/context/skill_registry.rs`
-- **Features:** `feat-skill-dispatch-confidence` (PR #2567)
+- **Features:** `feat-skill-dispatch-confidence`
 
 ### Description
 
@@ -1280,7 +1285,7 @@ Skill dispatch SHALL return the `_none` sentinel (confidence 0.0) below `MIN_DIS
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `src/cli/handlers/doctor.rs`, `src/cli/handlers/system_scan.rs`
-- **Features:** `feat-doctor-bounded` (PR #2571)
+- **Features:** `feat-doctor-bounded`
 
 ### Description
 
@@ -1297,7 +1302,7 @@ Skill dispatch SHALL return the `_none` sentinel (confidence 0.0) below `MIN_DIS
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `src/auto_improvement/cycle.rs`, `src/auto_improvement/mod.rs`, `src/cli/commands/improve.rs`
-- **Features:** `feat-improve-bounded` (PR #2579)
+- **Features:** `feat-improve-bounded`
 
 ### Description
 
@@ -1314,7 +1319,7 @@ Skill dispatch SHALL return the `_none` sentinel (confidence 0.0) below `MIN_DIS
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `src/observability/health.rs`, `src/cli/handlers/system.rs`, `src/cli/handlers/memory.rs`, `src/cli/commands/http.rs`
-- **Features:** `feat-cli-health-stats-parity` (PR #2574)
+- **Features:** `feat-cli-health-stats-parity`
 
 ### Description
 
@@ -1331,7 +1336,7 @@ The live `GET /health` payload (`observability::health::HealthStatus`) SHALL car
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `src/cli/handlers/code.rs`, `src/cli/code_dump.rs`, `src/cli/commands/code.rs`, `code-graph/src/query/mod.rs`
-- **Features:** `feat-codegraph-dump-path` (PR #2576)
+- **Features:** `feat-codegraph-dump-path`
 
 ### Description
 
@@ -1348,7 +1353,7 @@ The live `GET /health` payload (`observability::health::HealthStatus`) SHALL car
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `src/memory/sanitizer.rs`, `src/memory/qmd/writer.rs`
-- **Features:** `feat-memory-write-integrity` (PR #2573)
+- **Features:** `feat-memory-write-integrity`
 
 ### Description
 
@@ -1365,7 +1370,7 @@ Memory writes SHALL reject Latin-dominant tokens where a lowercase Latin letter 
 - **Priority:** High
 - **SRS Status:** `implemented`
 - **Files:** `tests/observability_contract.rs`, `.github/workflows/ci.yml`
-- **Features:** `feat-e2e-observability-contract` (PR #2578)
+- **Features:** `feat-e2e-observability-contract`
 
 ### Description
 
@@ -1508,7 +1513,7 @@ executed tests. Design: `docs/design/trunk-based/01-DESIGN.md`, `02-AUTONOMOUS-P
 - **Priority:** High
 - **SRS Status:** `planned`
 - **Files:** `src/memory/repo_store_registry.rs`, `src/memory/sqlite_vec_store/at_rest.rs`, `src/cli/handlers/memory.rs`, `src/memory/federated_search.rs`, `docs/adr/ADR-039-per-repo-memory-stores.md`
-- **Features:** `feat-repo-memory-isolation`
+- **Features:** None
 - **Design:** `docs/design/xav-repo-multidb-design.md` §2 (tasks T7/T8/T10/T11)
 
 ### Description

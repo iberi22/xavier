@@ -234,8 +234,25 @@ impl Indexer {
                 files_to_mtime.insert(rel, mtime);
             }
         } else {
-            let existing_metadata = self.db.get_all_file_metadata()?;
-            let existing_hashes = self.db.get_all_file_hashes().unwrap_or_default();
+            let resolved_root = if self.project_id != "default" {
+                self.project_id.clone()
+            } else {
+                std::fs::canonicalize(root)
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            };
+            let project_paths = self
+                .db
+                .get_file_paths_for_project(&resolved_root)
+                .unwrap_or_default();
+
+            let mut existing_metadata = self.db.get_all_file_metadata()?;
+            existing_metadata.retain(|k, _| project_paths.contains(k));
+
+            let mut existing_hashes = self.db.get_all_file_hashes().unwrap_or_default();
+            existing_hashes.retain(|k, _| project_paths.contains(k));
+
             let mut current_files = std::collections::HashSet::new();
             let mut hash_upserts: HashMap<String, String> = HashMap::new();
 
@@ -460,7 +477,22 @@ impl Indexer {
     /// already pruned by [`crate::db::CodeGraphDB::batch_delete_file_data`]
     /// whenever the delete went through a tracked path).
     pub fn verify_hash_parity(&self, root: &Path) -> Result<ParityReport> {
-        let stored = self.db.get_all_file_hashes()?;
+        let resolved_root = if self.project_id != "default" {
+            self.project_id.clone()
+        } else {
+            std::fs::canonicalize(root)
+                .ok()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        };
+        let project_paths = self
+            .db
+            .get_file_paths_for_project(&resolved_root)
+            .unwrap_or_default();
+
+        let mut stored = self.db.get_all_file_hashes()?;
+        stored.retain(|k, _| project_paths.contains(k));
+
         let mut report = ParityReport {
             checked: stored.len(),
             ..Default::default()

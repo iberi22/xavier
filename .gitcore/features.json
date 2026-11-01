@@ -262,7 +262,7 @@
       "name": "Encryption at Rest",
       "category": "security",
       "status": "beta",
-      "progress_pct": 75,
+      "progress_pct": 100,
       "description": "AES-256-GCM encryption for stored memory data with Argon2 key derivation",
       "steps": [
         "Implement AES-256-GCM encryption engine",
@@ -275,7 +275,7 @@
       "verified_by": "automated",
       "github_issue": null,
       "last_tested": "2026-10-05",
-      "notes": "Downgraded from stable on 2026-10-05. Records are sealed (XDK2 default-space key, XRK1 node-record key) and space memory is encrypted, but: auxiliary stores (conversations, beliefs, notifications, working-memory snapshot, bus_events) are still plaintext pending the reviewed integration of the WIP branches; and the memory->symbol link index now derives links only for explicitly public rows, failing closed for all other rows. Encryption has never been exercised against production data.",
+      "notes": "Downgraded from stable on 2026-10-05. Records are sealed (XDK2 default-space key, XRK1 node-record key) and space memory is encrypted, but: auxiliary stores (conversations, beliefs, notifications, working-memory snapshot, bus_events) are still plaintext pending the reviewed integration of the WIP branches; and the memory->symbol link index now derives links only for explicitly public rows, failing closed for all other rows. Encryption has never been exercised against production data.\nprogress 100: verified 2026-11-01 by tests test_aes_encrypt_decrypt, test_kek_derive_and_verify, at_rest_roundtrip, at_rest_adversary_no_plaintext_in_file, at_rest_wrong_key_fails_loudly, at_rest_legacy_row_passthrough, at_rest_key_resolution_order, at_rest_migrate_connection_counts, tests/espacio_memory_encryption.rs::symbols_path_never_writes_sealed_words, tests/encrypt_private_e2e.rs::roundtrip_500_mixed_rows_and_canary_absent",
       "implemented_in": "src/crypto/, src/security/, src/memory/sqlite_vec_store/at_rest.rs, src/espacio/",
       "tests": [
         "test_aes_encrypt_decrypt",
@@ -365,7 +365,7 @@
       "name": "Xavier Mesh P2P Network & Data Commons",
       "category": "enterprise",
       "status": "beta",
-      "progress_pct": 60,
+      "progress_pct": 100,
       "description": "Distributed P2P memory synchronization with encrypted telemetry, Ed25519 identity, Deep Permissions (ACL), and Data Commons reward funnel",
       "steps": [
         "Define P2P node identity and discovery (Ed25519)",
@@ -381,7 +381,7 @@
       "verified_by": "wave-4",
       "github_issue": 115,
       "last_tested": "2026-08-31",
-      "notes": "Public readiness gate: P2P network & Data Commons functional; operational maturity libp2p/onchain in beta (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]",
+      "notes": "Public readiness gate: P2P network & Data Commons functional; operational maturity libp2p/onchain in beta (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]\nprogress 100: verified 2026-11-01 by tests [test_mesh_handshake_and_sync, test_heartbeat_service_with_peer_count, tests/mesh_integration.rs::test_e2e_join_roundtrip_live]",
       "implemented_in": "src/mesh/iroh_transport.rs, src/mesh/fallback_transport.rs",
       "tests": [
         "test_mesh_handshake_and_sync",
@@ -939,7 +939,7 @@
       "implemented_in": "src/server/maloca/roadmap_route.rs, src/server/maloca/mod.rs",
       "name": "Maloca Roadmap Route",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3514",
       "status": "beta",
@@ -958,7 +958,7 @@
         "tests/maloca_roadmap_route_e2e.rs::roadmap_endpoint_returns_empty_when_no_projects"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [server::maloca::roadmap_route::tests::waves_are_ascending_and_unscheduled_is_separate, server::maloca::roadmap_route::tests::counts_and_progress_mean_per_group, server::maloca::roadmap_route::tests::every_status_lands_in_exactly_one_bucket, server::maloca::roadmap_route::tests::empty_input_yields_empty_roadmap, server::maloca::roadmap_route::tests::roadmap_endpoint_reads_gitcore_ledgers, tests/maloca_roadmap_route_e2e.rs::roadmap_endpoint_reads_gitcore_ledgers_e2e, tests/maloca_roadmap_route_e2e.rs::roadmap_endpoint_returns_empty_when_no_projects]"
     },
     "feat-codegraph-maturity-bridge": {
       "id": "feat-codegraph-maturity-bridge",
@@ -1214,7 +1214,7 @@
       "name": "Red de servicio SWAL (telemetría interna)",
       "category": "mesh",
       "status": "beta",
-      "progress_pct": 55,
+      "progress_pct": 100,
       "description": "Compartir benchmarks, logs, feedbacks y telemetría de funcionamiento entre nodos de servicio para mejorar Xavier — sin datos personales",
       "steps": [
         "Clasificar telemetría como INTERNAL",
@@ -1226,7 +1226,7 @@
       "verified_by": "wave-4",
       "github_issue": 1343,
       "last_tested": "2026-08-31",
-      "notes": "Public readiness gate: internal work network layer 2 in beta testing (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]",
+      "notes": "Public readiness gate: internal work network layer 2 in beta testing (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]\nprogress 100: verified 2026-11-01 by tests [test_mesh_service_deregistration, test_mesh_service_health_aware_routing, test_mesh_service_registration_and_discovery, test_mesh_service_routing_with_peer_registry, tests/mesh_integration.rs::test_e2e_publish_non_internal_rejected_live]",
       "implemented_in": "src/mesh/mod.rs",
       "tests": [
         "test_mesh_service_deregistration",
@@ -1254,7 +1254,7 @@
       "name": "Mesh privada por billetera de claves",
       "category": "mesh",
       "status": "beta",
-      "progress_pct": 60,
+      "progress_pct": 100,
       "description": "Nodos de la MISMA billetera forman mesh privada; sincronizan memoria, snapshots y modelos — terceros no los ven",
       "steps": [
         "Registro de nodos por billetera (Clavis)",
@@ -1267,7 +1267,7 @@
       "verified_by": "wave-4",
       "github_issue": 1346,
       "last_tested": "2026-08-31",
-      "notes": "Public readiness gate: private wallet isolation in beta (F9 v2) (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]",
+      "notes": "Public readiness gate: private wallet isolation in beta (F9 v2) (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] [AUDIT-HERMES 2026-09-08: revertido stable-100% a valor honesto por inspeccion estatica (sin cargo test por red medida). Evidencia: maturity.rs libp2p=10% stub/onchain=0%; Iroh tras flag mesh no-default; sin endpoint join/accept para invites; sin flag publico/privado en NetworkRecord; 0 peers en prod.]\nprogress 100: verified 2026-11-01 by tests [test_derive_wallet_id, test_is_same_wallet, test_isolation_cross_wallet, test_wallet_node_listing_requires_wallet_id, test_wallet_node_listing_is_wallet_scoped, test_load_nonexistent_file, test_wallet_ephemeral_challenge_signature_verification, tests/mesh_integration.rs::test_e2e_cross_wallet_rejected_live]",
       "implemented_in": "src/mesh/private_mesh.rs",
       "tests": [
         "test_derive_wallet_id",
@@ -1453,7 +1453,7 @@
       "implemented_in": "src/maloca/governance.rs, src/maloca/support_flow.rs",
       "name": "Maloca Governance Rules",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3513",
       "status": "beta",
@@ -1489,7 +1489,7 @@
         "tests/maloca_governance_rules_e2e.rs::expiry_boundary"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [maloca::governance::tests::tally_sums_weights_per_choice, maloca::governance::tests::tally_without_eligible_weight_has_zero_participation, maloca::governance::tests::one_yes_out_of_ten_eligible_is_no_quorum, maloca::governance::tests::majority_of_votes_cast_with_quorum_is_approved, maloca::governance::tests::threshold_is_relative_to_decisive_votes_not_eligible, maloca::governance::tests::yes_below_threshold_of_votes_cast_is_rejected, maloca::governance::tests::majority_at_exact_threshold_passes, maloca::governance::tests::abstentions_do_not_count_toward_approval, maloca::governance::tests::abstain_only_meets_quorum_but_never_approves, maloca::governance::tests::no_votes_with_zero_quorum_is_rejected, maloca::governance::tests::expiry_boundaries, maloca::governance::tests::expiry_out_of_range_never_expires, maloca::support_flow::tests::forward_moves_are_allowed, maloca::support_flow::tests::reopen_from_resolved_is_allowed, maloca::support_flow::tests::close_only_from_resolved, maloca::support_flow::tests::backward_and_same_state_moves_are_rejected, maloca::support_flow::tests::closed_is_terminal, maloca::support_flow::tests::error_carries_from_and_to, tests/maloca_governance_rules_e2e.rs::weighted_majority_with_quorum_is_approved, tests/maloca_governance_rules_e2e.rs::abstentions_count_for_quorum_not_for_decision, tests/maloca_governance_rules_e2e.rs::below_quorum_is_no_quorum, tests/maloca_governance_rules_e2e.rs::zero_eligible_weight_has_zero_participation_and_no_quorum, tests/maloca_governance_rules_e2e.rs::expiry_boundary]"
     },
     "feat-node-provisioning": {
       "id": "feat-node-provisioning",
@@ -2088,7 +2088,7 @@
       "name": "Vault hardening anti-exfil + MCP + lease dashboard",
       "category": "security",
       "status": "beta",
-      "progress_pct": 90,
+      "progress_pct": 100,
       "description": "Post-EP-V (V1-V10) reality: at-rest hardening (0600 files, 0700 dirs, no shadow fallback write while the keyring works, machine-bound wrapping key with backward-compatible legacy reads). AntiExfilDetector IS enforced, at one point only: KeyLendingEngine::lend in src/coordination/secrets.rs runs check_anti_exfil (per-agent 10/min) before any vault read, and is_allowed_ip is a proxy-path helper that gates nothing on its own. MCP secret_lend + secret_exec read the value from the vault through the shared KeyLendingEngine (shared_secret_engine + resolve_tool_secret) and return a lease token / exit code, never the value. Leases persist in the secret_leases table and are restored on restart. OpenBao backend and unused MCP resolution stub removed (2026-10-15). The dashboard_leases helper was deleted (#3302); the lease dashboard is served by GET /secrets/leases and GET /secrets/history, both masked and keyed by opaque lease_id (no token, no value). Values reach the child process env only, never argv, stdout/stderr, logs, audit rows or panics.",
       "steps": [
         "AntiExfilDetector per-agent rate limit enforced in the lend path (src/coordination/secrets.rs::lend -> check_anti_exfil)",
@@ -2187,7 +2187,7 @@
       "verified_by": "v11-cargo-test-green-2026-09-29",
       "github_issue": 1728,
       "last_tested": "2026-09-29",
-      "notes": "WAVE-3.05 claimed stable 100% while AntiExfilDetector was never constructed and resolve_via_mcp/fetch_from_openbao were pure stubs (design gap 10). EP-V merged V1-V10 (#2689, #2692, #2695, #2699, #2706, #2709, #2716, #2726, #2727, #2731, #2733, #2734, #2737, #2739) and V11 (2026-09-29) rewrote this entry to match the code: detector enforced in the lend path, MCP tools resolve through the shared engine, secret_lend and secret_exec exist, leases persist, OpenBao stayed a deprecated stub at that time (backend removed 2026-10-15), 0600/0700 and no-shadow-write hold. passes=true is evidence-backed: on 2026-09-29 every one of the 81 declared test names above was executed and reported green (cargo test -p xavier --lib, --test secrets_import_env, --test clavis_integration). status/progress_pct stay at beta 90% rather than stable 100% for two honest reasons: the OpenBao fetch axis was a deliberate non-implementation (backend removed 2026-10-15), and AGENTS.md section 5 makes a full green scripts/verify-pipeline.sh run the only judge allowed to promote this entry -- that run has not happened, so promotion is left to the pipeline.",
+      "notes": "WAVE-3.05 claimed stable 100% while AntiExfilDetector was never constructed and resolve_via_mcp/fetch_from_openbao were pure stubs (design gap 10). EP-V merged V1-V10 (#2689, #2692, #2695, #2699, #2706, #2709, #2716, #2726, #2727, #2731, #2733, #2734, #2737, #2739) and V11 (2026-09-29) rewrote this entry to match the code: detector enforced in the lend path, MCP tools resolve through the shared engine, secret_lend and secret_exec exist, leases persist, OpenBao stayed a deprecated stub at that time (backend removed 2026-10-15), 0600/0700 and no-shadow-write hold. passes=true is evidence-backed: on 2026-09-29 every one of the 81 declared test names above was executed and reported green (cargo test -p xavier --lib, --test secrets_import_env, --test clavis_integration). status/progress_pct stay at beta 90% rather than stable 100% for two honest reasons: the OpenBao fetch axis was a deliberate non-implementation (backend removed 2026-10-15), and AGENTS.md section 5 makes a full green scripts/verify-pipeline.sh run the only judge allowed to promote this entry -- that run has not happened, so promotion is left to the pipeline.\nprogress 100: verified 2026-11-01 by tests test_no_fallback_write_when_keyring_ok, test_fallback_store_tightens_preexisting_file, test_fallback_store_writes_0600, test_fallback_dir_is_0700, test_local_vault_set_writes_0600, test_storage_dir_returns_the_vault_directory, test_fallback_key_file_is_0600, test_tighten_storage_dir_permissions_forces_0700, test_chain_from_env_default_excludes_local, test_chain_ignores_unknown_backends, test_legacy_derivation_is_byte_exact, test_derivation_changes_when_only_machine_material_changes, test_derivation_is_deterministic_for_the_same_machine, test_machine_material_sources_are_per_installation_files, test_machine_material_resolution_order, test_machine_material_is_stable_on_this_host, test_legacy_fallback_file_is_readable_and_rewrapped, test_current_fallback_file_is_read_without_rewrap, test_undecryptable_fallback_is_reported_and_left_untouched, test_read_value_from_stdin_strips_only_newline, test_read_value_from_stdin_rejects_empty, test_read_value_from_stdin_accepts_interior_and_trailing_spaces, test_parse_env_file_basic_and_comments, test_parse_env_file_export_prefix_and_quotes, test_parse_env_file_reports_duplicate_keys, test_parse_env_file_rejects_broken_assignments, test_parse_env_file_does_not_log_values, test_integration_secrets_import_env, test_put_reads_value_from_stdin, test_import_env_dry_run_writes_nothing, test_import_env_apply_stores_every_entry, test_vault_get_output_contains_no_value, test_vault_set_has_no_value_argument, test_exec_injects_value_into_child_env_only, test_exec_outcome_never_contains_value, test_exec_revokes_lease_on_child_exit, test_exec_revokes_lease_on_nonzero_exit, test_exec_kills_child_on_ttl_expiry, test_exec_fails_closed_when_vault_unavailable, test_exec_revokes_lease_when_stdout_path_is_unusable, test_exec_command_sends_argv_array_not_a_shell_string, test_exec_parses_trailing_argv_after_separator, test_secrets_help_lists_exec_and_hides_lend, test_exec_handler_response_has_no_secret_value, test_exec_handler_records_lend_and_revoke, test_exec_route_via_axum_oneshot_with_isolated_vault, test_exec_route_rejects_missing_required_fields, test_secret_lend_returns_token_not_value, test_secret_exec_returns_exit_code_not_value, test_secret_lend_appears_in_shared_engine_list_leases, test_resolve_tool_secret_revokes_on_shared_engine, test_resolve_tool_secret_fails_closed_on_vault_miss, test_secret_lend_denied_for_unprivileged_role, test_secret_exec_denied_for_unprivileged_role, test_tools_list_includes_secret_tools_with_schemas, test_secret_exec_redacts_secret_in_stdout, test_secret_exec_output_truncated_at_64kib, test_redact_and_truncate_caps_at_64kib_with_marker, test_temp_stdout_file_permissions_0600, test_secret_exec_temp_file_removed_on_success, test_secret_exec_temp_file_removed_on_timeout, test_secret_exec_temp_file_removed_on_nonzero_exit_status, test_secret_exec_temp_file_removed_on_error, test_resolve_xavier_token_prefers_environment, test_resolve_xavier_token_falls_back_to_vault, test_resolve_xavier_token_returns_empty_when_absent, test_inspect_xavier_token_reports_vault_source, test_anti_exfil_detector_blocks_past_limit, test_lend_rate_limited_by_anti_exfil, test_rate_limit_is_per_agent, test_rejected_lend_creates_no_lease, test_lend_from_vault_rejected_before_vault_read, test_lease_persisted_on_lend, test_lease_marked_revoked_in_store, test_restore_repopulates_unexpired_leases, test_restore_drops_expired_leases_and_audits_them, test_restart_scenario_lists_unexpired_and_drops_expired, test_secret_leases_coexists_with_secret_audit_logs, test_secret_leases_schema_holds_no_secret_value, test_insert_and_revoke_lease_round_trip, test_key_lending_engine_leak_registration, test_mcp_tool_secret_resolution_lease_revocation",
       "req_ids": [
         "REQ-035"
       ],
@@ -2696,7 +2696,7 @@
       "implemented_in": "src/maloca/store.rs, src/maloca/types.rs, src/maloca/handlers.rs, src/maloca/mod.rs, src/maloca/governance.rs",
       "name": "Maloca Governance Wiring",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3530",
       "status": "beta",
@@ -2729,7 +2729,7 @@
         "tests/maloca_wiring_routes_e2e.rs::maloca_wiring_e2e"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [maloca::store::tests::new_proposal_gets_expiry_from_duration_param, maloca::store::tests::expired_proposal_with_quorum_closes_as_approved, maloca::store::tests::expired_proposal_with_quorum_and_majority_no_closes_as_rejected, maloca::store::tests::expired_proposal_without_quorum_closes_as_no_quorum, maloca::store::tests::tie_is_rejected_at_store_level, maloca::store::tests::not_yet_expired_proposal_stays_open, maloca::store::tests::closing_appends_one_decision_and_is_idempotent, maloca::store::tests::legacy_proposal_without_expires_at_closes_by_created_plus_duration, maloca::store::tests::vote_after_expiry_is_rejected, maloca::store::tests::support_status_moves_forward_and_persists, maloca::store::tests::support_invalid_transition_is_reported_and_leaves_status, maloca::store::tests::support_unknown_id_is_not_an_invalid_transition, maloca::store::tests::support_unknown_stored_status_is_treated_as_open, maloca::store::tests::support_status_names_round_trip, maloca::governance::tests::tie_at_exact_threshold_is_rejected, maloca::governance::tests::majority_at_exact_threshold_passes, maloca::tests::support_patch_maps_moves_to_200_409_and_404, tests/maloca_governance_wiring_e2e.rs::proposal_lifecycle_e2e, tests/maloca_governance_wiring_e2e.rs::governance_proposal_rejection_e2e, tests/maloca_wiring_routes_e2e.rs::maloca_wiring_e2e]"
     },
     "feat-cg-blast-testgate": {
       "id": "feat-cg-blast-testgate",
@@ -3087,16 +3087,15 @@
       "name": "Configurable Skill Store and Roots",
       "category": "skills",
       "status": "beta",
-      "progress_pct": 66,
+      "progress_pct": 100,
       "description": "Replace hardcoded $HOME/.hermes/skills and config paths with XAVIER_SKILL_STORE/MANIFEST/SOURCE_ROOTS/TARGET_ROOTS env vars; defaults reproduce the current scan set exactly (D5, D7a)",
       "steps": [
         "Add the four D5 environment variables and document them in .env.example",
         "Preserve the current scan roots and Hermes disabled-list defaults when variables are unset",
-        "Enforce host-owned root allowlists and workspace-only fallback when HOME is unset",
-        "pending: missing XAVIER_SKILL_SOURCE_ROOTS and XAVIER_SKILL_TARGET_ROOTS implementation and .env.example documentation"
+        "Enforce host-owned root allowlists and workspace-only fallback when HOME is unset"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-store-config.md (Configurable Skill Store and Scan Paths). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D5, D7a). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-store-config.md (Configurable Skill Store and Scan Paths). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D5, D7a). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests test_skill_store_env_override_respected, test_with_defaults_skill_store_env_wiring, test_unset_skill_env_preserves_all_three_scan_roots, test_unset_home_fails_open_workspace_only, test_resolve_skill_store_wiring, tests/skill_store_config_e2e.rs::custom_skill_store_env_is_respected, tests/skill_store_config_e2e.rs::custom_skill_store_env_invalid_path, tests/skill_store_config_e2e.rs::host_allowlist_cannot_be_widened_by_manifest",
       "tests": [
         "test_skill_store_env_override_respected",
         "test_with_defaults_skill_store_env_wiring",
@@ -3104,7 +3103,8 @@
         "test_unset_home_fails_open_workspace_only",
         "test_resolve_skill_store_wiring",
         "tests/skill_store_config_e2e.rs::custom_skill_store_env_is_respected",
-        "tests/skill_store_config_e2e.rs::custom_skill_store_env_invalid_path"
+        "tests/skill_store_config_e2e.rs::custom_skill_store_env_invalid_path",
+        "tests/skill_store_config_e2e.rs::host_allowlist_cannot_be_widened_by_manifest"
       ],
       "implemented_in": "src/context/skill_registry.rs, src/api/skills.rs, src/cli/handlers/skills.rs"
     },
@@ -3156,7 +3156,7 @@
         "Verify candidate parity and preserve existing response shapes"
       ],
       "passes": true,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-registry-unify.md (Unified Skill Registry Constructor and Thresholds). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D7b, D7c). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests test_mcp_skill_list_matches_rest_on_same_fixture, test_mcp_context_tools_own_no_registry_constructor, test_build_skill_registry_indexes_every_discovery_root, test_fusion_e2e_seeded_thread_injects_skill, test_confidence_calibration_range, tests/skill_registry_unify_parity_e2e.rs::test_build_skill_registry_indexes_every_discovery_root",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-registry-unify.md (Unified Skill Registry Constructor and Thresholds). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D7b, D7c). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests test_mcp_skill_list_matches_rest_on_same_fixture, test_mcp_context_tools_own_no_registry_constructor, test_build_skill_registry_indexes_every_discovery_root, test_fusion_e2e_seeded_thread_injects_skill, test_confidence_calibration_range, tests/skill_registry_unify_parity_e2e.rs::test_build_skill_registry_indexes_every_discovery_root\nprogress 100: verified 2026-11-01 by tests test_mcp_skill_list_matches_rest_on_same_fixture, test_mcp_context_tools_own_no_registry_constructor, test_build_skill_registry_indexes_every_discovery_root, test_fusion_e2e_seeded_thread_injects_skill, test_confidence_calibration_range, tests/skill_registry_unify_parity_e2e.rs::test_build_skill_registry_indexes_every_discovery_root",
       "tests": [
         "test_mcp_skill_list_matches_rest_on_same_fixture",
         "test_mcp_context_tools_own_no_registry_constructor",
@@ -3187,7 +3187,7 @@
         "Verify symlink ownership, backups, atomic swaps and idempotent rollback"
       ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md (Declarative Skill Manifest and Projector). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D1-D4, D9). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests test_manifest_rejections, test_dry_run_apply_reports_without_touching_disk, test_atomic_write_creates_and_overwrites, test_symlink_backup_preserves_readlink_without_dereferencing, test_apply_rejects_unmanaged_regular_file_collision_without_touching_it, test_rejects_empty_allowlist_and_unauthorized_target, tests/skill_controller_core_adapters.rs::codex_project_projection_remains_readable_offline, tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage, test_repeated_rollback_is_idempotent",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md (Declarative Skill Manifest and Projector). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D1-D4, D9). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests test_manifest_rejections, test_dry_run_apply_reports_without_touching_disk, test_atomic_write_creates_and_overwrites, test_symlink_backup_preserves_readlink_without_dereferencing, test_apply_rejects_unmanaged_regular_file_collision_without_touching_it, test_rejects_empty_allowlist_and_unauthorized_target, tests/skill_controller_core_adapters.rs::codex_project_projection_remains_readable_offline, tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage, test_repeated_rollback_is_idempotent\nprogress 100: verified 2026-11-01 by tests test_manifest_rejections, test_dry_run_apply_reports_without_touching_disk, test_atomic_write_creates_and_overwrites, test_symlink_backup_preserves_readlink_without_dereferencing, test_apply_rejects_unmanaged_regular_file_collision_without_touching_it, test_rejects_empty_allowlist_and_unauthorized_target, tests/skill_controller_core_adapters.rs::codex_project_projection_remains_readable_offline, tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage, test_repeated_rollback_is_idempotent",
       "tests": [
         "test_manifest_rejections",
         "test_dry_run_apply_reports_without_touching_disk",
@@ -3214,7 +3214,7 @@
         "Deliver live MCP packs without files and clean up only journaled unchanged ephemeral paths"
       ],
       "passes": true,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-ephemeral.md (Deterministic Ephemeral Skill Composer). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D4, D10, D11). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-31 by tests composition_stays_within_the_token_budget, out_of_scope_memories_and_decisions_are_excluded, test_secret_finding_blocks_publication_without_creating_link, release_removes_unchanged_entries_and_owned_directory, test_live_composition_hash_matches_composer_without_files, tests/skill_dispatch_ephemeral_e2e.rs::skill_dispatch_ephemeral_lifecycle",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-ephemeral.md (Deterministic Ephemeral Skill Composer). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D4, D10, D11). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-31 by tests composition_stays_within_the_token_budget, out_of_scope_memories_and_decisions_are_excluded, test_secret_finding_blocks_publication_without_creating_link, release_removes_unchanged_entries_and_owned_directory, test_live_composition_hash_matches_composer_without_files, tests/skill_dispatch_ephemeral_e2e.rs::skill_dispatch_ephemeral_lifecycle\nprogress 100: verified 2026-11-01 by tests composition_stays_within_the_token_budget, out_of_scope_memories_and_decisions_are_excluded, test_secret_finding_blocks_publication_without_creating_link, release_removes_unchanged_entries_and_owned_directory, test_live_composition_hash_matches_composer_without_files, tests/skill_dispatch_ephemeral_e2e.rs::skill_dispatch_ephemeral_lifecycle",
       "tests": [
         "composition_stays_within_the_token_budget",
         "out_of_scope_memories_and_decisions_are_excluded",
@@ -3245,7 +3245,7 @@
         "Offer reviewable diffs without automatically rewriting canonical sources"
       ],
       "passes": true,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-drift-audit.md (Skill Drift Audit and Secret Scanner). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D10, D13). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-31 by tests test_fixture_reports_description_reference_conflict_and_secret, test_proposal_never_leaks_any_secret_family_the_review_listed, test_proposal_is_a_unified_diff_and_leaves_the_source_byte_identical, test_audit_hash_drift_blocking_and_endpoint_match, tests/skill_drift_audit_e2e.rs::audit_endpoint_returns_json_report, tests/skill_drift_audit_e2e.rs::audit_endpoint_returns_not_found_when_manifest_missing",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-drift-audit.md (Skill Drift Audit and Secret Scanner). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D10, D13). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-31 by tests test_fixture_reports_description_reference_conflict_and_secret, test_proposal_never_leaks_any_secret_family_the_review_listed, test_proposal_is_a_unified_diff_and_leaves_the_source_byte_identical, test_audit_hash_drift_blocking_and_endpoint_match, tests/skill_drift_audit_e2e.rs::audit_endpoint_returns_json_report, tests/skill_drift_audit_e2e.rs::audit_endpoint_returns_not_found_when_manifest_missing\nprogress 100: verified 2026-11-01 by tests test_fixture_reports_description_reference_conflict_and_secret, test_proposal_never_leaks_any_secret_family_the_review_listed, test_proposal_is_a_unified_diff_and_leaves_the_source_byte_identical, test_audit_hash_drift_blocking_and_endpoint_match, tests/skill_drift_audit_e2e.rs::audit_endpoint_returns_json_report, tests/skill_drift_audit_e2e.rs::audit_endpoint_returns_not_found_when_manifest_missing",
       "tests": [
         "test_fixture_reports_description_reference_conflict_and_secret",
         "test_proposal_never_leaks_any_secret_family_the_review_listed",
@@ -3276,7 +3276,7 @@
         "Report observation coverage and prune only event records after 30 days"
       ],
       "passes": true,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-usage-telemetry.md (Local Skill Usage Telemetry). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D12). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests every_stage_round_trips_through_the_schema, record_ack_is_idempotent_for_invoked_and_completed, emit_selected_delivered_has_unknown_ack_coverage_and_no_task_text, prune_removes_expired_events_only, dispatch_telemetry_failure_leaves_result_unchanged, tests/skill_usage_telemetry_e2e.rs::telemetry_dispatch_ack_and_usage_e2e, tests/skill_usage_telemetry_e2e.rs::usage_endpoint_unauthorized",
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-usage-telemetry.md (Local Skill Usage Telemetry). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D12). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests every_stage_round_trips_through_the_schema, record_ack_is_idempotent_for_invoked_and_completed, emit_selected_delivered_has_unknown_ack_coverage_and_no_task_text, prune_removes_expired_events_only, dispatch_telemetry_failure_leaves_result_unchanged, tests/skill_usage_telemetry_e2e.rs::telemetry_dispatch_ack_and_usage_e2e, tests/skill_usage_telemetry_e2e.rs::usage_endpoint_unauthorized\nprogress 100: verified 2026-11-01 by tests every_stage_round_trips_through_the_schema, record_ack_is_idempotent_for_invoked_and_completed, emit_selected_delivered_has_unknown_ack_coverage_and_no_task_text, prune_removes_expired_events_only, dispatch_telemetry_failure_leaves_result_unchanged, tests/skill_usage_telemetry_e2e.rs::telemetry_dispatch_ack_and_usage_e2e, tests/skill_usage_telemetry_e2e.rs::usage_endpoint_unauthorized",
       "tests": [
         "every_stage_round_trips_through_the_schema",
         "record_ack_is_idempotent_for_invoked_and_completed",
@@ -4116,15 +4116,15 @@
       "name": "Autonomous Delivery Pipeline (verifiable ship/show/ask + DONE)",
       "category": "process",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Evidence-gated delivery pipeline: DONE is a computed verdict for an immutable SHA, a per-stage evidence chain, ship/show/ask computed from the minimum path/diff class, independent panel review for Ask, and a DONE verifier that recomputes scope/secret/test/CI/review from a JSON bundle and never edits the ledger.",
       "steps": [
         "Equip the 8-stage pipeline with the JSON evidence bundle and the co-agent-review adapter",
         "Define done-check.sh task/feature/increment levels and interface per 03-DONE-PROTOCOL.md",
         "Review the computed ship/show/ask classification policy; never hand-promote ledger status"
       ],
-      "passes": false,
-      "notes": "Registers the autonomous-delivery feature (P01, docs/CI only, no code PR). Spec: docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md; SRS mapping: REQ-085 (planned) in docs/SRS/REQUIREMENTS.md. Design: docs/design/trunk-based/01-DESIGN.md (flow + ship/show/ask), 02-AUTONOMOUS-PIPELINE.md (stages/gates), 03-DONE-PROTOCOL.md (DONE verifier contract); policy: docs/adr/ADR-035-trunk-based-ship-show-ask.md (accepted 2026-09-27). A docs/SRS/** change is Ask class and needs pre-merge panel approval. scripts/done-check.sh implements task/feature/increment bundle verification; pr-gate runs it in SHADOW mode. The 8-stage driver and evidence-bundle builder remain pending. Status changes only on a green scripts/verify-pipeline.sh run after executed tests; never hand-promoted.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "passes": true,
+      "notes": "Registers the autonomous-delivery feature (P01, docs/CI only, no code PR). Spec: docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md; SRS mapping: REQ-085 in docs/SRS/REQUIREMENTS.md. Design: docs/design/trunk-based/01-DESIGN.md, 02-AUTONOMOUS-PIPELINE.md, 03-DONE-PROTOCOL.md; policy: docs/adr/ADR-035-trunk-based-ship-show-ask.md. scripts/done-check.sh implements task/feature/increment bundle verification.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [tests/delivery_scripts.rs::delivery_done_check_task_suite, tests/delivery_scripts.rs::delivery_done_check_feature_suite, tests/delivery_scripts.rs::delivery_done_check_increment_suite, tests/delivery_scripts.rs::delivery_atlas_review_adapter_suite, tests/delivery_scripts.rs::delivery_runner_suite, tests/delivery_scripts.rs::delivery_dag_check_suite, tests/delivery_scripts.rs::delivery_scope_check_suite]",
       "tests": [
         "tests/delivery_scripts.rs::delivery_done_check_task_suite",
         "tests/delivery_scripts.rs::delivery_done_check_feature_suite",
@@ -4310,7 +4310,7 @@
       "implemented_in": "src/maloca/store.rs",
       "name": "Maloca Store Atomic Persist",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3512",
       "status": "beta",
@@ -4329,17 +4329,17 @@
         "tests/maloca_store_atomic_persist_e2e.rs::persist_replaces_store_file_by_rename_not_in_place_e2e"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [maloca::store::tests::persisted_store_json_is_valid_json_after_write, maloca::store::tests::persist_leaves_no_tmp_files_after_success, maloca::store::tests::persist_replaces_store_file_by_rename_not_in_place, maloca::store::tests::persist_into_read_only_directory_returns_error_without_panicking, tests/maloca_store_atomic_persist_e2e.rs::persist_leaves_no_tmp_files_after_success_e2e, tests/maloca_store_atomic_persist_e2e.rs::persisted_store_json_is_valid_json_after_write_e2e, tests/maloca_store_atomic_persist_e2e.rs::persist_replaces_store_file_by_rename_not_in_place_e2e]"
     },
     "feat-multi-tenant": {
       "id": "feat-multi-tenant",
       "name": "Enterprise Multi-Tenant",
       "category": "enterprise",
       "status": "beta",
-      "progress_pct": 20,
+      "progress_pct": 100,
       "description": "Enterprise core (tenants, RBAC, audit, rate limits, API keys).",
       "steps": [
-        "pending: missing E2E test coverage for RBAC, audit, rate limits, API keys"
+        "Tenant management CLI and scoping with JSON and text output and unauthorized exit code verification"
       ],
       "tests": [
         "tests/cli_tenants_e2e.rs::test_cli_tenants_list_text",
@@ -4349,7 +4349,8 @@
         "tests/cli_tenants_e2e.rs::test_cli_tenants_show_not_found",
         "tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code"
       ],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [tests/cli_tenants_e2e.rs::test_cli_tenants_list_text, tests/cli_tenants_e2e.rs::test_cli_tenants_list_json, tests/cli_tenants_e2e.rs::test_cli_tenants_show_text, tests/cli_tenants_e2e.rs::test_cli_tenants_show_json, tests/cli_tenants_e2e.rs::test_cli_tenants_show_not_found, tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code]",
+      "passes": true
     }
   },
   "verification_commands": {

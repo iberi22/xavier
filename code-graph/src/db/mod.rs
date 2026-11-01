@@ -1564,6 +1564,31 @@ impl CodeGraphDB {
     }
 
     /// O4 (G3): all stored content hashes (sha256 hex) by relative path.
+    pub fn get_file_paths_for_project(
+        &self,
+        project_root: &str,
+    ) -> Result<std::collections::HashSet<String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT file_path FROM symbols WHERE project_root = ?1")
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![project_root], |row| row.get::<_, String>(0))
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let mut paths = std::collections::HashSet::new();
+        for path in rows.flatten() {
+            paths.insert(path);
+        }
+
+        Ok(paths)
+    }
+
     pub fn get_all_file_hashes(&self) -> Result<std::collections::HashMap<String, String>> {
         let conn = self
             .conn

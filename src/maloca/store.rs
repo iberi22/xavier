@@ -469,7 +469,7 @@ impl MalocaStore {
     }
 
     /// Cast a vote. Requires active node with karma >= vote_karma_min.
-    /// Manager role never adds extra weight (weight stub = 1.0).
+    /// Manager role never adds extra weight (weight hardcoded = 1.0).
     pub fn cast_vote(&self, proposal_id: &str, body: CastVoteBody) -> Result<Vote> {
         self.close_due_proposals(Utc::now());
         let mut g = self.inner.write();
