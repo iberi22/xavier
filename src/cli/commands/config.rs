@@ -43,6 +43,39 @@ pub enum ConfigCommand {
     Path,
     /// Explain a setting's source, override variable and restart requirement
     Explain { key: String },
+    /// Configure LLM routing and behavior
+    Llm {
+        #[command(subcommand)]
+        cmd: ConfigLlmCommand,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ConfigLlmCommand {
+    /// Manage LLM routing configuration
+    Route {
+        #[command(subcommand)]
+        cmd: ConfigLlmRouteCommand,
+    },
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct ConfigLlmRouteCommandArgs {
+    #[command(subcommand)]
+    pub command: ConfigLlmRouteCommand,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ConfigLlmRouteCommand {
+    /// List configured LLM routes
+    List,
+    /// Set a route for a specific task
+    Set {
+        /// The task name (e.g. `summarize`)
+        task: String,
+        /// The target provider and model (e.g. `local/llama3`)
+        target: String,
+    },
 }
 
 fn error(code: i32, message: &str) -> ConfigError {
@@ -60,6 +93,40 @@ fn execute(args: &ConfigArgs) -> Result<(Value, i32), ConfigError> {
         "restart_required": false,
     });
     match &args.command {
+        ConfigCommand::Llm {
+            cmd: ConfigLlmCommand::Route { cmd },
+        } => match cmd {
+            ConfigLlmRouteCommand::List => {
+                inspection.require_valid()?;
+                body["operation"] = json!("list_routes");
+                let routes = inspection
+                    .effective
+                    .pointer("/models/routes")
+                    .cloned()
+                    .unwrap_or(json!({}));
+                body["routes"] = routes;
+            }
+            ConfigLlmRouteCommand::Set { task, target } => {
+                inspection.require_valid()?;
+                let mut runtime = inspection.runtime.clone();
+                let pointer = "/models/routes";
+                let mut routes = runtime.pointer(pointer).cloned().unwrap_or(json!({}));
+                if let Some(map) = routes.as_object_mut() {
+                    map.insert(task.clone(), json!(target));
+                } else {
+                    let mut map = serde_json::Map::new();
+                    map.insert(task.clone(), json!(target));
+                    routes = json!(map);
+                }
+                crate::settings::inspection::insert(&mut runtime, "models.routes", routes);
+                inspection.persist(&runtime)?;
+                body["operation"] = json!("set_route");
+                body["task"] = json!(task);
+                body["target"] = json!(target);
+                body["restart_required"] = json!(true);
+            }
+        },
+
         ConfigCommand::Path => {
             body["operation"] = json!("path");
         }
