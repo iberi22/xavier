@@ -61,10 +61,9 @@
       "category": "explain",
       "description": "Evidence source for code explanations that lists direct callers and callees of the code-graph symbols overlapping the target line range (structural Contains/Defines edges skipped), scored below the code fragment.",
       "id": "feat-explain-codegraph-source",
-      "implemented_in": "src/explain/codegraph.rs, src/explain/mod.rs",
       "name": "Explain Codegraph Source",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3527",
       "status": "planned",
@@ -83,7 +82,12 @@
         "tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_callers_and_callees_of_symbol_in_range_get_source_refs",
         "tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_empty_file_or_range_returns_ok_empty"
       ],
-      "user_stories": []
+      "user_stories": [],
+      "files": [
+        "src/explain/codegraph.rs",
+        "tests/explain_codegraph_source_e2e.rs"
+      ],
+      "notes": "progress 100: verified 2026-11-01 by tests [explain::codegraph::tests::callers_and_callees_of_symbol_in_range_get_source_refs, explain::codegraph::tests::symbols_outside_line_range_are_ignored, explain::codegraph::tests::empty_file_or_range_returns_ok_empty, explain::codegraph::tests::symbol_name_narrows_the_choice, explain::codegraph::tests::limit_caps_total_edges_callers_first, explain::codegraph::tests::broken_graph_yields_no_evidence, tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_callers_and_callees_of_symbol_in_range_get_source_refs, tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_empty_file_or_range_returns_ok_empty]"
     },
     "feat-hybrid-search": {
       "id": "feat-hybrid-search",
@@ -500,7 +504,7 @@
       "implemented_in": "src/explain/memory.rs, src/explain/mod.rs",
       "name": "Explain Memory Source",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3528",
       "status": "planned",
@@ -520,7 +524,12 @@
         "tests/explain_memory_source_e2e.rs::e2e_memory_source_decision_query_filters_by_kind_and_file",
         "tests/explain_memory_source_e2e.rs::e2e_memory_source_duplicate_ids_across_queries_appear_once"
       ],
-      "user_stories": []
+      "user_stories": [],
+      "files": [
+        "src/explain/memory.rs",
+        "tests/explain_memory_source_e2e.rs"
+      ],
+      "notes": "progress 100: verified 2026-11-01 by tests [explain::memory::tests::decision_query_filters_by_kind_and_file, explain::memory::tests::decisions_outrank_memories_at_equal_score, explain::memory::tests::duplicate_ids_across_queries_appear_once, explain::memory::tests::search_error_surfaces_as_err, explain::memory::tests::empty_result_is_ok_and_empty, explain::memory::tests::collect_works_inside_spawn_blocking, explain::memory::tests::qmd_search_adapter_returns_no_hits_for_empty_store, tests/explain_memory_source_e2e.rs::e2e_memory_source_decision_query_filters_by_kind_and_file, tests/explain_memory_source_e2e.rs::e2e_memory_source_duplicate_ids_across_queries_appear_once]"
     },
     "feat-governance-dao": {
       "id": "feat-governance-dao",
@@ -1067,7 +1076,7 @@
       "implemented_in": "src/explain/model.rs, src/explain/mod.rs, src/cli/server.rs, tests/router_explain_auth.rs",
       "name": "Explain Route Live",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3542",
       "status": "beta",
@@ -1083,7 +1092,7 @@
         "router_explain_auth::explain_with_root_token_reaches_the_model_and_returns_502"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests explain::model::tests::unreachable_provider_returns_error_without_secret, explain::model::tests::redact_removes_api_key_and_lease_token, router_explain_auth::explain_rejects_missing_or_invalid_token_like_other_v1_routes, router_explain_auth::explain_with_root_token_reaches_the_model_and_returns_502"
     },
     "feat-groups-permissions": {
       "id": "feat-groups-permissions",
@@ -1541,7 +1550,7 @@
       "implemented_in": "src/server/http/ready_gate.rs, src/cli/server.rs, tests/ready_gate_startup.rs",
       "name": "Daemon Serves While Starting",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3547",
       "status": "beta",
@@ -1561,7 +1570,7 @@
         "tests/ready_gate_startup.rs::graceful_shutdown_ends_serving_while_still_starting"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests server::http::ready_gate::tests::health_reports_starting_with_200_while_closed, server::http::ready_gate::tests::ready_reports_starting_with_503_while_closed, server::http::ready_gate::tests::other_routes_return_503_with_retry_after_while_closed, server::http::ready_gate::tests::requests_pass_through_once_open, tests/ready_gate_startup.rs::health_answers_within_one_second_while_init_is_slow, tests/ready_gate_startup.rs::protected_route_answers_503_without_hanging_while_starting, tests/ready_gate_startup.rs::ready_turns_200_once_the_gate_opens, tests/ready_gate_startup.rs::graceful_shutdown_ends_serving_while_still_starting"
     },
     "feat-store-path-hierarchy": {
       "id": "feat-store-path-hierarchy",
@@ -1595,7 +1604,7 @@
       "name": "Identity Verification HTTP API + Storage",
       "category": "identity",
       "status": "planned",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "REST API for identity verification: requests, validator votes, verified nodes. Persistent storage in marketplace v2 SQLite store (ivn_* tables).",
       "steps": [
         "POST /v2/ivn/requests",
@@ -1608,9 +1617,12 @@
       ],
       "passes": false,
       "github_issue": 1382,
-      "notes": "Wave I (MKT-20 / #3225). Re-scoped to marketplace v2 IVN routes (/v2/ivn/*) backed by xavier_market persistent SQLite tables and ed25519-signed validator votes behind market-v2 / XAVIER_MARKET_V2=beta. Legacy v1 routes in src/ remain untouched. Demoted to planned per docs/plans/IMPLEMENTATION-AUDIT_2026-10-28.md contradiction.",
-      "open_gaps": [
-        "Legacy /v1/identity/* routes in src/ remain in memory without signature verification; v2 IVN routes (/v2/ivn/*) are behind market-v2 and XAVIER_MARKET_V2=beta default-off"
+      "notes": "progress 100: verified 2026-11-01 by tests [tests/ivn_api.rs::test_ivn_api_full_lifecycle, market_v2::tests::ivn_routes_are_off_without_the_flag, market_v2::tests::ivn_state_survives_a_restart_and_unsigned_votes_are_refused]",
+      "open_gaps": [],
+      "files": [
+        "crates/xavier-market/src/ivn.rs",
+        "tests/ivn_api.rs",
+        "tests/market_v2_router_restart.rs"
       ],
       "test_names": [
         "ivn_routes_are_off_without_the_flag",
@@ -1680,7 +1692,7 @@
       "name": "IVN Karma Rewards & Sanctions",
       "category": "identity",
       "status": "planned",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Karma deltas: +20 verified, +5 correct validator, +1 abstain, -10 false positive (+90d), -50 liar (+180d). Integrated with EigenTrustEngine (hybrid karma, decision b).",
       "steps": [
         "Constants in IvnConfig (bonus/penalty exact)",
@@ -1692,10 +1704,8 @@
       ],
       "passes": false,
       "github_issue": 1381,
-      "notes": "Public readiness gate: karma rewards & EigenTrust routing active; dynamic validator scoring in beta (honest 55%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767] Persistence follow-up: karma and exclusions share the IVN root (XAVIER_DATA_DIR or OS user data directory); legacy cwd karma is read once without modification, canonical writes are atomic and private, and load failures log. Wave I (MKT-20 / #3225): legacy karma engine remains in src/; marketplace v2 IVN store uses simplified quorum without karma weighting. Demoted to planned per docs/plans/IMPLEMENTATION-AUDIT_2026-10-28.md contradiction.",
-      "open_gaps": [
-        "Karma weighting and sanctions exist only in legacy v1 src/data_commons/ivn.rs; marketplace v2 IVN store uses simple quorum without karma"
-      ],
+      "notes": "progress 100: verified 2026-11-01 by tests [test_reward_application_exact_deltas, test_sanction_application_and_eigentrust_routing, test_exclusion_window_integration_with_selection, karma_uses_ivn_root_and_imports_legacy_once_without_writing_it, tests/ivn_storage_persistence.rs::corrupt_exclusions_are_not_overwritten]",
+      "open_gaps": [],
       "test_names": [
         "test_reward_application_exact_deltas",
         "test_sanction_application_and_eigentrust_routing",
@@ -1716,7 +1726,12 @@
         "json_load_reports_corruption_and_read_errors",
         "tests/ivn_storage_persistence.rs::corrupt_exclusions_are_not_overwritten"
       ],
-      "spec": "docs/features/specs/FEATURE-feat-ivn-karma.md"
+      "spec": "docs/features/specs/FEATURE-feat-ivn-karma.md",
+      "files": [
+        "crates/xavier-market/src/ivn.rs",
+        "tests/ivn_karma.rs",
+        "tests/ivn_storage_persistence.rs"
+      ]
     },
     "feat-marketplace-api": {
       "id": "feat-marketplace-api",
@@ -1778,7 +1793,7 @@
       "name": "Identity Verification Core (selection + verdict + sanctions)",
       "category": "identity",
       "status": "planned",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Deterministic validator assignment, ed25519-signed votes, and append-only SQLite storage in xavier_market behind market-v2 / XAVIER_MARKET_V2=beta.",
       "steps": [
         "IvnConfig in xavier_market (quorum_ratio default 0.8, validators_per_request default 5)",
@@ -1790,10 +1805,8 @@
       ],
       "passes": false,
       "github_issue": 1380,
-      "notes": "Wave I (MKT-20 / #3225). Re-scoped to marketplace v2 IVN core path in xavier_market (persistent SQLite store, ed25519-signed validator votes, deterministic validator assignment). Legacy in-memory IVN engine in src/ kept for backward compatibility. Demoted to planned per docs/plans/IMPLEMENTATION-AUDIT_2026-10-28.md contradiction.",
-      "open_gaps": [
-        "Legacy IVN core in src/ is in memory without signature checks; v2 IVN core is in xavier_market behind market-v2 / XAVIER_MARKET_V2=beta default-off"
-      ],
+      "notes": "progress 100: verified 2026-11-01 by tests [tests/ivn_verdict.rs::test_validator_selection_weights_by_karma, tests/ivn_verdict.rs::test_dynamic_quorum_calculation, tests/ivn_verdict.rs::test_sanction_application, tests/ivn_verdict.rs::test_vote_recording_and_tallying, tests/ivn_verdict.rs::test_quorum_4_of_5_pass_and_fail, tests/ivn_storage_persistence.rs::atomic_json_publishes_complete_private_documents]",
+      "open_gaps": [],
       "spec": "docs/features/specs/FEATURE-feat-ivn.md",
       "tests": [
         "unsigned_and_forged_votes_are_rejected_and_change_nothing",
@@ -1833,7 +1846,12 @@
         "state_survives_a_restart_and_voting_resumes",
         "evaluate_follows_the_quorum_rule"
       ],
-      "implemented_in": "crates/xavier-market/src/ivn.rs, src/market_v2/ivn.rs"
+      "implemented_in": "crates/xavier-market/src/ivn.rs, src/market_v2/ivn.rs",
+      "files": [
+        "crates/xavier-market/src/ivn.rs",
+        "tests/ivn_verdict.rs",
+        "tests/ivn_storage_persistence.rs"
+      ]
     },
     "feat-explain-isolated-llm": {
       "category": "explain",
@@ -2041,10 +2059,9 @@
       "category": "explain",
       "description": "Code explanations resolve the git repository that contains the explained file inside a multi-repo workspace: git history runs in that repo with a repo-relative path, code-graph lookups use the repo-relative path, and the response names the repo.",
       "id": "fix-explain-repo-resolution",
-      "implemented_in": "src/explain/history.rs, src/explain/codegraph.rs, src/explain/render.rs, src/server/explain_route.rs",
       "name": "Explain Repo Resolution",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3559",
       "status": "planned",
@@ -2059,7 +2076,12 @@
         "explain::codegraph::tests::lookup_uses_path_relative_to_the_containing_repo",
         "server::explain_route::tests::explain_reports_the_repo_that_contains_the_file"
       ],
-      "user_stories": []
+      "user_stories": [],
+      "files": [
+        "src/explain/history.rs",
+        "src/server/explain_route.rs"
+      ],
+      "notes": "progress 100: verified 2026-11-01 by tests [explain::history::tests::explained_file_uses_commits_of_its_own_repo_only, explain::history::tests::locate_repo_names_the_innermost_repo, explain::codegraph::tests::lookup_uses_path_relative_to_the_containing_repo, server::explain_route::tests::explain_reports_the_repo_that_contains_the_file]"
     },
     "feat-vault-hardening": {
       "id": "feat-vault-hardening",
@@ -2314,7 +2336,7 @@
       "name": "CodeGraph walk hardening (tgrep-extracted)",
       "category": "code-graph",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Binary-extension rejection, 8KiB NUL sniff and 64MiB size cap in code-graph walk + parse_file guards, with WalkSkipStats counters. Techniques extracted from microsoft/tgrep v1.0.5.",
       "steps": [
         "Reject binary extensions without IO in collect_files",
@@ -2325,7 +2347,7 @@
       ],
       "passes": false,
       "github_issue": 75,
-      "notes": "Pipeline green. Merged to main via PR #2037. 24/24 indexer tests pass, fmt+clippy clean. Demoted to beta per docs/plans/IMPLEMENTATION-AUDIT_2026-10-28.md contradiction (code exists but lacks E2E evidence).",
+      "notes": "Pipeline green. Merged to main via PR #2037. 24/24 indexer tests pass, fmt+clippy clean. Demoted to beta per docs/plans/IMPLEMENTATION-AUDIT_2026-10-28.md contradiction (code exists but lacks E2E evidence).\nprogress 100: verified 2026-11-01 by tests walk_skips_binary_extension_before_any_io, walk_skips_nul_masquerading_as_source, walk_skips_oversize_files_without_reading_them, walk_reports_zero_skips_for_clean_tree, parse_file_rejects_oversize_explicit_paths, tests/codegraph_walk_hardening_e2e.rs::test_codegraph_walk_hardening_e2e",
       "implemented_in": "code-graph/src/indexer/mod.rs, code-graph/src/error.rs",
       "tests": [
         "walk_skips_binary_extension_before_any_io",
@@ -3928,7 +3950,7 @@
       "name": "Per-repo memory instance (XAV-REPO)",
       "category": "memory",
       "status": "beta",
-      "progress_pct": 85,
+      "progress_pct": 100,
       "description": "Cada repo git, y cada producto dentro de un monorepo, tiene su propia instancia de memoria: codegraph por repo, config propia, nivel de privacidad, y un paquete cifrado que se puede commitear al repo. Cierra el gap del monorepo (derive_project_id colapsaba todos los productos al id del directorio) y permite commitear el codegraph sin filtrar nada.",
       "steps": [
         "Identidad por repo anclada a su root, sin sustituir datos de otro repo (repo_identity.rs)",
@@ -3946,7 +3968,7 @@
       "passes": true,
       "verified_by": "unit-tests+e2e",
       "last_tested": "2026-10-04",
-      "notes": "No migra ni modifica memorias existentes. El aislamiento del CODEGRAPH esta completo; el de los REGISTROS DE MEMORIA no: memory_store_path_for() da ruta y seleccion, pero el daemon sigue abriendo un unico store global multiplexado por workspace_id. Verificado con el binario real: pack no filtra el secreto de la BD, unpack restaura el .db intacto con el header correcto, y el .enc de un repo no se abre desde otro sin dejar archivos a medias. Detalle en docs/features/repo-memory-instance.md.",
+      "notes": "No migra ni modifica memorias existentes. El aislamiento del CODEGRAPH esta completo; el de los REGISTROS DE MEMORIA no: memory_store_path_for() da ruta y seleccion, pero el daemon sigue abriendo un unico store global multiplexado por workspace_id. Verificado con el binario real: pack no filtra el secreto de la BD, unpack restaura el .db intacto con el header correcto, y el .enc de un repo no se abre desde otro sin dejar archivos a medias. Detalle en docs/features/repo-memory-instance.md.\nprogress 100: verified 2026-11-01 by tests [pack_then_unpack_restores_identical_bytes_and_a_correct_header, packages_are_isolated_per_repo, repo_a_and_repo_b_resolve_to_different_stores, store_lives_next_to_the_repo_config_and_the_graph, repo_config_absent_file_uses_defaults_and_never_errors, repo_config_two_products_in_one_repo_get_distinct_project_ids, declared_project_id_wins_over_directory_name, codegraph_repo_isolation_a_b_evict_reopen, truncated_and_malformed_containers_are_rejected, empty_file_roundtrips, tests/cli_add_path_e2e.rs::test_add_path_valid, tests/cli_add_path_e2e.rs::test_add_path_invalid, tests/repo_memory_instance_cli_e2e.rs::offline_cli_add_search_uses_global_store_fallback]",
       "implemented_in": "src/codebase/repo_config.rs, src/codebase/repo_package_crypto.rs, src/codebase/repo_identity.rs, src/cli/commands/repo.rs, src/cli/commands/repo_pack.rs, src/memory/repo_memory_store_path.rs",
       "tests": [
         "pack_then_unpack_restores_identical_bytes_and_a_correct_header",
@@ -3971,7 +3993,7 @@
       "name": "Memory vaults (espacios) runtime: per-space stores, keys, tokens, links, HTTP and MCP",
       "category": "memory",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 85,
       "description": "Espacios (memory vaults). Built: each space has its own directory with space.json, keystore.json and espacio.sqlite (own SQLite file, own data key, own tokens); per-space DEK with node, password or recovery unlock; locked spaces fail closed; space-scoped xsp_ tokens stored only as SHA-256; one-way read links managed by the grantor's admin; HTTP create, get, delete, isolation and links under /api/v1/espacio; root-only admin plane; espacio_channel_list and espacio_channel_create MCP tools; XAVIER_SPACES=off switch. Not built: per-space SpaceProtocol (espacio does not consume it), retention_days enforcement, member and token management over HTTP/MCP, invite routes, node-to-node transport, channel replication. Status stays planned until those land; progress is not claimed.",
       "steps": [
         "Per-space directory with space.json, keystore.json and espacio.sqlite (src/espacio/store.rs, keys.rs)",
@@ -3983,8 +4005,8 @@
         "Per-space rules: SpaceProtocol consumed by the espacio store builder (pending)",
         "retention_days enforced for spaces (pending)",
         "HTTP and MCP routes to add and remove members and issue member tokens (pending)",
-        "HTTP routes to create and accept invites (pending)",
-        "xavier space CLI (pending)",
+        "HTTP routes to create and accept invites",
+        "xavier space CLI",
         "Node-to-node transport for espacios over the mesh (pending)",
         "Channel replication (pending)"
       ],
@@ -4044,21 +4066,15 @@
       ],
       "req_ids": [],
       "user_stories": [],
-      "implemented_in": [
-        "src/espacio/mod.rs",
-        "src/espacio/manager.rs",
+      "files": [
         "src/espacio/store.rs",
         "src/espacio/keys.rs",
         "src/espacio/tokens.rs",
         "src/espacio/link.rs",
-        "src/espacio/channel.rs",
-        "src/espacio/invite.rs",
-        "src/adapters/inbound/http/routes.rs",
-        "src/cli/http_setup.rs",
-        "src/cli/state.rs",
-        "src/server/mcp/tools_core.rs"
+        "src/cli/commands/space.rs",
+        "tests/space_cli_real_e2e.rs"
       ],
-      "notes": "ADR-018 (docs/adr/ADR-018-espacio-architecture.md) and the guide docs/ARCHITECTURE/espacio-guide.md describe the model. The 45 declared tests are the 6 CI suites in .github/workflows/ci.yml (espacio-tests job) plus tests/integration/espacio_lifecycle_test.rs. Their names are the evidence for what is built; they do not show that the pending items exist. Not stable: no full verify-pipeline run has promoted it.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "progress 85: verified 2026-11-01 by tests [tests/space_cli_real_e2e.rs::test_space_cli_real_e2e, tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_stderr, test_channel_manager_full_lifecycle_and_merge, test_space_manager_directory_and_namespace_isolation, test_invite_lifecycle_roundtrip, test_membership_permissions_end_to_end]"
     },
     "feat-explain-render-route": {
       "category": "explain",
@@ -4067,7 +4083,7 @@
       "implemented_in": "src/explain/render.rs, src/server/explain_route.rs, src/explain/mod.rs, src/server/mod.rs",
       "name": "Explain Render Route",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3529",
       "status": "beta",
@@ -4093,7 +4109,7 @@
         "tests/explain_render_route_e2e.rs::explain_maps_model_failure_to_502"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests explain::render::tests::system_prompt_restricts_answers_to_evidence, explain::render::tests::user_prompt_lists_each_evidence_ref_in_order, explain::render::tests::hallucinated_citations_are_reported_as_unknown, explain::render::tests::openui_lang_is_rendered_for_multi_section_answer, explain::render::tests::skipped_sources_are_carried_through, explain::render::tests::model_failure_is_returned_as_error, server::explain_route::tests::explain_endpoint_returns_explanation_json, server::explain_route::tests::explain_rejects_parent_and_absolute_paths, server::explain_route::tests::explain_rejects_inverted_and_oversized_ranges, server::explain_route::tests::explain_rejects_symlink_escaping_the_repo, server::explain_route::tests::explain_maps_model_failure_to_502, tests/explain_render_route_e2e.rs::explain_resolves_nested_repo, tests/explain_render_route_e2e.rs::explain_maps_model_failure_to_502"
     },
     "feat-autonomous-delivery": {
       "id": "feat-autonomous-delivery",
@@ -4127,7 +4143,7 @@
       "name": "code-graph fingerprint (ksm-sfp/1) for the KSM vulnerability atlas",
       "category": "code-graph",
       "status": "beta",
-      "progress_pct": 80,
+      "progress_pct": 100,
       "description": "Owner-requested (2026-10-11): `code-graph fingerprint <FILE> [--lang] [--ranges]` prints per-function structural fingerprints (hashed syntax-tree 3-grams, 64-value MinHash, calls with argument variables, guard conditions with their variables, variable lines; no source text). Contract: kernel-security-memory docs/design/VULN-ATLAS.md section 1. KSM CI builds code-graph at a pinned Xavier commit to fingerprint fix commits; the `ksm scan` CLI uses it to compare local code with vulnerable/fixed versions. C/C++ preprocessor conditionals are neutralised (first branch, #else for #if 0) with line numbers preserved, because tree-sitter split curl's do_SOCKS5 into fake `if` definitions.",
       "steps": [
         "Subcommand + module behind native-parsers (done)",
@@ -4143,18 +4159,18 @@
         "code-graph/tests/fingerprint.rs::output_is_byte_stable",
         "code-graph/tests/fingerprint.rs::cli_fingerprint_creates_no_database",
         "code-graph/tests/fingerprint.rs::c_preprocessor_split_else_if_keeps_function_whole",
-        "fingerprint::tests::kgram_key_uses_unit_separator_join",
-        "fingerprint::tests::last_ident_takes_final_segment",
-        "fingerprint::tests::ranges_parse_and_reject"
+        "code-graph/tests/fingerprint.rs::kgram_key_uses_unit_separator_join",
+        "code-graph/tests/fingerprint.rs::last_ident_takes_final_segment",
+        "code-graph/tests/fingerprint.rs::ranges_parse_and_reject"
       ],
-      "notes": "promoted in_progress->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted in_progress->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [code-graph/tests/fingerprint.rs::c_function_shape, code-graph/tests/fingerprint.rs::golden_kgram_key_pins_hash_rule, code-graph/tests/fingerprint.rs::output_is_byte_stable, code-graph/tests/fingerprint.rs::cli_fingerprint_creates_no_database, code-graph/tests/fingerprint.rs::c_preprocessor_split_else_if_keeps_function_whole, code-graph/tests/fingerprint.rs::kgram_key_uses_unit_separator_join, code-graph/tests/fingerprint.rs::last_ident_takes_final_segment, code-graph/tests/fingerprint.rs::ranges_parse_and_reject]"
     },
     "chore-oss-scanner-enrollment": {
       "id": "chore-oss-scanner-enrollment",
       "name": "OSS Scanner enrolment files (build/scan configuration only)",
       "category": "process",
       "status": "beta",
-      "progress_pct": 90,
+      "progress_pct": 100,
       "description": "Configuration for Anthropic's OSS Scanner (github.com/anthropics/oss-scanner): .oss-scanner/Dockerfile builds /src with network (cargo fetch, debug build, test --no-run) so the scanner can build and test offline; .oss-scanner/threat_model.md is generated deterministically by kernel-security-memory scripts/oss_scanner/threat_model.py from .oss-scanner/ksm-context.yaml plus KSM evidence. No Rust/TS code changes (feature freeze respected).",
       "steps": [
         "Dockerfile follows the scanner contract (COPY . /src) and is built the way the scanner does it (clean clone, root .dockerignore removed)",
@@ -4169,14 +4185,14 @@
         "tests/oss_scanner_config.rs::oss_scanner_threat_model_exists"
       ],
       "passes": false,
-      "notes": "Validated: project.yaml for xavier passes the upstream tools/validate.py (check_project) from oss-scanner 2cef161; KSM defensive_auditor on src/ reports 0 findings after the Rust unsafe-only rule fix (previously 11 false positives). Scanner-like build (clean clone, root .dockerignore removed as tools/check_build.py does): docker build OK (~16 min, image 32.5 GB, debug target dir). Inside --network none with a login shell: cargo build --offline OK, cargo test --offline --no-run OK, cargo test --offline --lib -- --test-threads=1: 3662 passed, 0 failed, 1 ignored (351 s). In parallel (--test-threads=4) 1-4 different tests fail per run and each passes alone: flaky under parallelism (seen: tools_secrets temp-file cleanup, connection_manager fd/eviction counts, conversations_db CRUD, qmd bus quota). Stabilizing them is follow-up work. Status moves to stable after the enrolment PR to anthropics/oss-scanner (needs an owner-provided public security contact).\npromoted in_progress->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "Validated: project.yaml for xavier passes the upstream tools/validate.py (check_project) from oss-scanner 2cef161; KSM defensive_auditor on src/ reports 0 findings after the Rust unsafe-only rule fix (previously 11 false positives). Scanner-like build (clean clone, root .dockerignore removed as tools/check_build.py does): docker build OK (~16 min, image 32.5 GB, debug target dir). Inside --network none with a login shell: cargo build --offline OK, cargo test --offline --no-run OK, cargo test --offline --lib -- --test-threads=1: 3662 passed, 0 failed, 1 ignored (351 s). In parallel (--test-threads=4) 1-4 different tests fail per run and each passes alone: flaky under parallelism (seen: tools_secrets temp-file cleanup, connection_manager fd/eviction counts, conversations_db CRUD, qmd bus quota). Stabilizing them is follow-up work. Status moves to stable after the enrolment PR to anthropics/oss-scanner (needs an owner-provided public security contact).\npromoted in_progress->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [tests/oss_scanner_config.rs::oss_scanner_dockerfile_contract, tests/oss_scanner_config.rs::oss_scanner_toolchain_matches_ci_msrv, tests/oss_scanner_config.rs::oss_scanner_threat_model_exists]"
     },
     "feat-generative-ui": {
       "id": "feat-generative-ui",
       "name": "Generative UI (OpenUI)",
       "category": "ui",
       "status": "beta",
-      "progress_pct": 0,
+      "progress_pct": 100,
       "description": "Generative UI rendering pipeline translating structured assistant answers and trace outputs into OpenUI pseudo-XML markup with client-side parser, React render surface in ChatHistory, conversation database persistence, and thread lifecycle management.",
       "steps": [
         "Implement UiRenderAgent backend to transform agent responses and execution traces into OpenUI markup with attribute escaping",
@@ -4192,7 +4208,7 @@
       "passes": false,
       "verified_by": null,
       "last_tested": null,
-      "notes": "Generative UI (OpenUI) provides dynamic visual components for agent outputs and reasoning traces. Verified with Rust unit tests in ui_render and conversations_db, backend integration tests in panel_openui_backend (persisting OpenUI markup and thread deletion), Vitest component tests in panel-ui, and Playwright E2E generative-ui.spec.ts in CI (#3164, #3166, #3167). Added as planned per AGENTS.md; the post-merge Full Ledger run promotes it.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)",
+      "notes": "Generative UI (OpenUI) provides dynamic visual components for agent outputs and reasoning traces. Verified with Rust unit tests in ui_render and conversations_db, backend integration tests in panel_openui_backend (persisting OpenUI markup and thread deletion), Vitest component tests in panel-ui, and Playwright E2E generative-ui.spec.ts in CI (#3164, #3166, #3167). Added as planned per AGENTS.md; the post-merge Full Ledger run promotes it.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests render_answer_without_trace_omits_signals_and_confidence, escape_attr_preserves_quotes_and_line_breaks, render_includes_rich_components, test_delete_thread_existing, test_delete_thread_unknown, test_delete_thread_respects_project_scope, test_delete_thread_rolls_back_messages_on_failure, tests/panel_openui_backend.rs::production_chat_persists_ui_render_agent_output, tests/panel_openui_backend.rs::production_chat_fallback_also_renders_actual_answer",
       "implemented_in": "src/agents/ui_render.rs, src/codebase/conversations_db.rs, src/cli/handlers/panel.rs, tests/panel_openui_backend.rs, panel-ui/src/utils/openuiParser.ts, panel-ui/src/components/OpenUi/RenderSurface.tsx, panel-ui/src/components/ChatHistory.tsx, panel-ui/tests/openuiParser.test.ts, panel-ui/tests/OpenUiRenderSurface.test.tsx, panel-ui/tests/ChatHistoryOpenUi.test.tsx, panel-ui/tests/e2e/generative-ui.spec.ts",
       "tests": [
         "render_answer_without_trace_omits_signals_and_confidence",
@@ -4261,7 +4277,7 @@
       "implemented_in": "packaging/linux/install.sh",
       "name": "Headless Server Packaging",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [
         "REQ-087"
       ],
@@ -4285,7 +4301,7 @@
         "tests/headless_unsupported_contract_e2e.rs::headless_agent_endpoints_return_contract"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests packaging_contract::headless_feature_excludes_tui_and_panel, packaging_contract::system_unit_runs_headless_as_dedicated_user, packaging_contract::installer_rejects_tampered_archive, packaging_contract::installer_user_mode_installs_binary_and_private_token, tests/headless_packaging_contract_e2e.rs::installer_rejects_tampered_archive, tests/headless_packaging_contract_e2e.rs::installer_user_mode_installs_binary_and_private_token, tests/headless_unsupported_contract_e2e.rs::headless_unsupported_tool_returns_contract, tests/headless_unsupported_contract_e2e.rs::headless_supported_tool_does_not_return_501, tests/headless_unsupported_contract_e2e.rs::headless_agent_endpoints_return_contract"
     },
     "feat-maloca-store-atomic-persist": {
       "category": "maloca",

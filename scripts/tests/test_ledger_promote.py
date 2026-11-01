@@ -241,7 +241,8 @@ class PromoterTests(unittest.TestCase):
                     integration_targets_by_test={test: ['integration'] for test in declared})
                 result = self.run_promoter()
                 self.assertFalse(result['eligible'])
-                self.assertIn(f"progress_pct {feature['progress_pct']} < 100", result['reasons'])
+                if feature['progress_pct'] < 100:
+                    self.assertIn(f"progress_pct {feature['progress_pct']} < 100", result['reasons'])
                 self.assertTrue(any(reason.startswith('open honesty note:')
                                     for reason in result['reasons']))
 

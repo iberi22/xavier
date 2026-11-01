@@ -1,7 +1,7 @@
 //! Integration tests for `code-graph fingerprint` (ksm-sfp/1).
 
 use code_graph::fingerprint::{
-    fingerprint_source, kgram_key, parse_ranges, resolve_language, to_json_sorted,
+    fingerprint_source, kgram_key, last_ident, parse_ranges, resolve_language, to_json_sorted,
 };
 use code_graph::types::Language;
 use serde_json::Value;
@@ -316,4 +316,28 @@ fn c_preprocessor_zero_conditions_with_comments_parens_and_elif() {
     );
     let names: Vec<String> = fp.functions.iter().map(|f| f.name.clone()).collect();
     assert_eq!(names, vec!["live_a".to_string(), "live_b".to_string()]);
+}
+
+#[test]
+fn kgram_key_uses_unit_separator_join() {
+    // Contract rule, pinned: sha256("call:memcpy\x1fid\x1fnum")[:8].
+    assert_eq!(kgram_key(&["call:memcpy", "id", "num"]), "5306d8d4");
+}
+
+#[test]
+fn last_ident_takes_final_segment() {
+    assert_eq!(last_ident("a->b"), "b");
+    assert_eq!(last_ident("a::b::c"), "c");
+    assert_eq!(last_ident("obj.m"), "m");
+    assert_eq!(last_ident("free"), "free");
+    assert_eq!(last_ident("(*fp)"), "fp");
+}
+
+#[test]
+fn ranges_parse_and_reject() {
+    assert_eq!(parse_ranges("10-50,80-120"), Ok(vec![(10, 50), (80, 120)]));
+    assert!(parse_ranges("10").is_err());
+    assert!(parse_ranges("50-10").is_err());
+    assert!(parse_ranges("0-10").is_err());
+    assert!(parse_ranges("").is_err());
 }
