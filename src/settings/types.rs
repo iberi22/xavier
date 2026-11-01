@@ -47,6 +47,8 @@ pub struct XavierSettings {
     pub data_commons: DataCommonsSettings,
     #[serde(default)]
     pub license: LicenseSettings,
+    #[serde(default)]
+    pub billing: BillingSettings,
     #[serde(skip)]
     pub auth_token: Option<String>,
 }
@@ -73,9 +75,16 @@ impl fmt::Debug for XavierSettings {
             .field("advanced", &self.advanced)
             .field("pgheart", &self.pgheart)
             .field("data_commons", &self.data_commons)
+            .field("billing", &self.billing)
             .field("auth_token", &"[REDACTED]")
             .finish()
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct BillingSettings {
+    pub url: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

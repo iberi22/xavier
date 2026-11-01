@@ -80,6 +80,8 @@ mod mcp_surface_split_doc;
 mod mirror_cli_roundtrip_e2e;
 #[path = "projects_list_cli_e2e.rs"]
 mod projects_list_cli_e2e;
+#[path = "q1_cli_parity.rs"]
+mod q1_cli_parity;
 #[path = "space_cli_e2e.rs"]
 mod space_cli_e2e;
 #[path = "space_cli_real_e2e.rs"]

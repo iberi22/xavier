@@ -37,11 +37,16 @@ async fn plans(client: &BillingClient, json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&catalog)?);
     } else {
+        let billing_url_str = client
+            .endpoints()
+            .billing_url
+            .as_deref()
+            .unwrap_or("(unconfigured)");
         print!(
             "{}",
             render_plans(
                 &catalog,
-                &crate::billing::client::redact_url(&client.endpoints().billing_url)
+                &crate::billing::client::redact_url(billing_url_str)
             )
         );
     }
@@ -297,7 +302,7 @@ mod tests {
         BillingClient::new(
             reqwest::Client::new(),
             BillingEndpoints {
-                billing_url: url.into(),
+                billing_url: Some(url.into()),
                 billing_url_source: "env",
                 cloud_url: url.into(),
                 cloud_token: Some("test-key".into()),

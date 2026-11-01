@@ -4354,6 +4354,15 @@
       ],
       "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [tests/cli_tenants_e2e.rs::test_cli_tenants_list_text, tests/cli_tenants_e2e.rs::test_cli_tenants_list_json, tests/cli_tenants_e2e.rs::test_cli_tenants_show_text, tests/cli_tenants_e2e.rs::test_cli_tenants_show_json, tests/cli_tenants_e2e.rs::test_cli_tenants_show_not_found, tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code]",
       "passes": true
+    },
+    "q1-cli-parity": {
+      "id": "q1-cli-parity",
+      "description": "xavier CLI parity for config ops (llm model, indexing, memory load) with E2E",
+      "status": "planned",
+      "tests": [
+        "tests/q1_cli_parity.rs::test_cli_parity_config_llm",
+        "tests/q1_cli_parity.rs::test_cli_parity_index_and_memory"
+      ]
     }
   },
   "verification_commands": {

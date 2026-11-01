@@ -244,3 +244,6 @@ impl Default for PgHeartSettings {
         }
     }
 }
+
+// BillingSettings uses #[derive(Default)] in types.rs so explicit impl is not strictly needed,
+// but sticking to the plan: I already derived it in types.rs, so I will just ensure it works.

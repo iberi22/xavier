@@ -100,7 +100,7 @@ impl Cli {
                 crate::cli::handlers::backup::handle_backup_command(cmd.clone()).await
             }
             Command::Config(args) => {
-                let code = config::run(args);
+                let code = config::run(args).await;
                 if code != 0 {
                     std::process::exit(code);
                 }
@@ -108,6 +108,55 @@ impl Cli {
             }
             Command::Init(ref args) => installer::run_installer(args.clone()),
             Command::Mcp => start_mcp_stdio().await,
+
+            Command::Index { cmd, json } => {
+                let base_url = resolve_base_url();
+                let token = require_xavier_token()?;
+                let client = CODE_HTTP_CLIENT.clone();
+                match cmd {
+                    enums::IndexCommand::Add { path } => {
+                        let response = client
+                            .post(format!("{}/code/scan", base_url))
+                            .header("X-Xavier-Token", &token)
+                            .json(&serde_json::json!({
+                                "path": path,
+                            }))
+                            .send()
+                            .await?;
+                        let status = response.status();
+                        let body = response
+                            .json::<serde_json::Value>()
+                            .await
+                            .unwrap_or_else(|_| serde_json::json!({ "status": "error" }));
+                        if *json {
+                            println!("{}", serde_json::to_string_pretty(&body)?);
+                        } else {
+                            if status.is_success() {
+                                println!("Added path to index successfully.");
+                            } else {
+                                eprintln!("Failed to add path to index: {}", status);
+                            }
+                        }
+                    }
+                    enums::IndexCommand::Status => {
+                        let response = client
+                            .get(format!("{}/code/sidecar/status", base_url))
+                            .header("X-Xavier-Token", &token)
+                            .send()
+                            .await?;
+                        let body = response
+                            .json::<serde_json::Value>()
+                            .await
+                            .unwrap_or_else(|_| serde_json::json!({ "status": "error" }));
+                        if *json {
+                            println!("{}", serde_json::to_string_pretty(&body)?);
+                        } else {
+                            println!("Index status: {}", serde_json::to_string_pretty(&body)?);
+                        }
+                    }
+                }
+                Ok(())
+            }
             Command::IndexSelf { json } => memory::run_index_self(*json).await,
             Command::Search {
                 query,
