@@ -1,7 +1,6 @@
 //! <ledger id>: q8-billing-wiring
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 fn bind_mock_server() -> (TcpListener, String) {
