@@ -1238,7 +1238,7 @@ pub async fn offline_consolidate(workspace_id: Option<&str>) -> anyhow::Result<s
 
     let ws_id = workspace_id
         .map(|s| s.to_string())
-        .unwrap_or_else(|| crate::cli::utils::resolve_active_workspace());
+        .unwrap_or_else(crate::cli::utils::resolve_active_workspace);
 
     let store: Arc<dyn MemoryStore> =
         match crate::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await {
@@ -1293,7 +1293,7 @@ pub async fn offline_prune(
 
     let ws_id = workspace_id
         .map(|s| s.to_string())
-        .unwrap_or_else(|| crate::cli::utils::resolve_active_workspace());
+        .unwrap_or_else(crate::cli::utils::resolve_active_workspace);
 
     let store: Arc<dyn MemoryStore> =
         match crate::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await {

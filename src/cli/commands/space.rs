@@ -323,6 +323,40 @@ Retention: {}",
                 bail!("Failed to accept invite: {}", resp.text().await?);
             }
         }
+        SpaceCommand::Delete { id, json } => {
+            let resp = client
+                .delete(format!(
+                    "{}/api/v1/espacio/admin/spaces/{}?confirm={}",
+                    base_url, id, id
+                ))
+                .header("X-Xavier-Token", token)
+                .send()
+                .await?;
+            if resp.status().is_success() {
+                if json {
+                    println!("{}", serde_json::json!({ "ok": true }));
+                } else {
+                    println!("Deleted space {}", id);
+                }
+            } else {
+                bail!("Failed to delete space {}: {}", id, resp.text().await?);
+            }
+        }
+        SpaceCommand::Use { id, json } => {
+            let state_dir = std::env::var("XAVIER_STATE_DIR").unwrap_or_else(|_| ".".to_string());
+            let active_space_file = std::path::PathBuf::from(state_dir)
+                .join(".xavier")
+                .join("active_space");
+            if let Some(parent) = active_space_file.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            std::fs::write(&active_space_file, &id)?;
+            if json {
+                println!("{}", serde_json::json!({ "ok": true, "id": id }));
+            } else {
+                println!("Active space set to {}", id);
+            }
+        }
         SpaceCommand::Lock { id: _, json } => {
             if json {
                 println!(

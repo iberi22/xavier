@@ -1266,6 +1266,8 @@ pub fn build_app(state: CliState, deps: AppDeps) -> axum::Router {
         .merge(memory_large_body_routes())
         .route("/panel/api/chat", post(panel_process_chat))
         .route("/code/scan", post(code_scan_handler))
+        .route("/code/reindex", post(code_reindex_handler))
+        .route("/code/index-self", post(code_index_self_handler))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             state.clone(),

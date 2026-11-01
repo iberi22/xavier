@@ -83,7 +83,7 @@ pub async fn handle_tenants_command(cmd: TenantsCommand) -> anyhow::Result<()> {
                     data.push(TenantResponse {
                         id: t.id,
                         name: t.name.clone(),
-                        plan: t.plan.clone(),
+                        plan: t.plan,
                         created_at: t.created_at,
                     });
                 }
@@ -173,7 +173,7 @@ pub async fn handle_tenants_command(cmd: TenantsCommand) -> anyhow::Result<()> {
                 let data = TenantResponse {
                     id: t.id,
                     name: t.name.clone(),
-                    plan: t.plan.clone(),
+                    plan: t.plan,
                     created_at: t.created_at,
                 };
                 if json {

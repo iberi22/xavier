@@ -687,6 +687,20 @@ pub enum SpaceCommand {
         /// Display name for the peer
         display: String,
     },
+    /// Delete a space
+    Delete {
+        #[arg(long)]
+        json: bool,
+        /// The space ID
+        id: String,
+    },
+    /// Export a space to the environment
+    Use {
+        #[arg(long)]
+        json: bool,
+        /// The space ID
+        id: String,
+    },
     /// Lock a space (Not available yet)
     Lock {
         #[arg(long)]
@@ -1367,6 +1381,14 @@ pub enum CodeCommand {
         #[arg(long, default_value_t = false)]
         memory: bool,
     },
+    /// Incrementally reindex changed files in a codebase path
+    Reindex {
+        /// Optional path to the codebase (defaults to .)
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+    /// Index the current workspace or running repo root
+    IndexSelf,
     /// Repository management (list, add, remove)
     Repos {
         #[command(subcommand)]
