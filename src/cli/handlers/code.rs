@@ -396,6 +396,129 @@ pub async fn code_index_handler(
     }
 }
 
+#[derive(serde::Deserialize)]
+pub struct CodeReindexPayload {
+    pub path: Option<String>,
+}
+
+/// Code reindex handler.
+pub async fn code_reindex_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<CodeReindexPayload>,
+) -> impl axum::response::IntoResponse {
+    let path_str = payload.path.unwrap_or_else(|| ".".to_string());
+    let (requested_path, resolved_path) = resolve_target_path(Some(&path_str));
+
+    let sec_result = state
+        .security
+        .process_input(&requested_path)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: requested_path.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+        }));
+    }
+
+    let workspace_root = std::path::absolute(&state.workspace_dir)
+        .map(|p| p.canonicalize().unwrap_or(p))
+        .unwrap_or_else(|_| PathBuf::from("."));
+    let abs_path = PathBuf::from(&resolved_path);
+    let target = abs_path.canonicalize().unwrap_or_else(|_| abs_path.clone());
+    if !target.starts_with(&workspace_root) {
+        return axum::Json(serde_json::json!({
+            "status": "error",
+            "message": "path outside workspace not allowed",
+            "indexed_files": 0,
+        }));
+    }
+
+    let path = resolved_path.clone();
+    let sidecar = ensure_sidecar_for_workspace(&state.workspace_dir);
+
+    let repo_root = xavier::codebase::repo_identity::find_repo_root(std::path::Path::new(&path))
+        .map(|root| root.canonicalize().unwrap_or(root));
+    let repo_graph = match repo_root.as_deref().map(open_repo_code_graph) {
+        Some(Ok(graph)) => Some(graph),
+        Some(Err(error)) => {
+            return axum::Json(serde_json::json!({
+                "status": "error",
+                "message": format!("cannot open repo code graph: {error}"),
+                "indexed_files": 0,
+                "indexed_symbols": 0,
+                "indexed_imports": 0,
+                "paths": [path],
+                "codegraph_sidecar": sidecar.message,
+                "codegraph_available": sidecar.available,
+            }));
+        }
+        None => None,
+    };
+    let shared = state.code_graph.read().await;
+    let graph: &CodeGraphState = repo_graph.as_ref().unwrap_or(&*shared);
+
+    match graph.indexer.index(std::path::Path::new(&path), true).await {
+        Ok(stats) => {
+            if let Some(bin) = sidecar.bin_path.as_ref() {
+                maybe_sync_colby_project(std::path::Path::new(&path), bin);
+            }
+
+            if let Some(canonical) = repo_root.as_deref() {
+                if let Some(head) = xavier::codebase::repo_identity::git_head(canonical) {
+                    let checkpoint = canonical
+                        .join(".xavier")
+                        .join(xavier::codebase::repo_identity::SYNC_CHECKPOINT_FILE);
+                    let _ = std::fs::write(
+                        checkpoint,
+                        format!(
+                            "{}
+",
+                            head
+                        ),
+                    );
+                }
+            }
+
+            let (_dump_msg, dump_path_str, dump_success) = match perform_dump(graph, &path).await {
+                Ok(dump_path) => (
+                    format!(" (Dumped to {})", dump_path.display()),
+                    Some(dump_path.to_string_lossy().into_owned()),
+                    true,
+                ),
+                Err(e) => (format!(" (Dump failed: {})", e), None, false),
+            };
+
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "indexed_files": stats.total_files,
+                "indexed_symbols": stats.total_symbols,
+                "indexed_imports": stats.total_imports,
+                "duration_ms": stats.duration_ms,
+                "paths": [path],
+                "languages": stats.languages,
+                "codegraph_sidecar": sidecar.message,
+                "codegraph_available": sidecar.available,
+                "codegraph_dump_path": dump_path_str,
+                "codegraph_dump_success": dump_success,
+                "message": format!("Reindex complete. Changed files: {}", stats.total_files),
+            }))
+        }
+        Err(error) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+        })),
+    }
+}
+
 /// Code memories handler (`POST /code/memories`).
 /// Returns agent memories linked to a specific code symbol.
 pub async fn code_memories_handler(
@@ -802,7 +925,11 @@ pub async fn code_scan_handler(
     let shared = state.code_graph.read().await;
     let graph: &CodeGraphState = repo_graph.as_ref().unwrap_or(&*shared);
 
-    match graph.indexer.index(std::path::Path::new(&path), true).await {
+    match graph
+        .indexer
+        .index(std::path::Path::new(&path), false)
+        .await
+    {
         Ok(stats) => {
             if let Some(bin) = sidecar.bin_path.as_ref() {
                 maybe_sync_colby_project(std::path::Path::new(&path), bin);
