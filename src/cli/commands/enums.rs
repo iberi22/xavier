@@ -1348,6 +1348,14 @@ pub enum CodeCommand {
         #[arg(long, default_value_t = false)]
         memory: bool,
     },
+    /// Incrementally reindex changed files in a codebase path
+    Reindex {
+        /// Optional path to the codebase (defaults to .)
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+    /// Index the current workspace or running repo root
+    IndexSelf,
     /// Repository management (list, add, remove)
     Repos {
         #[command(subcommand)]

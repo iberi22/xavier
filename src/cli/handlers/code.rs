@@ -519,6 +519,16 @@ pub async fn code_reindex_handler(
     }
 }
 
+/// Code index-self handler (`POST /code/index-self`).
+/// Indexes the current workspace/repo root.
+pub async fn code_index_self_handler(State(state): State<CliState>) -> Json<serde_json::Value> {
+    code_index_handler(
+        State(state),
+        Some(axum::Json(serde_json::json!({ "path": "." }))),
+    )
+    .await
+}
+
 /// Code memories handler (`POST /code/memories`).
 /// Returns agent memories linked to a specific code symbol.
 pub async fn code_memories_handler(
