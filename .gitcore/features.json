@@ -61,10 +61,9 @@
       "category": "explain",
       "description": "Evidence source for code explanations that lists direct callers and callees of the code-graph symbols overlapping the target line range (structural Contains/Defines edges skipped), scored below the code fragment.",
       "id": "feat-explain-codegraph-source",
-      "implemented_in": "src/explain/codegraph.rs, src/explain/mod.rs",
       "name": "Explain Codegraph Source",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3527",
       "status": "planned",
@@ -83,7 +82,12 @@
         "tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_callers_and_callees_of_symbol_in_range_get_source_refs",
         "tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_empty_file_or_range_returns_ok_empty"
       ],
-      "user_stories": []
+      "user_stories": [],
+      "files": [
+        "src/explain/codegraph.rs",
+        "tests/explain_codegraph_source_e2e.rs"
+      ],
+      "notes": "progress 100: verified 2026-11-01 by tests [explain::codegraph::tests::callers_and_callees_of_symbol_in_range_get_source_refs, explain::codegraph::tests::symbols_outside_line_range_are_ignored, explain::codegraph::tests::empty_file_or_range_returns_ok_empty, explain::codegraph::tests::symbol_name_narrows_the_choice, explain::codegraph::tests::limit_caps_total_edges_callers_first, explain::codegraph::tests::broken_graph_yields_no_evidence, tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_callers_and_callees_of_symbol_in_range_get_source_refs, tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_empty_file_or_range_returns_ok_empty]"
     },
     "feat-hybrid-search": {
       "id": "feat-hybrid-search",
