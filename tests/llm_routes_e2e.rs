@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 xavier::isolate_test_process!();
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_llm_routing_config() {
     let root = tempfile::tempdir().unwrap();
     let root_path = root.path();
