@@ -1067,7 +1067,7 @@
       "implemented_in": "src/explain/model.rs, src/explain/mod.rs, src/cli/server.rs, tests/router_explain_auth.rs",
       "name": "Explain Route Live",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3542",
       "status": "beta",
@@ -1083,7 +1083,7 @@
         "router_explain_auth::explain_with_root_token_reaches_the_model_and_returns_502"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests explain::model::tests::unreachable_provider_returns_error_without_secret, explain::model::tests::redact_removes_api_key_and_lease_token, router_explain_auth::explain_rejects_missing_or_invalid_token_like_other_v1_routes, router_explain_auth::explain_with_root_token_reaches_the_model_and_returns_502"
     },
     "feat-groups-permissions": {
       "id": "feat-groups-permissions",
@@ -4067,7 +4067,7 @@
       "implemented_in": "src/explain/render.rs, src/server/explain_route.rs, src/explain/mod.rs, src/server/mod.rs",
       "name": "Explain Render Route",
       "passes": false,
-      "progress_pct": 0,
+      "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3529",
       "status": "beta",
@@ -4093,7 +4093,7 @@
         "tests/explain_render_route_e2e.rs::explain_maps_model_failure_to_502"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests explain::render::tests::system_prompt_restricts_answers_to_evidence, explain::render::tests::user_prompt_lists_each_evidence_ref_in_order, explain::render::tests::hallucinated_citations_are_reported_as_unknown, explain::render::tests::openui_lang_is_rendered_for_multi_section_answer, explain::render::tests::skipped_sources_are_carried_through, explain::render::tests::model_failure_is_returned_as_error, server::explain_route::tests::explain_endpoint_returns_explanation_json, server::explain_route::tests::explain_rejects_parent_and_absolute_paths, server::explain_route::tests::explain_rejects_inverted_and_oversized_ranges, server::explain_route::tests::explain_rejects_symlink_escaping_the_repo, server::explain_route::tests::explain_maps_model_failure_to_502, tests/explain_render_route_e2e.rs::explain_resolves_nested_repo, tests/explain_render_route_e2e.rs::explain_maps_model_failure_to_502"
     },
     "feat-autonomous-delivery": {
       "id": "feat-autonomous-delivery",

@@ -1,0 +1,12 @@
+fix(ledger): audit and update progress_pct for explain beta features
+
+The Ledger Promoter requires `progress_pct` to be 100 for `feat-explain-render-route` and `feat-explain-route-live` in `.gitcore/features.json` to move them from beta to stable.
+
+This PR sets `progress_pct` to 100 for these two features and appends the required `"progress 100: verified <date> by tests <list>"` line to their `notes` field. (Note: `feat-code-explain-context` and `feat-explain-isolated-llm` already had their `progress_pct` at 100 and correct verification notes in the base branch.)
+
+| Feature | Tests Verified | New Tests | Progress |
+|---------|----------------|-----------|----------|
+| feat-code-explain-context | 10 | 0 | 100 -> 100 |
+| feat-explain-isolated-llm | 7 | 0 | 100 -> 100 |
+| feat-explain-render-route | 13 | 0 | 0 -> 100 |
+| feat-explain-route-live | 4 | 0 | 0 -> 100 |
