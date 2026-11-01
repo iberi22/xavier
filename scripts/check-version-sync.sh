@@ -89,8 +89,8 @@ else
 fi
 
 # Verify git tag against manifest version if HEAD is tagged
-if command -v git &> /dev/null && git rev-parse --is-inside-work-tree &> /dev/null; then
-    TAG=$(git tag --points-at HEAD 2>/dev/null | head -n 1 || true)
+if command -v git &> /dev/null && git -C "$CWD" rev-parse --is-inside-work-tree &> /dev/null; then
+    TAG=$(git -C "$CWD" tag --points-at HEAD 2>/dev/null | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || true)
     if [ -n "$TAG" ]; then
         CLEAN_TAG="${TAG#v}"
         if [ -n "$CARGO_VER" ] && [ "$CLEAN_TAG" != "$CARGO_VER" ]; then
