@@ -3928,7 +3928,7 @@
       "name": "Per-repo memory instance (XAV-REPO)",
       "category": "memory",
       "status": "beta",
-      "progress_pct": 85,
+      "progress_pct": 100,
       "description": "Cada repo git, y cada producto dentro de un monorepo, tiene su propia instancia de memoria: codegraph por repo, config propia, nivel de privacidad, y un paquete cifrado que se puede commitear al repo. Cierra el gap del monorepo (derive_project_id colapsaba todos los productos al id del directorio) y permite commitear el codegraph sin filtrar nada.",
       "steps": [
         "Identidad por repo anclada a su root, sin sustituir datos de otro repo (repo_identity.rs)",
@@ -3946,7 +3946,7 @@
       "passes": true,
       "verified_by": "unit-tests+e2e",
       "last_tested": "2026-10-04",
-      "notes": "No migra ni modifica memorias existentes. El aislamiento del CODEGRAPH esta completo; el de los REGISTROS DE MEMORIA no: memory_store_path_for() da ruta y seleccion, pero el daemon sigue abriendo un unico store global multiplexado por workspace_id. Verificado con el binario real: pack no filtra el secreto de la BD, unpack restaura el .db intacto con el header correcto, y el .enc de un repo no se abre desde otro sin dejar archivos a medias. Detalle en docs/features/repo-memory-instance.md.",
+      "notes": "No migra ni modifica memorias existentes. El aislamiento del CODEGRAPH esta completo; el de los REGISTROS DE MEMORIA no: memory_store_path_for() da ruta y seleccion, pero el daemon sigue abriendo un unico store global multiplexado por workspace_id. Verificado con el binario real: pack no filtra el secreto de la BD, unpack restaura el .db intacto con el header correcto, y el .enc de un repo no se abre desde otro sin dejar archivos a medias. Detalle en docs/features/repo-memory-instance.md.\nprogress 100: verified 2026-11-01 by tests [pack_then_unpack_restores_identical_bytes_and_a_correct_header, packages_are_isolated_per_repo, repo_a_and_repo_b_resolve_to_different_stores, store_lives_next_to_the_repo_config_and_the_graph, repo_config_absent_file_uses_defaults_and_never_errors, repo_config_two_products_in_one_repo_get_distinct_project_ids, declared_project_id_wins_over_directory_name, codegraph_repo_isolation_a_b_evict_reopen, truncated_and_malformed_containers_are_rejected, empty_file_roundtrips, tests/cli_add_path_e2e.rs::test_add_path_valid, tests/cli_add_path_e2e.rs::test_add_path_invalid, tests/repo_memory_instance_cli_e2e.rs::offline_cli_add_search_uses_global_store_fallback]",
       "implemented_in": "src/codebase/repo_config.rs, src/codebase/repo_package_crypto.rs, src/codebase/repo_identity.rs, src/cli/commands/repo.rs, src/cli/commands/repo_pack.rs, src/memory/repo_memory_store_path.rs",
       "tests": [
         "pack_then_unpack_restores_identical_bytes_and_a_correct_header",
