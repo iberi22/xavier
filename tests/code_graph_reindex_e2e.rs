@@ -1,8 +1,7 @@
 //! feat-codegraph-reindex: Incremental reindexing tests
 
-use assert_cmd::Command;
-use predicates::prelude::*;
 use std::fs;
+use std::process::Command;
 use tempfile::tempdir;
 
 #[test]
@@ -21,23 +20,27 @@ fn test_codegraph_reindex_and_index_self_e2e() {
     fs::write(&ts_file, "function bar() {}").unwrap();
 
     // Index Self
-    let mut cmd = Command::cargo_bin("xavier").unwrap();
-    cmd.current_dir(&repo)
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    let output = cmd
+        .current_dir(&repo)
         .env("XAVIER_CLI_TEST", "1")
         .arg("code")
         .arg("index-self")
-        .assert()
-        .success();
+        .output()
+        .unwrap();
+    assert!(output.status.success());
 
     // Initial Scan
-    let mut cmd = Command::cargo_bin("xavier").unwrap();
-    cmd.current_dir(&repo)
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    let output = cmd
+        .current_dir(&repo)
         .env("XAVIER_CLI_TEST", "1")
         .arg("code")
         .arg("scan")
         .arg(".")
-        .assert()
-        .success();
+        .output()
+        .unwrap();
+    assert!(output.status.success());
 
     // Modify Rust file
     fs::write(&rust_file, "fn main() { println!(\"Hello World\"); }").unwrap();
@@ -50,21 +53,22 @@ fn test_codegraph_reindex_and_index_self_e2e() {
     fs::write(&ts_file2, "function baz() {}").unwrap();
 
     // Reindex
-    let mut cmd = Command::cargo_bin("xavier").unwrap();
-    let assert = cmd
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    let output = cmd
         .current_dir(&repo)
         .env("XAVIER_CLI_TEST", "1")
         .arg("code")
         .arg("reindex")
         .arg("--path")
         .arg(".")
-        .assert()
-        .success();
+        .output()
+        .unwrap();
+    assert!(output.status.success());
 
-    let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let stdout_str = String::from_utf8(output.stdout).unwrap();
 
     // Should output JSON showing unchanged files counter
     // The exact JSON output asserting symbols updated/removed/added and unchanged files counter.
     // We expect 3 total modified files: main.rs, script.py (removed), new.ts (added)
-    assert!(output.contains("\"status\": \"ok\""));
+    assert!(stdout_str.contains("\"status\": \"ok\""));
 }
