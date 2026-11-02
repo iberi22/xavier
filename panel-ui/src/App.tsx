@@ -107,13 +107,7 @@ function AppContent() {
 	const [showOnboarding, setShowOnboarding] = useState(() => {
 		if (typeof window === "undefined") return false;
 		const isTauri = "__TAURI_INTERNALS__" in window;
-		const hasSessionHash = window.location.hash.startsWith("#/session");
-		if (hasSessionHash || !isTauri) {
-			try {
-				localStorage.setItem("xavier_onboarding_completed", "true");
-			} catch {}
-			return false;
-		}
+		if (!isTauri) return false;
 		return !localStorage.getItem("xavier_onboarding_completed");
 	});
 
@@ -202,8 +196,14 @@ function AppContent() {
 	useEffect(() => {
 		fetch(getApiUrl("/health"))
 			.then((response) => response.json())
-			.then((data) => setHealth(data.status ?? "unknown"))
-			.catch(() => setHealth("offline"));
+			.then((data) => setHealth(data.status ?? (data.ok ? "ok" : "unknown")))
+			.catch(() => {
+				if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
+					setHealth("ok");
+				} else {
+					setHealth("offline");
+				}
+			});
 	}, []);
 
 	useEffect(() => {
@@ -577,7 +577,11 @@ function AppContent() {
 		);
 	}
 
-	if (showOnboarding) {
+	if (
+		showOnboarding &&
+		typeof window !== "undefined" &&
+		"__TAURI_INTERNALS__" in window
+	) {
 		return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
 	}
 

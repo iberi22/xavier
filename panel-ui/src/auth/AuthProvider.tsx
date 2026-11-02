@@ -197,11 +197,21 @@ const useAuthStore = create<AuthStore>((set, get) => ({
 
 	refreshSession: async () => {
 		try {
+			const rt = get().refreshToken ?? readRt();
+			if (!rt) return;
+			// Cloudflare mesh web session token
+			if (rt.startsWith("swal_sess_")) {
+				set({
+					token: rt,
+					accessToken: rt,
+					refreshToken: rt,
+					isAuthenticated: true,
+				});
+				return;
+			}
 			// /auth/refresh only returns { access_token, refresh_token } — no `user` — so the
 			// existing user object is preserved instead of being wiped out by `undefined`.
-			const response = await authClient.refresh(
-				get().refreshToken ?? readRt(),
-			);
+			const response = await authClient.refresh(rt);
 			writeRt(response.refresh_token);
 			set({
 				token: response.access_token ?? null,

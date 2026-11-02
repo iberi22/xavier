@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "postbuild": "node -e \"const fs = require('fs'); fs.rmSync('dist', { recursive: true, force: true }); fs.cpSync('build', 'dist', { recursive: true });\"",
+    "build": "vite build && npm run postbuild",
+    "postbuild": "node -e \"const fs = require('fs'); fs.rmSync('dist', { recursive: true, force: true }); fs.cpSync('build', 'dist', { recursive: true }); const files = fs.readdirSync('dist/assets'); const jsEntry = files.find(f => f.startsWith('index-') && f.endsWith('.js')); if (jsEntry) fs.copyFileSync('dist/assets/' + jsEntry, 'dist/assets/index.js'); const cssEntry = files.find(f => f.startsWith('index-') && f.endsWith('.css')); if (cssEntry) fs.copyFileSync('dist/assets/' + cssEntry, 'dist/assets/index.css');\"",
     "check": "pnpm run biome:check && pnpm run typecheck && pnpm run build",
     "biome:check": "biome check src/App.tsx src/main.tsx playwright.config.ts tests/e2e/generative-ui.spec.ts",
     "biome:write": "biome check --write src/App.tsx src/main.tsx playwright.config.ts tests/e2e/generative-ui.spec.ts",
