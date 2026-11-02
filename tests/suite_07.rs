@@ -72,4 +72,5 @@ mod mesh_replay_store_e2e;
 mod space_tenant_cli_e2e;
 
 #[path = "private_mesh_p2p_e2e.rs"]
+#[cfg(feature = "mesh")]
 mod private_mesh_p2p_e2e;
