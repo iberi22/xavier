@@ -111,6 +111,8 @@
 | Variable | Type | Default | Description | Secret |
 |----------|------|---------|-------------|--------|
 | `XAVIER_ALLOWED_DOMAINS` | `string` | (none) | Comma-separated domain allowlist for URL validator (test-only) | ❌ |
+| `XAVIER_ALLOWED_HOSTS` | `string` | (unset) | Comma-separated list of allowed host authorities for MCP Streamable HTTP transport (supports wildcard *) | ❌ |
+| `XAVIER_ALLOWED_ORIGINS` | `string` | (unset) | Comma-separated list of allowed origins for MCP Streamable HTTP transport (supports wildcard *) | ❌ |
 | `XAVIER_ALLOW_CLI_TOKEN` | `bool` | `false` | Gates the `--token` CLI flag for node provisioning (`src/nodes/provision.rs`): only honored when `1`/`true`. Test/dev only — production must use `XAVIER_NODE_TOKEN` or stdin. | ✅ |
 | `XAVIER_AUTH_RATE_LIMIT` | `u32` | `20` | Max requests per minute, per caller, accepted by the whole `/auth/*` nest (register/login/refresh/logout/2FA/recovery/OAuth), sliding 60s window. See `src/cli/http_setup.rs::auth_rate_limit_middleware`. | ❌ |
 | `XAVIER_CODE_GRAPH_DB_PATH` | `string` | `"data/code_graph.db"` | Path to code graph SQLite DB | ❌ |

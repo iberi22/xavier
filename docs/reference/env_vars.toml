@@ -2751,3 +2751,19 @@ default = "(unset)"
 description = "Recursion guard for sidecar probing"
 category = "Uncategorized"
 secret = false
+
+[[variables]]
+name = "XAVIER_ALLOWED_ORIGINS"
+type = "string"
+default = "(unset)"
+description = "Comma-separated list of allowed origins for MCP Streamable HTTP transport (supports wildcard *)"
+category = "Server & Network"
+secret = false
+
+[[variables]]
+name = "XAVIER_ALLOWED_HOSTS"
+type = "string"
+default = "(unset)"
+description = "Comma-separated list of allowed host authorities for MCP Streamable HTTP transport (supports wildcard *)"
+category = "Server & Network"
+secret = false
