@@ -13,6 +13,25 @@ use axum::{
 use subtle::ConstantTimeEq;
 use tracing::warn;
 
+/// Entries are exact header values; a standalone "*" allows any nonempty value.
+fn matches_allowlist(value: &str, allowed: &str) -> bool {
+    !value.is_empty()
+        && allowed
+            .split(',')
+            .map(str::trim)
+            .any(|entry| entry == "*" || (!entry.is_empty() && entry == value))
+}
+
+fn is_trusted_origin(origin: &str, allowed: &str) -> bool {
+    match url::Url::parse(origin) {
+        Ok(url) if matches!(url.scheme(), "http" | "https") && url.host_str().is_some() => {
+            matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))
+                || matches_allowlist(origin, allowed)
+        }
+        _ => false,
+    }
+}
+
 /// Authentication middleware for MCP HTTP+SSE transport
 pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
     let path = req.uri().path();
@@ -24,18 +43,8 @@ pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
     if let Some(origin) = req.headers().get("Origin") {
         let origin_str = origin.to_str().unwrap_or("");
 
-        let is_trusted = if origin_str.is_empty() {
-            false
-        } else {
-            let url = url::Url::parse(origin_str);
-            match url {
-                Ok(u) => {
-                    let host = u.host_str().unwrap_or("");
-                    host == "localhost" || host == "127.0.0.1" || host == "[::1]"
-                }
-                Err(_) => false,
-            }
-        };
+        let allowed_origins = std::env::var("XAVIER_ALLOWED_ORIGINS").unwrap_or_default();
+        let is_trusted = is_trusted_origin(origin_str, &allowed_origins);
 
         if !is_trusted {
             warn!(origin = %origin_str, "MCP access rejected: invalid Origin");
@@ -59,7 +68,14 @@ pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
             false
         };
 
-        if !is_localhost {
+        let allowed_hosts = std::env::var("XAVIER_ALLOWED_HOSTS").unwrap_or_default();
+        let is_allowed_host = req
+            .headers()
+            .get("Host")
+            .and_then(|host| host.to_str().ok())
+            .is_some_and(|host| matches_allowlist(host, &allowed_hosts));
+
+        if !is_localhost && !is_allowed_host {
             warn!("MCP access rejected: missing Origin header from non-local connection");
             return (StatusCode::FORBIDDEN, "Forbidden: Missing Origin header").into_response();
         }
@@ -138,4 +154,66 @@ pub fn validate_stdio_connection() -> anyhow::Result<()> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_trusted_origin, matches_allowlist};
+
+    #[test]
+    fn allows_local_origins_by_default() {
+        for origin in [
+            "http://localhost:8006",
+            "http://127.0.0.1",
+            "http://[::1]:8006",
+        ] {
+            assert!(is_trusted_origin(origin, ""));
+        }
+    }
+
+    #[test]
+    fn allows_explicit_remote_origins() {
+        let allowed = " https://app.example.com, ,https://other.example.com:8443 ";
+        assert!(is_trusted_origin("https://app.example.com", allowed));
+        assert!(is_trusted_origin("https://other.example.com:8443", allowed));
+    }
+
+    #[test]
+    fn denies_unlisted_origins() {
+        let allowed = "https://app.example.com";
+        for origin in [
+            "https://evil.example.com",
+            "https://app.example.com.evil.com",
+            "http://app.example.com",
+            "https://app.example.com:8443",
+            "",
+            "null",
+        ] {
+            assert!(!is_trusted_origin(origin, allowed));
+        }
+        assert!(!is_trusted_origin("https://remote.example.com", ""));
+    }
+
+    #[test]
+    fn wildcard_allows_valid_remote_origins() {
+        assert!(is_trusted_origin("https://remote.example.com", " , * , "));
+        for origin in ["", "null", "not a URL", "file:///tmp/test"] {
+            assert!(!is_trusted_origin(origin, "*"));
+        }
+    }
+
+    #[test]
+    fn host_allowlist_matches_exact_authority_or_wildcard() {
+        assert!(matches_allowlist(
+            "mcp.example.com:8006",
+            "other.example.com, mcp.example.com:8006"
+        ));
+        assert!(!matches_allowlist(
+            "mcp.example.com:8007",
+            "mcp.example.com:8006"
+        ));
+        assert!(!matches_allowlist("evil.example.com", ""));
+        assert!(matches_allowlist("remote.example.com:8006", "*"));
+        assert!(!matches_allowlist("", "*"));
+    }
 }
