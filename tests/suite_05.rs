@@ -8,6 +8,9 @@
 
 xavier::isolate_test_process!();
 
+#[path = "cloud_provision_and_sync_e2e.rs"]
+mod cloud_provision_and_sync_e2e;
+
 #[path = "e2e/hormer_navigation_e2e.rs"]
 mod hormer_navigation_e2e;
 

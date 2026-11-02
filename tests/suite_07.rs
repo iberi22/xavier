@@ -8,6 +8,10 @@
 
 xavier::isolate_test_process!();
 
+#[path = "cross_mesh_federation_e2e.rs"]
+#[cfg(feature = "mesh")]
+mod cross_mesh_federation_e2e;
+
 #[path = "memory_write_integrity_e2e.rs"]
 mod memory_write_integrity_e2e;
 
