@@ -233,6 +233,25 @@ function AppContent() {
 	}, [token]);
 
 	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const h = window.location.hash;
+		if (h.startsWith("#/session")) {
+			const q = h.indexOf("?");
+			if (q >= 0) {
+				const params = new URLSearchParams(h.slice(q + 1));
+				const sessionToken = params.get("token");
+				const email = params.get("email") || undefined;
+				const tenant = params.get("tenant") || undefined;
+				if (sessionToken) {
+					useAuthStore.getState().setSession(sessionToken, email, tenant);
+					localStorage.setItem("xavier_onboarding_completed", "true");
+					setShowOnboarding(false);
+					window.history.replaceState(null, "", window.location.pathname);
+					setHash("");
+				}
+			}
+		}
+
 		const handleHashChange = () => setHash(window.location.hash);
 		window.addEventListener("hashchange", handleHashChange);
 		return () => window.removeEventListener("hashchange", handleHashChange);

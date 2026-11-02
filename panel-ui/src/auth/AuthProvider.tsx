@@ -49,6 +49,7 @@ const writeRt = (rt: string | null | undefined) => {
 
 type AuthStore = AuthState & {
 	loginWithCode: (email: string, code: string) => Promise<void>;
+	setSession: (sessionToken: string, email?: string, tenant?: string) => void;
 };
 
 const useAuthStore = create<AuthStore>((set, get) => ({
@@ -68,6 +69,27 @@ const useAuthStore = create<AuthStore>((set, get) => ({
 			token: response.access_token ?? null,
 			accessToken: response.access_token ?? null,
 			refreshToken: response.refresh_token,
+			isAuthenticated: true,
+			requires2FA: false,
+		});
+	},
+
+	setSession: (sessionToken, email, tenant) => {
+		const now = Math.floor(Date.now() / 1000);
+		const user = {
+			id: tenant || "swal-user",
+			email: email || "iberi22@gmail.com",
+			name: email ? email.split("@")[0] : "Brahyan Belalcazar",
+			role: "admin" as const,
+			created_at: now,
+			updated_at: now,
+		};
+		writeRt(sessionToken);
+		set({
+			user,
+			token: sessionToken,
+			accessToken: sessionToken,
+			refreshToken: sessionToken,
 			isAuthenticated: true,
 			requires2FA: false,
 		});
