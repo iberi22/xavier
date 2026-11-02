@@ -104,11 +104,15 @@ function AppContent() {
 	const [hasConfig, setHasConfig] = useState(true);
 
 	const [isConfigOpen, setIsConfigOpen] = useState(false);
-	const [showOnboarding, setShowOnboarding] = useState(
-		() =>
-			typeof window !== "undefined" &&
-			!localStorage.getItem("xavier_onboarding_completed"),
-	);
+	const [showOnboarding, setShowOnboarding] = useState(() => {
+		if (typeof window === "undefined") return false;
+		const isCloud =
+			window.location.hostname === "xavier-cloud.swal.network" ||
+			window.location.hostname.endsWith(".xavier-panel.pages.dev") ||
+			window.location.hash.startsWith("#/session");
+		if (isCloud) return false;
+		return !localStorage.getItem("xavier_onboarding_completed");
+	});
 
 	const api = useCallback(
 		async <T,>(path: string, options?: RequestInit): Promise<T> => {
@@ -195,8 +199,14 @@ function AppContent() {
 	useEffect(() => {
 		fetch(getApiUrl("/health"))
 			.then((response) => response.json())
-			.then((data) => setHealth(data.status ?? "unknown"))
-			.catch(() => setHealth("offline"));
+			.then((data) => setHealth(data.status ?? (data.ok ? "ok" : "unknown")))
+			.catch(() => {
+				if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
+					setHealth("ok");
+				} else {
+					setHealth("offline");
+				}
+			});
 	}, []);
 
 	useEffect(() => {
@@ -233,6 +243,25 @@ function AppContent() {
 	}, [token]);
 
 	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const h = window.location.hash;
+		if (h.startsWith("#/session")) {
+			const q = h.indexOf("?");
+			if (q >= 0) {
+				const params = new URLSearchParams(h.slice(q + 1));
+				const sessionToken = params.get("token");
+				const email = params.get("email") || undefined;
+				const tenant = params.get("tenant") || undefined;
+				if (sessionToken) {
+					useAuthStore.getState().setSession(sessionToken, email, tenant);
+					localStorage.setItem("xavier_onboarding_completed", "true");
+					setShowOnboarding(false);
+					window.history.replaceState(null, "", window.location.pathname);
+					setHash("");
+				}
+			}
+		}
+
 		const handleHashChange = () => setHash(window.location.hash);
 		window.addEventListener("hashchange", handleHashChange);
 		return () => window.removeEventListener("hashchange", handleHashChange);
@@ -552,7 +581,14 @@ function AppContent() {
 	}
 
 	if (showOnboarding) {
-		return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
+		const isCloud =
+			typeof window !== "undefined" &&
+			(window.location.hostname === "xavier-cloud.swal.network" ||
+				window.location.hostname.endsWith(".xavier-panel.pages.dev") ||
+				window.location.hash.startsWith("#/session"));
+		if (!isCloud) {
+			return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
+		}
 	}
 
 	if (!isAuthenticated) {
