@@ -104,11 +104,18 @@ function AppContent() {
 	const [hasConfig, setHasConfig] = useState(true);
 
 	const [isConfigOpen, setIsConfigOpen] = useState(false);
-	const [showOnboarding, setShowOnboarding] = useState(
-		() =>
-			typeof window !== "undefined" &&
-			!localStorage.getItem("xavier_onboarding_completed"),
-	);
+	const [showOnboarding, setShowOnboarding] = useState(() => {
+		if (typeof window === "undefined") return false;
+		const isTauri = "__TAURI_INTERNALS__" in window;
+		const hasSessionHash = window.location.hash.startsWith("#/session");
+		if (hasSessionHash || !isTauri) {
+			try {
+				localStorage.setItem("xavier_onboarding_completed", "true");
+			} catch {}
+			return false;
+		}
+		return !localStorage.getItem("xavier_onboarding_completed");
+	});
 
 	const api = useCallback(
 		async <T,>(path: string, options?: RequestInit): Promise<T> => {
