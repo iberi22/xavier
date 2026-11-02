@@ -11,7 +11,7 @@ use rand::RngCore;
 use std::sync::LazyLock;
 use std::sync::RwLock;
 
-use crate::crypto::NONCE_SIZE;
+use crate::NONCE_SIZE;
 
 /// Size of AES-256 key in bytes
 const AES_KEY_SIZE: usize = 32;

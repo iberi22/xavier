@@ -15741,6 +15741,7 @@ dependencies = [
  "walkdir",
  "x25519-dalek",
  "xavier-core-logic",
+ "xavier-crypto",
  "xavier-market",
  "xavier-pageindex",
  "xxhash-rust",
@@ -15756,6 +15757,26 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "xavier-crypto"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "argon2",
+ "async-trait",
+ "bip39",
+ "chrono",
+ "ed25519-dalek 2.2.0",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "subtle",
+ "thiserror 2.0.21",
+ "xavier-core-logic",
 ]
 
 [[package]]

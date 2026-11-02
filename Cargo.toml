@@ -81,6 +81,7 @@ exclude = [
     "panel-ui/src-tauri",
 ]
 members = [
+    "crates/xavier-crypto",
     "crates/xavier-plugin-protocol",
     "code-graph",
     "crates/xavier-core-logic",
@@ -184,6 +185,7 @@ path = "benches/vector_search.rs"
 harness = false
 
 [dependencies]
+xavier-crypto = { path = "crates/xavier-crypto" }
 xavier-core-logic = { path = "crates/xavier-core-logic" }
 xavier-market = { path = "crates/xavier-market", optional = true }
 xavier-pageindex = { path = "crates/xavier-pageindex", default-features = false, features = ["sqlite", "markdown"], optional = true }

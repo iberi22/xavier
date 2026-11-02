@@ -3,7 +3,7 @@
 //! Encrypts memory records before they leave the node to 2x shards.
 //! Metadata includes shard_id + replica_id, both plaintext for routing.
 //! Ciphertext is AES-GCM with X25519-derived key. ToS: data stays encrypted on freetier.
-use crate::crypto::encryption::{aes_decrypt, aes_encrypt, NonceBytes};
+use crate::encryption::{aes_decrypt, aes_encrypt, NonceBytes};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,14 +25,14 @@ pub fn encrypt_for_shard(
     Ok(ShardEnvelope {
         shard_id,
         replica_id: 0,
-        ciphertext_b64: crate::crypto::hex_encode(&ct),
-        nonce_b64: crate::crypto::hex_encode(nonce.as_bytes()),
+        ciphertext_b64: crate::hex_encode(&ct),
+        nonce_b64: crate::hex_encode(nonce.as_bytes()),
         key_id: format!("shard-{}-v1", shard_id),
     })
 }
 
 pub fn decrypt_envelope(env: &ShardEnvelope, key: &[u8; 32]) -> anyhow::Result<Vec<u8>> {
-    let ct = crate::crypto::hex_decode(&env.ciphertext_b64)?;
+    let ct = crate::hex_decode(&env.ciphertext_b64)?;
     aes_decrypt(&ct, key).map_err(|e| anyhow::anyhow!("{}", e))
 }
 
