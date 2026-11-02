@@ -114,14 +114,9 @@ export default defineConfig(({ command }) => {
       rollupOptions: {
         external: ["@swal/maloca-wasm", "@swal/maloca-wasm/main"],
         output: {
-          entryFileNames: "assets/index.js",
-          chunkFileNames: "assets/[name].js",
-          assetFileNames: (assetInfo) => {
-            if (assetInfo.name?.endsWith(".css")) {
-              return "assets/index.css";
-            }
-            return "assets/[name][extname]";
-          },
+          entryFileNames: "assets/index-[hash].js",
+          chunkFileNames: "assets/[name]-[hash].js",
+          assetFileNames: "assets/[name]-[hash][extname]",
         },
       },
     },
