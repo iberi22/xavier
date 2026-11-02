@@ -3,13 +3,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::json;
 
 use xavier::memory::schema::{ClearanceLevel, MemoryLevel};
 use xavier::memory::store::{InMemoryMemoryStore, MemoryRecord, MemoryStore};
-use xavier::mesh::node::NodeIdentity;
 use xavier::sync::xavier_cloud::{
     build_pack_plaintexts, open_pack, parse_pack, run_backup, run_restore, seal_pack, BlobStore,
     CloudBackupConfig, CloudUsage, HttpBlobStore, KdfParams,
