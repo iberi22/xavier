@@ -9,7 +9,7 @@ use rand::rngs::OsRng as RandOsRng;
 use rand::RngCore;
 use std::fmt;
 
-use crate::crypto::{DEK_SIZE, SALT_SIZE};
+use crate::{DEK_SIZE, SALT_SIZE};
 
 /// Error type for key operations
 #[derive(Debug, thiserror::Error)]
@@ -177,7 +177,7 @@ impl KeyManager {
     ///
     /// Returns the encrypted DEK bytes (16-byte nonce + ciphertext + 16-byte tag)
     pub fn encrypt_dek(&self, dek: &DEK, kek: &KEK) -> KeyResult<Vec<u8>> {
-        use crate::crypto::encryption::{aes_encrypt, NonceBytes};
+        use crate::encryption::{aes_encrypt, NonceBytes};
 
         // DEK is encrypted with KEK - use a deterministic nonce derived from DEK
         // This is safe because each DEK is unique per document
@@ -190,7 +190,7 @@ impl KeyManager {
 
     /// Decrypt a DEK with a KEK (for retrieval)
     pub fn decrypt_dek(&self, encrypted_dek: &[u8], kek: &KEK) -> KeyResult<DEK> {
-        use crate::crypto::encryption::aes_decrypt;
+        use crate::encryption::aes_decrypt;
 
         let decrypted =
             aes_decrypt(encrypted_dek, &kek.0).map_err(|_| KeyError::InvalidKeyLength {

@@ -13,13 +13,11 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
-use crate::crypto::encryption::{decrypt_data, encrypt_data, NonceBytes};
-use crate::crypto::keys::{KeySalt, KEK};
-use crate::crypto::SALT_SIZE;
-use crate::crypto::{hex_decode, hex_encode};
-use crate::domain::cycle_breaks::w30_05::{
-    DerivedNodeKeys, NodeId, NodeIdentityFactory, NodeIdentityView,
-};
+use crate::domain::{DerivedNodeKeys, NodeId, NodeIdentityFactory, NodeIdentityView};
+use crate::encryption::{decrypt_data, encrypt_data, NonceBytes};
+use crate::keys::{KeySalt, KEK};
+use crate::SALT_SIZE;
+use crate::{hex_decode, hex_encode};
 
 /// Wallet error types.
 #[derive(Debug, thiserror::Error)]
@@ -648,10 +646,10 @@ impl Ed25519Wallet {
             let ciphertext_bytes = hex_decode(&record.ciphertext_hex)
                 .map_err(|e| WalletError::HexDecodeError(e.to_string()))?;
 
-            if nonce_bytes_vec.len() != crate::crypto::NONCE_SIZE {
+            if nonce_bytes_vec.len() != crate::NONCE_SIZE {
                 return Err(WalletError::DecryptionFailed("Invalid nonce size".into()));
             }
-            let mut nonce_arr = [0u8; crate::crypto::NONCE_SIZE];
+            let mut nonce_arr = [0u8; crate::NONCE_SIZE];
             nonce_arr.copy_from_slice(&nonce_bytes_vec);
 
             let decrypted_json = decrypt_data(&ciphertext_bytes, kek.as_bytes(), &nonce_arr)
