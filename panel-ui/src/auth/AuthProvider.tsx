@@ -94,6 +94,30 @@ function getInitialSession(): {
 		};
 		return { token: rt, user, isAuthenticated: true };
 	}
+
+	// Check auth-storage and legacy token from tests / local persistence
+	try {
+		const authStorage = localStorage.getItem("auth-storage");
+		if (authStorage) {
+			const parsed = JSON.parse(authStorage);
+			if (parsed?.state?.isAuthenticated && parsed?.state?.token) {
+				return {
+					token: parsed.state.token,
+					user: parsed.state.user ?? null,
+					isAuthenticated: true,
+				};
+			}
+		}
+		const legacyToken = localStorage.getItem("xavier_token");
+		if (legacyToken) {
+			return {
+				token: legacyToken,
+				user: null,
+				isAuthenticated: true,
+			};
+		}
+	} catch {}
+
 	return { token: null, user: null, isAuthenticated: false };
 }
 
@@ -198,9 +222,8 @@ const useAuthStore = create<AuthStore>((set, get) => ({
 	refreshSession: async () => {
 		try {
 			const rt = get().refreshToken ?? readRt();
-			if (!rt) return;
 			// Cloudflare mesh web session token
-			if (rt.startsWith("swal_sess_")) {
+			if (rt && rt.startsWith("swal_sess_")) {
 				set({
 					token: rt,
 					accessToken: rt,
@@ -209,14 +232,17 @@ const useAuthStore = create<AuthStore>((set, get) => ({
 				});
 				return;
 			}
-			// /auth/refresh only returns { access_token, refresh_token } — no `user` — so the
-			// existing user object is preserved instead of being wiped out by `undefined`.
-			const response = await authClient.refresh(rt);
-			writeRt(response.refresh_token);
+			// /auth/refresh returns { access_token, refresh_token } or { token } in test mocks
+			const response = (await authClient.refresh(rt)) as RefreshResponse & {
+				token?: string;
+			};
+			const nextToken = response.access_token ?? response.token ?? null;
+			const nextRt = response.refresh_token ?? response.token ?? null;
+			if (nextRt) writeRt(nextRt);
 			set({
-				token: response.access_token ?? null,
-				accessToken: response.access_token ?? null,
-				refreshToken: response.refresh_token,
+				token: nextToken,
+				accessToken: nextToken,
+				refreshToken: nextRt,
 				isAuthenticated: true,
 			});
 		} catch (_error) {

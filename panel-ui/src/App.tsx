@@ -106,8 +106,11 @@ function AppContent() {
 	const [isConfigOpen, setIsConfigOpen] = useState(false);
 	const [showOnboarding, setShowOnboarding] = useState(() => {
 		if (typeof window === "undefined") return false;
-		const isTauri = "__TAURI_INTERNALS__" in window;
-		if (!isTauri) return false;
+		const isCloud =
+			window.location.hostname === "xavier-cloud.swal.network" ||
+			window.location.hostname.endsWith(".xavier-panel.pages.dev") ||
+			window.location.hash.startsWith("#/session");
+		if (isCloud) return false;
 		return !localStorage.getItem("xavier_onboarding_completed");
 	});
 
@@ -577,12 +580,15 @@ function AppContent() {
 		);
 	}
 
-	if (
-		showOnboarding &&
-		typeof window !== "undefined" &&
-		"__TAURI_INTERNALS__" in window
-	) {
-		return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
+	if (showOnboarding) {
+		const isCloud =
+			typeof window !== "undefined" &&
+			(window.location.hostname === "xavier-cloud.swal.network" ||
+				window.location.hostname.endsWith(".xavier-panel.pages.dev") ||
+				window.location.hash.startsWith("#/session"));
+		if (!isCloud) {
+			return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
+		}
 	}
 
 	if (!isAuthenticated) {
