@@ -51,5 +51,8 @@ mod profile_vault_e2e;
 #[path = "proxy_integration.rs"]
 mod proxy_integration;
 
+#[path = "mesh_security_threat_model_e2e.rs"]
+#[cfg(feature = "mesh")]
+mod mesh_security_threat_model_e2e;
 #[path = "proxy_lending_integration.rs"]
 mod proxy_lending_integration;
