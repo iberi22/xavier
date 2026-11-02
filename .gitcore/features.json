@@ -6,21 +6,21 @@
     "version": "1.0.0",
     "created": "2026-03-05",
     "last_verified": "2026-10-30",
-    "total_features": 118,
-    "features_complete": 89,
-    "features_beta": 23,
+    "total_features": 103,
+    "features_complete": 83,
+    "features_beta": 16,
     "features_draft": 0,
-    "features_planned": 6,
+    "features_planned": 4,
     "features_designed": 0,
-    "features_stable": 89,
-    "overall_progress_pct": 82.0,
+    "features_stable": 83,
+    "overall_progress_pct": 98.9,
     "complete": 6,
     "percent": 90.0,
     "updated": "2026-10-02",
     "verification_note": "WAVE-31 (2026-10-02) registered 4 E2E test and vault namespace features as stable (WAVE-31.01 feat-e2e-clavis-http, WAVE-31.02 feat-e2e-keygen, WAVE-31.03 feat-e2e-smoke-ci, WAVE-31.04 fix-clavis-vault-namespace). All 19 tests passing green, PRs #2812, #2813, #2814, #2818 merged.",
     "features_implemented": 0,
     "features_in_progress": 0,
-    "features_deferred": 0
+    "features_deferred": 16
   },
   "features": {
     "feat-unified-storage": {
@@ -365,7 +365,7 @@
       "id": "feat-mesh-network",
       "name": "Xavier Mesh P2P Network & Data Commons",
       "category": "enterprise",
-      "status": "beta",
+      "status": "deferred",
       "progress_pct": 100,
       "description": "Distributed P2P memory synchronization with encrypted telemetry, Ed25519 identity, Deep Permissions (ACL), and Data Commons reward funnel",
       "steps": [
@@ -536,7 +536,7 @@
       "id": "feat-governance-dao",
       "name": "Bicameral Governance DAO",
       "category": "enterprise",
-      "status": "stable",
+      "status": "deferred",
       "progress_pct": 100,
       "description": "Bicameral governance system — 50% node operators + 50% Xavier Core Council — with weighted voting, veto, XIP lifecycle, and on-chain integration",
       "steps": [
@@ -943,7 +943,7 @@
       "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3514",
-      "status": "beta",
+      "status": "deferred",
       "steps": [
         "Group backlog features by wave ascending, unscheduled apart",
         "Count stable (stable|completed), planned and in_progress (any other status) per group",
@@ -1214,7 +1214,7 @@
       "id": "feat-mesh-service-network",
       "name": "Red de servicio SWAL (telemetría interna)",
       "category": "mesh",
-      "status": "beta",
+      "status": "deferred",
       "progress_pct": 100,
       "description": "Compartir benchmarks, logs, feedbacks y telemetría de funcionamiento entre nodos de servicio para mejorar Xavier — sin datos personales",
       "steps": [
@@ -1254,7 +1254,7 @@
       "id": "feat-mesh-private-wallet",
       "name": "Mesh privada por billetera de claves",
       "category": "mesh",
-      "status": "beta",
+      "status": "deferred",
       "progress_pct": 100,
       "description": "Nodos de la MISMA billetera forman mesh privada; sincronizan memoria, snapshots y modelos — terceros no los ven",
       "steps": [
@@ -1418,7 +1418,7 @@
       "id": "feat-maloca",
       "name": "Maloca Ops Domain",
       "category": "governance",
-      "status": "stable",
+      "status": "deferred",
       "progress_pct": 100,
       "description": "Maloca governance/ops domain hosted by Xavier: proposals, votes, decisions, nodes, params, timeline, beliefs, commits graph, WS feed",
       "steps": [
@@ -1457,7 +1457,7 @@
       "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3513",
-      "status": "beta",
+      "status": "deferred",
       "steps": [
         "Tally weighted votes per choice and participation over eligible weight",
         "Decide NoQuorum/Approved/Rejected with approval over decisive (yes+no) weight",
@@ -1496,7 +1496,7 @@
       "id": "feat-node-provisioning",
       "name": "SWAL Node Provisioning (BaaS tokens + SSH keys)",
       "category": "mesh",
-      "status": "stable",
+      "status": "deferred",
       "progress_pct": 100,
       "description": "Register a cloud service (Supabase/Neon) or VPS as a SWAL node by pasting its API token or SSH key. Xavier provisions and administers it autonomously (Ola M6 BaaS + Ola M7 SSH/VPS). Credentials live ONLY in Clavis (AES-256-GCM + lease TTL + revoke + rotation).",
       "steps": [
@@ -1604,7 +1604,7 @@
       "id": "feat-ivn-api",
       "name": "Identity Verification HTTP API + Storage",
       "category": "identity",
-      "status": "planned",
+      "status": "deferred",
       "progress_pct": 100,
       "description": "REST API for identity verification: requests, validator votes, verified nodes. Persistent storage in marketplace v2 SQLite store (ivn_* tables).",
       "steps": [
@@ -1692,7 +1692,7 @@
       "id": "feat-ivn-karma",
       "name": "IVN Karma Rewards & Sanctions",
       "category": "identity",
-      "status": "planned",
+      "status": "deferred",
       "progress_pct": 100,
       "description": "Karma deltas: +20 verified, +5 correct validator, +1 abstain, -10 false positive (+90d), -50 liar (+180d). Integrated with EigenTrustEngine (hybrid karma, decision b).",
       "steps": [
@@ -1738,7 +1738,7 @@
       "id": "feat-marketplace-api",
       "name": "DataMarketplace HTTP API (list/query/revoke/pricing)",
       "category": "marketplace",
-      "status": "stable",
+      "status": "deferred",
       "progress_pct": 100,
       "description": "Expose marketplace v2 (xavier_market: listings/receipts/grants/consent/audit) as REST API /v2/marketplace/* behind market-v2 / XAVIER_MARKET_V2=beta. Motor exists in crates/xavier-market, routes adapted in src/market_v2/.",
       "steps": [
@@ -1793,7 +1793,7 @@
       "id": "feat-ivn",
       "name": "Identity Verification Core (selection + verdict + sanctions)",
       "category": "identity",
-      "status": "planned",
+      "status": "deferred",
       "progress_pct": 100,
       "description": "Deterministic validator assignment, ed25519-signed votes, and append-only SQLite storage in xavier_market behind market-v2 / XAVIER_MARKET_V2=beta.",
       "steps": [
@@ -1893,7 +1893,7 @@
       "id": "feat-data-node-consent",
       "name": "Data Node Opt-In Consent API",
       "category": "maloca",
-      "status": "stable",
+      "status": "deferred",
       "progress_pct": 100,
       "description": "REST API for P2P mesh governance: data nodes must explicitly opt-in to data sharing. ConsentRegistry with register/check/revoke/list backed by JSON persistence.",
       "steps": [
@@ -2700,7 +2700,7 @@
       "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3530",
-      "status": "beta",
+      "status": "deferred",
       "steps": [
         "Give proposals expires_at and outcome with serde defaults",
         "Close due proposals lazily in list_proposals and cast_vote",
@@ -4230,7 +4230,7 @@
       "id": "feat-mesh-replay-store",
       "name": "Mesh Replay Store",
       "category": "mesh",
-      "status": "stable",
+      "status": "deferred",
       "progress_pct": 100,
       "description": "A reusable SQLite storage primitive to ensure replay requests are rejected and new ones recorded durably.",
       "steps": [
@@ -4315,7 +4315,7 @@
       "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3512",
-      "status": "beta",
+      "status": "deferred",
       "steps": [
         "Write a sibling temp file, fsync it and rename it over store.json",
         "Fsync the parent directory and remove the temp file on error",

@@ -230,7 +230,7 @@ class PromoterTests(unittest.TestCase):
 
     def test_real_incomplete_features_block_even_with_green_evidence(self):
         ledger = json.loads((SCRIPTS.parent / '.gitcore' / 'features.json').read_text())
-        for fid in ('feat-encryption-at-rest', 'feat-mesh-network', 'feat-vault-hardening'):
+        for fid in ('feat-encryption-at-rest', 'feat-vault-hardening'):
             with self.subTest(feature=fid):
                 feature = ledger['features'][fid]
                 self.assertEqual('beta', feature['status'])
