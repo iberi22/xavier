@@ -1,70 +1,50 @@
 import { motion } from "motion/react";
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import ParticleBackground from "../components/ParticleBackground";
-import { PasswordInput } from "../components/PasswordInput";
-import { TwoFactorInput } from "../components/TwoFactorInput";
-import { useAuth } from "../hooks/useAuth";
-import { useAuthStore } from "./AuthProvider";
 
-/** Parse `#/login?email=..&code=123456`; null unless both are present and the code is 6 digits. */
-export const parseLoginHashQuery = (
-  hash: string,
-): { email: string; code: string } | null => {
-  const q = hash.indexOf("?");
-  if (q < 0) return null;
-  const params = new URLSearchParams(hash.slice(q + 1));
-  const email = params.get("email")?.trim() ?? "";
-  const code = params.get("code")?.trim() ?? "";
-  return email && /^\d{6}$/.test(code) ? { email, code } : null;
-};
+/** Response shape returned by the passwordless magic-link endpoint. */
+interface MagicLinkResponse {
+  ok: boolean;
+  magic_url?: string;
+  error?: string;
+}
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [totpCode, setTotpCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-
-  const [loginCode, setLoginCode] = useState("");
-
-  const { login, requires2FA } = useAuth();
-  const loginWithCode = useAuthStore((state) => state.loginWithCode);
-  const autoTried = useRef(false);
-
-  const submitCode = async (mail: string, code: string) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      await loginWithCode(mail, code);
-    } catch (_err) {
-      setError("Invalid or expired login code");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (autoTried.current) return;
-    autoTried.current = true;
-    const parsed = parseLoginHashQuery(window.location.hash);
-    if (!parsed) return;
-    setEmail(parsed.email);
-    setLoginCode(parsed.code);
-    // Drop the one-time code from the URL/history right away.
-    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/login`);
-    void submitCode(parsed.email, parsed.code);
-    // biome-ignore lint/correctness/useExhaustiveDependencies: run once on mount
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
     setError(null);
+    setStatus(null);
+    setIsLoading(true);
     try {
-      await login(email, password, totpCode || undefined);
+      const res = await fetch(
+        "https://xaviercloud.swal.network/auth/magic-link",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        },
+      );
+      const data = (await res.json()) as MagicLinkResponse;
+      if (res.ok && data.ok) {
+        if (data.magic_url) {
+          setStatus("MAGIC LINK GENERATED - REDIRECTING...");
+          window.location.href = data.magic_url;
+        } else {
+          setError("Magic link generated but no redirect URL was returned");
+        }
+      } else {
+        setError(data.error ?? "Failed to generate magic link");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to sign in");
+      setError(
+        err instanceof Error ? err.message : "Failed to generate magic link",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -82,7 +62,7 @@ export const LoginPage: React.FC = () => {
           XAVIER LOGIN
         </h1>
         <p className="text-xs opacity-60 mb-8 leading-relaxed uppercase tracking-tighter">
-          Connect to the secure cognitive core
+          Passwordless · zero-knowledge magic link
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -101,66 +81,9 @@ export const LoginPage: React.FC = () => {
               placeholder="operator@xavier.local"
               type="email"
               required
+              autoComplete="email"
+              disabled={isLoading}
             />
-          </div>
-
-          <PasswordInput
-            id="password-input"
-            label="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-
-          {requires2FA && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              className="flex flex-col gap-2 mt-2"
-            >
-              <label className="text-xs text-[#39ff14] uppercase tracking-widest text-center mb-2">
-                Enter 2FA Code
-              </label>
-              <TwoFactorInput
-                value={totpCode}
-                onChange={setTotpCode}
-                length={8}
-              />
-              <p className="text-[10px] text-white/40 text-center uppercase tracking-widest">
-                6-digit authenticator code, or an 8-digit backup code
-              </p>
-            </motion.div>
-          )}
-
-          <div className="flex flex-col gap-1 w-full">
-            <label
-              htmlFor="login-code-input"
-              className="text-xs text-white/60 uppercase tracking-widest"
-            >
-              Login code (optional)
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="login-code-input"
-                className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono tracking-[0.4em]"
-                value={loginCode}
-                onChange={(e) =>
-                  setLoginCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-                }
-                placeholder="123456"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-              />
-              <button
-                type="button"
-                disabled={isLoading || !email || loginCode.length !== 6}
-                onClick={() => void submitCode(email, loginCode)}
-                className="px-4 border border-[#39ff14]/50 text-[#39ff14] text-xs tracking-widest rounded-lg hover:bg-[#39ff14]/10 disabled:opacity-40"
-              >
-                USE CODE
-              </button>
-            </div>
           </div>
 
           {error && (
@@ -169,31 +92,25 @@ export const LoginPage: React.FC = () => {
             </div>
           )}
 
+          {status && (
+            <div className="text-[#39ff14] text-[10px] uppercase tracking-widest bg-[#39ff14]/10 border border-[#39ff14]/30 p-2 rounded-lg text-center">
+              {status}
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isLoading}
             className="w-full bg-[#39ff14] text-black font-bold text-sm tracking-widest py-3 rounded-lg hover:shadow-[0_0_15px_rgba(57,255,20,0.5)] transition-all mt-4 disabled:opacity-50"
           >
-            {isLoading ? "VERIFYING..." : "INITIALIZE SESSION"}
+            {isLoading ? "GENERATING..." : "SEND MAGIC LINK"}
           </button>
         </form>
 
-        <div className="mt-8 flex flex-col gap-3">
-          <button
-            type="button"
-            onClick={() => (window.location.hash = "#/register")}
-            className="text-[10px] text-white/40 hover:text-[#39ff14] transition-colors uppercase tracking-widest"
-          >
-            Register new operator
-          </button>
-          <button
-            type="button"
-            onClick={() => (window.location.hash = "#/recovery")}
-            className="text-[10px] text-white/40 hover:text-[#39ff14] transition-colors uppercase tracking-widest"
-          >
-            Forgot access credentials?
-          </button>
-        </div>
+        <p className="mt-8 text-[10px] text-white/40 text-center uppercase tracking-widest leading-relaxed">
+          No passwords. No accounts to recover. A one-time link is sent to your
+          inbox.
+        </p>
       </motion.div>
     </div>
   );

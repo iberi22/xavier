@@ -16,7 +16,7 @@
 import type React from "react";
 import { createContext, useEffect } from "react";
 import { create } from "zustand";
-import { AuthApiError, authClient } from "../api/authClient";
+import { AuthApiError, authClient, type RefreshResponse } from "../api/authClient";
 import type { AuthState, User } from "../types";
 
 // SECURITY: the panel authenticates purely via the /auth/* session (cookie/token flow) —

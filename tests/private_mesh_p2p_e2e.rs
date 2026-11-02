@@ -12,7 +12,7 @@ xavier::isolate_test_process!();
 #[tokio::test]
 #[serial]
 async fn test_p2p_same_wallet_peer_handshake() {
-    let owner = NodeIdentity::generate();
+    let owner = Arc::new(NodeIdentity::generate());
     let wallet = xavier::mesh::derive_wallet_id(&owner.public_key);
     let identity_a = Arc::new(NodeIdentity::generate());
     let identity_b = Arc::new(NodeIdentity::generate());
@@ -71,14 +71,14 @@ async fn test_p2p_same_wallet_peer_handshake() {
     let register = |url: String,
                     identity: Arc<NodeIdentity>,
                     wallet: String,
-                    owner: &NodeIdentity,
+                    owner: Arc<NodeIdentity>,
                     iroh_addr: Option<String>| {
         let client = client.clone();
         async move {
             let node = identity.node_id.as_str().to_string();
             let reg_challenge = challenge(client.clone(), url.clone(), wallet.clone()).await;
             let reg_proof = xavier::mesh::wallet_ownership::sign_wallet_registration(
-                owner,
+                &owner,
                 &reg_challenge,
                 &node,
             );
@@ -105,7 +105,7 @@ async fn test_p2p_same_wallet_peer_handshake() {
             url_a.clone(),
             identity_a.clone(),
             wallet.clone(),
-            &owner,
+            owner.clone(),
             None
         )
         .await,
@@ -116,7 +116,7 @@ async fn test_p2p_same_wallet_peer_handshake() {
             url_a.clone(),
             identity_b.clone(),
             wallet.clone(),
-            &owner,
+            owner.clone(),
             None
         )
         .await,
@@ -127,7 +127,7 @@ async fn test_p2p_same_wallet_peer_handshake() {
             url_b.clone(),
             identity_b.clone(),
             wallet.clone(),
-            &owner,
+            owner.clone(),
             None
         )
         .await,
@@ -138,7 +138,7 @@ async fn test_p2p_same_wallet_peer_handshake() {
             url_b.clone(),
             identity_a.clone(),
             wallet.clone(),
-            &owner,
+            owner.clone(),
             None
         )
         .await,
@@ -151,7 +151,7 @@ async fn test_p2p_same_wallet_peer_handshake() {
             url_a.clone(),
             identity_c.clone(),
             wallet_c.clone(),
-            &identity_c,
+            identity_c.clone(),
             None
         )
         .await,
@@ -164,7 +164,7 @@ async fn test_p2p_same_wallet_peer_handshake() {
             url_a.clone(),
             identity_c.clone(),
             wallet.clone(),
-            &identity_c,
+            identity_c.clone(),
             None
         )
         .await,
@@ -179,7 +179,7 @@ async fn test_p2p_same_wallet_peer_handshake() {
 #[tokio::test]
 #[serial]
 async fn test_bidirectional_memory_replication() {
-    let owner = NodeIdentity::generate();
+    let owner = Arc::new(NodeIdentity::generate());
     let wallet = xavier::mesh::derive_wallet_id(&owner.public_key);
     let identity_a = Arc::new(NodeIdentity::generate());
     let identity_b = Arc::new(NodeIdentity::generate());
@@ -236,12 +236,12 @@ async fn test_bidirectional_memory_replication() {
     let register = |url: String, identity: Arc<NodeIdentity>, iroh_addr: Option<String>| {
         let client = client.clone();
         let wallet = wallet.clone();
-        let owner = &owner;
+        let owner = owner.clone();
         async move {
             let node = identity.node_id.as_str().to_string();
             let reg_challenge = challenge(client.clone(), url.clone(), wallet.clone()).await;
             let reg_proof = xavier::mesh::wallet_ownership::sign_wallet_registration(
-                owner,
+                &owner,
                 &reg_challenge,
                 &node,
             );
@@ -367,7 +367,7 @@ async fn test_bidirectional_memory_replication() {
 #[serial]
 #[ignore = "bug: vectors are dropped from PrivateSyncApiRequest"]
 async fn test_private_vector_delta_replication() {
-    let owner = NodeIdentity::generate();
+    let owner = Arc::new(NodeIdentity::generate());
     let wallet = xavier::mesh::derive_wallet_id(&owner.public_key);
     let identity_a = Arc::new(NodeIdentity::generate());
     let identity_b = Arc::new(NodeIdentity::generate());
@@ -424,12 +424,12 @@ async fn test_private_vector_delta_replication() {
     let register = |url: String, identity: Arc<NodeIdentity>, iroh_addr: Option<String>| {
         let client = client.clone();
         let wallet = wallet.clone();
-        let owner = &owner;
+        let owner = owner.clone();
         async move {
             let node = identity.node_id.as_str().to_string();
             let reg_challenge = challenge(client.clone(), url.clone(), wallet.clone()).await;
             let reg_proof = xavier::mesh::wallet_ownership::sign_wallet_registration(
-                owner,
+                &owner,
                 &reg_challenge,
                 &node,
             );
@@ -505,7 +505,7 @@ async fn test_private_vector_delta_replication() {
 #[serial]
 #[ignore = "bug: no offline replay queue drain mechanism"]
 async fn test_offline_disconnect_replay_queue() {
-    let owner = NodeIdentity::generate();
+    let owner = Arc::new(NodeIdentity::generate());
     let wallet = xavier::mesh::derive_wallet_id(&owner.public_key);
     let identity_a = Arc::new(NodeIdentity::generate());
     let identity_b = Arc::new(NodeIdentity::generate());
@@ -562,12 +562,12 @@ async fn test_offline_disconnect_replay_queue() {
     let register = |url: String, identity: Arc<NodeIdentity>, iroh_addr: Option<String>| {
         let client = client.clone();
         let wallet = wallet.clone();
-        let owner = &owner;
+        let owner = owner.clone();
         async move {
             let node = identity.node_id.as_str().to_string();
             let reg_challenge = challenge(client.clone(), url.clone(), wallet.clone()).await;
             let reg_proof = xavier::mesh::wallet_ownership::sign_wallet_registration(
-                owner,
+                &owner,
                 &reg_challenge,
                 &node,
             );

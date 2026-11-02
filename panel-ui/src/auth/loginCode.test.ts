@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "./AuthProvider";
-import { parseLoginHashQuery } from "./LoginPage";
 
 const RT_KEY = "xavier.rt";
 const okBody = {
@@ -18,21 +17,6 @@ const reset = () =>
 		refreshToken: null,
 		isAuthenticated: false,
 	});
-
-describe("parseLoginHashQuery", () => {
-	it("extracts email and code", () => {
-		expect(parseLoginHashQuery("#/login?email=a%40b.c&code=123456")).toEqual({
-			email: "a@b.c",
-			code: "123456",
-		});
-	});
-	it("returns null when missing or malformed", () => {
-		expect(parseLoginHashQuery("#/login")).toBeNull();
-		expect(parseLoginHashQuery("#/login?email=a@b.c")).toBeNull();
-		expect(parseLoginHashQuery("#/login?email=a@b.c&code=12ab56")).toBeNull();
-		expect(parseLoginHashQuery("")).toBeNull();
-	});
-});
 
 describe("auth store with login codes", () => {
 	beforeEach(() => {
