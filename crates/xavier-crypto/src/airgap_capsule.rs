@@ -9,7 +9,6 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use anyhow::{bail, Context, Result};
 use argon2::{Algorithm, Argon2, Params, Version};
 use chrono::{DateTime, Utc};
-#[cfg(test)]
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
@@ -78,8 +77,7 @@ pub struct AirgapCapsule;
 
 impl AirgapCapsule {
     /// Encrypts plaintext data with an Argon2id-derived key and packages it into a binary capsule
-    #[cfg(test)]
-    pub(crate) fn pack_with_passphrase(
+    pub fn pack_with_passphrase(
         plaintext: &[u8],
         payload_kind: CapsulePayloadKind,
         original_filename: String,

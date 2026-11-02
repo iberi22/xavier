@@ -8,16 +8,7 @@ use zip::write::SimpleFileOptions;
 
 xavier::isolate_test_process!();
 
-// Compile the capsule engine locally so creation remains test-only.
-mod crypto {
-    pub use xavier::crypto::{hex_decode, hex_encode};
-}
-#[allow(dead_code)]
-#[path = "../crates/xavier-crypto/src/airgap_capsule.rs"]
-mod capsule_engine {
-    include!("../crates/xavier-crypto/src/airgap_capsule.rs");
-}
-use capsule_engine::{AirgapCapsule, CapsulePayloadKind};
+use xavier::crypto::{AirgapCapsule, CapsulePayloadKind};
 
 const PASS: &str = "airgap test passphrase";
 const DATA: &[u8] = b"capsule test data";
