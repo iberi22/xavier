@@ -204,4 +204,47 @@ test.describe("Onboarding Flow (pending wave-theme)", () => {
       )
       .toBe("true");
   });
+
+
+    test("Web Cloud Domain: automatically bypasses onboarding flow without hardware diagnostics", async ({ page }) => {
+    test.setTimeout(60_000);
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error") {
+        consoleErrors.push(msg.text());
+      }
+    });
+
+    // Navigate with a cloud environment trigger (hash starts with #/session)
+    await page.goto("/#/session?cloud_domain_test=1");
+    await page.waitForTimeout(1000); // Give it a moment to render TopStatusBar
+
+    // Assert that 'INITIALIZING XAVIER_' is never rendered (i.e. onboarding is bypassed)
+    await expect(page.getByText('INITIALIZING XAVIER_')).toBeHidden();
+
+    // Assert that TopStatusBar or main dashboard layout is immediately visible
+    await expect(page.getByTitle('Abrir Maloca (ops workspace)')).toBeVisible({ timeout: 10000 });
+
+    const unauthErrors = consoleErrors.filter((e) => e.includes("401"));
+    expect(unauthErrors).toHaveLength(0);
+    const criticalErrors = consoleErrors.filter(e => !e.includes("404"));
+    expect(criticalErrors).toHaveLength(0);
+  });
+
+  test("Magic Link Session Hash: synchronously hydrates auth state and bypasses onboarding", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.goto("/#/session?token=swal_sess_test_123&email=user@swal.network&tenant=swal");
+    await page.waitForTimeout(1000);
+
+    // Assert that 'INITIALIZING XAVIER_' is skipped
+    await expect(page.getByText('INITIALIZING XAVIER_')).toBeHidden();
+
+    // Assert that sessionStorage.getItem("xavier.rt") contains swal_sess_test_123
+    const rt = await page.evaluate(() => sessionStorage.getItem("xavier.rt"));
+    expect(rt).toBe("swal_sess_test_123");
+
+    // Assert that window.location.hash is cleaned or updated to remove sensitive query parameters
+    const hash = await page.evaluate(() => window.location.hash);
+    expect(hash).not.toContain("token=swal_sess_test_123");
+  });
 });
