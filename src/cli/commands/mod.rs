@@ -414,6 +414,32 @@ impl Cli {
             Command::Token { cmd } => token::handle_token_command(cmd.clone()).await,
             Command::Users { cmd } => users::handle_users_command(cmd.clone()).await,
             Command::Provider { cmd } => provider::handle_provider_command(cmd.clone()).await,
+            Command::Models { cmd } => match cmd {
+                enums::ModelsCommand::Fetch { model } => {
+                    crate::cli::handlers::offline_models::run_models_fetch_cli(model)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to fetch model {}: {}", model, e))
+                }
+                enums::ModelsCommand::List { json } => {
+                    let settings = crate::settings::XavierSettings::current();
+                    if *json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&serde_json::json!({
+                                "status": "ok",
+                                "local_model_dirs": settings.models.local_model_dirs,
+                                "auto_start_last_model": settings.models.auto_start_last_model,
+                            }))?
+                        );
+                    } else {
+                        println!(
+                            "Local model directories: {:?}",
+                            settings.models.local_model_dirs
+                        );
+                    }
+                    Ok(())
+                }
+            },
             Command::Llm(args) => llm::handle(args).await,
             Command::Setup {
                 local,

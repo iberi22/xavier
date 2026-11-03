@@ -1,3 +1,5 @@
+xavier::isolate_test_process!();
+
 use sha2::{Digest, Sha256};
 use std::fs;
 use tempfile::tempdir;

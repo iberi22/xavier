@@ -1727,7 +1727,8 @@
       "last_tested": "2026-11-03",
       "implemented_in": "src/embedding/downloader.rs, src/cli/handlers/offline_models.rs",
       "tests": [
-        "test_mock_download_success_and_atomic_rename"
+        "test_mock_download_success_and_atomic_rename",
+        "test_cli_models_fetch_e2e"
       ]
     },
     "feat-embed-modality-selector": {

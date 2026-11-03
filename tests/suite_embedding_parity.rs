@@ -1,3 +1,5 @@
+xavier::isolate_test_process!();
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::sync::Arc;

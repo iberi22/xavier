@@ -17,3 +17,4 @@ Autonomous model downloader with atomic extraction, SHA-256 verification, and di
 
 ## Test References
 - `tests/model_downloader_test.rs` integration tests with mock HTTP server, atomic rename, and hash integrity checks.
+- `tests/cli_models_e2e.rs` end-to-end CLI command tests validating `xavier models fetch` and `xavier models list`.

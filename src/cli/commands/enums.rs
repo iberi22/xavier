@@ -314,6 +314,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: ProviderCommand,
     },
+    /// Manage and fetch local/offline embedding models (ADR-042)
+    Models {
+        #[command(subcommand)]
+        cmd: ModelsCommand,
+    },
     /// Configure and probe language models (general or explanation scope)
     Llm(super::llm::LlmArgs),
     /// Run interactive system detection or unattended local configuration
@@ -1508,6 +1513,23 @@ pub enum TenantsCommand {
         /// Force local mode (bypass daemon)
         #[arg(long, default_value_t = false)]
         local: bool,
+    },
+}
+
+/// Subcommands for `xavier models` (ADR-042)
+#[derive(Subcommand, Debug, Clone)]
+pub enum ModelsCommand {
+    /// Fetch and verify an embedding model asset into the local model store
+    Fetch {
+        /// Name of the model to download (e.g. embeddinggemma)
+        #[arg(long)]
+        model: String,
+    },
+    /// List configured local model directories and status
+    List {
+        /// Output as JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
     },
 }
 

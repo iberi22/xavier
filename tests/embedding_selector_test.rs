@@ -1,3 +1,5 @@
+xavier::isolate_test_process!();
+
 use xavier::embedding::selector::{ContentModality, EmbeddingSelector};
 use xavier::server::alerts::SYSTEM_ALERTS;
 
