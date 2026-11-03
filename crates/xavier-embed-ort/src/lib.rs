@@ -1,9 +1,11 @@
 pub mod pooling;
 pub mod tokenizer;
 
-use ndarray::{Array2, CowArray};
-use ort::{Environment, Session, SessionBuilder, Tensor, Value};
+use ort::session::builder::GraphOptimizationLevel;
+use ort::session::Session;
+use ort::value::Tensor;
 use std::path::Path;
+use std::sync::Mutex;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -11,13 +13,13 @@ pub enum EmbedOrtError {
     #[error("Tokenizer error: {0}")]
     Tokenizer(String),
     #[error("ONNX Runtime error: {0}")]
-    Ort(#[from] ort::Error),
+    Ort(String),
     #[error("Model not found at {0}")]
     ModelNotFound(String),
 }
 
 pub struct OrtEmbedder {
-    session: Session,
+    session: Mutex<Session>,
     tokenizer: tokenizer::TextTokenizer,
 }
 
@@ -33,13 +35,19 @@ impl OrtEmbedder {
         let tokenizer = tokenizer::TextTokenizer::new(model_dir)
             .map_err(|e| EmbedOrtError::Tokenizer(e.to_string()))?;
 
-        // let env = Environment::builder().with_name("xavier-embed-ort").build()?.into_arc();
-        let session = Session::builder()?
-            .with_optimization_level(ort::GraphOptimizationLevel::Level3)?
-            .with_intra_threads(4)?
-            .commit_from_file(model_path)?;
+        let session = Session::builder()
+            .map_err(|e| EmbedOrtError::Ort(e.to_string()))?
+            .with_optimization_level(GraphOptimizationLevel::Level3)
+            .map_err(|e| EmbedOrtError::Ort(e.to_string()))?
+            .with_intra_threads(4)
+            .map_err(|e| EmbedOrtError::Ort(e.to_string()))?
+            .commit_from_file(model_path)
+            .map_err(|e| EmbedOrtError::Ort(e.to_string()))?;
 
-        Ok(Self { session, tokenizer })
+        Ok(Self {
+            session: Mutex::new(session),
+            tokenizer,
+        })
     }
 
     pub fn embed_query(&self, text: &str) -> Result<Vec<f32>, EmbedOrtError> {
@@ -69,27 +77,30 @@ impl OrtEmbedder {
     ) -> Result<Vec<f32>, EmbedOrtError> {
         let seq_length = input_ids.len();
 
-        let input_ids_array = Array2::from_shape_vec((1, seq_length), input_ids).unwrap();
-        let attention_mask_array =
-            Array2::from_shape_vec((1, seq_length), attention_mask.clone()).unwrap();
+        let input_ids_tensor = Tensor::from_array(([1usize, seq_length], input_ids))
+            .map_err(|e| EmbedOrtError::Ort(e.to_string()))?;
+        let attention_mask_tensor =
+            Tensor::from_array(([1usize, seq_length], attention_mask.clone()))
+                .map_err(|e| EmbedOrtError::Ort(e.to_string()))?;
 
-        let input_ids_tensor = Tensor::from_array(input_ids_array)?;
-        let attention_mask_tensor = Tensor::from_array(attention_mask_array)?;
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|e| EmbedOrtError::Ort(e.to_string()))?;
 
-        let outputs = self.session.run(ort::inputs![
-            "input_ids" => input_ids_tensor,
-            "attention_mask" => attention_mask_tensor
-        ]?)?;
+        let outputs = session
+            .run(ort::inputs![
+                "input_ids" => input_ids_tensor,
+                "attention_mask" => attention_mask_tensor
+            ])
+            .map_err(|e| EmbedOrtError::Ort(e.to_string()))?;
 
-        let last_hidden_state = outputs["last_hidden_state"].try_extract_tensor::<f32>()?;
-        let hidden_size = last_hidden_state.shape()[2];
+        let (shape, data) = outputs["last_hidden_state"]
+            .try_extract_tensor::<f32>()
+            .map_err(|e| EmbedOrtError::Ort(e.to_string()))?;
+        let hidden_size = shape[2] as usize;
 
-        let pooled = pooling::mean_pooling(
-            last_hidden_state.as_slice().unwrap(),
-            &attention_mask,
-            seq_length,
-            hidden_size,
-        );
+        let pooled = pooling::mean_pooling(data, &attention_mask, seq_length, hidden_size);
         let normalized = pooling::l2_normalize(pooled);
 
         Ok(normalized)
