@@ -82,6 +82,7 @@ exclude = [
 ]
 members = [
     "crates/xavier-crypto",
+    "crates/xavier-embed-ort",
     "crates/xavier-plugin-protocol",
     "code-graph",
     "crates/xavier-core-logic",
@@ -101,6 +102,7 @@ members = [
 default = ["headless", "cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "panel-ui"]
 # Server build: HTTP + MCP + CLI only, no TUI and no panel routes. Build it with
 # `--no-default-features --features headless` (see docs/DEPLOY/LINUX_SERVER.md).
+embed-native = ["dep:xavier-embed-ort"]
 headless = ["self-manage", "pageindex"]
 panel-ui = []
 notification-in-app = []
@@ -188,6 +190,7 @@ harness = false
 xavier-crypto = { path = "crates/xavier-crypto" }
 xavier-core-logic = { path = "crates/xavier-core-logic" }
 xavier-market = { path = "crates/xavier-market", optional = true }
+xavier-embed-ort = { path = "crates/xavier-embed-ort", optional = true }
 xavier-pageindex = { path = "crates/xavier-pageindex", default-features = false, features = ["sqlite", "markdown"], optional = true }
 code-graph = { path = "./code-graph" }
 maloca-core = { path = "vendor/maloca-core" }

@@ -87,6 +87,12 @@
 | `XAVIER_WORKING_LRU_THRESHOLD` | `usize` | `2` | Access count threshold for LRU exemption | ❌ |
 | `XAVIER_WORKING_MEMORY_CAPACITY` | `usize` | `100` | Maximum items in working memory | ❌ |
 
+## Model & Embeddings
+
+| Variable | Type | Default | Description | Secret |
+|----------|------|---------|-------------|--------|
+| `XAVIER_MODEL_DOWNLOAD_BASE_URL` | `string` | (unset) | Base URL for downloading offline/local ONNX embedding models (ADR-042) | ❌ |
+
 ## Retrieval
 
 | Variable | Type | Default | Description | Secret |

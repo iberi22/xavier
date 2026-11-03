@@ -2767,3 +2767,11 @@ default = "(unset)"
 description = "Comma-separated list of allowed host authorities for MCP Streamable HTTP transport (supports wildcard *)"
 category = "Server & Network"
 secret = false
+
+[[variables]]
+name = "XAVIER_MODEL_DOWNLOAD_BASE_URL"
+type = "string"
+default = "(unset)"
+description = "Base URL for downloading offline/local ONNX embedding models (ADR-042)"
+category = "Model & Embeddings"
+secret = false

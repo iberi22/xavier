@@ -1,6 +1,6 @@
 import { motion } from "motion/react";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ParticleBackground from "../components/ParticleBackground";
 import { PasswordInput } from "../components/PasswordInput";
 import { TwoFactorInput } from "../components/TwoFactorInput";
@@ -14,6 +14,25 @@ interface MagicLinkResponse {
   error?: string;
 }
 
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (
+        container: string | HTMLElement,
+        options: {
+          sitekey: string;
+          callback: (token: string) => void;
+          "error-callback"?: () => void;
+          "expired-callback"?: () => void;
+          theme?: "dark" | "light" | "auto";
+          size?: "normal" | "compact" | "invisible";
+        },
+      ) => string;
+      reset: (widgetId: string) => void;
+    };
+  }
+}
+
 export const LoginPage: React.FC = () => {
   const [mode, setMode] = useState<"magic" | "password">("magic");
   const [email, setEmail] = useState("");
@@ -22,8 +41,55 @@ export const LoginPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetId = useRef<string | null>(null);
 
   const { login, requires2FA } = useAuth();
+
+  useEffect(() => {
+    const siteKey =
+      (typeof import.meta !== "undefined" &&
+        import.meta.env?.VITE_TURNSTILE_SITE_KEY) ||
+      "1x00000000000000000000AA"; // Cloudflare official test key
+
+    const renderWidget = () => {
+      if (
+        window.turnstile &&
+        turnstileContainerRef.current &&
+        !turnstileWidgetId.current
+      ) {
+        try {
+          turnstileWidgetId.current = window.turnstile.render(
+            turnstileContainerRef.current,
+            {
+              sitekey: siteKey,
+              theme: "dark",
+              size: "normal",
+              callback: (token: string) => setTurnstileToken(token),
+              "expired-callback": () => setTurnstileToken(null),
+              "error-callback": () => setTurnstileToken(null),
+            },
+          );
+        } catch {}
+      }
+    };
+
+    if (window.turnstile) {
+      renderWidget();
+    } else if (typeof document !== "undefined") {
+      const existing = document.getElementById("cf-turnstile-script");
+      if (!existing) {
+        const script = document.createElement("script");
+        script.id = "cf-turnstile-script";
+        script.src =
+          "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+        script.async = true;
+        script.onload = () => renderWidget();
+        document.head.appendChild(script);
+      }
+    }
+  }, []);
 
   const handleMagicSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +102,10 @@ export const LoginPage: React.FC = () => {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({
+            email,
+            turnstile_token: turnstileToken || undefined,
+          }),
         },
       );
       const data = (await res.json()) as MagicLinkResponse;
@@ -124,6 +193,13 @@ export const LoginPage: React.FC = () => {
                 disabled={isLoading}
               />
             </div>
+
+            <div
+              id="turnstile-container"
+              ref={turnstileContainerRef}
+              data-testid="turnstile-container"
+              className="my-1 flex justify-center min-h-[65px]"
+            />
 
             {error && (
               <div className="text-red-500 text-[10px] uppercase tracking-widest bg-red-500/10 border border-red-500/20 p-2 rounded-lg">

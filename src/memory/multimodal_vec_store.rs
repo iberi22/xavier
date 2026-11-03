@@ -17,6 +17,7 @@ use crate::memory::sqlite_vec_store::vector;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DataTypeKind {
+    Text,
     Legal,
     Code,
     Image,
@@ -28,6 +29,7 @@ impl DataTypeKind {
     /// Returns the isolated SQLite table name for this modality.
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::Text => "vec_text",
             Self::Legal => "vec_legal",
             Self::Code => "vec_code",
             Self::Image => "vec_image",
@@ -39,6 +41,7 @@ impl DataTypeKind {
     /// Default dimension for the given data type kind.
     pub fn default_dim(&self) -> usize {
         match self {
+            Self::Text => 768,
             Self::Legal => 1536,
             Self::Code => 384,
             Self::Image => 768,
@@ -164,14 +167,24 @@ impl MultimodalVecManager {
         vector: &[f32],
         payload_json: &str,
     ) -> Result<()> {
-        let table_name = modality.as_str();
         let expected_dim = self.get_modality_dim(conn, modality)?;
 
-        if vector.len() != expected_dim {
+        // Fallback dimensional routing: if inserting Code with 768d (due to fallback to Text embedder), route to vec_text
+        let target_modality =
+            if modality == DataTypeKind::Code && vector.len() == 768 && expected_dim == 1024 {
+                DataTypeKind::Text
+            } else {
+                modality
+            };
+
+        let target_expected_dim = self.get_modality_dim(conn, target_modality)?;
+        let table_name = target_modality.as_str();
+
+        if vector.len() != target_expected_dim {
             return Err(anyhow!(
                 "Dimension mismatch for modality '{}': expected {} dimensions, got {}",
                 table_name,
-                expected_dim,
+                target_expected_dim,
                 vector.len()
             ));
         }

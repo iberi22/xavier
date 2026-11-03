@@ -314,6 +314,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: ProviderCommand,
     },
+    /// Manage and fetch local/offline embedding models (ADR-042)
+    Models {
+        #[command(subcommand)]
+        cmd: ModelsCommand,
+    },
     /// Configure and probe language models (general or explanation scope)
     Llm(super::llm::LlmArgs),
     /// Run interactive system detection or unattended local configuration
@@ -1511,6 +1516,23 @@ pub enum TenantsCommand {
     },
 }
 
+/// Subcommands for `xavier models` (ADR-042)
+#[derive(Subcommand, Debug, Clone)]
+pub enum ModelsCommand {
+    /// Fetch and verify an embedding model asset into the local model store
+    Fetch {
+        /// Name of the model to download (e.g. embeddinggemma)
+        #[arg(long)]
+        model: String,
+    },
+    /// List configured local model directories and status
+    List {
+        /// Output as JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+}
+
 /// Local user account administration subcommands (operador con acceso al nodo).
 ///
 /// Leen y escriben directamente `<estado>/.xavier/auth.db`, la misma base que
@@ -2549,4 +2571,39 @@ pub enum IndexCommand {
     Add { path: String },
     /// Show index status
     Status,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser, Debug)]
+    struct CliTest {
+        #[command(subcommand)]
+        command: Command,
+    }
+
+    #[test]
+    fn test_models_command_parsing() {
+        let args = vec!["xavier", "models", "fetch", "--model", "embeddinggemma"];
+        let cli = CliTest::try_parse_from(args).expect("Should parse models fetch");
+        match cli.command {
+            Command::Models { cmd } => match cmd {
+                ModelsCommand::Fetch { model } => assert_eq!(model, "embeddinggemma"),
+                _ => panic!("Expected ModelsCommand::Fetch"),
+            },
+            _ => panic!("Expected Command::Models"),
+        }
+
+        let args_list = vec!["xavier", "models", "list", "--json"];
+        let cli_list = CliTest::try_parse_from(args_list).expect("Should parse models list");
+        match cli_list.command {
+            Command::Models { cmd } => match cmd {
+                ModelsCommand::List { json } => assert!(json),
+                _ => panic!("Expected ModelsCommand::List"),
+            },
+            _ => panic!("Expected Command::Models"),
+        }
+    }
 }

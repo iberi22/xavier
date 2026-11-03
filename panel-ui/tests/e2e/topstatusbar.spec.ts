@@ -95,6 +95,17 @@ test.describe("TopStatusBar End-to-End Smoke Tests", () => {
       window.localStorage.setItem("xavier_onboarding_completed", "true");
       window.localStorage.setItem("xavier_token", "mock-jwt-token");
       window.sessionStorage.setItem("xavier.rt", "mock-rt-token");
+      window.localStorage.setItem(
+        "auth-storage",
+        JSON.stringify({
+          state: {
+            token: "mock-jwt-token",
+            isAuthenticated: true,
+            user: { id: "1", email: "operator@xavier.local", role: "admin" },
+          },
+          version: 0,
+        })
+      );
     });
 
     await page.goto("/");
@@ -107,6 +118,10 @@ test.describe("TopStatusBar End-to-End Smoke Tests", () => {
     const loginButton = page.locator('button:has-text("INITIALIZE SESSION")');
     if (await loginButton.isVisible()) {
       await page.fill('input[type="email"]', "operator@xavier.local");
+      const otherMethodsBtn = page.locator('button:has-text("Otros métodos")');
+      if (await otherMethodsBtn.isVisible()) {
+        await otherMethodsBtn.click();
+      }
       const passwordInput = page.locator('input[type="password"]');
       if (await passwordInput.isVisible()) {
         await passwordInput.fill("password123");
