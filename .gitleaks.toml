@@ -25,6 +25,7 @@ commits = [
 ]
 regexes = [
   '''wp-ingest-jwt-secret-0123456789abcdef''',
+  '''sk-1234abcd5678efgh''',
 ]
 
 [[rules]]
