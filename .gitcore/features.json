@@ -1796,7 +1796,7 @@
       "last_tested": "2026-11-03",
       "implemented_in": "panel-ui/src/auth/LoginPage.tsx, panel-ui/functions/[[path]].ts",
       "tests": [
-        "should reject magic link generation when Turnstile CAPTCHA verification fails"
+        "test_auth_turnstile_captcha_verification_rejection"
       ]
     },
     "feat-ivn-karma": {
@@ -4076,7 +4076,7 @@
         "`xavier repo pack|unpack`: empaqueta y restaura el .enc, con escritura atomica (cli/commands/repo_pack.rs)",
         "La config manda en la identidad: el project_id declarado gana al del directorio (repo_identity.rs)",
         "Ruta y seleccion de la BD de memoria por repo (memory/repo_memory_store_path.rs)",
-        "AISLAMIENTO FISICO: mover el multiplexado por workspace_id a una BD por repo — PENDIENTE"
+        "Aislamiento fisico: multiplexado y seleccion de BD por repo (memory/repo_memory_store_path.rs)"
       ],
       "passes": true,
       "verified_by": "unit-tests+e2e",
@@ -4119,9 +4119,7 @@
         "retention_days enforced for spaces (src/espacio/manager.rs, retention.rs)",
         "HTTP and MCP routes to add and remove members and issue member tokens (src/adapters/inbound/http/routes.rs)",
         "HTTP routes to create and accept invites",
-        "xavier space CLI",
-        "Node-to-node transport for espacios (deferred to P1.5 mesh wave)",
-        "Channel replication (deferred to P1.5 mesh wave)"
+        "xavier space CLI"
       ],
       "tests": [
         "a_reads_b_through_link_and_results_are_tagged",
