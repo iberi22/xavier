@@ -1688,6 +1688,93 @@
         "test_backfill_idempotent_and_resumable"
       ]
     },
+    "feat-embed-native-gemma2": {
+      "id": "feat-embed-native-gemma2",
+      "name": "Native In-Process Gemma 2 ONNX Embeddings",
+      "category": "core",
+      "status": "planned",
+      "progress_pct": 100,
+      "description": "In-process vector embedding generation using Google Gemma 2 (768d) executed via ONNX Runtime without Ollama.",
+      "steps": [
+        "crates/xavier-embed-ort load-dynamic runtime",
+        "L2 normalization and mean pooling",
+        "Parity cosine verification against canonical fixture pairs"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-11-03",
+      "implemented_in": "crates/xavier-embed-ort, src/embedding/native.rs",
+      "tests": [
+        "test_embedding_parity_and_accuracy"
+      ]
+    },
+    "feat-embed-model-downloader": {
+      "id": "feat-embed-model-downloader",
+      "name": "Self-Managed Model Downloader & Verification",
+      "category": "core",
+      "status": "planned",
+      "progress_pct": 100,
+      "description": "Autonomous embedding model downloader with atomic rename, SHA256 integrity verification, and disk space protection.",
+      "steps": [
+        "ModelDownloader stream fetch engine",
+        "SHA-256 integrity verification",
+        "CLI models fetch command and REST endpoint"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-11-03",
+      "implemented_in": "src/embedding/downloader.rs, src/cli/handlers/offline_models.rs",
+      "tests": [
+        "test_mock_download_success_and_atomic_rename"
+      ]
+    },
+    "feat-embed-modality-selector": {
+      "id": "feat-embed-modality-selector",
+      "name": "On-Demand Modality Embedding Selector & Dimensional Fallback",
+      "category": "core",
+      "status": "planned",
+      "progress_pct": 100,
+      "description": "Dynamic selector routing Text to Gemma 2 (768d) and Code to Qwen (1024d) with circuit breaker and fallback table insertion.",
+      "steps": [
+        "EmbeddingSelector modality classification heuristics",
+        "Ollama Qwen health probe circuit breaker",
+        "MultimodalVecManager fallback table routing and dimension validation"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-11-03",
+      "implemented_in": "src/embedding/selector.rs, src/memory/multimodal_vec_store.rs",
+      "tests": [
+        "test_modality_selection",
+        "test_selector_fallback",
+        "test_dimension_mismatch_rejection",
+        "test_dimension_fallback_routing"
+      ]
+    },
+    "feat-auth-turnstile-captcha": {
+      "id": "feat-auth-turnstile-captcha",
+      "name": "Cloudflare Turnstile Frictionless CAPTCHA Protection",
+      "category": "security",
+      "status": "planned",
+      "progress_pct": 100,
+      "description": "Frictionless Turnstile CAPTCHA protection on panel authentication endpoints with edge verification.",
+      "steps": [
+        "LoginPage Turnstile widget integration",
+        "Cloudflare Pages Functions edge verification gate",
+        "Adversarial E2E token validation test"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-11-03",
+      "implemented_in": "panel-ui/src/auth/LoginPage.tsx, panel-ui/functions/[[path]].ts",
+      "tests": [
+        "should reject magic link generation when Turnstile CAPTCHA verification fails"
+      ]
+    },
     "feat-ivn-karma": {
       "id": "feat-ivn-karma",
       "name": "IVN Karma Rewards & Sanctions",
