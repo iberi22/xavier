@@ -8,6 +8,10 @@
 
 xavier::isolate_test_process!();
 
+#[path = "cross_mesh_federation_e2e.rs"]
+#[cfg(feature = "mesh")]
+mod cross_mesh_federation_e2e;
+
 #[path = "memory_write_integrity_e2e.rs"]
 mod memory_write_integrity_e2e;
 
@@ -70,3 +74,7 @@ mod mesh_replay_store_e2e;
 
 #[path = "space_tenant_cli_e2e.rs"]
 mod space_tenant_cli_e2e;
+
+#[path = "private_mesh_p2p_e2e.rs"]
+#[cfg(feature = "mesh")]
+mod private_mesh_p2p_e2e;

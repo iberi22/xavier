@@ -45,6 +45,8 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
     // Bypass onboarding and set authenticated session
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_onboarding_completed", "true");
+      window.localStorage.setItem("xavier_token", "mock-jwt-token");
+      window.sessionStorage.setItem("xavier.rt", "mock-rt-token");
       window.localStorage.setItem(
         "auth-storage",
         JSON.stringify({
@@ -67,7 +69,10 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
     const loginButton = page.locator('button:has-text("INITIALIZE SESSION")');
     if (await loginButton.isVisible()) {
       await page.fill('input[type="email"]', "operator@xavier.local");
-      await page.fill('input[type="password"]', "password123");
+      const passwordInput = page.locator('input[type="password"]');
+      if (await passwordInput.isVisible()) {
+        await passwordInput.fill("password123");
+      }
       await loginButton.click();
       await page.waitForTimeout(1000);
     }
