@@ -12,6 +12,7 @@ use thiserror::Error;
 use tracing::info;
 
 pub mod cache;
+pub mod downloader;
 pub mod fallback;
 pub mod gllm;
 pub mod ollama;
