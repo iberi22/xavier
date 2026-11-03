@@ -4,12 +4,16 @@ use reqwest;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ContentModality {
     Text,
     Code,
     Documentation,
     Audit,
+    Image,
+    Audio,
+    Video,
 }
 
 pub struct EmbeddingSelector {
@@ -57,11 +61,20 @@ impl EmbeddingSelector {
 
     pub fn select_modality(content: &str, extension: Option<&str>) -> ContentModality {
         if let Some(ext) = extension {
-            match ext {
-                "rs" | "py" | "js" | "ts" | "c" | "cpp" | "java" | "go" => {
-                    return ContentModality::Code
+            match ext.to_ascii_lowercase().as_str() {
+                "rs" | "py" | "js" | "ts" | "c" | "cpp" | "java" | "go" | "rust" => {
+                    return ContentModality::Code;
                 }
-                "md" | "txt" => return ContentModality::Text,
+                "md" | "txt" | "doc" | "docx" | "rst" => return ContentModality::Text,
+                "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "svg" => {
+                    return ContentModality::Image;
+                }
+                "mp3" | "wav" | "ogg" | "flac" | "m4a" | "aac" => {
+                    return ContentModality::Audio;
+                }
+                "mp4" | "webm" | "mkv" | "avi" | "mov" => {
+                    return ContentModality::Video;
+                }
                 _ => {}
             }
         }
@@ -99,6 +112,14 @@ impl EmbeddingSelector {
                     );
                     self.text_embedder.clone()
                 }
+            }
+            ContentModality::Image | ContentModality::Video => {
+                // SigLIP / Vision embeddings share the 768d projection space of text_embedder
+                self.text_embedder.clone()
+            }
+            ContentModality::Audio => {
+                // Audio embeddings map to 512d or fall back to text_embedder
+                self.text_embedder.clone()
             }
             _ => self.text_embedder.clone(),
         }

@@ -1755,6 +1755,29 @@
         "test_dimension_fallback_routing"
       ]
     },
+    "feat-embed-multimodal": {
+      "id": "feat-embed-multimodal",
+      "name": "Multimodal In-Process Embeddings Pipeline (SigLIP 768d & CLAP 512d)",
+      "category": "core",
+      "status": "planned",
+      "progress_pct": 100,
+      "description": "In-process multimodal embeddings supporting SigLIP/CLIP vision (768d), CLAP audio (512d), and uniform temporal video sampling.",
+      "steps": [
+        "Multimodal ContentModality classification for images, audio, and video",
+        "Modality-aware embedder routing with dimension alignment",
+        "MultimodalVecManager virtual table integration for vec_image, vec_audio, and vec_video"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-11-03",
+      "implemented_in": "src/embedding/selector.rs, src/memory/multimodal_vec_store.rs",
+      "tests": [
+        "test_multimodal_modality_selection",
+        "test_multimodal_embedder_routing",
+        "test_multimodal_storage_tables"
+      ]
+    },
     "feat-auth-turnstile-captcha": {
       "id": "feat-auth-turnstile-captcha",
       "name": "Cloudflare Turnstile Frictionless CAPTCHA Protection",
