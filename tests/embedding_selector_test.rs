@@ -40,6 +40,10 @@ async fn test_modality_selection() {
 
 #[tokio::test]
 async fn test_selector_fallback() {
+    std::env::set_var(
+        "_XAVIER_TEST_OLLAMA_PROBE_URL",
+        "http://127.0.0.1:59999/offline",
+    );
     // Create new embedding selector
     SYSTEM_ALERTS.clear();
     let selector = EmbeddingSelector::new().await.unwrap();
@@ -61,6 +65,7 @@ async fn test_selector_fallback() {
     assert!(embedding_alerts
         .iter()
         .any(|msg| msg.contains("Qwen 1024d is offline, falling back to Text 768d")));
+    std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
 }
 
 #[tokio::test]
@@ -134,4 +139,97 @@ async fn test_dimension_fallback_routing() {
         .unwrap();
     assert_eq!(search_res.len(), 1);
     assert_eq!(search_res[0].item_id, "code_snippet_fallback");
+}
+
+#[tokio::test]
+async fn test_multimodal_modality_selection() {
+    assert_eq!(
+        EmbeddingSelector::select_modality("binary data", Some("png")),
+        ContentModality::Image
+    );
+    assert_eq!(
+        EmbeddingSelector::select_modality("binary data", Some("jpg")),
+        ContentModality::Image
+    );
+    assert_eq!(
+        EmbeddingSelector::select_modality("binary data", Some("webp")),
+        ContentModality::Image
+    );
+    assert_eq!(
+        EmbeddingSelector::select_modality("waveform data", Some("mp3")),
+        ContentModality::Audio
+    );
+    assert_eq!(
+        EmbeddingSelector::select_modality("waveform data", Some("wav")),
+        ContentModality::Audio
+    );
+    assert_eq!(
+        EmbeddingSelector::select_modality("video stream", Some("mp4")),
+        ContentModality::Video
+    );
+    assert_eq!(
+        EmbeddingSelector::select_modality("video stream", Some("webm")),
+        ContentModality::Video
+    );
+}
+
+#[tokio::test]
+async fn test_multimodal_embedder_routing() {
+    let selector = EmbeddingSelector::new().await.unwrap();
+
+    let image_embedder = selector.get_embedder(ContentModality::Image).await;
+    assert_eq!(image_embedder.dimension(), 768);
+
+    let video_embedder = selector.get_embedder(ContentModality::Video).await;
+    assert_eq!(video_embedder.dimension(), 768);
+
+    let audio_embedder = selector.get_embedder(ContentModality::Audio).await;
+    assert_eq!(audio_embedder.dimension(), 768);
+}
+
+#[tokio::test]
+async fn test_multimodal_storage_tables() {
+    use rusqlite::Connection;
+    use xavier::memory::multimodal_vec_store::{DataTypeKind, MultimodalVecManager};
+
+    let manager = MultimodalVecManager::new();
+    let conn = Connection::open_in_memory().unwrap();
+
+    manager
+        .ensure_modality_table(&conn, DataTypeKind::Image, 768)
+        .unwrap();
+    manager
+        .ensure_modality_table(&conn, DataTypeKind::Audio, 512)
+        .unwrap();
+    manager
+        .ensure_modality_table(&conn, DataTypeKind::Video, 768)
+        .unwrap();
+
+    let image_vec = vec![0.036084392f32; 768];
+    let audio_vec = vec![0.044194174f32; 512];
+
+    manager
+        .insert_modality_embedding(
+            &conn,
+            DataTypeKind::Image,
+            "img_diagram_1",
+            &image_vec,
+            "{}",
+        )
+        .unwrap();
+    manager
+        .insert_modality_embedding(&conn, DataTypeKind::Audio, "audio_clip_1", &audio_vec, "{}")
+        .unwrap();
+
+    let image_results = manager
+        .search_modality(&conn, DataTypeKind::Image, &image_vec, 1)
+        .unwrap();
+    assert_eq!(image_results.len(), 1);
+    assert_eq!(image_results[0].item_id, "img_diagram_1");
+
+    let audio_results = manager
+        .search_modality(&conn, DataTypeKind::Audio, &audio_vec, 1)
+        .unwrap();
+    assert_eq!(audio_results.len(), 1);
+    assert_eq!(audio_results[0].item_id, "audio_clip_1");
 }

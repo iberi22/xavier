@@ -8,6 +8,8 @@
 
 *Lista de decisiones de arquitectura*
 
+- [ADR-049 — Multimodal In-Process Embeddings (SigLIP Vision 768d & CLAP Audio 512d)](ADR-049-multimodal-embeddings.md) — Aceptado, 2026-11-03
+- [ADR-048 — Cloudflare Zero-Trust Turnstile & Passwordless Auth](ADR-048-cloudflare-passwordless-auth.md) — Aceptado, 2026-11-02
 - [ADR-047 — MCP error channels by phase](ADR-047-mcp-error-channels.md) — Aceptado, 2026-10-23
 - [ADR-046 — Marketplace currency, settlement and licensing](ADR-046-marketplace-currency-settlement-licensing.md) — Propuesto, 2026-10-16
 - [ADR-045 — Compaction opt-in and ingestion cursors](ADR-045-compaction-opt-in-and-ingestion-cursors.md) — Aceptado, 2026-10-12
