@@ -169,4 +169,42 @@ test.describe("Auth Adversarial, Fuzzing & Edge-Cases E2E Suite", () => {
       page.locator("h1:has-text('XAVIER LOGIN')"),
     ).toBeVisible();
   });
+
+  test("blocks request when CAPTCHA Turnstile verification is rejected by edge gate", async ({
+    page,
+  }) => {
+    await page.route("**/auth/magic-link", async (route) => {
+      const body = route.request().postDataJSON();
+      if (body.turnstile_token === "2x00000000000000000000AB" || !body.turnstile_token) {
+        await route.fulfill({
+          status: 403,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: false,
+            error: "CAPTCHA verification failed. Security challenge invalid.",
+          }),
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: true, magic_url: "/#/session?token=mock" }),
+        });
+      }
+    });
+
+    await page.goto("/");
+    // Check turnstile container rendered
+    const turnstileContainer = page.locator('[data-testid="turnstile-container"]');
+    await expect(turnstileContainer).toBeVisible();
+
+    await page.fill('input[type="email"]', "bot@spammer.net");
+    await page.click('button:has-text("INITIALIZE SESSION")');
+
+    // Assert user-friendly error from edge gate
+    await expect(
+      page.locator("text=CAPTCHA verification failed. Security challenge invalid."),
+    ).toBeVisible();
+    await expect(page.locator("h1:has-text('XAVIER LOGIN')")).toBeVisible();
+  });
 });
