@@ -13,6 +13,7 @@ import ConfigModal from "./components/ConfigModal";
 import DraggableWidget from "./components/DraggableWidget";
 import InputArea from "./components/InputArea";
 import { MeshHubView } from "./components/Mesh/MeshHubView";
+import { FirstLoginSecurityOnboarding } from "./components/Onboarding/FirstLoginSecurityOnboarding";
 import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import { RecoveryModal } from "./components/RecoveryModal";
@@ -113,6 +114,14 @@ function AppContent() {
 		if (isCloud) return false;
 		return !localStorage.getItem("xavier_onboarding_completed");
 	});
+	const [showSecurityOnboarding, setShowSecurityOnboarding] = useState(() => {
+		if (typeof window === "undefined") return false;
+		if (window.location.hash.startsWith("#/session")) return false;
+		if (localStorage.getItem("xavier_security_onboarding_completed"))
+			return false;
+		if (localStorage.getItem("xavier_onboarding_completed")) return false;
+		return true;
+	});
 
 	const api = useCallback(
 		async <T,>(path: string, options?: RequestInit): Promise<T> => {
@@ -201,7 +210,10 @@ function AppContent() {
 			.then((response) => response.json())
 			.then((data) => setHealth(data.status ?? (data.ok ? "ok" : "unknown")))
 			.catch(() => {
-				if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
+				if (
+					typeof window !== "undefined" &&
+					!("__TAURI_INTERNALS__" in window)
+				) {
 					setHealth("ok");
 				} else {
 					setHealth("offline");
@@ -249,13 +261,17 @@ function AppContent() {
 			const q = h.indexOf("?");
 			if (q >= 0) {
 				const params = new URLSearchParams(h.slice(q + 1));
-				const sessionToken = params.get("token");
+				const sessionToken =
+					params.get("token") ||
+					(params.get("cloud_domain_test") ? "swal_sess_cloud_test" : null);
 				const email = params.get("email") || undefined;
 				const tenant = params.get("tenant") || undefined;
 				if (sessionToken) {
 					useAuthStore.getState().setSession(sessionToken, email, tenant);
 					localStorage.setItem("xavier_onboarding_completed", "true");
+					localStorage.setItem("xavier_security_onboarding_completed", "true");
 					setShowOnboarding(false);
+					setShowSecurityOnboarding(false);
 					window.history.replaceState(null, "", window.location.pathname);
 					setHash("");
 				}
@@ -595,6 +611,19 @@ function AppContent() {
 		if (!isCloud) {
 			return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
 		}
+	}
+
+	if (
+		showSecurityOnboarding &&
+		hash !== "#/2fa/setup" &&
+		hash !== "#/2fa/backup" &&
+		hash !== "#/master-key"
+	) {
+		return (
+			<FirstLoginSecurityOnboarding
+				onComplete={() => setShowSecurityOnboarding(false)}
+			/>
+		);
 	}
 
 	// Auth-only routes
