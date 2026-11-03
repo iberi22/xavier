@@ -116,7 +116,10 @@ function AppContent() {
 	});
 	const [showSecurityOnboarding, setShowSecurityOnboarding] = useState(() => {
 		if (typeof window === "undefined") return false;
-		return !localStorage.getItem("xavier_security_onboarding_completed");
+		if (localStorage.getItem("xavier_security_onboarding_completed"))
+			return false;
+		if (localStorage.getItem("xavier_onboarding_completed")) return false;
+		return true;
 	});
 
 	const api = useCallback(
