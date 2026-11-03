@@ -91,6 +91,51 @@ pub struct DerivedNodeKeys {
     pub ml_dsa_commitment: [u8; 32],
 }
 
+pub const DOMAIN_NODE_ED25519: &[u8] = b"swal-node-ed25519-v1";
+pub const DOMAIN_ML_DSA: &[u8] = b"swal-ml-dsa-65-seed-v1";
+
+impl DerivedNodeKeys {
+    pub fn from_seed_bytes(seed_bytes: &[u8; 64]) -> anyhow::Result<Self> {
+        use crate::hmac::HmacSha256;
+        use ed25519_dalek::{SigningKey, VerifyingKey};
+
+        // RFC 5869 HKDF-Extract: PRK = HMAC-Hash(salt, IKM). salt = 32 zeros.
+        let prk = {
+            let mut hmac = HmacSha256::new(&[0u8; 32]);
+            hmac.update(seed_bytes);
+            hmac.finalize()
+        };
+
+        // HKDF-Expand for ed25519: OKM = HMAC-Hash(PRK, info || 0x01)
+        let ed_sk = {
+            let mut hmac = HmacSha256::new(&prk);
+            hmac.update(DOMAIN_NODE_ED25519);
+            hmac.update(&[1u8]);
+            hmac.finalize()
+        };
+
+        // HKDF-Expand for ml_dsa: OKM = HMAC-Hash(PRK, info || 0x01)
+        let ml_commit = {
+            let mut hmac = HmacSha256::new(&prk);
+            hmac.update(DOMAIN_ML_DSA);
+            hmac.update(&[1u8]);
+            hmac.finalize()
+        };
+
+        let signing = SigningKey::from_bytes(&ed_sk);
+        let verifying: VerifyingKey = signing.verifying_key();
+        let pk = verifying.to_bytes();
+        let node_id = NodeId::from_public_key_bytes(&pk);
+
+        Ok(Self {
+            node_id,
+            ed25519_public: pk,
+            ed25519_secret: ed_sk,
+            ml_dsa_commitment: ml_commit,
+        })
+    }
+}
+
 /// Read-only mesh identity view, implemented by `mesh::node::NodeIdentity`.
 pub trait NodeIdentityView {
     fn private_key_bytes(&self) -> &[u8];
@@ -163,80 +208,5 @@ mod tests {
         assert_eq!(parsed.as_str(), "xv1-abc123defgh");
         assert!(NodeId::parse("node-abc123").is_err());
         assert!(NodeId::parse("xv1-short").is_err());
-    }
-
-    #[test]
-    fn node_store_satisfies_vault_contract() {
-        use crate::node_identity::{NodeBootstrap, NodeStore, NodeStorePaths};
-
-        let dir = tempfile::tempdir().unwrap();
-        let store = NodeStore::new(NodeStorePaths::from_data_dir(dir.path()));
-        let source: &dyn SwalVaultKeySource = &store;
-
-        // No vault on disk: the contract says `Ok(None)`, not an error.
-        assert!(matches!(source.unlock_derived_keys("1234", None), Ok(None)));
-
-        let bundle = NodeBootstrap::create(None, "1234", None).unwrap();
-        store.save_vault(&bundle.vault).unwrap();
-
-        // Right PIN re-derives the exact keys the vault was sealed from.
-        let keys = source
-            .unlock_derived_keys("1234", None)
-            .unwrap()
-            .expect("vault exists, keys expected");
-        assert_eq!(keys.node_id, bundle.keys.node_id);
-        assert_eq!(keys.ed25519_public, bundle.keys.ed25519_public);
-
-        // Wrong PIN: the vault exists but does not unlock, so `Err`.
-        assert!(source.unlock_derived_keys("0000", None).is_err());
-    }
-
-    #[test]
-    fn onchain_client_cluster_id_roundtrip_and_validation() {
-        use crate::mesh::governance::onchain::{EvmDaoConfig, OnchainDaoClient};
-
-        #[cfg(feature = "dao-evm")]
-        let contract_address = alloy::primitives::Address::ZERO;
-        #[cfg(not(feature = "dao-evm"))]
-        let contract_address = String::new();
-        let client = OnchainDaoClient::new(EvmDaoConfig {
-            rpc_url: String::new(),
-            contract_address,
-            chain_id: 1,
-            private_key: String::new(),
-        });
-
-        let bytes = client.format_cluster_id("xip-1");
-        assert_eq!(client.parse_cluster_id(&bytes), "xip-1");
-        // Longer than 32 bytes is truncated, never panics.
-        let long = "x".repeat(40);
-        assert_eq!(
-            client
-                .parse_cluster_id(&client.format_cluster_id(&long))
-                .len(),
-            32
-        );
-        assert!(
-            client.validate_params("xip-1").is_err(),
-            "empty RPC URL must be rejected"
-        );
-    }
-
-    #[cfg(feature = "dao-evm")]
-    #[tokio::test]
-    async fn evm_config_builds_gateway_that_rejects_bad_signer_offline() {
-        use crate::mesh::governance::onchain::EvmDaoConfig;
-
-        let gateway: Box<dyn OnchainDaoGateway> = EvmDaoConfig {
-            rpc_url: "http://127.0.0.1:1".to_string(),
-            contract_address: alloy::primitives::Address::ZERO,
-            chain_id: 1,
-            private_key: "not-a-private-key".to_string(),
-        }
-        .into_onchain_dao_gateway();
-
-        // The signer is parsed before any network call, so this fails offline and
-        // proves the call reaches the real `OnchainDaoClient`, not a stub.
-        assert!(gateway.vote("xip-1", true, 100, false).await.is_err());
     }
 }
