@@ -43,7 +43,7 @@ impl TextTokenizer {
             direction: tokenizers::utils::truncation::TruncationDirection::Right,
             ..Default::default()
         };
-        tokenizer.with_truncation(Some(truncation));
+        let _ = tokenizer.with_truncation(Some(truncation));
 
         let padding = tokenizers::utils::padding::PaddingParams {
             strategy: tokenizers::utils::padding::PaddingStrategy::BatchLongest,
@@ -51,8 +51,9 @@ impl TextTokenizer {
             pad_id: 0,
             pad_type_id: 0,
             pad_token: String::from("<pad>"),
+            pad_to_multiple_of: None,
         };
-        tokenizer.with_padding(Some(padding));
+        let _ = tokenizer.with_padding(Some(padding));
 
         let encoding = tokenizer.encode(text, true)?;
 
