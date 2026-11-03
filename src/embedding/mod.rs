@@ -18,6 +18,7 @@ pub mod gllm;
 pub mod ollama;
 pub mod openai;
 pub mod pipeline;
+pub mod selector;
 
 pub const DIMENSION_768: usize = 768;
 

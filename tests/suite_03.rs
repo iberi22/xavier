@@ -44,6 +44,9 @@ mod embedding_fallback_test;
 #[path = "embedding_local_integration.rs"]
 mod embedding_local_integration;
 
+#[path = "embedding_selector_test.rs"]
+mod embedding_selector_test;
+
 #[path = "encrypt_private_e2e.rs"]
 mod encrypt_private_e2e;
 

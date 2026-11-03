@@ -1,5 +1,5 @@
 use crate::embedding::{build_embedder_from_env, Embedder, EmbeddingError};
-use crate::server::alerts::{SystemAlert, SYSTEM_ALERTS};
+use crate::server::alerts::SYSTEM_ALERTS;
 use reqwest;
 use std::sync::Arc;
 use std::time::Duration;
@@ -64,7 +64,8 @@ impl EmbeddingSelector {
     pub async fn get_embedder(&self, modality: ContentModality) -> Arc<dyn Embedder> {
         match modality {
             ContentModality::Code => {
-                let is_qwen_online = match self.http_client
+                let is_qwen_online = match self
+                    .http_client
                     .get(
                         std::env::var("_XAVIER_TEST_OLLAMA_PROBE_URL")
                             .unwrap_or_else(|_| "http://localhost:11435/v1/models".to_string()),
