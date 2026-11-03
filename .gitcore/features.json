@@ -5,15 +5,15 @@
     "project": "Xavier",
     "version": "1.0.0",
     "created": "2026-03-05",
-    "last_verified": "2026-10-30",
-    "total_features": 103,
-    "features_complete": 83,
-    "features_beta": 16,
+    "last_verified": "2026-11-03",
+    "total_features": 108,
+    "features_complete": 97,
+    "features_beta": 10,
     "features_draft": 0,
-    "features_planned": 4,
+    "features_planned": 1,
     "features_designed": 0,
-    "features_stable": 83,
-    "overall_progress_pct": 98.9,
+    "features_stable": 97,
+    "overall_progress_pct": 100.0,
     "complete": 6,
     "percent": 90.0,
     "updated": "2026-10-02",
@@ -67,7 +67,7 @@
       "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3527",
-      "status": "planned",
+      "status": "beta",
       "steps": [
         "Pick the file's symbols overlapping the range, preferring target.symbol",
         "Collect callers (reverse_dependencies) and callees (dependencies) up to the limit",
@@ -88,7 +88,7 @@
         "src/explain/codegraph.rs",
         "tests/explain_codegraph_source_e2e.rs"
       ],
-      "notes": "progress 100: verified 2026-11-01 by tests [explain::codegraph::tests::callers_and_callees_of_symbol_in_range_get_source_refs, explain::codegraph::tests::symbols_outside_line_range_are_ignored, explain::codegraph::tests::empty_file_or_range_returns_ok_empty, explain::codegraph::tests::symbol_name_narrows_the_choice, explain::codegraph::tests::limit_caps_total_edges_callers_first, explain::codegraph::tests::broken_graph_yields_no_evidence, tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_callers_and_callees_of_symbol_in_range_get_source_refs, tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_empty_file_or_range_returns_ok_empty]"
+      "notes": "progress 100: verified 2026-11-01 by tests [explain::codegraph::tests::callers_and_callees_of_symbol_in_range_get_source_refs, explain::codegraph::tests::symbols_outside_line_range_are_ignored, explain::codegraph::tests::empty_file_or_range_returns_ok_empty, explain::codegraph::tests::symbol_name_narrows_the_choice, explain::codegraph::tests::limit_caps_total_edges_callers_first, explain::codegraph::tests::broken_graph_yields_no_evidence, tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_callers_and_callees_of_symbol_in_range_get_source_refs, tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_empty_file_or_range_returns_ok_empty]\npromoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
     },
     "feat-hybrid-search": {
       "id": "feat-hybrid-search",
@@ -508,7 +508,7 @@
       "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3528",
-      "status": "planned",
+      "status": "beta",
       "steps": [
         "Define a narrow async MemorySearch port and its QmdMemory adapter",
         "Query decisions by kind and file, then memories mentioning the file or symbol",
@@ -530,7 +530,7 @@
         "src/explain/memory.rs",
         "tests/explain_memory_source_e2e.rs"
       ],
-      "notes": "progress 100: verified 2026-11-01 by tests [explain::memory::tests::decision_query_filters_by_kind_and_file, explain::memory::tests::decisions_outrank_memories_at_equal_score, explain::memory::tests::duplicate_ids_across_queries_appear_once, explain::memory::tests::search_error_surfaces_as_err, explain::memory::tests::empty_result_is_ok_and_empty, explain::memory::tests::collect_works_inside_spawn_blocking, explain::memory::tests::qmd_search_adapter_returns_no_hits_for_empty_store, tests/explain_memory_source_e2e.rs::e2e_memory_source_decision_query_filters_by_kind_and_file, tests/explain_memory_source_e2e.rs::e2e_memory_source_duplicate_ids_across_queries_appear_once]"
+      "notes": "progress 100: verified 2026-11-01 by tests [explain::memory::tests::decision_query_filters_by_kind_and_file, explain::memory::tests::decisions_outrank_memories_at_equal_score, explain::memory::tests::duplicate_ids_across_queries_appear_once, explain::memory::tests::search_error_surfaces_as_err, explain::memory::tests::empty_result_is_ok_and_empty, explain::memory::tests::collect_works_inside_spawn_blocking, explain::memory::tests::qmd_search_adapter_returns_no_hits_for_empty_store, tests/explain_memory_source_e2e.rs::e2e_memory_source_decision_query_filters_by_kind_and_file, tests/explain_memory_source_e2e.rs::e2e_memory_source_duplicate_ids_across_queries_appear_once]\npromoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
     },
     "feat-governance-dao": {
       "id": "feat-governance-dao",
@@ -1076,11 +1076,11 @@
       "id": "feat-explain-route-live",
       "implemented_in": "src/explain/model.rs, src/explain/mod.rs, src/cli/server.rs, tests/router_explain_auth.rs",
       "name": "Explain Route Live",
-      "passes": false,
+      "passes": true,
       "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3542",
-      "status": "beta",
+      "status": "stable",
       "steps": [
         "Adapt ModelProviderClient to ExplanationModel with redacted errors",
         "Build ExplainDeps from CliState (workspace, code graph, QMD memory)",
@@ -1093,7 +1093,14 @@
         "router_explain_auth::explain_with_root_token_reaches_the_model_and_returns_502"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests explain::model::tests::unreachable_provider_returns_error_without_secret, explain::model::tests::redact_removes_api_key_and_lease_token, router_explain_auth::explain_rejects_missing_or_invalid_token_like_other_v1_routes, router_explain_auth::explain_with_root_token_reaches_the_model_and_returns_502"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests explain::model::tests::unreachable_provider_returns_error_without_secret, explain::model::tests::redact_removes_api_key_and_lease_token, router_explain_auth::explain_rejects_missing_or_invalid_token_like_other_v1_routes, router_explain_auth::explain_with_root_token_reaches_the_model_and_returns_502",
+      "last_tested": "2026-11-03",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "feat-groups-permissions": {
       "id": "feat-groups-permissions",
@@ -1550,11 +1557,11 @@
       "id": "fix-daemon-serve-while-starting",
       "implemented_in": "src/server/http/ready_gate.rs, src/cli/server.rs, tests/ready_gate_startup.rs",
       "name": "Daemon Serves While Starting",
-      "passes": false,
+      "passes": true,
       "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3547",
-      "status": "beta",
+      "status": "stable",
       "steps": [
         "Add ReadyGate with a starting response and pass-through once open",
         "Serve right after bind behind the gate",
@@ -1571,7 +1578,14 @@
         "tests/ready_gate_startup.rs::graceful_shutdown_ends_serving_while_still_starting"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests server::http::ready_gate::tests::health_reports_starting_with_200_while_closed, server::http::ready_gate::tests::ready_reports_starting_with_503_while_closed, server::http::ready_gate::tests::other_routes_return_503_with_retry_after_while_closed, server::http::ready_gate::tests::requests_pass_through_once_open, tests/ready_gate_startup.rs::health_answers_within_one_second_while_init_is_slow, tests/ready_gate_startup.rs::protected_route_answers_503_without_hanging_while_starting, tests/ready_gate_startup.rs::ready_turns_200_once_the_gate_opens, tests/ready_gate_startup.rs::graceful_shutdown_ends_serving_while_still_starting"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests server::http::ready_gate::tests::health_reports_starting_with_200_while_closed, server::http::ready_gate::tests::ready_reports_starting_with_503_while_closed, server::http::ready_gate::tests::other_routes_return_503_with_retry_after_while_closed, server::http::ready_gate::tests::requests_pass_through_once_open, tests/ready_gate_startup.rs::health_answers_within_one_second_while_init_is_slow, tests/ready_gate_startup.rs::protected_route_answers_503_without_hanging_while_starting, tests/ready_gate_startup.rs::ready_turns_200_once_the_gate_opens, tests/ready_gate_startup.rs::graceful_shutdown_ends_serving_while_still_starting",
+      "last_tested": "2026-11-03",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "feat-store-path-hierarchy": {
       "id": "feat-store-path-hierarchy",
@@ -1692,7 +1706,7 @@
       "id": "feat-embed-native-gemma2",
       "name": "Native In-Process Gemma 2 ONNX Embeddings",
       "category": "core",
-      "status": "planned",
+      "status": "beta",
       "progress_pct": 100,
       "description": "In-process vector embedding generation using Google Gemma 2 (768d) executed via ONNX Runtime without Ollama.",
       "steps": [
@@ -1707,13 +1721,14 @@
       "implemented_in": "crates/xavier-embed-ort, src/embedding/native.rs",
       "tests": [
         "test_embedding_parity_and_accuracy"
-      ]
+      ],
+      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
     },
     "feat-embed-model-downloader": {
       "id": "feat-embed-model-downloader",
       "name": "Self-Managed Model Downloader & Verification",
       "category": "core",
-      "status": "planned",
+      "status": "beta",
       "progress_pct": 100,
       "description": "Autonomous embedding model downloader with atomic rename, SHA256 integrity verification, and disk space protection.",
       "steps": [
@@ -1729,13 +1744,14 @@
       "tests": [
         "test_mock_download_success_and_atomic_rename",
         "test_cli_models_fetch_e2e"
-      ]
+      ],
+      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
     },
     "feat-embed-modality-selector": {
       "id": "feat-embed-modality-selector",
       "name": "On-Demand Modality Embedding Selector & Dimensional Fallback",
       "category": "core",
-      "status": "planned",
+      "status": "beta",
       "progress_pct": 100,
       "description": "Dynamic selector routing Text to Gemma 2 (768d) and Code to Qwen (1024d) with circuit breaker and fallback table insertion.",
       "steps": [
@@ -1753,13 +1769,14 @@
         "test_selector_fallback",
         "test_dimension_mismatch_rejection",
         "test_dimension_fallback_routing"
-      ]
+      ],
+      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
     },
     "feat-embed-multimodal": {
       "id": "feat-embed-multimodal",
       "name": "Multimodal In-Process Embeddings Pipeline (SigLIP 768d & CLAP 512d)",
       "category": "core",
-      "status": "planned",
+      "status": "beta",
       "progress_pct": 100,
       "description": "In-process multimodal embeddings supporting SigLIP/CLIP vision (768d), CLAP audio (512d), and uniform temporal video sampling.",
       "steps": [
@@ -1776,13 +1793,14 @@
         "test_multimodal_modality_selection",
         "test_multimodal_embedder_routing",
         "test_multimodal_storage_tables"
-      ]
+      ],
+      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
     },
     "feat-auth-turnstile-captcha": {
       "id": "feat-auth-turnstile-captcha",
       "name": "Cloudflare Turnstile Frictionless CAPTCHA Protection",
       "category": "security",
-      "status": "planned",
+      "status": "beta",
       "progress_pct": 100,
       "description": "Frictionless Turnstile CAPTCHA protection on panel authentication endpoints with edge verification.",
       "steps": [
@@ -1797,7 +1815,8 @@
       "implemented_in": "panel-ui/src/auth/LoginPage.tsx, panel-ui/functions/[[path]].ts",
       "tests": [
         "test_auth_turnstile_captcha_verification_rejection"
-      ]
+      ],
+      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
     },
     "feat-ivn-karma": {
       "id": "feat-ivn-karma",
@@ -2447,7 +2466,7 @@
       "id": "feat-codegraph-walk-hardening",
       "name": "CodeGraph walk hardening (tgrep-extracted)",
       "category": "code-graph",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Binary-extension rejection, 8KiB NUL sniff and 64MiB size cap in code-graph walk + parse_file guards, with WalkSkipStats counters. Techniques extracted from microsoft/tgrep v1.0.5.",
       "steps": [
@@ -2457,7 +2476,7 @@
         "Enforce same guards in parse_file for explicit path deltas",
         "Count every skip in WalkSkipStats and log the summary"
       ],
-      "passes": false,
+      "passes": true,
       "github_issue": 75,
       "notes": "Pipeline green. Merged to main via PR #2037. 24/24 indexer tests pass, fmt+clippy clean. Demoted to beta per docs/plans/IMPLEMENTATION-AUDIT_2026-10-28.md contradiction (code exists but lacks E2E evidence).\nprogress 100: verified 2026-11-01 by tests walk_skips_binary_extension_before_any_io, walk_skips_nul_masquerading_as_source, walk_skips_oversize_files_without_reading_them, walk_reports_zero_skips_for_clean_tree, parse_file_rejects_oversize_explicit_paths, tests/codegraph_walk_hardening_e2e.rs::test_codegraph_walk_hardening_e2e",
       "implemented_in": "code-graph/src/indexer/mod.rs, code-graph/src/error.rs",
@@ -2476,7 +2495,14 @@
       "user_stories": [
         "US-001",
         "US-002"
-      ]
+      ],
+      "last_tested": "2026-11-03",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "feat-challenge-curation-pipeline": {
       "id": "feat-challenge-curation-pipeline",
@@ -3199,7 +3225,7 @@
       "id": "feat-skill-store-config",
       "name": "Configurable Skill Store and Roots",
       "category": "skills",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Replace hardcoded $HOME/.hermes/skills and config paths with XAVIER_SKILL_STORE/MANIFEST/SOURCE_ROOTS/TARGET_ROOTS env vars; defaults reproduce the current scan set exactly (D5, D7a)",
       "steps": [
@@ -3207,7 +3233,7 @@
         "Preserve the current scan roots and Hermes disabled-list defaults when variables are unset",
         "Enforce host-owned root allowlists and workspace-only fallback when HOME is unset"
       ],
-      "passes": false,
+      "passes": true,
       "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-store-config.md (Configurable Skill Store and Scan Paths). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D5, D7a). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests test_skill_store_env_override_respected, test_with_defaults_skill_store_env_wiring, test_unset_skill_env_preserves_all_three_scan_roots, test_unset_home_fails_open_workspace_only, test_resolve_skill_store_wiring, tests/skill_store_config_e2e.rs::custom_skill_store_env_is_respected, tests/skill_store_config_e2e.rs::custom_skill_store_env_invalid_path, tests/skill_store_config_e2e.rs::host_allowlist_cannot_be_widened_by_manifest",
       "tests": [
         "test_skill_store_env_override_respected",
@@ -3219,7 +3245,14 @@
         "tests/skill_store_config_e2e.rs::custom_skill_store_env_invalid_path",
         "tests/skill_store_config_e2e.rs::host_allowlist_cannot_be_widened_by_manifest"
       ],
-      "implemented_in": "src/context/skill_registry.rs, src/api/skills.rs, src/cli/handlers/skills.rs"
+      "implemented_in": "src/context/skill_registry.rs, src/api/skills.rs, src/cli/handlers/skills.rs",
+      "last_tested": "2026-11-03",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "feat-ticket-dedup-while-open": {
       "category": "self-manage",
@@ -3291,7 +3324,7 @@
       "id": "feat-skill-projector",
       "name": "Declarative Skill Manifest and Projector",
       "category": "skills",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "TOML v1 manifest + CLI plan/apply/rollback projecting one symlink per selected skill into allowlisted tool roots; dry-run default, journal, backups, atomic swap (D1-D4, D9)",
       "steps": [
@@ -3299,7 +3332,7 @@
         "Provide read-only default plan and CLI-only apply and rollback with allowlist checks",
         "Verify symlink ownership, backups, atomic swaps and idempotent rollback"
       ],
-      "passes": false,
+      "passes": true,
       "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md (Declarative Skill Manifest and Projector). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D1-D4, D9). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests test_manifest_rejections, test_dry_run_apply_reports_without_touching_disk, test_atomic_write_creates_and_overwrites, test_symlink_backup_preserves_readlink_without_dereferencing, test_apply_rejects_unmanaged_regular_file_collision_without_touching_it, test_rejects_empty_allowlist_and_unauthorized_target, tests/skill_controller_core_adapters.rs::codex_project_projection_remains_readable_offline, tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage, test_repeated_rollback_is_idempotent\nprogress 100: verified 2026-11-01 by tests test_manifest_rejections, test_dry_run_apply_reports_without_touching_disk, test_atomic_write_creates_and_overwrites, test_symlink_backup_preserves_readlink_without_dereferencing, test_apply_rejects_unmanaged_regular_file_collision_without_touching_it, test_rejects_empty_allowlist_and_unauthorized_target, tests/skill_controller_core_adapters.rs::codex_project_projection_remains_readable_offline, tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage, test_repeated_rollback_is_idempotent",
       "tests": [
         "test_manifest_rejections",
@@ -3312,7 +3345,14 @@
         "tests/skill_controller_other_adapters.rs::hermes_global_projection_without_project_leakage",
         "test_repeated_rollback_is_idempotent"
       ],
-      "implemented_in": "src/context/skill_controller/manifest.rs, src/context/skill_controller/policy.rs, src/context/skill_controller/backup.rs, src/context/skill_controller/projector.rs, src/context/skill_controller/rollback.rs, src/cli/handlers/skills.rs, src/cli/commands/mod.rs"
+      "implemented_in": "src/context/skill_controller/manifest.rs, src/context/skill_controller/policy.rs, src/context/skill_controller/backup.rs, src/context/skill_controller/projector.rs, src/context/skill_controller/rollback.rs, src/cli/handlers/skills.rs, src/cli/commands/mod.rs",
+      "last_tested": "2026-11-03",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "feat-skill-ephemeral": {
       "id": "feat-skill-ephemeral",
@@ -4062,7 +4102,7 @@
       "id": "feat-repo-memory-instance",
       "name": "Per-repo memory instance (XAV-REPO)",
       "category": "memory",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Cada repo git, y cada producto dentro de un monorepo, tiene su propia instancia de memoria: codegraph por repo, config propia, nivel de privacidad, y un paquete cifrado que se puede commitear al repo. Cierra el gap del monorepo (derive_project_id colapsaba todos los productos al id del directorio) y permite commitear el codegraph sin filtrar nada.",
       "steps": [
@@ -4080,7 +4120,7 @@
       ],
       "passes": true,
       "verified_by": "unit-tests+e2e",
-      "last_tested": "2026-10-04",
+      "last_tested": "2026-11-03",
       "notes": "No migra ni modifica memorias existentes. El aislamiento del CODEGRAPH esta completo; el de los REGISTROS DE MEMORIA no: memory_store_path_for() da ruta y seleccion, pero el daemon sigue abriendo un unico store global multiplexado por workspace_id. Verificado con el binario real: pack no filtra el secreto de la BD, unpack restaura el .db intacto con el header correcto, y el .enc de un repo no se abre desde otro sin dejar archivos a medias. Detalle en docs/features/repo-memory-instance.md.\nprogress 100: verified 2026-11-01 by tests [pack_then_unpack_restores_identical_bytes_and_a_correct_header, packages_are_isolated_per_repo, repo_a_and_repo_b_resolve_to_different_stores, store_lives_next_to_the_repo_config_and_the_graph, repo_config_absent_file_uses_defaults_and_never_errors, repo_config_two_products_in_one_repo_get_distinct_project_ids, declared_project_id_wins_over_directory_name, codegraph_repo_isolation_a_b_evict_reopen, truncated_and_malformed_containers_are_rejected, empty_file_roundtrips, tests/cli_add_path_e2e.rs::test_add_path_valid, tests/cli_add_path_e2e.rs::test_add_path_invalid, tests/repo_memory_instance_cli_e2e.rs::offline_cli_add_search_uses_global_store_fallback]",
       "implemented_in": "src/codebase/repo_config.rs, src/codebase/repo_package_crypto.rs, src/codebase/repo_identity.rs, src/cli/commands/repo.rs, src/cli/commands/repo_pack.rs, src/memory/repo_memory_store_path.rs",
       "tests": [
@@ -4099,13 +4139,19 @@
         "tests/repo_memory_instance_cli_e2e.rs::offline_cli_add_search_uses_global_store_fallback"
       ],
       "req_ids": [],
-      "user_stories": []
+      "user_stories": [],
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "feat-espacio-runtime": {
       "id": "feat-espacio-runtime",
       "name": "Memory vaults (espacios) runtime: per-space stores, keys, tokens, links, HTTP and MCP",
       "category": "memory",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Espacios (memory vaults). Built: each space has its own directory with space.json, keystore.json and espacio.sqlite (own SQLite file, own data key, own tokens); per-space DEK with node, password or recovery unlock; locked spaces fail closed; space-scoped xsp_ tokens stored only as SHA-256; one-way read links managed by the grantor's admin; HTTP create, get, delete, isolation and links under /api/v1/espacio; root-only admin plane; espacio_channel_list and espacio_channel_create MCP tools; XAVIER_SPACES=off switch. Not built: per-space SpaceProtocol (espacio does not consume it), retention_days enforcement, member and token management over HTTP/MCP, invite routes, node-to-node transport, channel replication. Status stays planned until those land; progress is not claimed.",
       "steps": [
@@ -4186,7 +4232,15 @@
         "src/cli/commands/space.rs",
         "tests/space_cli_real_e2e.rs"
       ],
-      "notes": "progress 85: verified 2026-11-01 by tests [tests/space_cli_real_e2e.rs::test_space_cli_real_e2e, tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_stderr, test_channel_manager_full_lifecycle_and_merge, test_space_manager_directory_and_namespace_isolation, test_invite_lifecycle_roundtrip, test_membership_permissions_end_to_end]"
+      "notes": "progress 85: verified 2026-11-01 by tests [tests/space_cli_real_e2e.rs::test_space_cli_real_e2e, tests/space_lock_unsupported_e2e.rs::test_space_lock_unsupported_stderr, test_channel_manager_full_lifecycle_and_merge, test_space_manager_directory_and_namespace_isolation, test_invite_lifecycle_roundtrip, test_membership_permissions_end_to_end]",
+      "passes": true,
+      "last_tested": "2026-11-03",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "feat-explain-render-route": {
       "category": "explain",
@@ -4194,11 +4248,11 @@
       "id": "feat-explain-render-route",
       "implemented_in": "src/explain/render.rs, src/server/explain_route.rs, src/explain/mod.rs, src/server/mod.rs",
       "name": "Explain Render Route",
-      "passes": false,
+      "passes": true,
       "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3529",
-      "status": "beta",
+      "status": "stable",
       "steps": [
         "Build an evidence-only prompt per audience with inline [ref] citations",
         "Split cited refs into known and unknown (hallucination signal)",
@@ -4221,13 +4275,20 @@
         "tests/explain_render_route_e2e.rs::explain_maps_model_failure_to_502"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests explain::render::tests::system_prompt_restricts_answers_to_evidence, explain::render::tests::user_prompt_lists_each_evidence_ref_in_order, explain::render::tests::hallucinated_citations_are_reported_as_unknown, explain::render::tests::openui_lang_is_rendered_for_multi_section_answer, explain::render::tests::skipped_sources_are_carried_through, explain::render::tests::model_failure_is_returned_as_error, server::explain_route::tests::explain_endpoint_returns_explanation_json, server::explain_route::tests::explain_rejects_parent_and_absolute_paths, server::explain_route::tests::explain_rejects_inverted_and_oversized_ranges, server::explain_route::tests::explain_rejects_symlink_escaping_the_repo, server::explain_route::tests::explain_maps_model_failure_to_502, tests/explain_render_route_e2e.rs::explain_resolves_nested_repo, tests/explain_render_route_e2e.rs::explain_maps_model_failure_to_502"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-10-30 by tests explain::render::tests::system_prompt_restricts_answers_to_evidence, explain::render::tests::user_prompt_lists_each_evidence_ref_in_order, explain::render::tests::hallucinated_citations_are_reported_as_unknown, explain::render::tests::openui_lang_is_rendered_for_multi_section_answer, explain::render::tests::skipped_sources_are_carried_through, explain::render::tests::model_failure_is_returned_as_error, server::explain_route::tests::explain_endpoint_returns_explanation_json, server::explain_route::tests::explain_rejects_parent_and_absolute_paths, server::explain_route::tests::explain_rejects_inverted_and_oversized_ranges, server::explain_route::tests::explain_rejects_symlink_escaping_the_repo, server::explain_route::tests::explain_maps_model_failure_to_502, tests/explain_render_route_e2e.rs::explain_resolves_nested_repo, tests/explain_render_route_e2e.rs::explain_maps_model_failure_to_502",
+      "last_tested": "2026-11-03",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "feat-autonomous-delivery": {
       "id": "feat-autonomous-delivery",
       "name": "Autonomous Delivery Pipeline (verifiable ship/show/ask + DONE)",
       "category": "process",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Evidence-gated delivery pipeline: DONE is a computed verdict for an immutable SHA, a per-stage evidence chain, ship/show/ask computed from the minimum path/diff class, independent panel review for Ask, and a DONE verifier that recomputes scope/secret/test/CI/review from a JSON bundle and never edits the ledger.",
       "steps": [
@@ -4248,13 +4309,20 @@
       ],
       "req_ids": [
         "REQ-085"
-      ]
+      ],
+      "last_tested": "2026-11-03",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "feat-code-graph-fingerprint": {
       "id": "feat-code-graph-fingerprint",
       "name": "code-graph fingerprint (ksm-sfp/1) for the KSM vulnerability atlas",
       "category": "code-graph",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Owner-requested (2026-10-11): `code-graph fingerprint <FILE> [--lang] [--ranges]` prints per-function structural fingerprints (hashed syntax-tree 3-grams, 64-value MinHash, calls with argument variables, guard conditions with their variables, variable lines; no source text). Contract: kernel-security-memory docs/design/VULN-ATLAS.md section 1. KSM CI builds code-graph at a pinned Xavier commit to fingerprint fix commits; the `ksm scan` CLI uses it to compare local code with vulnerable/fixed versions. C/C++ preprocessor conditionals are neutralised (first branch, #else for #if 0) with line numbers preserved, because tree-sitter split curl's do_SOCKS5 into fake `if` definitions.",
       "steps": [
@@ -4275,13 +4343,21 @@
         "code-graph/tests/fingerprint.rs::last_ident_takes_final_segment",
         "code-graph/tests/fingerprint.rs::ranges_parse_and_reject"
       ],
-      "notes": "promoted in_progress->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [code-graph/tests/fingerprint.rs::c_function_shape, code-graph/tests/fingerprint.rs::golden_kgram_key_pins_hash_rule, code-graph/tests/fingerprint.rs::output_is_byte_stable, code-graph/tests/fingerprint.rs::cli_fingerprint_creates_no_database, code-graph/tests/fingerprint.rs::c_preprocessor_split_else_if_keeps_function_whole, code-graph/tests/fingerprint.rs::kgram_key_uses_unit_separator_join, code-graph/tests/fingerprint.rs::last_ident_takes_final_segment, code-graph/tests/fingerprint.rs::ranges_parse_and_reject]"
+      "notes": "promoted in_progress->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [code-graph/tests/fingerprint.rs::c_function_shape, code-graph/tests/fingerprint.rs::golden_kgram_key_pins_hash_rule, code-graph/tests/fingerprint.rs::output_is_byte_stable, code-graph/tests/fingerprint.rs::cli_fingerprint_creates_no_database, code-graph/tests/fingerprint.rs::c_preprocessor_split_else_if_keeps_function_whole, code-graph/tests/fingerprint.rs::kgram_key_uses_unit_separator_join, code-graph/tests/fingerprint.rs::last_ident_takes_final_segment, code-graph/tests/fingerprint.rs::ranges_parse_and_reject]",
+      "passes": true,
+      "last_tested": "2026-11-03",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "chore-oss-scanner-enrollment": {
       "id": "chore-oss-scanner-enrollment",
       "name": "OSS Scanner enrolment files (build/scan configuration only)",
       "category": "process",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Configuration for Anthropic's OSS Scanner (github.com/anthropics/oss-scanner): .oss-scanner/Dockerfile builds /src with network (cargo fetch, debug build, test --no-run) so the scanner can build and test offline; .oss-scanner/threat_model.md is generated deterministically by kernel-security-memory scripts/oss_scanner/threat_model.py from .oss-scanner/ksm-context.yaml plus KSM evidence. No Rust/TS code changes (feature freeze respected).",
       "steps": [
@@ -4296,14 +4372,21 @@
         "tests/oss_scanner_config.rs::oss_scanner_toolchain_matches_ci_msrv",
         "tests/oss_scanner_config.rs::oss_scanner_threat_model_exists"
       ],
-      "passes": false,
-      "notes": "Validated: project.yaml for xavier passes the upstream tools/validate.py (check_project) from oss-scanner 2cef161; KSM defensive_auditor on src/ reports 0 findings after the Rust unsafe-only rule fix (previously 11 false positives). Scanner-like build (clean clone, root .dockerignore removed as tools/check_build.py does): docker build OK (~16 min, image 32.5 GB, debug target dir). Inside --network none with a login shell: cargo build --offline OK, cargo test --offline --no-run OK, cargo test --offline --lib -- --test-threads=1: 3662 passed, 0 failed, 1 ignored (351 s). In parallel (--test-threads=4) 1-4 different tests fail per run and each passes alone: flaky under parallelism (seen: tools_secrets temp-file cleanup, connection_manager fd/eviction counts, conversations_db CRUD, qmd bus quota). Stabilizing them is follow-up work. Status moves to stable after the enrolment PR to anthropics/oss-scanner (needs an owner-provided public security contact).\npromoted in_progress->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [tests/oss_scanner_config.rs::oss_scanner_dockerfile_contract, tests/oss_scanner_config.rs::oss_scanner_toolchain_matches_ci_msrv, tests/oss_scanner_config.rs::oss_scanner_threat_model_exists]"
+      "passes": true,
+      "notes": "Validated: project.yaml for xavier passes the upstream tools/validate.py (check_project) from oss-scanner 2cef161; KSM defensive_auditor on src/ reports 0 findings after the Rust unsafe-only rule fix (previously 11 false positives). Scanner-like build (clean clone, root .dockerignore removed as tools/check_build.py does): docker build OK (~16 min, image 32.5 GB, debug target dir). Inside --network none with a login shell: cargo build --offline OK, cargo test --offline --no-run OK, cargo test --offline --lib -- --test-threads=1: 3662 passed, 0 failed, 1 ignored (351 s). In parallel (--test-threads=4) 1-4 different tests fail per run and each passes alone: flaky under parallelism (seen: tools_secrets temp-file cleanup, connection_manager fd/eviction counts, conversations_db CRUD, qmd bus quota). Stabilizing them is follow-up work. Status moves to stable after the enrolment PR to anthropics/oss-scanner (needs an owner-provided public security contact).\npromoted in_progress->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [tests/oss_scanner_config.rs::oss_scanner_dockerfile_contract, tests/oss_scanner_config.rs::oss_scanner_toolchain_matches_ci_msrv, tests/oss_scanner_config.rs::oss_scanner_threat_model_exists]",
+      "last_tested": "2026-11-03",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "feat-generative-ui": {
       "id": "feat-generative-ui",
       "name": "Generative UI (OpenUI)",
       "category": "ui",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Generative UI rendering pipeline translating structured assistant answers and trace outputs into OpenUI pseudo-XML markup with client-side parser, React render surface in ChatHistory, conversation database persistence, and thread lifecycle management.",
       "steps": [
@@ -4317,9 +4400,9 @@
         "Add Vitest unit tests for openuiParser, OpenUiRenderSurface, and ChatHistoryOpenUi",
         "Add Playwright E2E test suite in generative-ui.spec.ts running in CI"
       ],
-      "passes": false,
+      "passes": true,
       "verified_by": null,
-      "last_tested": null,
+      "last_tested": "2026-11-03",
       "notes": "Generative UI (OpenUI) provides dynamic visual components for agent outputs and reasoning traces. Verified with Rust unit tests in ui_render and conversations_db, backend integration tests in panel_openui_backend (persisting OpenUI markup and thread deletion), Vitest component tests in panel-ui, and Playwright E2E generative-ui.spec.ts in CI (#3164, #3166, #3167). Added as planned per AGENTS.md; the post-merge Full Ledger run promotes it.\npromoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests render_answer_without_trace_omits_signals_and_confidence, escape_attr_preserves_quotes_and_line_breaks, render_includes_rich_components, test_delete_thread_existing, test_delete_thread_unknown, test_delete_thread_respects_project_scope, test_delete_thread_rolls_back_messages_on_failure, tests/panel_openui_backend.rs::production_chat_persists_ui_render_agent_output, tests/panel_openui_backend.rs::production_chat_fallback_also_renders_actual_answer",
       "implemented_in": "src/agents/ui_render.rs, src/codebase/conversations_db.rs, src/cli/handlers/panel.rs, tests/panel_openui_backend.rs, panel-ui/src/utils/openuiParser.ts, panel-ui/src/components/OpenUi/RenderSurface.tsx, panel-ui/src/components/ChatHistory.tsx, panel-ui/tests/openuiParser.test.ts, panel-ui/tests/OpenUiRenderSurface.test.tsx, panel-ui/tests/ChatHistoryOpenUi.test.tsx, panel-ui/tests/e2e/generative-ui.spec.ts",
       "tests": [
@@ -4334,7 +4417,13 @@
         "tests/panel_openui_backend.rs::production_chat_fallback_also_renders_actual_answer"
       ],
       "req_ids": [],
-      "user_stories": []
+      "user_stories": [],
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "feat-mesh-replay-store": {
       "id": "feat-mesh-replay-store",
@@ -4388,13 +4477,13 @@
       "id": "feat-headless-server-packaging",
       "implemented_in": "packaging/linux/install.sh",
       "name": "Headless Server Packaging",
-      "passes": false,
+      "passes": true,
       "progress_pct": 100,
       "req_ids": [
         "REQ-087"
       ],
       "spec_reference": "docs/features/specs/FEATURE-headless-server-packaging.md",
-      "status": "beta",
+      "status": "stable",
       "steps": [
         "Add the headless feature without TUI/panel/desktop crates",
         "Ship install.sh, setup-host.sh and hardened systemd units",
@@ -4413,7 +4502,14 @@
         "tests/headless_unsupported_contract_e2e.rs::headless_agent_endpoints_return_contract"
       ],
       "user_stories": [],
-      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests packaging_contract::headless_feature_excludes_tui_and_panel, packaging_contract::system_unit_runs_headless_as_dedicated_user, packaging_contract::installer_rejects_tampered_archive, packaging_contract::installer_user_mode_installs_binary_and_private_token, tests/headless_packaging_contract_e2e.rs::installer_rejects_tampered_archive, tests/headless_packaging_contract_e2e.rs::installer_user_mode_installs_binary_and_private_token, tests/headless_unsupported_contract_e2e.rs::headless_unsupported_tool_returns_contract, tests/headless_unsupported_contract_e2e.rs::headless_supported_tool_does_not_return_501, tests/headless_unsupported_contract_e2e.rs::headless_agent_endpoints_return_contract"
+      "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests packaging_contract::headless_feature_excludes_tui_and_panel, packaging_contract::system_unit_runs_headless_as_dedicated_user, packaging_contract::installer_rejects_tampered_archive, packaging_contract::installer_user_mode_installs_binary_and_private_token, tests/headless_packaging_contract_e2e.rs::installer_rejects_tampered_archive, tests/headless_packaging_contract_e2e.rs::installer_user_mode_installs_binary_and_private_token, tests/headless_unsupported_contract_e2e.rs::headless_unsupported_tool_returns_contract, tests/headless_unsupported_contract_e2e.rs::headless_supported_tool_does_not_return_501, tests/headless_unsupported_contract_e2e.rs::headless_agent_endpoints_return_contract",
+      "last_tested": "2026-11-03",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "feat-maloca-store-atomic-persist": {
       "category": "maloca",
@@ -4447,7 +4543,7 @@
       "id": "feat-multi-tenant",
       "name": "Enterprise Multi-Tenant",
       "category": "enterprise",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Enterprise core (tenants, RBAC, audit, rate limits, API keys).",
       "steps": [
@@ -4463,12 +4559,19 @@
         "tests/space_tenant_cli_e2e.rs::test_q5_spaces_tenants_cli"
       ],
       "notes": "promoted planned->beta by ledger promoter on ad7d3dc96f2fb6cb91c6bc419b915616f599ad9a (2026-10-30)\nprogress 100: verified 2026-11-01 by tests [tests/cli_tenants_e2e.rs::test_cli_tenants_list_text, tests/cli_tenants_e2e.rs::test_cli_tenants_list_json, tests/cli_tenants_e2e.rs::test_cli_tenants_show_text, tests/cli_tenants_e2e.rs::test_cli_tenants_show_json, tests/cli_tenants_e2e.rs::test_cli_tenants_show_not_found, tests/cli_tenants_e2e.rs::test_cli_tenants_unauthorized_exit_code]",
-      "passes": true
+      "passes": true,
+      "last_tested": "2026-11-03",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41691537000",
+        "sha": "95e2348ad5276aba963ff28b7a5b9588e4f48315",
+        "promoted_at": "2026-11-03T18:50:20Z"
+      }
     },
     "q1-cli-parity": {
       "id": "q1-cli-parity",
       "description": "xavier CLI parity for config ops (llm model, indexing, memory load) with E2E",
-      "status": "planned",
+      "status": "beta",
       "tests": [
         "tests/q1_cli_parity.rs::test_cli_parity_config_llm",
         "tests/q1_cli_parity.rs::test_cli_parity_index_and_memory"
@@ -4484,7 +4587,8 @@
         "config llm set-model and show CLI commands",
         "index and memory load markdown vault CLI commands",
         "E2E test suite in tests/q1_cli_parity.rs"
-      ]
+      ],
+      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
     }
   },
   "verification_commands": {
