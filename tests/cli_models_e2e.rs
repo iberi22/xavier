@@ -2,6 +2,7 @@
 
 xavier::isolate_test_process!();
 
+use sha2::Digest;
 use std::fs;
 use tempfile::TempDir;
 use xavier::crypto::hex_encode;
@@ -69,7 +70,8 @@ async fn test_cli_models_fetch_e2e() {
         .await
         .expect("Model fetch should succeed");
 
-    assert_eq!(report.files_downloaded.len(), 3);
+    let expected_bytes = (onnx_data.len() + json_data.len() + license_data.len()) as u64;
+    assert_eq!(report.bytes_downloaded, expected_bytes);
     assert!(target_model_dir.join("model.onnx").exists());
     assert!(target_model_dir.join("tokenizer.json").exists());
     assert!(target_model_dir.join("LICENSE").exists());
