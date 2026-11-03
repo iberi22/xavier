@@ -1,5 +1,4 @@
 use xavier::embedding::selector::{ContentModality, EmbeddingSelector};
-use xavier::embedding::Embedder;
 use xavier::server::alerts::SYSTEM_ALERTS;
 
 #[tokio::test]
