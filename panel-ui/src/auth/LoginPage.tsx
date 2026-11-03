@@ -103,7 +103,7 @@ export const LoginPage: React.FC = () => {
             disabled={isLoading}
             className="w-full bg-[#39ff14] text-black font-bold text-sm tracking-widest py-3 rounded-lg hover:shadow-[0_0_15px_rgba(57,255,20,0.5)] transition-all mt-4 disabled:opacity-50"
           >
-            {isLoading ? "GENERATING..." : "SEND MAGIC LINK"}
+            {isLoading ? "GENERATING..." : "INITIALIZE SESSION"}
           </button>
         </form>
 

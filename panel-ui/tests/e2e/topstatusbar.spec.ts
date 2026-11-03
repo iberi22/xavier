@@ -90,9 +90,11 @@ test.describe("TopStatusBar End-to-End Smoke Tests", () => {
       });
     });
 
-    // Set onboarding completed flag in localStorage
+    // Set onboarding completed flag and authenticated session in localStorage
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_onboarding_completed", "true");
+      window.localStorage.setItem("xavier_token", "mock-jwt-token");
+      window.sessionStorage.setItem("xavier.rt", "mock-rt-token");
     });
 
     await page.goto("/");
@@ -105,7 +107,10 @@ test.describe("TopStatusBar End-to-End Smoke Tests", () => {
     const loginButton = page.locator('button:has-text("INITIALIZE SESSION")');
     if (await loginButton.isVisible()) {
       await page.fill('input[type="email"]', "operator@xavier.local");
-      await page.fill('input[type="password"]', "password123");
+      const passwordInput = page.locator('input[type="password"]');
+      if (await passwordInput.isVisible()) {
+        await passwordInput.fill("password123");
+      }
       await loginButton.click();
     }
 

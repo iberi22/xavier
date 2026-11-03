@@ -28,7 +28,7 @@ describe("LoginPage (Passwordless Magic Link)", () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Email")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "SEND MAGIC LINK" }),
+      screen.getByRole("button", { name: "INITIALIZE SESSION" }),
     ).toBeInTheDocument();
 
     // Verify password and 2FA fields are strictly absent
@@ -52,7 +52,9 @@ describe("LoginPage (Passwordless Magic Link)", () => {
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "operator@xavier.local" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "SEND MAGIC LINK" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "INITIALIZE SESSION" }),
+    );
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -87,7 +89,9 @@ describe("LoginPage (Passwordless Magic Link)", () => {
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "operator@xavier.local" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "SEND MAGIC LINK" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "INITIALIZE SESSION" }),
+    );
 
     await waitFor(() => {
       expect(
