@@ -736,8 +736,55 @@ impl Ed25519Wallet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mesh::node::NodeIdentity;
     use tempfile::NamedTempFile;
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct MockNodeIdentity {
+        node_id: NodeId,
+        public_key: [u8; 32],
+        private_key: [u8; 32],
+        ml_dsa_commitment: [u8; 32],
+    }
+
+    impl MockNodeIdentity {
+        fn generate() -> Self {
+            use rand::RngCore;
+            let mut priv_bytes = [0u8; 32];
+            rand::rngs::OsRng.fill_bytes(&mut priv_bytes);
+            let signing = SigningKey::from_bytes(&priv_bytes);
+            let verifying = signing.verifying_key();
+            let pk = verifying.to_bytes();
+            let node_id = NodeId::from_public_key_bytes(&pk);
+            let mut ml_commit = [0u8; 32];
+            rand::rngs::OsRng.fill_bytes(&mut ml_commit);
+            Self {
+                node_id,
+                public_key: pk,
+                private_key: priv_bytes,
+                ml_dsa_commitment: ml_commit,
+            }
+        }
+    }
+
+    impl NodeIdentityView for MockNodeIdentity {
+        fn private_key_bytes(&self) -> &[u8] {
+            &self.private_key
+        }
+        fn ml_dsa_commitment_hex(&self) -> Option<String> {
+            Some(crate::hex_encode(self.ml_dsa_commitment))
+        }
+    }
+
+    impl NodeIdentityFactory for MockNodeIdentity {
+        fn from_derived_keys(keys: &DerivedNodeKeys) -> Self {
+            Self {
+                node_id: keys.node_id.clone(),
+                public_key: keys.ed25519_public,
+                private_key: keys.ed25519_secret,
+                ml_dsa_commitment: keys.ml_dsa_commitment,
+            }
+        }
+    }
 
     const MASTER_PASS: &str = "SuperSecretMasterPassphrase123!";
 
@@ -893,14 +940,14 @@ mod tests {
     #[test]
     fn test_10_integration_with_node_identity() {
         let mut wallet = Ed25519Wallet::new(MASTER_PASS).unwrap();
-        let original_identity = NodeIdentity::generate();
+        let original_identity = MockNodeIdentity::generate();
         let imported_node_id = wallet
             .import_node_identity("mesh-node", &original_identity, None)
             .unwrap();
 
         assert_eq!(imported_node_id, original_identity.node_id);
 
-        let exported_identity: NodeIdentity = wallet.export_node_identity("mesh-node").unwrap();
+        let exported_identity: MockNodeIdentity = wallet.export_node_identity("mesh-node").unwrap();
         assert_eq!(exported_identity.node_id, original_identity.node_id);
         assert_eq!(exported_identity.public_key, original_identity.public_key);
         assert_eq!(
@@ -920,7 +967,8 @@ mod tests {
             .unwrap();
         assert_eq!(imported_node_id, derived_keys.node_id);
 
-        let exported_identity: NodeIdentity = wallet.export_node_identity("derived-alias").unwrap();
+        let exported_identity: MockNodeIdentity =
+            wallet.export_node_identity("derived-alias").unwrap();
         assert_eq!(
             exported_identity.ml_dsa_commitment_hex(),
             Some(hex_encode(derived_keys.ml_dsa_commitment))
@@ -1142,7 +1190,7 @@ mod tests {
             .unwrap();
 
         let (_pub_hex, sec_hex) = src_wallet.export_keypair_hex("original").unwrap();
-        let identity: NodeIdentity = src_wallet.export_node_identity("original").unwrap();
+        let identity: MockNodeIdentity = src_wallet.export_node_identity("original").unwrap();
 
         let mut dst_wallet = Ed25519Wallet::new(MASTER_PASS).unwrap();
         let imported_id_hex = dst_wallet
