@@ -34,11 +34,13 @@ pub struct ModelDownloader {
 
 impl ModelDownloader {
     pub fn new() -> Self {
+        let base_url = std::env::var("XAVIER_MODEL_DOWNLOAD_BASE_URL").unwrap_or_else(|_| {
+            "https://huggingface.co/lmstudio-community/embeddinggemma-2-onnx/resolve/main"
+                .to_string()
+        });
         Self {
             client: Client::new(),
-            base_url:
-                "https://huggingface.co/lmstudio-community/embeddinggemma-2-onnx/resolve/main"
-                    .to_string(), // Default HuggingFace repo for the model
+            base_url,
         }
     }
 

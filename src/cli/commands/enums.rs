@@ -2572,3 +2572,38 @@ pub enum IndexCommand {
     /// Show index status
     Status,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser, Debug)]
+    struct CliTest {
+        #[command(subcommand)]
+        command: Command,
+    }
+
+    #[test]
+    fn test_models_command_parsing() {
+        let args = vec!["xavier", "models", "fetch", "--model", "embeddinggemma"];
+        let cli = CliTest::try_parse_from(args).expect("Should parse models fetch");
+        match cli.command {
+            Command::Models { cmd } => match cmd {
+                ModelsCommand::Fetch { model } => assert_eq!(model, "embeddinggemma"),
+                _ => panic!("Expected ModelsCommand::Fetch"),
+            },
+            _ => panic!("Expected Command::Models"),
+        }
+
+        let args_list = vec!["xavier", "models", "list", "--json"];
+        let cli_list = CliTest::try_parse_from(args_list).expect("Should parse models list");
+        match cli_list.command {
+            Command::Models { cmd } => match cmd {
+                ModelsCommand::List { json } => assert!(json),
+                _ => panic!("Expected ModelsCommand::List"),
+            },
+            _ => panic!("Expected Command::Models"),
+        }
+    }
+}

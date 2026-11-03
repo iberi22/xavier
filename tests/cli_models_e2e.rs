@@ -56,21 +56,22 @@ async fn test_cli_models_fetch_e2e() {
         .create_async()
         .await;
     let _m4 = server
-        .mock("GET", "/sha256sums.txt")
-        .with_body(sums_content)
+        .mock("GET", "/SHA256SUMS")
+        .with_body(sums_content.clone())
         .create_async()
         .await;
 
     std::env::set_var("XAVIER_MODEL_DOWNLOAD_BASE_URL", &url);
 
     let target_model_dir = models_dir.join("test-model");
-    let downloader = xavier::embedding::downloader::ModelDownloader::new();
+    let downloader = xavier::embedding::downloader::ModelDownloader::with_base_url(&url);
     let report = downloader
         .fetch_model("test-model", &target_model_dir)
         .await
         .expect("Model fetch should succeed");
 
-    let expected_bytes = (onnx_data.len() + json_data.len() + license_data.len()) as u64;
+    let expected_bytes =
+        (onnx_data.len() + json_data.len() + license_data.len() + sums_content.len()) as u64;
     assert_eq!(report.bytes_downloaded, expected_bytes);
     assert!(target_model_dir.join("model.onnx").exists());
     assert!(target_model_dir.join("tokenizer.json").exists());

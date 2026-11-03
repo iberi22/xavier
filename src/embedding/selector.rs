@@ -20,7 +20,19 @@ pub struct EmbeddingSelector {
 
 impl EmbeddingSelector {
     pub async fn new() -> Result<Self, EmbeddingError> {
-        let text_embedder = build_embedder_from_env().await?;
+        let text_embedder = match build_embedder_from_env().await {
+            Ok(embedder) if embedder.dimension() > 0 => embedder,
+            _ => {
+                let ollama_embedder = crate::embedding::ollama::OllamaEmbedder::new(
+                    "embeddinggemma".to_string(),
+                    "http://localhost:11434/api/embed".to_string(),
+                    768,
+                    Duration::from_secs(30),
+                )
+                .map_err(|e| EmbeddingError::Config(e.to_string()))?;
+                Arc::new(ollama_embedder)
+            }
+        };
 
         let ollama_embedder = crate::embedding::ollama::OllamaEmbedder::new(
             "qwen3-embedding:0.6b".to_string(),

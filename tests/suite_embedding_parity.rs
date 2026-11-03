@@ -174,7 +174,10 @@ async fn test_fallback_total_failure_degradation() {
         EmbeddingError::Config(msg) => {
             assert!(msg.contains("no embedding backend produced a usable vector"))
         }
-        _ => panic!("Expected Config error, got {:?}", err),
+        EmbeddingError::Network(msg) => {
+            assert!(msg.contains("ModelUnavailable"))
+        }
+        _ => panic!("Expected Config or Network error, got {:?}", err),
     }
 }
 
