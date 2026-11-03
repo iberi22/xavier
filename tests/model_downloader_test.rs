@@ -1,5 +1,7 @@
+use sha2::{Digest, Sha256};
 use std::fs;
 use tempfile::tempdir;
+use xavier::crypto::hex_encode;
 use xavier::embedding::downloader::{DownloaderError, ModelDownloader};
 
 #[tokio::test]
@@ -13,17 +15,17 @@ async fn test_mock_download_success_and_atomic_rename() {
     let license_data = b"mock license content";
 
     // We compute what the SHA256 should be
-    let mut onnx_hasher = sha2::Sha256::new();
-    sha2::Digest::update(&mut onnx_hasher, onnx_data);
-    let onnx_hash = format!("{:x}", onnx_hasher.finalize());
+    let mut onnx_hasher = Sha256::new();
+    onnx_hasher.update(onnx_data);
+    let onnx_hash = hex_encode(onnx_hasher.finalize());
 
-    let mut json_hasher = sha2::Sha256::new();
-    sha2::Digest::update(&mut json_hasher, json_data);
-    let json_hash = format!("{:x}", json_hasher.finalize());
+    let mut json_hasher = Sha256::new();
+    json_hasher.update(json_data);
+    let json_hash = hex_encode(json_hasher.finalize());
 
-    let mut license_hasher = sha2::Sha256::new();
-    sha2::Digest::update(&mut license_hasher, license_data);
-    let license_hash = format!("{:x}", license_hasher.finalize());
+    let mut license_hasher = Sha256::new();
+    license_hasher.update(license_data);
+    let license_hash = hex_encode(license_hasher.finalize());
 
     let sums_content = format!(
         "{}  model.onnx\n{}  tokenizer.json\n{}  LICENSE\n",

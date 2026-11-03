@@ -88,3 +88,6 @@ mod q1_cli_parity;
 mod space_cli_e2e;
 #[path = "space_cli_real_e2e.rs"]
 mod space_cli_real_e2e;
+
+#[path = "suite_embedding_parity.rs"]
+mod suite_embedding_parity;
