@@ -49,9 +49,7 @@ export const LoginPage: React.FC = () => {
 
   useEffect(() => {
     const siteKey =
-      (typeof import.meta !== "undefined" &&
-        import.meta.env?.VITE_TURNSTILE_SITE_KEY) ||
-      "1x00000000000000000000AA"; // Cloudflare official test key
+      import.meta.env?.VITE_TURNSTILE_SITE_KEY || "1x00000000000000000000AA"; // Cloudflare official test key
 
     const renderWidget = () => {
       if (

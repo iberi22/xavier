@@ -209,7 +209,9 @@ test.describe("Xavier Generative UI (OpenUI)", () => {
 			page.getByText("Connect to the secure cognitive core"),
 		).toBeVisible();
 
-		const otherMethodsBtn = page.getByText("Otros métodos de acceso (Contraseña / 2FA)");
+		const otherMethodsBtn = page.getByText(
+			"Otros métodos de acceso (Contraseña / 2FA)",
+		);
 		if (await otherMethodsBtn.isVisible()) {
 			await otherMethodsBtn.click();
 		}
