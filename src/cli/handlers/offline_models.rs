@@ -215,6 +215,39 @@ pub async fn download_offline_model_handler(Json(payload): Json<DownloadModelPay
     }
 }
 
+/// CLI handler for `xavier models fetch --model <model_name>`
+pub async fn run_models_fetch_cli(model_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let settings = XavierSettings::current();
+    let target_dir = if let Some(first_dir) = settings.models.local_model_dirs.first() {
+        PathBuf::from(first_dir)
+    } else {
+        crate::settings::XavierSettings::resolve_data_dir().join("models")
+    };
+
+    let model_target_dir = target_dir.join(model_name);
+    let downloader = ModelDownloader::new();
+
+    info!(
+        "Starting download for model {} into {}",
+        model_name,
+        model_target_dir.display()
+    );
+    match downloader.fetch_model(model_name, &model_target_dir).await {
+        Ok(report) => {
+            info!(
+                "Successfully downloaded {} bytes to {}",
+                report.bytes_downloaded,
+                report.target_dir.display()
+            );
+            Ok(())
+        }
+        Err(e) => {
+            error!("Failed to fetch model: {}", e);
+            Err(Box::new(e))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,38 +395,5 @@ mod tests {
         assert_eq!(status.engine_status, "stopped");
 
         std::env::remove_var("XAVIER_LOCAL_LLM_URL");
-    }
-}
-
-/// CLI handler for `xavier models fetch --model <model_name>`
-pub async fn run_models_fetch_cli(model_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let settings = XavierSettings::current();
-    let target_dir = if let Some(first_dir) = settings.models.local_model_dirs.first() {
-        PathBuf::from(first_dir)
-    } else {
-        xavier::settings::XavierSettings::resolve_data_dir().join("models")
-    };
-
-    let model_target_dir = target_dir.join(model_name);
-    let downloader = ModelDownloader::new();
-
-    info!(
-        "Starting download for model {} into {}",
-        model_name,
-        model_target_dir.display()
-    );
-    match downloader.fetch_model(model_name, &model_target_dir).await {
-        Ok(report) => {
-            info!(
-                "Successfully downloaded {} bytes to {}",
-                report.bytes_downloaded,
-                report.target_dir.display()
-            );
-            Ok(())
-        }
-        Err(e) => {
-            error!("Failed to fetch model: {}", e);
-            Err(Box::new(e))
-        }
     }
 }
