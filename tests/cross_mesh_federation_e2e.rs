@@ -3,6 +3,8 @@
 //! Tests for asserting Node A and C wallet sync, cross-wallet isolation,
 //! cross-grant issuance, and boundary enforcement.
 
+xavier::isolate_test_process!();
+
 use chrono::{Duration, Utc};
 use tempfile::tempdir;
 use xavier::enterprise::rbac::Permission;

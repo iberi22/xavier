@@ -1,3 +1,5 @@
+xavier::isolate_test_process!();
+
 use axum::{
     extract::State,
     http::{Method, StatusCode},

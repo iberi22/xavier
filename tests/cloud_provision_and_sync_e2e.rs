@@ -1,3 +1,5 @@
+xavier::isolate_test_process!();
+
 use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
