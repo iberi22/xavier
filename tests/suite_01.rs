@@ -78,6 +78,8 @@ mod cli_provider_live_routes_e2e;
 mod mcp_surface_split_doc;
 #[path = "mirror_cli_roundtrip_e2e.rs"]
 mod mirror_cli_roundtrip_e2e;
+#[path = "model_downloader_test.rs"]
+mod model_downloader_test;
 #[path = "projects_list_cli_e2e.rs"]
 mod projects_list_cli_e2e;
 #[path = "q1_cli_parity.rs"]
@@ -86,3 +88,6 @@ mod q1_cli_parity;
 mod space_cli_e2e;
 #[path = "space_cli_real_e2e.rs"]
 mod space_cli_real_e2e;
+
+#[path = "suite_embedding_parity.rs"]
+mod suite_embedding_parity;
