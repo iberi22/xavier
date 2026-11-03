@@ -2,6 +2,7 @@
 //!
 //! Aggregates and re-exports the sub-modules within this module,
 //! providing the public API surface for module consumers.
+use crate::embedding::fallback::FallbackEmbedder;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ use thiserror::Error;
 use tracing::info;
 
 pub mod cache;
+pub mod fallback;
 pub mod gllm;
 pub mod ollama;
 pub mod openai;
@@ -919,55 +921,6 @@ impl Embedder for NoopEmbedder {
 
     fn dimension(&self) -> usize {
         0
-    }
-}
-
-pub(crate) struct FallbackEmbedder {
-    pub(crate) embedders: Vec<Arc<dyn Embedder>>,
-}
-
-#[async_trait]
-impl Embedder for FallbackEmbedder {
-    async fn encode(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        let mut last_error = None;
-        for embedder in &self.embedders {
-            match embedder.encode(text).await {
-                Ok(vector) if !vector.is_empty() => return Ok(vector),
-                Ok(_) => {
-                    last_error = Some(EmbeddingError::Parse(
-                        "embedding backend returned an empty vector".to_string(),
-                    ))
-                }
-                Err(error) => last_error = Some(error),
-            }
-        }
-
-        increment_embedding_error_count();
-        Err(last_error.unwrap_or_else(|| {
-            EmbeddingError::Config("no embedding backend produced a usable vector".to_string())
-        }))
-    }
-
-    async fn probe_health(&self) -> Result<f64, EmbeddingError> {
-        let mut last_error = None;
-        for embedder in &self.embedders {
-            match embedder.probe_health().await {
-                Ok(latency_ms) => return Ok(latency_ms),
-                Err(err) => last_error = Some(err),
-            }
-        }
-        increment_embedding_error_count();
-        Err(last_error.unwrap_or_else(|| {
-            EmbeddingError::Config("no embedding backend responded to health probe".to_string())
-        }))
-    }
-
-    fn dimension(&self) -> usize {
-        self.embedders
-            .iter()
-            .map(|embedder| embedder.dimension())
-            .find(|dimension| *dimension > 0)
-            .unwrap_or(0)
     }
 }
 
