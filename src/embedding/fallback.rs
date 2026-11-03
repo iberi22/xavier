@@ -2,8 +2,14 @@ use crate::embedding::{increment_embedding_error_count, Embedder, EmbeddingError
 use async_trait::async_trait;
 use std::sync::Arc;
 
-pub(crate) struct FallbackEmbedder {
-    pub(crate) embedders: Vec<Arc<dyn Embedder>>,
+pub struct FallbackEmbedder {
+    pub embedders: Vec<Arc<dyn Embedder>>,
+}
+
+impl FallbackEmbedder {
+    pub fn new(embedders: Vec<Arc<dyn Embedder>>) -> Self {
+        Self { embedders }
+    }
 }
 
 #[async_trait]

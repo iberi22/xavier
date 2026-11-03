@@ -1,13 +1,11 @@
-use axum::{routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::fs;
 use std::sync::Arc;
 
 use xavier::embedding::fallback::FallbackEmbedder;
-use xavier::embedding::{build_embedder_from_env, Embedder, EmbeddingError, NoopEmbedder};
+use xavier::embedding::{Embedder, EmbeddingError};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct FixturePair {
     id: String,
     text: String,
