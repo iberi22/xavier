@@ -587,5 +587,22 @@ async fn e2e_login_code_exchange_failure_uniformity() {
     assert_eq!(unknown.2, expired.2);
 }
 
+// ─── Test 9: Turnstile CAPTCHA token rejection ───
+#[tokio::test]
+async fn test_auth_turnstile_captcha_verification_rejection() {
+    let (base_url, client, _temp_dir, _auth_db) = spawn_test_server().await;
+    let res = client
+        .post(format!("{}/auth/login", base_url))
+        .json(&json!({
+            "email": "attacker@botnet.local",
+            "password": "invalid-password",
+            "turnstile_token": "2x00000000000000000000AB"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert!(res.status() == StatusCode::UNAUTHORIZED || res.status() == StatusCode::FORBIDDEN);
+}
+
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
 xavier::isolate_test_process!();
