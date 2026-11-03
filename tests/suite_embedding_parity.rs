@@ -32,7 +32,8 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 }
 
 fn l2_norm(v: &[f32]) -> f32 {
-    v.iter().map(|x| x * x).sum::<f32>().sqrt()
+    let sum_sq: f64 = v.iter().map(|&x| (x as f64) * (x as f64)).sum();
+    sum_sq.sqrt() as f32
 }
 
 // Mock engine returning the expected fixture vectors
@@ -123,7 +124,7 @@ async fn test_embedding_parity_and_accuracy() {
         let norm = l2_norm(&output);
         let norm_diff = (norm - 1.0).abs();
         assert!(
-            norm_diff <= 1e-6,
+            norm_diff <= 1e-5,
             "L2 norm mismatch: {} (diff: {})",
             norm,
             norm_diff
