@@ -584,6 +584,24 @@ impl SpaceManager {
         self.stores.get(space_id)?.members()
     }
 
+    /// Enforce message retention across all registered spaces according to each
+    /// space's [`SpaceProtocol::retention_days`] (falling back to `fallback_days`
+    /// when unspecified). Returns a vector of `(space_id, deleted_messages_count)`.
+    pub async fn sweep_retention(&self, fallback_days: u64) -> Vec<(String, usize)> {
+        let spaces = self.list().await;
+        let mut targets = Vec::with_capacity(spaces.len());
+        for s in spaces {
+            let proto = self.protocol(&s.id).await;
+            targets.push((s.id, proto.retention_days));
+        }
+        crate::espacio::retention::sweep_spaces_per_space(
+            &self.stores,
+            &targets,
+            chrono::Utc::now(),
+            fallback_days,
+        )
+    }
+
     /// Build namespace for a space
     pub fn namespace_for(space_id: &str, app_id: &str, instance_id: &str) -> String {
         format!("xavier://{}/{}/{}", space_id, app_id, instance_id)
@@ -1804,5 +1822,67 @@ mod persistence_tests {
 
         let members = mgr.members("esp_def").await.unwrap();
         assert_eq!(members.len(), 2); // owner + member2
+    }
+
+    #[tokio::test]
+    async fn test_manager_sweep_retention_enforces_space_protocol() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = SpaceManager::open(tmp.path());
+
+        let mut proto_custom = plain_protocol();
+        proto_custom.retention_days = Some(5);
+
+        mgr.create_with_keys(
+            "esp_retain".into(),
+            "Retain Space".into(),
+            "desc".into(),
+            "owner".into(),
+            false,
+            KeyOptions {
+                encrypt_records: false,
+                protocol: Some(proto_custom),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let store = mgr.stores.get("esp_retain").unwrap();
+        store
+            .append_message("esp_retain", "owner", "msg 0")
+            .unwrap();
+        store
+            .append_message("esp_retain", "owner", "msg 1")
+            .unwrap();
+        store
+            .append_message("esp_retain", "owner", "msg 2")
+            .unwrap();
+
+        let old_time = chrono::Utc::now()
+            .checked_sub_signed(chrono::TimeDelta::try_days(10).unwrap())
+            .unwrap();
+        let old_ts = old_time.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+
+        {
+            let mut conn = store.lock();
+            let tx = conn
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .unwrap();
+            tx.execute(
+                "UPDATE messages SET created_at = ?1 WHERE seq < 2",
+                rusqlite::params![old_ts],
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+
+        let swept = mgr.sweep_retention(30).await;
+        assert_eq!(swept.len(), 1);
+        assert_eq!(swept[0].0, "esp_retain");
+        assert_eq!(swept[0].1, 2);
+
+        let msgs = store.messages_since(None).unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].seq, 2);
     }
 }
