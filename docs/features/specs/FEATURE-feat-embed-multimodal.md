@@ -18,4 +18,5 @@ Comprehensive in-process multimodal embedding subsystem implementing SigLIP/CLIP
 - `src/memory/multimodal_vec_store.rs` (`MultimodalVecManager` virtual tables and queries)
 
 ## Test References
-- `tests/suite_multimodal_embeddings.rs` covering image vector dimension parity (768d), audio vector dimension parity (512d), cross-modal cosine similarity, and isolated storage insertion.
+- `tests/embedding_selector_test.rs` covering multimodal modality selection, embedder routing, and virtual storage tables.
+- `tests/e2e/multimodal_rag_pipeline_e2e.rs` covering image vector dimension parity (768d), audio vector dimension parity (512d), cross-modal cosine similarity, and isolated storage insertion.
