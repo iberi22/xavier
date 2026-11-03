@@ -2,6 +2,9 @@ import { motion } from "motion/react";
 import type React from "react";
 import { useState } from "react";
 import ParticleBackground from "../components/ParticleBackground";
+import { PasswordInput } from "../components/PasswordInput";
+import { TwoFactorInput } from "../components/TwoFactorInput";
+import { useAuth } from "../hooks/useAuth";
 
 /** Response shape returned by the passwordless magic-link endpoint. */
 interface MagicLinkResponse {
@@ -11,12 +14,17 @@ interface MagicLinkResponse {
 }
 
 export const LoginPage: React.FC = () => {
+  const [mode, setMode] = useState<"magic" | "password">("magic");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const { login, requires2FA } = useAuth();
+
+  const handleMagicSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setStatus(null);
@@ -50,6 +58,19 @@ export const LoginPage: React.FC = () => {
     }
   };
 
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    try {
+      await login(email, password, totpCode || undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to sign in");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="w-full h-screen bg-[#050505] flex items-center justify-center text-white font-mono relative overflow-hidden">
       <ParticleBackground />
@@ -65,51 +86,163 @@ export const LoginPage: React.FC = () => {
           Connect to the secure cognitive core
         </p>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1 w-full">
-            <label
-              htmlFor="email-input"
-              className="text-xs text-white/60 uppercase tracking-widest"
+        {mode === "magic" ? (
+          <form onSubmit={handleMagicSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1 w-full">
+              <label
+                htmlFor="email-input"
+                className="text-xs text-white/60 uppercase tracking-widest"
+              >
+                Email
+              </label>
+              <input
+                id="email-input"
+                className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="operator@xavier.local"
+                type="email"
+                required
+                autoComplete="email"
+                disabled={isLoading}
+              />
+            </div>
+
+            {error && (
+              <div className="text-red-500 text-[10px] uppercase tracking-widest bg-red-500/10 border border-red-500/20 p-2 rounded-lg">
+                {error}
+              </div>
+            )}
+
+            {status && (
+              <div className="text-[#39ff14] text-[10px] uppercase tracking-widest bg-[#39ff14]/10 border border-[#39ff14]/30 p-2 rounded-lg text-center">
+                {status}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-[#39ff14] text-black font-bold text-sm tracking-widest py-3 rounded-lg hover:shadow-[0_0_15px_rgba(57,255,20,0.5)] transition-all mt-4 disabled:opacity-50"
             >
-              Email
-            </label>
-            <input
-              id="email-input"
-              className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="operator@xavier.local"
-              type="email"
+              {isLoading ? "GENERATING..." : "INITIALIZE SESSION"}
+            </button>
+
+            <div className="mt-4 flex flex-col items-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setStatus(null);
+                  setMode("password");
+                }}
+                className="text-[11px] text-[#39ff14]/80 hover:text-[#39ff14] transition-colors underline uppercase tracking-wider"
+              >
+                Otros métodos de acceso (Contraseña / 2FA)
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1 w-full">
+              <label
+                htmlFor="email-input"
+                className="text-xs text-white/60 uppercase tracking-widest"
+              >
+                Email
+              </label>
+              <input
+                id="email-input"
+                className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="operator@xavier.local"
+                type="email"
+                required
+                autoComplete="email"
+                disabled={isLoading}
+              />
+            </div>
+
+            <PasswordInput
+              id="password-input"
+              label="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               required
-              autoComplete="email"
               disabled={isLoading}
             />
-          </div>
 
-          {error && (
-            <div className="text-red-500 text-[10px] uppercase tracking-widest bg-red-500/10 border border-red-500/20 p-2 rounded-lg">
-              {error}
+            {requires2FA && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                className="flex flex-col gap-2 mt-2"
+              >
+                <label className="text-xs text-[#39ff14] uppercase tracking-widest text-center mb-2">
+                  Enter 2FA Code
+                </label>
+                <TwoFactorInput
+                  value={totpCode}
+                  onChange={setTotpCode}
+                  length={8}
+                />
+                <p className="text-[10px] text-white/40 text-center uppercase tracking-widest">
+                  6-digit authenticator code, or an 8-digit backup code
+                </p>
+              </motion.div>
+            )}
+
+            {error && (
+              <div className="text-red-500 text-[10px] uppercase tracking-widest bg-red-500/10 border border-red-500/20 p-2 rounded-lg">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-[#39ff14] text-black font-bold text-sm tracking-widest py-3 rounded-lg hover:shadow-[0_0_15px_rgba(57,255,20,0.5)] transition-all mt-4 disabled:opacity-50"
+            >
+              {isLoading ? "VERIFYING..." : "INITIALIZE SESSION"}
+            </button>
+
+            <div className="mt-4 flex flex-col gap-3 items-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setStatus(null);
+                  setMode("magic");
+                }}
+                className="text-[11px] text-white/60 hover:text-white transition-colors underline uppercase tracking-wider"
+              >
+                ← Volver a acceso por Magic Link
+              </button>
+              <div className="flex gap-4 mt-2">
+                <button
+                  type="button"
+                  onClick={() => (window.location.hash = "#/register")}
+                  className="text-[10px] text-white/40 hover:text-[#39ff14] transition-colors uppercase tracking-widest"
+                >
+                  Register new operator
+                </button>
+                <button
+                  type="button"
+                  onClick={() => (window.location.hash = "#/recovery")}
+                  className="text-[10px] text-white/40 hover:text-[#39ff14] transition-colors uppercase tracking-widest"
+                >
+                  Forgot access credentials?
+                </button>
+              </div>
             </div>
-          )}
-
-          {status && (
-            <div className="text-[#39ff14] text-[10px] uppercase tracking-widest bg-[#39ff14]/10 border border-[#39ff14]/30 p-2 rounded-lg text-center">
-              {status}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full bg-[#39ff14] text-black font-bold text-sm tracking-widest py-3 rounded-lg hover:shadow-[0_0_15px_rgba(57,255,20,0.5)] transition-all mt-4 disabled:opacity-50"
-          >
-            {isLoading ? "GENERATING..." : "INITIALIZE SESSION"}
-          </button>
-        </form>
+          </form>
+        )}
 
         <p className="mt-8 text-[10px] text-white/40 text-center uppercase tracking-widest leading-relaxed">
-          No passwords. No accounts to recover. A one-time link is sent to your
-          inbox.
+          {mode === "magic"
+            ? "No passwords. No accounts to recover. A one-time link is sent to your inbox."
+            : "Protected by Argon2id cryptographic password hashing and RFC 6238 TOTP 2FA."}
         </p>
       </motion.div>
     </div>

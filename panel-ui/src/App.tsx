@@ -580,6 +580,12 @@ function AppContent() {
 		);
 	}
 
+	if (!isAuthenticated) {
+		if (hash === "#/register") return <RegisterPage />;
+		if (hash === "#/recovery") return <RecoveryPage />;
+		return <LoginPage />;
+	}
+
 	if (showOnboarding) {
 		const isCloud =
 			typeof window !== "undefined" &&
@@ -589,12 +595,6 @@ function AppContent() {
 		if (!isCloud) {
 			return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
 		}
-	}
-
-	if (!isAuthenticated) {
-		if (hash === "#/register") return <RegisterPage />;
-		if (hash === "#/recovery") return <RecoveryPage />;
-		return <LoginPage />;
 	}
 
 	// Auth-only routes

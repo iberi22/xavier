@@ -31,10 +31,23 @@ describe("LoginPage (Passwordless Magic Link)", () => {
       screen.getByRole("button", { name: "INITIALIZE SESSION" }),
     ).toBeInTheDocument();
 
-    // Verify password and 2FA fields are strictly absent
+    // Verify password and 2FA fields are strictly absent in magic link mode
     expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
     expect(screen.queryByText("Enter 2FA Code")).not.toBeInTheDocument();
     expect(screen.queryByText("REGISTER NEW OPERATOR")).not.toBeInTheDocument();
+
+    // Verify toggle link to password & 2FA mode is present
+    const toggleBtn = screen.getByText("Otros métodos de acceso (Contraseña / 2FA)");
+    expect(toggleBtn).toBeInTheDocument();
+
+    // Switch to password mode
+    fireEvent.click(toggleBtn);
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
+    expect(screen.getByText("Register new operator")).toBeInTheDocument();
+
+    // Switch back to magic link mode
+    fireEvent.click(screen.getByText("← Volver a acceso por Magic Link"));
+    expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
   });
 
   it("submits email to magic-link endpoint and shows redirect status on success", async () => {
