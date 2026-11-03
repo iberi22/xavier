@@ -62,7 +62,7 @@ export const LoginPage: React.FC = () => {
           XAVIER LOGIN
         </h1>
         <p className="text-xs opacity-60 mb-8 leading-relaxed uppercase tracking-tighter">
-          Passwordless · zero-knowledge magic link
+          Connect to the secure cognitive core
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">

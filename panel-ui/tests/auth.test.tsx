@@ -24,7 +24,7 @@ describe("LoginPage (Passwordless Magic Link)", () => {
 
     expect(screen.getByText("XAVIER LOGIN")).toBeInTheDocument();
     expect(
-      screen.getByText("Passwordless · zero-knowledge magic link"),
+      screen.getByText("Connect to the secure cognitive core"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Email")).toBeInTheDocument();
     expect(

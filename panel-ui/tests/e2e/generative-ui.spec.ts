@@ -183,6 +183,17 @@ test.describe("Xavier Generative UI (OpenUI)", () => {
 		const capturedAuthTokens: string[] = [];
 		await setupMockRoutes(page, { capturedAuthTokens });
 
+		await page.route("**/auth/magic-link", async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({
+					ok: true,
+					magic_url: "/#/session?token=mock-jwt-token&email=operator@xavier.local",
+				}),
+			});
+		});
+
 		// Mark onboarding completed so the app lands on the login page directly
 		await page.addInitScript(() => {
 			window.localStorage.setItem("xavier_onboarding_completed", "true");
@@ -201,7 +212,10 @@ test.describe("Xavier Generative UI (OpenUI)", () => {
 		await page
 			.getByPlaceholder("operator@xavier.local")
 			.fill("operator@xavier.local");
-		await page.getByLabel("Password", { exact: true }).fill("password123");
+		const passwordInput = page.locator('input[type="password"]');
+		if (await passwordInput.isVisible()) {
+			await passwordInput.fill("password123");
+		}
 		await page.getByRole("button", { name: "INITIALIZE SESSION" }).click();
 
 		// 2. Command input in authenticated panel shell
