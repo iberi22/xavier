@@ -205,8 +205,8 @@ async fn test_multimodal_storage_tables() {
         .ensure_modality_table(&conn, DataTypeKind::Video, 768)
         .unwrap();
 
-    let image_vec = vec![0.036084392f32; 768];
-    let audio_vec = vec![0.044194174f32; 512];
+    let image_vec = vec![0.036_084_39_f32; 768];
+    let audio_vec = vec![0.044_194_17_f32; 512];
 
     manager
         .insert_modality_embedding(
