@@ -268,6 +268,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 	children,
 }) => {
 	const refreshSession = useAuthStore((state) => state.refreshSession);
+	const setSession = useAuthStore((state) => state.setSession);
+
+	useEffect(() => {
+		const handleHash = () => {
+			const h = window.location.hash;
+			if (h.startsWith("#/session")) {
+				const q = h.indexOf("?");
+				if (q >= 0) {
+					const params = new URLSearchParams(h.slice(q + 1));
+					const sessionToken = params.get("token");
+					const email = params.get("email") || "iberi22@gmail.com";
+					const tenant = params.get("tenant") || "swal";
+					if (sessionToken) {
+						setSession(sessionToken, email, tenant);
+					}
+				}
+			}
+		};
+		window.addEventListener("hashchange", handleHash);
+		return () => window.removeEventListener("hashchange", handleHash);
+	}, [setSession]);
 
 	useEffect(() => {
 		// Attempt to refresh session on mount

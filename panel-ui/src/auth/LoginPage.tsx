@@ -5,6 +5,7 @@ import ParticleBackground from "../components/ParticleBackground";
 import { PasswordInput } from "../components/PasswordInput";
 import { TwoFactorInput } from "../components/TwoFactorInput";
 import { useAuth } from "../hooks/useAuth";
+import { useAuthStore } from "./AuthProvider";
 
 /** Response shape returned by the passwordless magic-link endpoint. */
 interface MagicLinkResponse {
@@ -42,6 +43,22 @@ export const LoginPage: React.FC = () => {
       if (res.ok && data.ok) {
         if (data.magic_url) {
           setStatus("MAGIC LINK GENERATED - REDIRECTING...");
+          try {
+            const url = new URL(data.magic_url, window.location.origin);
+            const h = url.hash;
+            if (h.startsWith("#/session")) {
+              const q = h.indexOf("?");
+              if (q >= 0) {
+                const params = new URLSearchParams(h.slice(q + 1));
+                const sessionToken = params.get("token");
+                const mail = params.get("email");
+                const tenant = params.get("tenant");
+                if (sessionToken) {
+                  useAuthStore.getState().setSession(sessionToken, mail || undefined, tenant || undefined);
+                }
+              }
+            }
+          } catch {}
           window.location.href = data.magic_url;
         } else {
           setError("Magic link generated but no redirect URL was returned");

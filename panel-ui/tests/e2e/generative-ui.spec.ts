@@ -189,7 +189,7 @@ test.describe("Xavier Generative UI (OpenUI)", () => {
 				contentType: "application/json",
 				body: JSON.stringify({
 					ok: true,
-					magic_url: "/#/session?token=mock-jwt-token&email=operator@xavier.local",
+					magic_url: `/#/session?token=${testToken}&email=operator@xavier.local`,
 				}),
 			});
 		});
@@ -208,6 +208,11 @@ test.describe("Xavier Generative UI (OpenUI)", () => {
 		await expect(
 			page.getByText("Connect to the secure cognitive core"),
 		).toBeVisible();
+
+		const otherMethodsBtn = page.getByText("Otros métodos de acceso (Contraseña / 2FA)");
+		if (await otherMethodsBtn.isVisible()) {
+			await otherMethodsBtn.click();
+		}
 
 		await page
 			.getByPlaceholder("operator@xavier.local")
