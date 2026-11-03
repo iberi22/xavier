@@ -11,6 +11,7 @@ use thiserror::Error;
 use tracing::info;
 
 pub mod cache;
+pub mod downloader;
 pub mod gllm;
 pub mod ollama;
 pub mod openai;
