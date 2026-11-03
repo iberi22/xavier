@@ -116,6 +116,7 @@ function AppContent() {
 	});
 	const [showSecurityOnboarding, setShowSecurityOnboarding] = useState(() => {
 		if (typeof window === "undefined") return false;
+		if (window.location.hash.startsWith("#/session")) return false;
 		if (localStorage.getItem("xavier_security_onboarding_completed"))
 			return false;
 		if (localStorage.getItem("xavier_onboarding_completed")) return false;
@@ -597,6 +598,17 @@ function AppContent() {
 		return <LoginPage />;
 	}
 
+	if (showOnboarding) {
+		const isCloud =
+			typeof window !== "undefined" &&
+			(window.location.hostname === "xavier-cloud.swal.network" ||
+				window.location.hostname.endsWith(".xavier-panel.pages.dev") ||
+				window.location.hash.startsWith("#/session"));
+		if (!isCloud) {
+			return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
+		}
+	}
+
 	if (
 		showSecurityOnboarding &&
 		hash !== "#/2fa/setup" &&
@@ -608,17 +620,6 @@ function AppContent() {
 				onComplete={() => setShowSecurityOnboarding(false)}
 			/>
 		);
-	}
-
-	if (showOnboarding) {
-		const isCloud =
-			typeof window !== "undefined" &&
-			(window.location.hostname === "xavier-cloud.swal.network" ||
-				window.location.hostname.endsWith(".xavier-panel.pages.dev") ||
-				window.location.hash.startsWith("#/session"));
-		if (!isCloud) {
-			return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
-		}
 	}
 
 	// Auth-only routes
