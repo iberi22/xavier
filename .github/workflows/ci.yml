@@ -582,6 +582,39 @@ jobs:
             echo "Verified $f executed tests successfully"
           done
 
+  # Job: Cross-Platform Compilation Check (Windows & macOS)
+  cross-platform-matrix:
+    name: Cross-Platform (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    env:
+      # Clear Linux-only mold linker flag set at workflow level
+      RUSTFLAGS: ""
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-cross-platform-${{ matrix.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Run Cargo Check (Cross-Platform)
+        run: cargo check --workspace --features ci-safe
+
+      - name: Run Smoke Tests (Cross-Platform)
+        run: cargo test --package xavier --lib --features ci-safe -- cli::commands::login
+
   # Job 4: Secret Scan
   secret-scan:
     name: Secret Scan (Gitleaks)
@@ -755,6 +788,7 @@ jobs:
       - changes
       - rust-test
       - rust-integration
+      - cross-platform-matrix
       - market-v2-tests
       - espacio-tests
       - secret-scan

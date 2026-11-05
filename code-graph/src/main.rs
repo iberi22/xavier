@@ -714,6 +714,7 @@ impl<'a> Drop for SocketCleanupGuard<'a> {
 }
 
 /// Run Axum server over a Unix Domain Socket with a custom shutdown signal
+#[cfg(unix)]
 async fn run_uds_server_with_shutdown<F>(
     socket_path: &Path,
     app: axum::Router,
@@ -743,7 +744,6 @@ where
     let listener = tokio::net::UnixListener::bind(socket_path)?;
 
     // Set file permissions (0600 on Unix)
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let permissions = std::fs::Permissions::from_mode(0o600);
@@ -795,6 +795,22 @@ where
     Ok(())
 }
 
+/// Fallback when running on non-Unix platforms
+#[cfg(not(unix))]
+async fn run_uds_server_with_shutdown<F>(
+    socket_path: &Path,
+    _app: axum::Router,
+    _shutdown: F,
+) -> anyhow::Result<()>
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    anyhow::bail!(
+        "Unix domain sockets are not supported on this platform: {:?}",
+        socket_path
+    )
+}
+
 /// Run Axum server over a Unix Domain Socket with default ctrl-c shutdown signal
 async fn run_uds_server(socket_path: &Path, app: axum::Router) -> anyhow::Result<()> {
     run_uds_server_with_shutdown(socket_path, app, async {
@@ -812,6 +828,7 @@ mod tests {
     use super::*;
     use axum::routing::get;
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_uds_server_lifecycle_and_request() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
