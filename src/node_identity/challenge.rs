@@ -90,11 +90,7 @@ pub fn verify_sync_request(
     let skew_limit = max_skew_secs.unwrap_or(DEFAULT_MAX_SKEW_SECS);
 
     // Timestamp expiration / freshness check
-    let diff = if now >= header.timestamp {
-        now - header.timestamp
-    } else {
-        header.timestamp - now
-    };
+    let diff = now.abs_diff(header.timestamp);
 
     if diff > skew_limit {
         bail!(
