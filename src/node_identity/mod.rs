@@ -12,6 +12,7 @@
 //! **No-goals:** Stripe-as-Pro, ledger en mesh, templates biométricos.
 
 pub mod bip39_seed;
+pub mod challenge;
 pub mod check_codes;
 pub mod derive;
 pub mod founder;
@@ -21,6 +22,10 @@ pub mod shamir;
 pub mod vault;
 
 pub use bip39_seed::{GeneratedSeed, SeedPhrase};
+pub use challenge::{
+    canonical_sign_payload, sign_sync_request, verify_sync_request, SignatureHeader,
+    CLOUD_SYNC_DOMAIN, DEFAULT_MAX_SKEW_SECS,
+};
 pub use check_codes::{CheckCodes, OrderMode, OrderedChallenge};
 pub use derive::{DerivedNodeKeys, DOMAIN_ML_DSA, DOMAIN_NODE_ED25519};
 pub use founder::{

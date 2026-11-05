@@ -6,13 +6,20 @@
 use crate::mesh::node::{NodeId, NodeIdentity};
 use crate::mesh::peer::PeerInfo;
 use crate::mesh::protocol::{MeshHandshakeResponse, MeshManifest};
+pub use crate::node_identity::challenge::{sign_sync_request, SignatureHeader};
 use crate::session::sharing::SessionBundle;
 use anyhow::{Context, Result};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 type ChunkFetchResult = Result<Option<(String, Vec<u8>)>>;
+
+fn compute_payload_hash<T: ?Sized + serde::Serialize>(payload: &T) -> String {
+    let bytes = serde_json::to_vec(payload).unwrap_or_default();
+    crate::crypto::hex_encode(Sha256::digest(&bytes))
+}
 
 pub struct CloudPeer {
     client: reqwest::Client,
@@ -186,17 +193,23 @@ impl CloudPeer {
                 "created_at": chrono::Utc::now().to_rfc3339()
             });
 
+            let payload_hash = compute_payload_hash(&payload);
+            let sig_header = sign_sync_request(&self.local_identity, &payload_hash);
+
             let url = format!("{}/rest/v1/mesh_chunks", self.supabase_url);
-            let resp = self
+            let mut req = self
                 .client
                 .post(&url)
                 .header("apikey", &self.supabase_key)
                 .header("Authorization", format!("Bearer {}", self.supabase_key))
                 .header("Content-Type", "application/json")
-                .header("Prefer", "resolution=merge-duplicates")
-                .json(&payload)
-                .send()
-                .await?;
+                .header("Prefer", "resolution=merge-duplicates");
+
+            for (header_name, header_val) in sig_header.to_headers() {
+                req = req.header(header_name, header_val);
+            }
+
+            let resp = req.json(&payload).send().await?;
 
             if resp.status().is_success() || resp.status() == reqwest::StatusCode::CREATED {
                 pushed.push(hash.clone());
@@ -208,17 +221,23 @@ impl CloudPeer {
 
     /// Publish the local manifest to cloud storage.
     pub async fn publish_manifest(&self, manifest: &MeshManifest) -> Result<()> {
+        let payload_hash = compute_payload_hash(manifest);
+        let sig_header = sign_sync_request(&self.local_identity, &payload_hash);
+
         let url = format!("{}/rest/v1/mesh_manifests", self.supabase_url);
-        let resp = self
+        let mut req = self
             .client
             .post(&url)
             .header("apikey", &self.supabase_key)
             .header("Authorization", format!("Bearer {}", self.supabase_key))
             .header("Content-Type", "application/json")
-            .header("Prefer", "resolution=merge-duplicates")
-            .json(manifest)
-            .send()
-            .await?;
+            .header("Prefer", "resolution=merge-duplicates");
+
+        for (header_name, header_val) in sig_header.to_headers() {
+            req = req.header(header_name, header_val);
+        }
+
+        let resp = req.json(manifest).send().await?;
 
         if !resp.status().is_success() && resp.status() != reqwest::StatusCode::CREATED {
             anyhow::bail!("Failed to publish manifest to cloud: {}", resp.status());
@@ -241,17 +260,23 @@ impl CloudPeer {
             "created_at": chrono::Utc::now().to_rfc3339()
         });
 
+        let payload_hash = compute_payload_hash(&payload);
+        let sig_header = sign_sync_request(&self.local_identity, &payload_hash);
+
         let url = format!("{}/rest/v1/mesh_sessions", self.supabase_url);
-        let resp = self
+        let mut req = self
             .client
             .post(&url)
             .header("apikey", &self.supabase_key)
             .header("Authorization", format!("Bearer {}", self.supabase_key))
             .header("Content-Type", "application/json")
-            .header("Prefer", "resolution=merge-duplicates")
-            .json(&payload)
-            .send()
-            .await?;
+            .header("Prefer", "resolution=merge-duplicates");
+
+        for (header_name, header_val) in sig_header.to_headers() {
+            req = req.header(header_name, header_val);
+        }
+
+        let resp = req.json(&payload).send().await?;
 
         if !resp.status().is_success() && resp.status() != reqwest::StatusCode::CREATED {
             anyhow::bail!("Failed to share session to cloud: {}", resp.status());
@@ -286,5 +311,40 @@ impl CloudflareAdapters {
         } else {
             &self.r2_shard_1
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::node_identity::challenge::verify_sync_request;
+
+    #[test]
+    fn test_compute_payload_hash_and_sign() {
+        let identity = Arc::new(NodeIdentity::generate());
+        let payload = json!({
+            "test_key": "test_value",
+            "number": 42
+        });
+
+        let hash = compute_payload_hash(&payload);
+        assert!(!hash.is_empty());
+
+        let sig_header = sign_sync_request(&identity, &hash);
+        assert_eq!(sig_header.node_id, identity.node_id.as_str());
+
+        let verified = verify_sync_request(&sig_header, &hash, None).unwrap();
+        assert_eq!(verified, identity.node_id);
+
+        let headers = sig_header.to_headers();
+        let map: HashMap<&str, String> = headers.into_iter().collect();
+        assert_eq!(map.get("X-Node-Id").unwrap(), identity.node_id.as_str());
+        assert_eq!(
+            map.get("X-Node-Public-Key").unwrap(),
+            &crate::crypto::hex_encode(&identity.public_key)
+        );
+        assert!(map.contains_key("X-Node-Signature"));
+        assert!(map.contains_key("X-Timestamp"));
+        assert!(map.contains_key("X-Nonce"));
     }
 }
