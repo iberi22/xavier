@@ -497,7 +497,7 @@ fn canonical_roots(kind: RootKind, roots: &[PathBuf]) -> Result<Vec<PathBuf>, Po
     Ok(out)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;

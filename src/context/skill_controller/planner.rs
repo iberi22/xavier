@@ -302,7 +302,7 @@ fn display(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};

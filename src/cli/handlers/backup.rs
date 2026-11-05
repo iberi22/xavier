@@ -385,6 +385,7 @@ fn reserve_destination(base: &Path, explicit: bool) -> std::io::Result<PathBuf> 
     let mut candidate = base.to_path_buf();
     let mut suffix = 0u64;
     loop {
+        #[allow(unused_mut)]
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
         builder.mode(0o700);

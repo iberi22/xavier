@@ -9,6 +9,7 @@ target/
 *.sqlite3-*
 *.log
 .env
+.env.*
 shell.nix
 build.sh
 node_modules/
@@ -86,7 +87,8 @@ xavier_memory.db*
 # SWAL preflight + skill registry (generated)
 .atl/
 .gitcore/skill-registry.json
-panel-ui/.env.local
+panel-ui/.env
+.env.*.local
 
 # ===== WAVE-8.09: data hygiene (WAL/SHM/bak quarantine) =====
 data/*.db.bak

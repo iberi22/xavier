@@ -524,6 +524,7 @@ fn test_member_path_refuses_traversal_absolute_and_symlinked_inputs() {
     assert!(member_path(dir.path(), "").is_none());
     assert!(member_path(dir.path(), "/etc/passwd").is_none());
 
+    #[cfg(unix)]
     let outside = _tmp.path().join("outside.md");
     member(_tmp.path(), "outside.md", "outside-canary\n");
     #[cfg(unix)]
@@ -580,6 +581,7 @@ fn test_read_member_refuses_a_fifo_without_opening_it() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn test_audit_refuses_a_symlinked_skill_md_pointing_out_of_the_package() {
     let (tmp, source) = fixture();

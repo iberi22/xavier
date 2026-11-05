@@ -30,6 +30,7 @@ pub mod improve;
 pub mod installer;
 pub mod license;
 pub mod llm;
+pub mod login;
 pub mod memory;
 pub mod mesh;
 pub mod mirror;
@@ -497,6 +498,9 @@ impl Cli {
             Command::Cloud { cmd } => {
                 crate::cli::handlers::cloud::handle_cloud_command(cmd.clone()).await
             }
+            Command::Login(args) => login::handle_login_cmd(args.clone()).await,
+            Command::Auth { cmd } => login::handle_auth_cmd(cmd.clone()).await,
+            Command::Logout { json } => login::handle_logout_cmd(*json).await,
             Command::Agent { cmd } => {
                 crate::cli::handlers::agent_cli::handle_agent_command(cmd.clone()).await
             }
