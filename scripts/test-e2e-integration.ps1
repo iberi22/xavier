@@ -35,8 +35,16 @@ function Write-TestResult {
 Write-TestHeader "TEST 1: Xavier Standalone"
 
 ## 1.1: Binary exists
-$xavierBin = "e:\proyectosSWAL\xavier\target\release\xavier.exe"
-$binaryExists = Test-Path $xavierBin
+$xavierBin = if (Test-Path (Join-Path $PSScriptRoot "..\target\release\xavier.exe")) {
+    Join-Path $PSScriptRoot "..\target\release\xavier.exe"
+} elseif (Test-Path (Join-Path $PSScriptRoot "..\target\release\xavier")) {
+    Join-Path $PSScriptRoot "..\target\release\xavier"
+} elseif (Get-Command xavier -ErrorAction SilentlyContinue) {
+    (Get-Command xavier).Source
+} else {
+    "xavier"
+}
+$binaryExists = (Test-Path $xavierBin) -or (Get-Command xavier -ErrorAction SilentlyContinue)
 Write-TestResult "Xavier binary exists" $binaryExists
 
 if ($binaryExists) {
@@ -74,7 +82,7 @@ if ($binaryExists) {
 # ============================================================================
 Write-TestHeader "TEST 2: AGY CLI (Antigravity) Standalone"
 
-$agyBinDir = "$env:LOCALAPPDATA\agy\bin"
+$agyBinDir = if ($env:LOCALAPPDATA) { "$env:LOCALAPPDATA\agy\bin" } else { "$HOME/.local/bin" }
 if ((Test-Path $agyBinDir) -and ($env:PATH -notmatch [regex]::Escape($agyBinDir))) {
     $env:PATH = "$agyBinDir;$env:PATH"
 }
@@ -104,8 +112,13 @@ try {
 Write-TestHeader "TEST 3: Gestalt Configuration"
 
 ## 3.1: Gestalt exists
-$gestaltDir = "e:\proyectosSWAL\gestalt"
-$gestaltExists = Test-Path $gestaltDir
+$candidateGestalt = @(
+    (Join-Path $PSScriptRoot "..\..\gestalt"),
+    "e:\proyectosSWAL\gestalt",
+    "$HOME/proyectosSWAL/gestalt"
+)
+$gestaltDir = $candidateGestalt | Where-Object { Test-Path $_ } | Select-Object -First 1
+$gestaltExists = -not [string]::IsNullOrEmpty($gestaltDir)
 Write-TestResult "Gestalt directory exists" $gestaltExists
 
 if ($gestaltExists) {
@@ -127,8 +140,16 @@ if ($gestaltExists) {
     }
     
     ## 3.4: Gestalt project valid
-    $gestaltBin = "C:\Users\belal\.cargo\target_global\debug\gestalt_cli.exe"
-    $gestaltOk = Test-Path $gestaltBin
+    $candidateGestaltBins = @(
+        (Join-Path $gestaltDir "target\release\gestalt_cli.exe"),
+        (Join-Path $gestaltDir "target\debug\gestalt_cli.exe"),
+        (Join-Path $gestaltDir "target\release\gestalt_cli"),
+        (Join-Path $gestaltDir "target\debug\gestalt_cli"),
+        "$HOME\.cargo\target_global\debug\gestalt_cli.exe",
+        "$HOME\.cargo\target_global\release\gestalt_cli.exe"
+    )
+    $gestaltBin = $candidateGestaltBins | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $gestaltOk = (-not [string]::IsNullOrEmpty($gestaltBin)) -or (Get-Command gestalt_cli -ErrorAction SilentlyContinue)
     Write-TestResult "Gestalt binary built and valid" $gestaltOk
 }
 
