@@ -30,6 +30,10 @@ pub struct LoginArgs {
     #[arg(long)]
     pub token: Option<String>,
 
+    /// 6-digit TOTP two-factor authentication code (for headless/automated environments)
+    #[arg(long = "totp-code", env = "XAVIER_TOTP_CODE")]
+    pub totp_code: Option<String>,
+
     /// Do not automatically open the default web browser
     #[arg(long, default_value_t = false)]
     pub no_browser: bool,
@@ -61,11 +65,39 @@ pub enum AuthCommand {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct MagicLinkResponse {
+    #[serde(default)]
     pub ok: bool,
     pub message: Option<String>,
     pub magic_url: Option<String>,
     pub email: Option<String>,
     pub expires_in_secs: Option<u64>,
+    #[serde(default)]
+    pub requires_2fa: bool,
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TwoFactorChallenge {
+    pub requires_2fa: bool,
+    pub session_id: String,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Verify2faRequest {
+    pub session_id: String,
+    pub code: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Verify2faResponse {
+    pub token: Option<String>,
+    pub session_token: Option<String>,
+    pub access_token: Option<String>,
+    pub jwt: Option<String>,
+    pub ok: Option<bool>,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -177,6 +209,173 @@ pub async fn save_session_credentials(cloud_url: &str, token: &str) -> Result<()
     Ok(())
 }
 
+/// Validates and normalizes an RFC 6238 TOTP 6-digit code.
+/// Strips leading/trailing and inner whitespace, and ensures it consists of exactly 6 ASCII digits.
+pub fn validate_totp_code(input: &str) -> Result<String> {
+    let cleaned: String = input.chars().filter(|c| !c.is_whitespace()).collect();
+    if cleaned.len() != 6 || !cleaned.chars().all(|c| c.is_ascii_digit()) {
+        bail!(
+            "Invalid 2FA code format: expected exactly 6 digits, received '{}'",
+            cleaned
+        );
+    }
+    Ok(cleaned)
+}
+
+/// Resolves the TOTP code from arguments, environment variable, or interactive terminal prompt.
+pub fn prompt_or_resolve_totp_code(args_code: Option<&str>) -> Result<String> {
+    // 1. Check argument if provided
+    if let Some(code) = args_code {
+        let trimmed = code.trim();
+        if !trimmed.is_empty() {
+            return validate_totp_code(trimmed);
+        }
+    }
+
+    // 2. Check environment variable XAVIER_TOTP_CODE
+    if let Ok(env_code) = std::env::var("XAVIER_TOTP_CODE") {
+        let trimmed = env_code.trim();
+        if !trimmed.is_empty() {
+            return validate_totp_code(trimmed);
+        }
+    }
+
+    // 3. Interactive prompt
+    // Prompt the user in terminal: "Enter 6-digit 2FA code (Authenticator app): "
+    let prompt_text = "Enter 6-digit 2FA code (Authenticator app): ";
+    let raw_input: String = match dialoguer::Input::new()
+        .with_prompt(prompt_text.trim_end())
+        .interact_text()
+    {
+        Ok(val) => val,
+        Err(_) => {
+            // Fallback to standard stdin reading if dialoguer fails or non-standard TTY
+            use std::io::Write;
+            eprint!("{}", prompt_text);
+            std::io::stderr().flush().ok();
+            let mut line = String::new();
+            std::io::stdin()
+                .read_line(&mut line)
+                .context("failed to read 2FA code from standard input")?;
+            line
+        }
+    };
+
+    validate_totp_code(&raw_input)
+}
+
+/// Sends POST /auth/verify-2fa with { session_id, code } to receive final JWT session token.
+pub async fn send_verify_2fa(cloud_url: &str, session_id: &str, code: &str) -> Result<String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()?;
+
+    let verify_url = format!("{}/auth/verify-2fa", cloud_url.trim_end_matches('/'));
+    let payload = Verify2faRequest {
+        session_id: session_id.to_string(),
+        code: code.to_string(),
+    };
+
+    let resp = client
+        .post(&verify_url)
+        .json(&payload)
+        .send()
+        .await
+        .with_context(|| format!("failed to send 2FA verification to {}", verify_url))?;
+
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        bail!("2FA verification failed (HTTP {}): {}", status, body);
+    }
+
+    let parsed: Verify2faResponse = serde_json::from_str(&body)
+        .with_context(|| format!("failed to parse 2FA verification response JSON: {}", body))?;
+
+    let token = parsed
+        .token
+        .or(parsed.session_token)
+        .or(parsed.access_token)
+        .or(parsed.jwt)
+        .ok_or_else(|| {
+            anyhow!("2FA verification response did not include a valid session token")
+        })?;
+
+    Ok(token)
+}
+
+/// Prints the successful login message or JSON payload.
+fn print_login_success(
+    args: &LoginArgs,
+    email: &str,
+    cloud_url: &str,
+    token: &str,
+    usage: &CloudUsageResponse,
+) -> Result<()> {
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "status": "authenticated",
+                "email": email,
+                "cloud_url": cloud_url,
+                "tenant": usage.tenant,
+                "plan": usage.plan,
+                "storage_bytes": usage.bytes,
+                "storage_quota": usage.quota,
+                "chunks": usage.chunks,
+                "session_token": token,
+            }))?
+        );
+    } else {
+        println!();
+        println!(
+            "{}",
+            "════════════════════════════════════════════════════════════".cyan()
+        );
+        println!(
+            "  {} ",
+            "✓ Successfully authenticated with Xavier Cloud!"
+                .bold()
+                .green()
+        );
+        println!(
+            "{}",
+            "════════════════════════════════════════════════════════════".cyan()
+        );
+        println!("  {:<16} {}", "Account Email:", email.yellow());
+        println!("  {:<16} {}", "Tenant:", usage.tenant.green());
+        if let Some(ref p) = usage.plan {
+            println!("  {:<16} {}", "Plan:", p.white());
+        }
+        println!(
+            "  {:<16} {} in {} chunks ({:.2}% of {})",
+            "Cloud Storage:",
+            format_bytes(usage.bytes).cyan(),
+            usage.chunks,
+            usage.percent.unwrap_or(0.0),
+            format_bytes(usage.quota).white()
+        );
+        if let Some(tokens) = usage.ai_tokens_per_day {
+            println!("  {:<16} {} tokens/day", "AI Inference:", tokens);
+        }
+        println!(
+            "{}",
+            "════════════════════════════════════════════════════════════".cyan()
+        );
+        println!(
+            "  {} Session credentials persisted to secure vault.",
+            "✓".green()
+        );
+        println!(
+            "  {} Cloud backups and local CLI are now fully synchronized.\n",
+            "✓".green()
+        );
+    }
+    Ok(())
+}
+
 /// Formats bytes into a human-readable string.
 fn format_bytes(bytes: u64) -> String {
     if bytes >= 1024 * 1024 * 1024 {
@@ -259,7 +458,10 @@ pub async fn handle_login_cmd(args: LoginArgs) -> Result<()> {
     // Interactive Browser / Magic Link flow
     let email = args
         .email
-        .filter(|e| !e.trim().is_empty())
+        .as_deref()
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+        .map(ToString::to_string)
         .unwrap_or_else(|| DEFAULT_LOGIN_EMAIL.to_string());
 
     if !args.json {
@@ -293,138 +495,142 @@ pub async fn handle_login_cmd(args: LoginArgs) -> Result<()> {
         .await
         .with_context(|| format!("failed to request magic link from {}", magic_req_url))?;
 
-    if !magic_resp.status().is_success() {
-        let status = magic_resp.status();
-        let body = magic_resp.text().await.unwrap_or_default();
-        bail!(
-            "Xavier Cloud rejected login request (HTTP {}): {}",
-            status,
-            body
-        );
-    }
+    let status = magic_resp.status();
+    let resp_text = magic_resp.text().await.unwrap_or_default();
 
-    let magic_data = magic_resp.json::<MagicLinkResponse>().await?;
-    let magic_url = magic_data
-        .magic_url
-        .ok_or_else(|| anyhow!("Cloud response did not return a valid authentication URL"))?;
+    if !status.is_success() {
+        // Also inspect if error body indicates 2FA challenge
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&resp_text) {
+            if val.get("requires_2fa").and_then(|v| v.as_bool()) == Some(true) {
+                if let Some(session_id) = val.get("session_id").and_then(|v| v.as_str()) {
+                    let code = prompt_or_resolve_totp_code(args.totp_code.as_deref())?;
+                    let token = send_verify_2fa(&cloud_url, session_id, &code).await?;
+                    let usage = verify_cloud_session(&cloud_url, &token).await?;
+                    save_session_credentials(&cloud_url, &token).await?;
 
-    if !args.json {
-        println!(
-            "  {} {}",
-            "🔗 Magic Link URL:".bold(),
-            magic_url.cyan().underline()
-        );
-        println!();
-        if !args.no_browser {
-            println!("  Opening your default browser to authorize...");
-            if let Err(e) = open_browser(&magic_url) {
-                tracing::debug!("Browser auto-open notice: {e}");
-            }
-        }
-        println!("  Completing token exchange with Cloudflare...");
-    }
-
-    // Exchange / consume magic link directly to acquire session token
-    let exchange_resp = client
-        .get(&magic_url)
-        .send()
-        .await
-        .with_context(|| format!("failed to execute verification against {}", magic_url))?;
-
-    let mut session_token: Option<String> = None;
-
-    // Check Location header on 302 redirect
-    if let Some(loc_val) = exchange_resp.headers().get("location") {
-        if let Ok(loc_str) = loc_val.to_str() {
-            if let Some(t) = extract_param_from_url(loc_str, "token") {
-                session_token = Some(t);
-            }
-        }
-    }
-
-    // Fallback: Check Set-Cookie header
-    if session_token.is_none() {
-        for cookie_val in exchange_resp.headers().get_all("set-cookie") {
-            if let Ok(c_str) = cookie_val.to_str() {
-                if let Some(t) = extract_param_from_url(c_str, "__Host-swal_session") {
-                    session_token = Some(t);
-                    break;
+                    print_login_success(&args, &email, &cloud_url, &token, &usage)?;
+                    return Ok(());
                 }
             }
         }
+
+        bail!(
+            "Xavier Cloud rejected login request (HTTP {}): {}",
+            status,
+            resp_text
+        );
     }
 
-    let token = session_token.ok_or_else(|| {
-        anyhow!(
-            "Could not automatically extract session token from redirect. \
-             You can manually log in via `xavier login --token <TOKEN>`."
-        )
-    })?;
+    let magic_data: MagicLinkResponse = serde_json::from_str(&resp_text)
+        .with_context(|| format!("invalid response JSON from Xavier Cloud: {}", resp_text))?;
+
+    // Check if initial magic-link request requires 2FA challenge
+    let token = if magic_data.requires_2fa && magic_data.session_id.is_some() {
+        let session_id = magic_data.session_id.as_deref().unwrap();
+        let code = prompt_or_resolve_totp_code(args.totp_code.as_deref())?;
+        send_verify_2fa(&cloud_url, session_id, &code).await?
+    } else {
+        let magic_url = magic_data
+            .magic_url
+            .ok_or_else(|| anyhow!("Cloud response did not return a valid authentication URL"))?;
+
+        if !args.json {
+            println!(
+                "  {} {}",
+                "🔗 Magic Link URL:".bold(),
+                magic_url.cyan().underline()
+            );
+            println!();
+            if !args.no_browser {
+                println!("  Opening your default browser to authorize...");
+                if let Err(e) = open_browser(&magic_url) {
+                    tracing::debug!("Browser auto-open notice: {e}");
+                }
+            }
+            println!("  Completing token exchange with Cloudflare...");
+        }
+
+        // Exchange / consume magic link directly to acquire session token
+        let exchange_resp = client
+            .get(&magic_url)
+            .send()
+            .await
+            .with_context(|| format!("failed to execute verification against {}", magic_url))?;
+
+        let exchange_status = exchange_resp.status();
+        let mut session_token: Option<String> = None;
+        let mut exchange_2fa_session_id: Option<String> = None;
+
+        // Check Location header on 302 redirect
+        if let Some(loc_val) = exchange_resp.headers().get("location") {
+            if let Ok(loc_str) = loc_val.to_str() {
+                if let Some(t) = extract_param_from_url(loc_str, "token") {
+                    session_token = Some(t);
+                }
+                if let Some(sid) = extract_param_from_url(loc_str, "session_id") {
+                    if extract_param_from_url(loc_str, "requires_2fa").as_deref() == Some("true") {
+                        exchange_2fa_session_id = Some(sid);
+                    }
+                }
+            }
+        }
+
+        // Fallback: Check Set-Cookie header
+        if session_token.is_none() {
+            for cookie_val in exchange_resp.headers().get_all("set-cookie") {
+                if let Ok(c_str) = cookie_val.to_str() {
+                    if let Some(t) = extract_param_from_url(c_str, "__Host-swal_session") {
+                        session_token = Some(t);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(token) = session_token {
+            token
+        } else if let Some(sid) = exchange_2fa_session_id {
+            let code = prompt_or_resolve_totp_code(args.totp_code.as_deref())?;
+            send_verify_2fa(&cloud_url, &sid, &code).await?
+        } else {
+            // Check exchange response body if JSON returned requires_2fa
+            let exchange_body = exchange_resp.text().await.unwrap_or_default();
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&exchange_body) {
+                if val.get("requires_2fa").and_then(|v| v.as_bool()) == Some(true) {
+                    if let Some(sid) = val.get("session_id").and_then(|v| v.as_str()) {
+                        let code = prompt_or_resolve_totp_code(args.totp_code.as_deref())?;
+                        send_verify_2fa(&cloud_url, sid, &code).await?
+                    } else {
+                        bail!("Backend requires 2FA but did not provide a session_id");
+                    }
+                } else if let Some(t) = val
+                    .get("token")
+                    .or_else(|| val.get("session_token"))
+                    .and_then(|v| v.as_str())
+                {
+                    t.to_string()
+                } else {
+                    bail!(
+                        "Could not automatically extract session token from redirect (HTTP {}): {}. \
+                         You can manually log in via `xavier login --token <TOKEN>`.",
+                        exchange_status,
+                        exchange_body
+                    );
+                }
+            } else {
+                bail!(
+                    "Could not automatically extract session token from redirect. \
+                     You can manually log in via `xavier login --token <TOKEN>`."
+                );
+            }
+        }
+    };
 
     // Verify and fetch usage metrics
     let usage = verify_cloud_session(&cloud_url, &token).await?;
     save_session_credentials(&cloud_url, &token).await?;
 
-    if args.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "status": "authenticated",
-                "email": email,
-                "cloud_url": cloud_url,
-                "tenant": usage.tenant,
-                "plan": usage.plan,
-                "storage_bytes": usage.bytes,
-                "storage_quota": usage.quota,
-                "chunks": usage.chunks,
-                "session_token": token,
-            }))?
-        );
-    } else {
-        println!();
-        println!(
-            "{}",
-            "════════════════════════════════════════════════════════════".cyan()
-        );
-        println!(
-            "  {} ",
-            "✓ Successfully authenticated with Xavier Cloud!"
-                .bold()
-                .green()
-        );
-        println!(
-            "{}",
-            "════════════════════════════════════════════════════════════".cyan()
-        );
-        println!("  {:<16} {}", "Account Email:", email.yellow());
-        println!("  {:<16} {}", "Tenant:", usage.tenant.green());
-        if let Some(ref p) = usage.plan {
-            println!("  {:<16} {}", "Plan:", p.white());
-        }
-        println!(
-            "  {:<16} {} in {} chunks ({:.2}% of {})",
-            "Cloud Storage:",
-            format_bytes(usage.bytes).cyan(),
-            usage.chunks,
-            usage.percent.unwrap_or(0.0),
-            format_bytes(usage.quota).white()
-        );
-        if let Some(tokens) = usage.ai_tokens_per_day {
-            println!("  {:<16} {} tokens/day", "AI Inference:", tokens);
-        }
-        println!(
-            "{}",
-            "════════════════════════════════════════════════════════════".cyan()
-        );
-        println!(
-            "  {} Session credentials persisted to secure vault.",
-            "✓".green()
-        );
-        println!(
-            "  {} Cloud backups and local CLI are now fully synchronized.\n",
-            "✓".green()
-        );
-    }
+    print_login_success(&args, &email, &cloud_url, &token, &usage)?;
 
     Ok(())
 }
@@ -631,6 +837,13 @@ pub async fn handle_auth_cmd(cmd: AuthCommand) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
+
+    #[derive(Parser, Debug)]
+    struct LoginCliTest {
+        #[command(flatten)]
+        args: LoginArgs,
+    }
 
     #[test]
     fn test_extract_param_from_url() {
@@ -649,5 +862,50 @@ mod tests {
             extract_param_from_url(cookie_str, "__Host-swal_session"),
             Some("swal_sess_abcde".to_string())
         );
+    }
+
+    #[test]
+    fn test_validate_totp_code() {
+        assert_eq!(validate_totp_code("123456").unwrap(), "123456");
+        assert_eq!(validate_totp_code(" 123 456 ").unwrap(), "123456");
+        assert_eq!(validate_totp_code("\t654321\n").unwrap(), "654321");
+
+        // Invalid codes
+        assert!(validate_totp_code("12345").is_err());
+        assert!(validate_totp_code("1234567").is_err());
+        assert!(validate_totp_code("12a456").is_err());
+        assert!(validate_totp_code("abcdef").is_err());
+        assert!(validate_totp_code("").is_err());
+    }
+
+    #[test]
+    fn test_parse_2fa_challenge_response() {
+        let json_data = r#"{"requires_2fa": true, "session_id": "sess_challenge_9988"}"#;
+        let challenge: TwoFactorChallenge =
+            serde_json::from_str(json_data).expect("valid challenge json");
+        assert!(challenge.requires_2fa);
+        assert_eq!(challenge.session_id, "sess_challenge_9988");
+
+        let magic_data: MagicLinkResponse =
+            serde_json::from_str(json_data).expect("valid magic link 2fa json");
+        assert!(magic_data.requires_2fa);
+        assert_eq!(
+            magic_data.session_id,
+            Some("sess_challenge_9988".to_string())
+        );
+    }
+
+    #[test]
+    fn test_login_args_totp_code_flag() {
+        let parsed = LoginCliTest::try_parse_from(["login_test", "--totp-code", "123456"]).unwrap();
+        assert_eq!(parsed.args.totp_code, Some("123456".to_string()));
+    }
+
+    #[test]
+    fn test_login_args_totp_code_env() {
+        std::env::set_var("XAVIER_TOTP_CODE", "654321");
+        let parsed = LoginCliTest::try_parse_from(["login_test"]).unwrap();
+        assert_eq!(parsed.args.totp_code, Some("654321".to_string()));
+        std::env::remove_var("XAVIER_TOTP_CODE");
     }
 }

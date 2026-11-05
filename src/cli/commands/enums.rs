@@ -2621,4 +2621,16 @@ mod tests {
             _ => panic!("Expected Command::Models"),
         }
     }
+
+    #[test]
+    fn test_login_command_totp_code_parsing() {
+        let args = vec!["xavier", "login", "--totp-code", "123456"];
+        let cli = CliTest::try_parse_from(args).expect("Should parse login --totp-code");
+        match cli.command {
+            Command::Login(login_args) => {
+                assert_eq!(login_args.totp_code, Some("123456".to_string()));
+            }
+            _ => panic!("Expected Command::Login"),
+        }
+    }
 }
