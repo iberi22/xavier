@@ -8,6 +8,7 @@
 
 *Lista de decisiones de arquitectura*
 
+- [ADR-050 — Cloud 2FA, Multi-Tenant Persistence & Zero-Loss Context Capsule Sync](ADR-050-cloud-2fa-and-zero-loss-sync.md) — Aceptado, 2026-11-05
 - [ADR-049 — Multimodal In-Process Embeddings (SigLIP Vision 768d & CLAP Audio 512d)](ADR-049-multimodal-embeddings.md) — Aceptado, 2026-11-03
 - [ADR-048 — Cloudflare Zero-Trust Turnstile & Passwordless Auth](ADR-048-cloudflare-passwordless-auth.md) — Aceptado, 2026-11-02
 - [ADR-047 — MCP error channels by phase](ADR-047-mcp-error-channels.md) — Aceptado, 2026-10-23
