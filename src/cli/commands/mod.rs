@@ -581,6 +581,7 @@ impl Cli {
                 mirror::handle_mirror_export(out.clone(), *limit, since.clone()).await
             }
             Command::MirrorImport { input } => mirror::handle_mirror_import(input.clone()).await,
+            Command::Capsule { cmd } => handle_capsule_command(cmd.clone()).await,
             Command::Airgap(args) => airgap::handle_airgap_command(args.clone()).await,
             Command::Skills { cmd } => handle_skills_command(cmd.clone()).await,
             Command::Service { cmd } => service::run_service_cmd(cmd).await,
@@ -591,6 +592,85 @@ impl Cli {
                 follow,
                 json,
             } => service::run_logs_cmd(since, grep, lines, *follow, *json).await,
+        }
+    }
+}
+
+/// Handle `xavier capsule push|pull` commands.
+async fn handle_capsule_command(cmd: enums::CapsuleCommand) -> Result<()> {
+    match cmd {
+        enums::CapsuleCommand::Push {
+            capsule_id,
+            file,
+            data,
+            json,
+        } => {
+            let payload: Vec<u8> = if let Some(path) = file {
+                tokio::fs::read(&path).await.map_err(|e| {
+                    anyhow::anyhow!("cannot read capsule file '{}': {e}", path.display())
+                })?
+            } else if let Some(content) = data {
+                content.into_bytes()
+            } else {
+                // If neither --file nor --data provided, check stdin or session/capsule fallback
+                anyhow::bail!("Capsule push requires --file <path> or --data <string>");
+            };
+
+            let token = crate::mesh::cloud_node::upload_capsule(&capsule_id, &payload).await?;
+
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "status": "ok",
+                        "capsule_id": capsule_id,
+                        "reference_token": token,
+                        "size_bytes": payload.len(),
+                    }))?
+                );
+            } else {
+                println!("✅ Capsule uploaded to Cloudflare R2");
+                println!("Reference: {token}");
+            }
+            Ok(())
+        }
+        enums::CapsuleCommand::Pull {
+            capsule_id,
+            output,
+            json,
+        } => {
+            let data = crate::mesh::cloud_node::download_capsule(&capsule_id).await?;
+
+            if let Some(dest) = output {
+                tokio::fs::write(&dest, &data).await.map_err(|e| {
+                    anyhow::anyhow!("cannot write to output file '{}': {e}", dest.display())
+                })?;
+
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "status": "ok",
+                            "capsule_id": capsule_id,
+                            "output_file": dest.display().to_string(),
+                            "size_bytes": data.len(),
+                        }))?
+                    );
+                } else {
+                    println!("✅ Capsule downloaded and decrypted to {}", dest.display());
+                }
+            } else {
+                if json {
+                    let parsed: serde_json::Value = serde_json::from_slice(&data).unwrap_or_else(
+                        |_| serde_json::json!({ "raw": String::from_utf8_lossy(&data) }),
+                    );
+                    println!("{}", serde_json::to_string_pretty(&parsed)?);
+                } else {
+                    let text = String::from_utf8_lossy(&data);
+                    println!("{text}");
+                }
+            }
+            Ok(())
         }
     }
 }
