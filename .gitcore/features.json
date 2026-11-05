@@ -5,14 +5,14 @@
     "project": "Xavier",
     "version": "1.0.0",
     "created": "2026-03-05",
-    "last_verified": "2026-11-03",
+    "last_verified": "2026-11-05",
     "total_features": 108,
-    "features_complete": 97,
-    "features_beta": 10,
+    "features_complete": 105,
+    "features_beta": 2,
     "features_draft": 0,
     "features_planned": 1,
     "features_designed": 0,
-    "features_stable": 97,
+    "features_stable": 105,
     "overall_progress_pct": 100.0,
     "complete": 6,
     "percent": 90.0,
@@ -63,11 +63,11 @@
       "description": "Evidence source for code explanations that lists direct callers and callees of the code-graph symbols overlapping the target line range (structural Contains/Defines edges skipped), scored below the code fragment.",
       "id": "feat-explain-codegraph-source",
       "name": "Explain Codegraph Source",
-      "passes": false,
+      "passes": true,
       "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3527",
-      "status": "beta",
+      "status": "stable",
       "steps": [
         "Pick the file's symbols overlapping the range, preferring target.symbol",
         "Collect callers (reverse_dependencies) and callees (dependencies) up to the limit",
@@ -88,7 +88,14 @@
         "src/explain/codegraph.rs",
         "tests/explain_codegraph_source_e2e.rs"
       ],
-      "notes": "progress 100: verified 2026-11-01 by tests [explain::codegraph::tests::callers_and_callees_of_symbol_in_range_get_source_refs, explain::codegraph::tests::symbols_outside_line_range_are_ignored, explain::codegraph::tests::empty_file_or_range_returns_ok_empty, explain::codegraph::tests::symbol_name_narrows_the_choice, explain::codegraph::tests::limit_caps_total_edges_callers_first, explain::codegraph::tests::broken_graph_yields_no_evidence, tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_callers_and_callees_of_symbol_in_range_get_source_refs, tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_empty_file_or_range_returns_ok_empty]\npromoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
+      "notes": "progress 100: verified 2026-11-01 by tests [explain::codegraph::tests::callers_and_callees_of_symbol_in_range_get_source_refs, explain::codegraph::tests::symbols_outside_line_range_are_ignored, explain::codegraph::tests::empty_file_or_range_returns_ok_empty, explain::codegraph::tests::symbol_name_narrows_the_choice, explain::codegraph::tests::limit_caps_total_edges_callers_first, explain::codegraph::tests::broken_graph_yields_no_evidence, tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_callers_and_callees_of_symbol_in_range_get_source_refs, tests/explain_codegraph_source_e2e.rs::e2e_codegraph_source_empty_file_or_range_returns_ok_empty]\npromoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)",
+      "last_tested": "2026-11-05",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41974472829",
+        "sha": "041c7cc512b52dd58a498506146c7267cb29fc5e",
+        "promoted_at": "2026-11-05T06:11:26Z"
+      }
     },
     "feat-hybrid-search": {
       "id": "feat-hybrid-search",
@@ -504,11 +511,11 @@
       "id": "feat-explain-memory-source",
       "implemented_in": "src/explain/memory.rs, src/explain/mod.rs",
       "name": "Explain Memory Source",
-      "passes": false,
+      "passes": true,
       "progress_pct": 100,
       "req_ids": [],
       "spec_reference": "https://github.com/iberi22/xavier/issues/3528",
-      "status": "beta",
+      "status": "stable",
       "steps": [
         "Define a narrow async MemorySearch port and its QmdMemory adapter",
         "Query decisions by kind and file, then memories mentioning the file or symbol",
@@ -530,7 +537,14 @@
         "src/explain/memory.rs",
         "tests/explain_memory_source_e2e.rs"
       ],
-      "notes": "progress 100: verified 2026-11-01 by tests [explain::memory::tests::decision_query_filters_by_kind_and_file, explain::memory::tests::decisions_outrank_memories_at_equal_score, explain::memory::tests::duplicate_ids_across_queries_appear_once, explain::memory::tests::search_error_surfaces_as_err, explain::memory::tests::empty_result_is_ok_and_empty, explain::memory::tests::collect_works_inside_spawn_blocking, explain::memory::tests::qmd_search_adapter_returns_no_hits_for_empty_store, tests/explain_memory_source_e2e.rs::e2e_memory_source_decision_query_filters_by_kind_and_file, tests/explain_memory_source_e2e.rs::e2e_memory_source_duplicate_ids_across_queries_appear_once]\npromoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
+      "notes": "progress 100: verified 2026-11-01 by tests [explain::memory::tests::decision_query_filters_by_kind_and_file, explain::memory::tests::decisions_outrank_memories_at_equal_score, explain::memory::tests::duplicate_ids_across_queries_appear_once, explain::memory::tests::search_error_surfaces_as_err, explain::memory::tests::empty_result_is_ok_and_empty, explain::memory::tests::collect_works_inside_spawn_blocking, explain::memory::tests::qmd_search_adapter_returns_no_hits_for_empty_store, tests/explain_memory_source_e2e.rs::e2e_memory_source_decision_query_filters_by_kind_and_file, tests/explain_memory_source_e2e.rs::e2e_memory_source_duplicate_ids_across_queries_appear_once]\npromoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)",
+      "last_tested": "2026-11-05",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41974472829",
+        "sha": "041c7cc512b52dd58a498506146c7267cb29fc5e",
+        "promoted_at": "2026-11-05T06:11:26Z"
+      }
     },
     "feat-governance-dao": {
       "id": "feat-governance-dao",
@@ -1706,7 +1720,7 @@
       "id": "feat-embed-native-gemma2",
       "name": "Native In-Process Gemma 2 ONNX Embeddings",
       "category": "core",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "In-process vector embedding generation using Google Gemma 2 (768d) executed via ONNX Runtime without Ollama.",
       "steps": [
@@ -1717,18 +1731,24 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-11-03",
+      "last_tested": "2026-11-05",
       "implemented_in": "crates/xavier-embed-ort, src/embedding/native.rs",
       "tests": [
         "test_embedding_parity_and_accuracy"
       ],
-      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
+      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41974472829",
+        "sha": "041c7cc512b52dd58a498506146c7267cb29fc5e",
+        "promoted_at": "2026-11-05T06:11:26Z"
+      }
     },
     "feat-embed-model-downloader": {
       "id": "feat-embed-model-downloader",
       "name": "Self-Managed Model Downloader & Verification",
       "category": "core",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Autonomous embedding model downloader with atomic rename, SHA256 integrity verification, and disk space protection.",
       "steps": [
@@ -1739,19 +1759,25 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-11-03",
+      "last_tested": "2026-11-05",
       "implemented_in": "src/embedding/downloader.rs, src/cli/handlers/offline_models.rs",
       "tests": [
         "test_mock_download_success_and_atomic_rename",
         "test_cli_models_fetch_e2e"
       ],
-      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
+      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41974472829",
+        "sha": "041c7cc512b52dd58a498506146c7267cb29fc5e",
+        "promoted_at": "2026-11-05T06:11:26Z"
+      }
     },
     "feat-embed-modality-selector": {
       "id": "feat-embed-modality-selector",
       "name": "On-Demand Modality Embedding Selector & Dimensional Fallback",
       "category": "core",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Dynamic selector routing Text to Gemma 2 (768d) and Code to Qwen (1024d) with circuit breaker and fallback table insertion.",
       "steps": [
@@ -1762,7 +1788,7 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-11-03",
+      "last_tested": "2026-11-05",
       "implemented_in": "src/embedding/selector.rs, src/memory/multimodal_vec_store.rs",
       "tests": [
         "test_modality_selection",
@@ -1770,13 +1796,19 @@
         "test_dimension_mismatch_rejection",
         "test_dimension_fallback_routing"
       ],
-      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
+      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41974472829",
+        "sha": "041c7cc512b52dd58a498506146c7267cb29fc5e",
+        "promoted_at": "2026-11-05T06:11:26Z"
+      }
     },
     "feat-embed-multimodal": {
       "id": "feat-embed-multimodal",
       "name": "Multimodal In-Process Embeddings Pipeline (SigLIP 768d & CLAP 512d)",
       "category": "core",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "In-process multimodal embeddings supporting SigLIP/CLIP vision (768d), CLAP audio (512d), and uniform temporal video sampling.",
       "steps": [
@@ -1787,20 +1819,26 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-11-03",
+      "last_tested": "2026-11-05",
       "implemented_in": "src/embedding/selector.rs, src/memory/multimodal_vec_store.rs",
       "tests": [
         "test_multimodal_modality_selection",
         "test_multimodal_embedder_routing",
         "test_multimodal_storage_tables"
       ],
-      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
+      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41974472829",
+        "sha": "041c7cc512b52dd58a498506146c7267cb29fc5e",
+        "promoted_at": "2026-11-05T06:11:26Z"
+      }
     },
     "feat-auth-turnstile-captcha": {
       "id": "feat-auth-turnstile-captcha",
       "name": "Cloudflare Turnstile Frictionless CAPTCHA Protection",
       "category": "security",
-      "status": "beta",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Frictionless Turnstile CAPTCHA protection on panel authentication endpoints with edge verification.",
       "steps": [
@@ -1811,12 +1849,18 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-11-03",
+      "last_tested": "2026-11-05",
       "implemented_in": "panel-ui/src/auth/LoginPage.tsx, panel-ui/functions/[[path]].ts",
       "tests": [
         "test_auth_turnstile_captcha_verification_rejection"
       ],
-      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
+      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41974472829",
+        "sha": "041c7cc512b52dd58a498506146c7267cb29fc5e",
+        "promoted_at": "2026-11-05T06:11:26Z"
+      }
     },
     "feat-ivn-karma": {
       "id": "feat-ivn-karma",
@@ -4571,7 +4615,7 @@
     "q1-cli-parity": {
       "id": "q1-cli-parity",
       "description": "xavier CLI parity for config ops (llm model, indexing, memory load) with E2E",
-      "status": "beta",
+      "status": "stable",
       "tests": [
         "tests/q1_cli_parity.rs::test_cli_parity_config_llm",
         "tests/q1_cli_parity.rs::test_cli_parity_index_and_memory"
@@ -4581,14 +4625,20 @@
       "progress_pct": 100,
       "passes": true,
       "verified_by": "automated",
-      "last_tested": "2026-11-03",
+      "last_tested": "2026-11-05",
       "implemented_in": "src/cli/commands/config.rs, src/cli/commands/memory.rs, tests/q1_cli_parity.rs",
       "steps": [
         "config llm set-model and show CLI commands",
         "index and memory load markdown vault CLI commands",
         "E2E test suite in tests/q1_cli_parity.rs"
       ],
-      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)"
+      "notes": "promoted planned->beta by ledger promoter on 95e2348ad5276aba963ff28b7a5b9588e4f48315 (2026-11-03)",
+      "ledger": {
+        "promoted_by": "post-merge-ci",
+        "full_verifier_run": "https://github.com/southwest-ai-labs/xavier/actions/runs/41974472829",
+        "sha": "041c7cc512b52dd58a498506146c7267cb29fc5e",
+        "promoted_at": "2026-11-05T06:11:26Z"
+      }
     }
   },
   "verification_commands": {
