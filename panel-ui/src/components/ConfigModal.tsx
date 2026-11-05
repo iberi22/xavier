@@ -42,6 +42,7 @@ import { mergeFilteredGraphUpdate } from "../utils/roadmapGraph";
 import AgentsView from "./AgentsView";
 import BookmarksView from "./BookmarksView";
 import { CloudRelayConfig } from "./CloudRelayConfig";
+import { CloudSyncCard } from "./CloudSyncCard";
 import DataCommonsConfigUI from "./DataCommonsConfigUI";
 import GraphCanvas from "./GraphCanvas";
 import GraphView from "./GraphView";
@@ -1610,6 +1611,7 @@ function ConfigView({
                 </p>
               </div>
               <div className="space-y-6">
+                <CloudSyncCard token={token || ""} />
                 <CloudRelayConfig token={token || ""} />
                 <DataCommonsConfigUI token={token || ""} />
               </div>
