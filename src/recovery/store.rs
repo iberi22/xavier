@@ -664,6 +664,7 @@ mod tests {
         let store = RecoveryStore::at(dir.path().join("recovery"));
         store.write_kcv(&KEY_A).unwrap();
 
+        #[cfg(unix)]
         let path = store.root().join(KCV_FILENAME);
         #[cfg(unix)]
         {

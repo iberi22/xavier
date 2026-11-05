@@ -1985,6 +1985,14 @@ category = "Uncategorized"
 secret = false
 
 [[variables]]
+name = "XAVIER_CLOUD_TOKEN"
+type = "string"
+default = ""
+description = "Internal"
+category = "Uncategorized"
+secret = true
+
+[[variables]]
 name = "XAVIER_PGHEART_TOKEN"
 type = "string"
 default = ""

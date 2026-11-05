@@ -586,6 +586,21 @@ pub enum Command {
         #[command(subcommand)]
         cmd: SkillsCommand,
     },
+
+    /// Log in to Xavier Cloud (SWAL Mesh) via 1-click magic link or browser
+    Login(super::login::LoginArgs),
+
+    /// Authentication commands (login, status, logout)
+    Auth {
+        #[command(subcommand)]
+        cmd: super::login::AuthCommand,
+    },
+
+    /// Log out from Xavier Cloud
+    Logout {
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 /// Service management subcommands.

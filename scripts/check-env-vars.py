@@ -46,13 +46,13 @@ def check():
 
     print("All environment variables are documented.")
 
-    with open("docs/reference/ENV_VARS.md", "r") as f:
+    with open("docs/reference/ENV_VARS.md", "r", encoding="utf-8") as f:
         current_md = f.read()
 
     import subprocess
     subprocess.run([sys.executable, "scripts/generate-env-docs.py"], check=True)
 
-    with open("docs/reference/ENV_VARS.md", "r") as f:
+    with open("docs/reference/ENV_VARS.md", "r", encoding="utf-8") as f:
         expected_md = f.read()
 
     if current_md != expected_md:
