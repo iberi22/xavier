@@ -44,7 +44,7 @@ def generate():
             out.append(f"| `{name}` | `{typ}` | {default} | {desc} | {secret} |")
         out.append("")
 
-    with open("docs/reference/ENV_VARS.md", "r") as f:
+    with open("docs/reference/ENV_VARS.md", "r", encoding="utf-8") as f:
         md = f.read()
 
     start_marker = "<!-- BEGIN AUTOGEN -->"
@@ -59,7 +59,7 @@ def generate():
 
     new_md = md[:start_idx + len(start_marker)] + "\n\n" + "\n".join(out) + "\n" + md[end_idx:]
 
-    with open("docs/reference/ENV_VARS.md", "w") as f:
+    with open("docs/reference/ENV_VARS.md", "w", encoding="utf-8") as f:
         f.write(new_md)
 
 if __name__ == "__main__":

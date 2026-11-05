@@ -202,6 +202,7 @@
 | `XAVIER_CLOUD_BACKUP_INTERVAL_MINS` | `string` |  | Internal | ❌ |
 | `XAVIER_CLOUD_BACKUP_PASSPHRASE` | `string` |  | Internal | ✅ |
 | `XAVIER_CLOUD_BACKUP_PASSPHRASE_FILE` | `string` |  | Internal | ✅ |
+| `XAVIER_CLOUD_TOKEN` | `string` |  | Internal | ✅ |
 | `XAVIER_CODEGRAPH_BIN` | `string` |  | Internal | ❌ |
 | `XAVIER_CODEGRAPH_INSTALL_ACTIVE` | `string` |  | Internal | ❌ |
 | `XAVIER_CODEGRAPH_PROBE_DEPTH` | `string` | (unset) | Recursion guard for sidecar probing | ❌ |
