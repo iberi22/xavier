@@ -39,7 +39,15 @@ param(
 )
 
 # Configurar paths
-$XavierBin = Join-Path $PSScriptRoot "..\target\release\xavier.exe"
+$XavierBin = if (Test-Path (Join-Path $PSScriptRoot "..\target\release\xavier.exe")) {
+    Join-Path $PSScriptRoot "..\target\release\xavier.exe"
+} elseif (Test-Path (Join-Path $PSScriptRoot "..\target\release\xavier")) {
+    Join-Path $PSScriptRoot "..\target\release\xavier"
+} elseif (Get-Command xavier -ErrorAction SilentlyContinue) {
+    (Get-Command xavier).Source
+} else {
+    "xavier"
+}
 $ErrorActionPreference = "Continue"
 
 # Función para enviar eventos a Gestalt Bus
