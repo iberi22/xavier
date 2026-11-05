@@ -1569,3 +1569,66 @@ Xavier SHALL be installable as a headless server, with HTTP, MCP and the CLI but
 - [ ] `server-packages.yml` is green: tarball builds, deb on Debian 12, rpm on Fedora, install.sh on Debian 12 and Ubuntu 24.04, Docker key persistence, Nix build and module evaluation
 - [ ] `packaging_contract` tests pass under `ci-safe`
 - [ ] A tagged release attaches the server tarballs, `.deb` and `.rpm`, and pushes `ghcr.io/<owner>/xavier:server-<tag>`
+
+---
+
+## REQ-SEC-010: Cloud 2FA TOTP (Ola 4)
+
+- **Category:** Security / Authentication
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/auth2/`, `src/auth2/db.rs`, `src/auth2/jwt.rs`, `tests/test_auth_2fa_scoped.rs`
+- **Features:** `feat-cloud-2fa-totp`
+- **Design:** `docs/adr/ADR-050-cloud-2fa-and-zero-loss-sync.md` §3.1
+
+### Description
+Multi-factor authentication (MFA) via RFC 6238 Time-based One-Time Password (TOTP) algorithm SHALL be provided for operators and remote access. TOTP enrollment and verification SHALL be strictly scoped and cryptographically bound to the authenticated JWT identity (`claims.sub`). The system SHALL prevent cross-user account modification, prevent password hash or credential leakage in API payloads, and reject login attempts without valid second-factor verification once enabled.
+
+### Acceptance criteria
+- [x] TOTP setup (`/auth/2fa/setup`) and verification (`/auth/2fa/verify`) operate strictly on the caller's JWT subject (`claims.sub`), never defaulting to the first database user.
+- [x] Once 2FA is verified and enabled for an account, password-only logins return HTTP 401 Unauthorized with error `"mfa_required"` and require `totp_code`.
+- [x] Enabling 2FA on one account leaves all other accounts unaffected (regression guarded by `test_2fa_scoped_to_jwt_user_not_first_user`).
+- [x] API responses from `/auth/register` and `/auth/login` never expose `password_hash`, `totp_secret`, `recovery_seed_hash`, or `backup_codes`.
+- [x] TOTP generator uses 30-second steps and validates within standard clock drift tolerances.
+
+---
+
+## REQ-SEC-011: HardwareVault Token Encryption (Ola 4)
+
+- **Category:** Security / Storage
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/secrets/vault.rs`, `src/cli/commands/login.rs`, `src/settings/serialization.rs`
+- **Features:** `feat-hardwarevault-token-encryption`
+- **Design:** `docs/adr/ADR-050-cloud-2fa-and-zero-loss-sync.md` §3.2
+
+### Description
+All session tokens (`XAVIER_CLOUD_TOKEN`, `PGHEART_TOKEN`), credentials, and sensitive API keys SHALL be encrypted and stored in `HardwareVault`. Plaintext secrets SHALL NOT be written to unencrypted configuration files, logs, or shell history. In environments where OS keyrings (Linux Secret Service / Keyutils, macOS Keychain, Windows Credential Manager) are unavailable, fallback storage SHALL enforce machine-bound AES-256-GCM encryption with strict filesystem permissions (`0600` for files, `0700` for directories).
+
+### Acceptance criteria
+- [x] `save_session_credentials` stores session tokens directly in `HardwareVault` service domain.
+- [x] In the absence of an OS keyring, `HardwareVault` persists secrets in fallback storage encrypted with a machine-bound master key derived via HKDF-SHA256 from hardware entropy.
+- [x] Fallback secret files enforce POSIX `0600` permissions and secret storage directories enforce POSIX `0700` permissions.
+- [x] Session tokens are resolved hierarchically (Environment Variable -> Settings -> HardwareVault) without leaking secrets in stdout or error messages.
+- [x] `xavier logout` securely overwrites and clears stored tokens in `HardwareVault` and runtime settings.
+
+---
+
+## REQ-MESH-012: Zero-Loss Context Capsules (Ola 4)
+
+- **Category:** Mesh / Synchronization
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/cli/commands/airgap.rs`, `src/crypto/airgap_capsule.rs`, `src/node_identity/shamir.rs`, `AGENTS.md`
+- **Features:** `feat-zero-loss-context-capsules`
+- **Design:** `docs/adr/ADR-050-cloud-2fa-and-zero-loss-sync.md` §3.3-3.5
+
+### Description
+Xavier SHALL provide zero-loss context capsule serialization and synchronization (`.swal_capsule`) to preserve active agent transcripts, memory records, and reasoning state across long-running sessions and multi-device transitions. Capsules SHALL be encrypted client-side using Argon2id (19,456 KiB, 2 iterations, 1 lane) and AES-256-GCM authenticated cipher with a hard 1 GiB size limit, SHA-256 header digest verification, safe directory extraction (`O_NOFOLLOW`), and Shamir 2-of-3 threshold split recovery.
+
+### Acceptance criteria
+- [x] Context capsules enforce a strict single-file ceiling of 1 GiB (`MAX_CAPSULE_SIZE = 1_073_741_824` bytes); oversized capsules are rejected before decompression.
+- [x] Capsule payload encryption uses Argon2id key derivation and AES-256-GCM authenticated encryption; tampered or invalid passphrase attempts fail safely.
+- [x] Safe extraction prevents path traversal and directory symlink attacks by requiring `O_NOFOLLOW` support.
+- [x] Node identity master entropy is splittable into Shamir 2-of-3 shares $(k=2, n=3)$ where any 2 shares reconstruct the exact 32-byte secret and 1 share yields zero information.
+- [x] Context capsules retain complete agent session state enabling seamless continuation (`xavier search <capsule_id>`) without loss of historical reasoning.
