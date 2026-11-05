@@ -8,10 +8,11 @@ use std::sync::{Arc, Mutex};
 
 use crate::embedding::{Embedder, EmbeddingError};
 
-// Best overall: Qwen3-Embedding-0.6B (MTEB 67.5, 1024d) — ideal with GPU.
-// Fallback: all-MiniLM-L6-v2 (MTEB 58.8, 384d) — fastest on CPU.
-pub const DEFAULT_GLLM_MODEL: &str = "Qwen/Qwen3-Embedding-0.6B";
-pub const DEFAULT_GLLM_DIMENSION: usize = 1024;
+// Best overall (2026): Qwen3-Embedding-4B (MTEB-eng-v2 74.6, MMTEB 69.45, 2560d)
+// Balance óptimo: calidad top-tier + cabe en 8GB GPU (INT8) + Apache-2.0 license
+// Alternativas: 8B (75.22 MTEB, +0.62 pts, 9GB VRAM) | 0.6B (70.7 MTEB, 1.5GB VRAM)
+pub const DEFAULT_GLLM_MODEL: &str = "Qwen/Qwen3-Embedding-4B";
+pub const DEFAULT_GLLM_DIMENSION: usize = 2560;
 
 #[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
 type InnerEmbedder = ::gllm::FallbackEmbedder;
@@ -135,12 +136,27 @@ pub fn dimension_for_model(model: &str) -> usize {
         | "jina-embeddings-v2-small-en"
         | "multilingual-minilm-l12-v2" => 384,
         "bge-small-zh" => 512,
-        "bge-base-en" | "e5-base" | "all-mpnet-base-v2" | "m3e-base" => 768,
-        "bge-large-en" | "e5-large" | "qwen3-embedding-0.6b" | "codexembed-400m" => 1024,
+        "bge-base-en"
+        | "e5-base"
+        | "all-mpnet-base-v2"
+        | "m3e-base"
+        | "nomic-embed-text-v1.5"
+        | "nomic-embed-text-v2-moe" => 768,
+        "bge-large-en"
+        | "e5-large"
+        | "qwen3-embedding-0.6b"
+        | "qwen/qwen3-embedding-0.6b"
+        | "codexembed-400m"
+        | "bge-m3"
+        | "mxbai-embed-large-v1" => 1024,
         "codexembed-2b" => 1536,
-        "jina-embeddings-v4" => 2048,
-        "qwen3-embedding-4b" => 2560,
-        "qwen3-embedding-8b" | "llama-embed-nemotron-8b" | "codexembed-7b" => 4096,
+        "jina-embeddings-v3" | "jina-embeddings-v4" => 2048,
+        "qwen3-embedding-4b" | "qwen/qwen3-embedding-4b" => 2560,
+        "gte-qwen2-7b-instruct" => 3584,
+        "qwen3-embedding-8b"
+        | "qwen/qwen3-embedding-8b"
+        | "llama-embed-nemotron-8b"
+        | "codexembed-7b" => 4096,
         _ => DEFAULT_GLLM_DIMENSION,
     }
 }
