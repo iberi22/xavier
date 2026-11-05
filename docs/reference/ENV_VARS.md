@@ -2,6 +2,12 @@
 
 <!-- BEGIN AUTOGEN -->
 
+## CLI & Agents
+
+| Variable | Type | Default | Description | Secret |
+|----------|------|---------|-------------|--------|
+| `XAVIER_TOTP_CODE` | `string` | (unset) | 6-digit TOTP two-factor authentication code for non-interactive xavier login | ✅ |
+
 ## CLI / Legacy
 
 | Variable | Type | Default | Description | Secret |

@@ -458,7 +458,10 @@ pub async fn handle_login_cmd(args: LoginArgs) -> Result<()> {
     // Interactive Browser / Magic Link flow
     let email = args
         .email
-        .filter(|e| !e.trim().is_empty())
+        .as_deref()
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+        .map(ToString::to_string)
         .unwrap_or_else(|| DEFAULT_LOGIN_EMAIL.to_string());
 
     if !args.json {

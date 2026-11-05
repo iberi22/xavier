@@ -2783,3 +2783,11 @@ default = "(unset)"
 description = "Base URL for downloading offline/local ONNX embedding models (ADR-042)"
 category = "Model & Embeddings"
 secret = false
+
+[[variables]]
+name = "XAVIER_TOTP_CODE"
+type = "string"
+default = "(unset)"
+description = "6-digit TOTP two-factor authentication code for non-interactive xavier login"
+category = "CLI & Agents"
+secret = true
