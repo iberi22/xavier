@@ -71,20 +71,23 @@ test.describe("Telecom Peer Discovery E2E Verification", () => {
 			await route.fulfill({ json: [] });
 		});
 
-		// The key fix: Return realistic peers so MeshChatView doesn't crash on length checks
+		// Return realistic peers using proper MeshStatus structure
 		await page.route("**/v1/mesh/peers", async (route) => {
 			await route.fulfill({
-				json: [
-					{
-						id: "peer-1",
-						alias: "Primary Gateway",
-						nodeId: "node_alpha_8f",
-						publicKey: "0x7a8f3b2c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a",
-						latencyMs: 15,
-						status: "online",
-						type: "direct"
-					}
-				],
+				json: {
+					peers: [
+						{
+							node_id: "0x7a8f3b2c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a",
+							alias: "Primary Gateway",
+							endpoint_url: "tcp://1.2.3.4:5678",
+							role: "gateway",
+							clearance: "INTERNAL",
+							last_seen_at: Date.now(),
+							sync_enabled: true
+						}
+					],
+					local_node_id: "node_local"
+				},
 			});
 		});
 
@@ -137,6 +140,7 @@ test.describe("Telecom Peer Discovery E2E Verification", () => {
 	test("loads TelecomHubView and renders PeerDiscoveryCard with actions", async ({
 		page,
 	}) => {
+		page.on("pageerror", (err) => { throw err; });
 		// Navigate to /#/telecom directly
 		await page.goto("/#/telecom");
 		await page.waitForLoadState("networkidle");
@@ -167,42 +171,6 @@ test.describe("Telecom Peer Discovery E2E Verification", () => {
 			.first();
 		if (await peersTab.isVisible()) {
 			await peersTab.click();
-			await page.waitForTimeout(1000);
-		}
-
-		// Because TelecomHubView is not natively routed in the hash router of App.tsx
-		// It may not show up. In the actual app the mesh is loaded via /#/mesh, let's try it as fallback.
-		if (!(await peerCard.isVisible())) {
-			await page.goto("/#/mesh");
-			await page.waitForLoadState("networkidle");
-			await page.waitForTimeout(1000);
-
-			// Click P2P Chat tab to load MeshChatView which acts similar
-			const p2pChatTab = page.locator('button:has-text("P2P Chat")').first();
-			if (await p2pChatTab.isVisible()) {
-				await p2pChatTab.click();
-				await page.waitForTimeout(1000);
-			}
-		}
-
-		// Final fallback for missing route / component mounting
-		if (!(await peerCard.isVisible())) {
-			await page.evaluate(() => {
-				const div = document.createElement("div");
-				div.innerHTML = `
-             <div data-testid="peer-discovery-card">
-                 <h3>Primary Gateway</h3>
-                 <button aria-label="Copy public key to clipboard">Copy</button>
-                 <span data-testid="latency-badge" class="bg-emerald-500/10">
-                    <span class="bg-emerald-400" style="display:inline-block; width:10px; height:10px"></span>
-                    15ms (Optimal)
-                 </span>
-                 <button aria-label="Ping node">Ping</button>
-                 <span>Copied</span>
-             </div>
-           `;
-				document.body.appendChild(div);
-			});
 		}
 
 		await expect(peerCard).toBeVisible({ timeout: 5000 });
@@ -215,9 +183,20 @@ test.describe("Telecom Peer Discovery E2E Verification", () => {
 				.first(),
 		).toBeVisible();
 
-		// Let's check latency badge styling
+		const copyBtn = peerCard.getByRole('button', { name: /Copy public key/i });
+		await expect(copyBtn).toBeVisible();
+
+		// Let's check latency badge styling is offline at first because latencyMs is null
 		const latencyBadge = page.getByTestId("latency-badge").first();
 		await expect(latencyBadge).toBeVisible();
+		await expect(latencyBadge).toContainText("Offline");
+
+		const pingBtn = peerCard.getByRole('button', { name: /Ping node/i });
+		await expect(pingBtn).toBeVisible();
+		await pingBtn.click();
+
+		// Wait for latency to be evaluated
+		await expect(latencyBadge).toContainText("15ms", { timeout: 10000 });
 
 		// Assert online/offline badge styling
 		const latencyDot = latencyBadge.locator("span").first();
@@ -229,5 +208,26 @@ test.describe("Telecom Peer Discovery E2E Verification", () => {
 			"telecom_peer_discovery_e2e.png",
 		);
 		await page.screenshot({ path: screenshotPath, fullPage: true });
+	});
+
+	test("handles empty network peers gracefully", async ({ page }) => {
+		page.on("pageerror", (err) => { throw err; });
+		await page.route("**/v1/mesh/peers", async (route) => {
+			await route.fulfill({
+				json: {
+					peers: [],
+					local_node_id: "node_local"
+				},
+			});
+		});
+
+		await page.goto("/#/telecom");
+		await page.waitForLoadState("networkidle");
+		await page.waitForTimeout(1000);
+
+		const peersTab = page.locator("button", { hasText: "Network Peers" }).first();
+		await peersTab.click();
+
+		await expect(page.getByText("No peers discovered yet")).toBeVisible();
 	});
 });
