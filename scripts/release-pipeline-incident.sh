@@ -26,24 +26,29 @@ TITLE="release pipeline red: ${WORKFLOW_NAME}"
 
 gh label create "$LABEL" --color B60205 --description "Release/binary pipeline failure" 2>/dev/null || true
 
+# Prints the matching open issue number, or empty if none.
+# Propagates gh/jq failures (fail-closed) so callers never mutate after a broken lookup.
 find_open_issue() {
   local open_issues number body
   open_issues=$(gh issue list --label "$LABEL" --state open --limit 200 --json number,body)
   if [ -z "$open_issues" ] || [ "$open_issues" = "[]" ]; then
     return 0
   fi
+  echo "$open_issues" | jq -e 'type == "array"' >/dev/null
   while IFS= read -r number; do
     [ -n "$number" ] || continue
-    body=$(echo "$open_issues" | jq -r --argjson n "$number" '.[] | select(.number == $n) | .body')
+    body=$(echo "$open_issues" | jq -r --argjson n "$number" '.[] | select(.number == $n) | .body // empty')
     if [[ "$body" == *"$MARKER"* ]]; then
       echo "$number"
       return 0
     fi
   done < <(echo "$open_issues" | jq -r '.[].number')
+  return 0
 }
 
+EXISTING=$(find_open_issue)
+
 if [ "$CONCLUSION" = "failure" ] || [ "$CONCLUSION" = "cancelled" ] || [ "$CONCLUSION" = "timed_out" ]; then
-  EXISTING=$(find_open_issue || true)
   REF_LINE=""
   if [ -n "$HEAD_BRANCH" ]; then
     REF_LINE="Ref: \`$HEAD_BRANCH\`"
@@ -74,7 +79,6 @@ if [ "$CONCLUSION" = "failure" ] || [ "$CONCLUSION" = "cancelled" ] || [ "$CONCL
     gh issue create --title "$TITLE" --body-file /tmp/release-pipeline-body.md --label "$LABEL"
   fi
 elif [ "$CONCLUSION" = "success" ]; then
-  EXISTING=$(find_open_issue || true)
   if [ -n "$EXISTING" ]; then
     echo "Closing release-pipeline incident #$EXISTING after green run"
     gh issue comment "$EXISTING" --body "Pipeline green again in run $RUN_ID @ \`$HEAD_SHA\`. See: $RUN_URL"
