@@ -20,7 +20,14 @@ assert_contains "$WF" 'Release & Multi-Platform Binaries'
 assert_contains "$WF" 'release-pipeline-incident.sh'
 assert_contains "$WF" 'workflow_run:'
 assert_contains "$WF" 'issues: write'
-assert_contains "$WF" 'release-pipeline-watch-${{ github.event.workflow_run.id'
+assert_contains "$WF" 'group: release-pipeline-watch'
+# Shared group only — per-run groups allow parallel create races.
+if grep -E 'group:.*workflow_run\.id|group:.*github\.run_id' "$WF"; then
+  echo "concurrency group must be shared, not per-run"; exit 1
+fi
+assert_contains "$SCRIPT" 'Exhaustive scan before declaring absence'
+assert_contains "$SCRIPT" 'HINT only'
+assert_contains "$SCRIPT" 'dedupe_marker_issues'
 
 MARKER_LINE=$(grep -E 'MARKER=' "$SCRIPT" | head -1)
 assert_contains <(echo "$MARKER_LINE") 'release-pipeline-failure:'
@@ -166,8 +173,14 @@ if [ "$1" = "issue" ] && [ "$2" = "list" ]; then
   echo '[]'
   exit 0
 fi
+if [ "$1" = "api" ]; then
+  # Exhaustive scan finds nothing both before create and in post-create dedupe.
+  echo '[]'
+  exit 0
+fi
 if [ "$1" = "issue" ] && [ "$2" = "create" ]; then
   echo "MUTATION:create" >> "$LOGDIR/mutations.log"
+  echo "https://example.test/issues/999"
   exit 0
 fi
 echo "unexpected gh invocation: $*" >&2
@@ -180,5 +193,44 @@ env PATH="$WORKDIR:$PATH" GITHUB_REPOSITORY='southwest-ai-labs/xavier' \
   WORKFLOW_NAME='Release & Multi-Platform Binaries' \
   bash "$SCRIPT" >"$WORKDIR/out5.txt" 2>"$WORKDIR/err5.txt"
 assert_contains "$WORKDIR/mutations.log" 'MUTATION:create'
+
+# Search succeeds but omits the marker; exhaustive API scan must still find it.
+cat > "$WORKDIR/gh" <<'GH'
+#!/bin/bash
+LOGDIR="$(dirname "$0")"
+echo "gh $*" >> "$LOGDIR/gh.log"
+if [ "$1" = "label" ] && [ "$2" = "create" ]; then exit 0; fi
+if [ "$1" = "issue" ] && [ "$2" = "list" ]; then
+  echo '[]'
+  exit 0
+fi
+if [ "$1" = "api" ]; then
+  echo '[{"number":77,"body":"hidden\n<!-- release-pipeline-failure:Release & Multi-Platform Binaries -->\n","pull_request":null}]'
+  exit 0
+fi
+if [ "$1" = "issue" ] && [ "$2" = "comment" ]; then
+  echo "MUTATION:comment:$3" >> "$LOGDIR/mutations.log"
+  exit 0
+fi
+if [ "$1" = "issue" ] && [ "$2" = "create" ]; then
+  echo "MUTATION:create" >> "$LOGDIR/mutations.log"
+  echo "https://example.test/issues/999"
+  exit 0
+fi
+if [ "$1" = "issue" ] && [ "$2" = "close" ]; then
+  echo "MUTATION:close:$3" >> "$LOGDIR/mutations.log"
+  exit 0
+fi
+echo "unexpected gh invocation: $*" >&2
+exit 99
+GH
+chmod +x "$WORKDIR/gh"
+: > "$WORKDIR/mutations.log"
+env PATH="$WORKDIR:$PATH" GITHUB_REPOSITORY='southwest-ai-labs/xavier' \
+  CONCLUSION=failure HEAD_SHA=abc1234 RUN_ID=12 RUN_URL=https://example.test \
+  WORKFLOW_NAME='Release & Multi-Platform Binaries' \
+  bash "$SCRIPT" >"$WORKDIR/out6.txt" 2>"$WORKDIR/err6.txt"
+assert_contains "$WORKDIR/mutations.log" 'MUTATION:comment:77'
+assert_not_contains "$WORKDIR/mutations.log" 'MUTATION:create'
 
 echo "OK: release-pipeline-incident contract"

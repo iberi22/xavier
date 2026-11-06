@@ -19,11 +19,11 @@ permissions:
   actions: read
   issues: write
 
-# One group per watched run id so a newer watcher never cancels a pending
-# older one (GitHub cancels pending jobs in the same group even when
-# cancel-in-progress is false).
+# Single shared group serializes lookup/create across all release-watch
+# runs (workflow_run + workflow_dispatch). cancel-in-progress=false keeps
+# the in-flight upsert; pending runs queue behind it.
 concurrency:
-  group: release-pipeline-watch-${{ github.event.workflow_run.id || github.run_id }}
+  group: release-pipeline-watch
   cancel-in-progress: false
 
 jobs:

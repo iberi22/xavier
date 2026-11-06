@@ -30,46 +30,79 @@ gh label create "$LABEL" --color B60205 --description "Release/binary pipeline f
 # Identity is the HTML marker only (label is advisory and may be removed).
 # Must exit non-zero on gh/jq failure (callers check explicitly; bash
 # assignments do not honor errexit for command substitutions).
+#
+# Search is a HINT only. Declaring "no incident" requires an exhaustive
+# paginated open-issue scan so a marker omitted by search cannot create
+# duplicates or skip closure.
 find_open_issue() {
-  local open_issues number body page per_page
-  # Prefer GitHub search scoped to the marker text so label removal cannot hide
-  # the open incident. Fall back to an unfiltered open-issue scan if search is
-  # unavailable, still without requiring the advisory label.
-  if open_issues=$(gh issue list --state open --limit 100 --search "$MARKER" --json number,body 2>/dev/null); then
-    :
-  else
-    open_issues="[]"
-    page=1
-    per_page=100
-    max_pages=50
-    while :; do
-      chunk=$(gh api "repos/${GITHUB_REPOSITORY}/issues?state=open&per_page=${per_page}&page=${page}") || return $?
-      echo "$chunk" | jq -e 'type == "array"' >/dev/null || return $?
-      count=$(echo "$chunk" | jq 'length') || return $?
-      [ "$count" -gt 0 ] || break
-      open_issues=$(jq -s 'add' <(echo "$open_issues") <(echo "$chunk" | jq '[.[] | select(.pull_request == null) | {number, body}]')) || return $?
-      if [ "$count" -lt "$per_page" ]; then
-        break
-      fi
-      page=$((page + 1))
-      if [ "$page" -gt "$max_pages" ]; then
-        echo "release-pipeline-incident: open-issue scan exceeded ${max_pages} pages; aborting to avoid incomplete lookup" >&2
-        return 2
-      fi
-    done
-  fi
-  if [ -z "$open_issues" ] || [ "$open_issues" = "[]" ]; then
-    return 0
-  fi
-  echo "$open_issues" | jq -e 'type == "array"' >/dev/null || return $?
-  while IFS= read -r number; do
-    [ -n "$number" ] || continue
-    body=$(echo "$open_issues" | jq -r --argjson n "$number" '.[] | select(.number == $n) | .body // empty') || return $?
-    if [[ "$body" == *"$MARKER"* ]]; then
-      echo "$number"
-      return 0
+  local open_issues="[]" number body page per_page=100 max_pages=50 count chunk search_hits
+
+  # Fast path: if search returns the marker, use it (still marker-based).
+  if search_hits=$(gh issue list --state open --limit 100 --search "$MARKER" --json number,body 2>/dev/null); then
+    if [ -n "$search_hits" ] && [ "$search_hits" != "[]" ]; then
+      echo "$search_hits" | jq -e 'type == "array"' >/dev/null || return $?
+      while IFS= read -r number; do
+        [ -n "$number" ] || continue
+        body=$(echo "$search_hits" | jq -r --argjson n "$number" '.[] | select(.number == $n) | .body // empty') || return $?
+        if [[ "$body" == *"$MARKER"* ]]; then
+          echo "$number"
+          return 0
+        fi
+      done < <(echo "$search_hits" | jq -r '.[].number')
     fi
-  done < <(echo "$open_issues" | jq -r '.[].number')
+  fi
+
+  # Exhaustive scan before declaring absence (or when search missed the marker).
+  page=1
+  while :; do
+    chunk=$(gh api "repos/${GITHUB_REPOSITORY}/issues?state=open&per_page=${per_page}&page=${page}") || return $?
+    echo "$chunk" | jq -e 'type == "array"' >/dev/null || return $?
+    count=$(echo "$chunk" | jq 'length') || return $?
+    [ "$count" -gt 0 ] || break
+    open_issues=$(jq -s 'add' <(echo "$open_issues") <(echo "$chunk" | jq '[.[] | select(.pull_request == null) | {number, body}]')) || return $?
+    while IFS= read -r number; do
+      [ -n "$number" ] || continue
+      body=$(echo "$chunk" | jq -r --argjson n "$number" '.[] | select(.pull_request == null and .number == $n) | .body // empty') || return $?
+      if [[ "$body" == *"$MARKER"* ]]; then
+        echo "$number"
+        return 0
+      fi
+    done < <(echo "$chunk" | jq -r '.[] | select(.pull_request == null) | .number')
+    if [ "$count" -lt "$per_page" ]; then
+      break
+    fi
+    page=$((page + 1))
+    if [ "$page" -gt "$max_pages" ]; then
+      echo "release-pipeline-incident: open-issue scan exceeded ${max_pages} pages; aborting to avoid incomplete lookup" >&2
+      return 2
+    fi
+  done
+  return 0
+}
+
+# Close duplicate open incidents that share the same marker, keep the oldest.
+dedupe_marker_issues() {
+  local keep="$1" page=1 per_page=100 max_pages=50 chunk count number body
+  [ -n "$keep" ] || return 0
+  while :; do
+    chunk=$(gh api "repos/${GITHUB_REPOSITORY}/issues?state=open&per_page=${per_page}&page=${page}") || return $?
+    echo "$chunk" | jq -e 'type == "array"' >/dev/null || return $?
+    count=$(echo "$chunk" | jq 'length') || return $?
+    [ "$count" -gt 0 ] || break
+    while IFS= read -r number; do
+      [ -n "$number" ] || continue
+      [ "$number" = "$keep" ] && continue
+      body=$(echo "$chunk" | jq -r --argjson n "$number" '.[] | select(.pull_request == null and .number == $n) | .body // empty') || return $?
+      if [[ "$body" == *"$MARKER"* ]]; then
+        echo "Closing duplicate release-pipeline incident #$number (keeping #$keep)"
+        gh issue comment "$number" --body "Duplicate of #$keep for the same release-pipeline marker; closing."
+        gh issue close "$number" --reason "not planned"
+      fi
+    done < <(echo "$chunk" | jq -r '.[] | select(.pull_request == null) | .number')
+    [ "$count" -lt "$per_page" ] && break
+    page=$((page + 1))
+    [ "$page" -gt "$max_pages" ] && break
+  done
   return 0
 }
 
@@ -112,7 +145,20 @@ if [ "$CONCLUSION" = "failure" ] || [ "$CONCLUSION" = "cancelled" ] || [ "$CONCL
       echo
       echo "$MARKER"
     } > /tmp/release-pipeline-body.md
-    gh issue create --title "$TITLE" --body-file /tmp/release-pipeline-body.md --label "$LABEL"
+    CREATED_URL=$(gh issue create --title "$TITLE" --body-file /tmp/release-pipeline-body.md --label "$LABEL")
+    echo "Created: $CREATED_URL"
+    # Race with a parallel watcher: re-scan and close newer duplicates.
+    set +e
+    KEEP=$(find_open_issue)
+    DEDUPE_RC=$?
+    set -e
+    if [ "$DEDUPE_RC" -ne 0 ]; then
+      echo "release-pipeline-incident: post-create lookup failed (rc=$DEDUPE_RC)" >&2
+      exit "$DEDUPE_RC"
+    fi
+    if [ -n "$KEEP" ]; then
+      dedupe_marker_issues "$KEEP"
+    fi
   fi
 elif [ "$CONCLUSION" = "success" ]; then
   if [ -n "$EXISTING" ]; then
