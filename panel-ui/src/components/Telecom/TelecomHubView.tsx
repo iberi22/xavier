@@ -30,6 +30,21 @@ import TopStatusBar from "../TopStatusBar";
 
 export type TelecomTab = "direct" | "groups" | "peers";
 
+/** A peer counts as online when the daemon saw it within this window (seconds). */
+export const PEER_ONLINE_WINDOW_S = 300;
+
+/**
+ * `last_seen_at` comes from the daemon as unix SECONDS (src/api/mesh.rs uses
+ * `chrono::Utc::now().timestamp()`), so compare against seconds, not milliseconds.
+ */
+export function isPeerRecentlySeen(
+  lastSeenAt: number | null | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  if (typeof lastSeenAt !== "number") return false;
+  return nowMs / 1000 - lastSeenAt <= PEER_ONLINE_WINDOW_S;
+}
+
 export interface TelecomHubViewProps {
   token?: string;
   onClose?: () => void;
@@ -213,7 +228,6 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
   const [meshPeers, setMeshPeers] = useState<MeshPeer[]>([]);
   const [isLoadingPeers, setIsLoadingPeers] = useState(false);
   const [peersError, setPeersError] = useState<string | null>(null);
-  const [peerLatencies, setPeerLatencies] = useState<Record<string, number | null>>({});
 
 
   useEffect(() => {
@@ -492,15 +506,9 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
                       publicKey={peer.node_id}
                       nodeId={peer.node_id}
                       alias={peer.alias}
-                      latencyMs={peerLatencies[peer.node_id] ?? null}
-                      pingStatus={peerLatencies[peer.node_id] !== undefined ? "online" : "offline"}
-                      lastSeen={peer.last_seen_at ? new Date(peer.last_seen_at).toLocaleTimeString() : "Unknown"}
-                      onPing={(key) => {
-                        // Simulate a ping response latency for now
-                        setTimeout(() => {
-                           setPeerLatencies(prev => ({ ...prev, [key]: 15 }));
-                        }, 500);
-                      }}
+                      latencyMs={null}
+                      pingStatus={isPeerRecentlySeen(peer.last_seen_at) ? "online" : "offline"}
+                      lastSeen={peer.last_seen_at ? new Date(peer.last_seen_at * 1000).toLocaleTimeString() : "Unknown"}
                     />
                   ))}
                 </div>
