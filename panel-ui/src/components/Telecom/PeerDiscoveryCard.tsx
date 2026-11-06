@@ -58,6 +58,15 @@ export const getLatencyColor = (
       label: "Pinging...",
     };
   }
+  if (pingStatus === "online" && (latencyMs === null || latencyMs === undefined)) {
+    return {
+      bg: "bg-emerald-500/10",
+      text: "text-emerald-400",
+      border: "border-emerald-500/30",
+      dotBg: "bg-emerald-400",
+      label: "Online",
+    };
+  }
   if (pingStatus === "offline" || latencyMs === null || latencyMs === undefined) {
     return {
       bg: "bg-rose-500/10",
