@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ort = { version = "=2.0.0-rc.12", default-features = false, features = ["load-dynamic", "api-18"] }
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "api-18"] }
 tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
 ndarray = "0.16"
 thiserror = "2"
