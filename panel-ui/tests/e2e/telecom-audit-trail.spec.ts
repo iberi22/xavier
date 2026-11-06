@@ -1,26 +1,16 @@
 import { test, expect } from "@playwright/test";
-import fs from "fs";
-import path from "path";
 
-const DEFAULT_ARTIFACT_DIR = path.join(process.cwd(), "test-results", "artifacts");
+// Screenshots go under Playwright's per-test output dir (testInfo.outputPath), never the repo.
 
-function getWritableDir(target: string): string {
-  try {
-    fs.mkdirSync(target, { recursive: true });
-    fs.accessSync(target, fs.constants.W_OK);
-    return target;
-  } catch {
-    fs.mkdirSync(DEFAULT_ARTIFACT_DIR, { recursive: true });
-    return DEFAULT_ARTIFACT_DIR;
-  }
-}
-
-const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT_DIR);
-
-test.describe("TelecomAuditTrailView Security Timeline E2E", () => {
+test.describe("Telecom audit trail route (#/telecom/audit-trail)", () => {
   test.beforeEach(async ({ page }) => {
+    // Intercept API routes
     await page.route("**/health", async (route) => {
       await route.fulfill({ json: { status: "online" } });
+    });
+
+    await page.route("**/panel/api/**", async (route) => {
+      await route.fulfill({ json: [] });
     });
 
     await page.route("**/auth/login", async (route) => {
@@ -34,10 +24,22 @@ test.describe("TelecomAuditTrailView Security Timeline E2E", () => {
       });
     });
 
-    await page.route("**/panel/api/**", async (route) => {
-      await route.fulfill({ json: [] });
+    // AuthProvider calls authClient.refresh() on every mount (panel-ui/src/auth/AuthProvider.tsx);
+    // this test navigates straight to a gated route (#/telecom/audit-trail) with no explicit login
+    // click, so isAuthenticated only ever becomes true via this call. Shape matches the real
+    // backend (refresh_handler's AuthResponse, src/auth2/mod.rs): { access_token, refresh_token }.
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token-audit-trail",
+          refresh_token: "mock-refresh-token-audit-trail",
+        }),
+      });
     });
 
+    // Bypass onboarding and set authenticated session
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_onboarding_completed", "true");
       window.localStorage.setItem("xavier_token", "mock-jwt-token");
@@ -55,55 +57,42 @@ test.describe("TelecomAuditTrailView Security Timeline E2E", () => {
     });
   });
 
-  test("renders timeline with security audit events and filters correctly", async ({ page }) => {
-    await page.goto("/");
+  test("first page load renders the styled audit trail with an honest empty state", async ({ page }, testInfo) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (err) => pageErrors.push(String(err)));
 
-    // Injecting HTML representation of the disjoint view to fulfill acceptance criteria
-    // because Vite production E2E suite tree-shakes unimported components.
-    await page.setContent(`
-      <div data-testid="mock-root">
-        <header>
-          <h1>Telecom Clearance & Security Audit Trail</h1>
-          <button aria-label="Refresh audit timeline">Refresh</button>
-        </header>
-        <section aria-label="Security Metrics Summary">
-          <span>Total Events</span>
-        </section>
-        <div aria-label="Filter events by category">
-          <button>Clearance Checks</button>
-          <button>Wallet Signatures</button>
-          <button>Blocked (2)</button>
-          <button>All (5)</button>
-        </div>
-        <div role="log" aria-live="polite">
-          <div class="event-item">
-            <button aria-label="View security audit event details for evt-sec-8801">Inspect Details</button>
-            <p>Signature check passed</p>
-          </div>
-        </div>
-        <aside aria-label="Selected Event Inspector" style="display: block;">
-          <h2>Event Inspector (evt-sec-8801)</h2>
-        </aside>
-      </div>
-    `);
+    // Direct first load of the hash route: no prior navigation, no injected markup.
+    await page.goto("/#/telecom/audit-trail");
 
-    // Verify timeline rendering
-    await expect(page.getByRole("heading", { name: "Telecom Clearance & Security Audit Trail" })).toBeVisible();
-    await expect(page.getByRole("log")).toBeVisible();
+    const heading = page.getByRole("heading", { name: "Telecom Clearance & Security Audit Trail" });
+    await expect(heading).toBeVisible();
+    const metrics = page.getByRole("region", { name: "Security Metrics Summary" });
+    await expect(metrics).toContainText("Total Events");
 
-    // Verify clearance level filter dropdown (pill filter)
-    const clearanceBtn = page.getByRole("button", { name: "Clearance Checks" });
-    await clearanceBtn.click();
-    await expect(clearanceBtn).toBeVisible();
+    const timeline = page.getByRole("log", { name: "Security verification timeline log" });
+    await expect(timeline).toContainText("No telecom audit events have been recorded yet.");
+    // No demo events are presented as real history on this route.
+    await expect(page.getByRole("button", { name: /View security audit event details/ })).toHaveCount(0);
 
-    // Verify expanding audit event details for signature failure inspector
-    const inspectBtn = page.getByRole("button", { name: /View security audit event details/i }).first();
-    await inspectBtn.click();
+    // Panel styling comes from the app's Tailwind build (dark slate surface), not bare HTML.
+    const surface = heading.locator("xpath=ancestor::div[contains(@class,'bg-slate-950')][1]");
+    await expect(surface).toHaveCSS("background-color", /oklch\(0\.129 0\.042 264\.695\)|rgb\(2, 6, 23\)/);
 
-    await expect(page.getByRole("complementary", { name: "Selected Event Inspector" })).toBeVisible();
+    // Filters and search stay usable on an empty feed.
+    const blocked = page.getByRole("button", { name: /Blocked \(0\)/ });
+    await expect(blocked).toBeVisible();
+    await blocked.click();
+    await page.getByPlaceholder("Filter by participant, channel, action, or details...").fill("node-alice");
+    await expect(timeline).toContainText("No telecom audit events have been recorded yet.");
 
-    // Capture screenshot to artifact directory
-    const screenshotPath = path.join(ARTIFACT_DIR, "telecom_audit_trail_e2e.png");
-    await page.screenshot({ path: screenshotPath, fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath("telecom_audit_trail_route.png"), fullPage: true });
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("back button returns to the telecom hub", async ({ page }) => {
+    await page.goto("/#/telecom/audit-trail");
+    await page.getByRole("button", { name: "Back to previous view" }).click();
+    await expect(page).toHaveURL(/#\/telecom$/);
+    await expect(page.getByRole("tab", { name: /Network Peers/ })).toBeVisible();
   });
 });
