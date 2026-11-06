@@ -5,6 +5,10 @@ on:
   pull_request:
     branches: [main, 'sprint/**', 'integration/**']
 
+concurrency:
+  group: fast-gate-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   shadow-gate:
     name: Shadow Fast Gate

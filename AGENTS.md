@@ -54,6 +54,19 @@ machine never builds. PRs must be mergeable as-is:
 - CI runs on PRs to `main` and `sprint/**`. If it fails, a bot comment `@jules` brings the failing log
   to the PR: fix only what the log shows, on the same branch.
 
+### panel-ui / UI tasks for Jules (owner rule, 2026-11-06)
+
+- Package manager is **pnpm** (`pnpm install`, `pnpm run build`, `pnpm exec vitest run`, `pnpm exec playwright test`). Never `npm install` / `npx` installs that write a `package-lock.json`.
+- Base branch for UI work is **`integration/core-100`** (unless the task names another); open the PR against it.
+- One task = one outcome: touch only the files the task needs, one PR per gap, no drive-by refactors.
+- No fake DOM: never `page.setContent`, `innerHTML` or `page.evaluate` that injects markup to make a locator pass. Tests load the real route of the real app.
+- No invented backend: mock only endpoints that exist in the daemon (`src/**` routes) with their real response shapes (see the Rust structs / `panel-ui/src/api`, `panel-ui/src/types.ts`). If the UI needs an endpoint that does not exist, say so in the PR instead of inventing one.
+- No fake behaviour in app code: no `setTimeout`-simulated ping, progress, latency, hashes or "LIVE" data. Show an honest empty/unavailable state instead.
+- Playwright: web-first assertions (`await expect(locator).toBeVisible()/toHaveText()/toHaveAttribute()`), `expect.poll` for non-DOM state, `page.routeWebSocket` for sockets. Never `page.waitForTimeout`. Collect `pageerror`s into an array and assert it is empty; do not throw inside the handler.
+- Screenshots go to `testInfo.outputPath(...)`; never commit screenshots or write to absolute/home paths.
+- Never weaken or delete an assertion to get green. Do not touch auth/session/crypto/WebAuthn code; stop and say so if a task needs it.
+- Validation to paste in the PR body: `pnpm run build`, vitest for touched files, and `pnpm exec playwright test --project=chromium` counts.
+
 ## 3. Development by waves
 
 - Work is organized in waves: research → issues → execution → verification.
