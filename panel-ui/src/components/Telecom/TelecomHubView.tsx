@@ -20,7 +20,12 @@ import {
   Wifi,
   Zap,
 } from "lucide-react";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
+import { ApiClient } from "../../api/client";
+import { useAuthStore } from "../../auth/AuthProvider";
+import { MeshPeer } from "../../types";
+import PeerDiscoveryCard from "./PeerDiscoveryCard";
+
 import TopStatusBar from "../TopStatusBar";
 
 export type TelecomTab = "direct" | "groups" | "peers";
@@ -373,6 +378,41 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
   const [isEphemeral, setIsEphemeral] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
+  // Peers State
+  const [meshPeers, setMeshPeers] = useState<MeshPeer[]>([]);
+  const [isLoadingPeers, setIsLoadingPeers] = useState(false);
+  const [peersError, setPeersError] = useState<string | null>(null);
+  const [peerLatencies, setPeerLatencies] = useState<Record<string, number | null>>({});
+
+
+  useEffect(() => {
+    if (activeTab === "peers" && token) {
+      let isMounted = true;
+      const fetchPeers = async () => {
+        try {
+          setIsLoadingPeers(true);
+          const client = new ApiClient(token || "");
+          const status = await client.getMeshStatus();
+          if (isMounted) {
+            setMeshPeers(status?.peers ?? []);
+            setPeersError(null);
+          }
+        } catch (err) {
+          if (isMounted) {
+            setPeersError("Failed to fetch network peers.");
+          }
+        } finally {
+          if (isMounted) {
+            setIsLoadingPeers(false);
+          }
+        }
+      };
+      fetchPeers();
+      return () => { isMounted = false; };
+    }
+  }, [activeTab, token]);
+
+
   // Handle multi-channel room selection
   const handleSelectRoom = useCallback((roomId: string) => {
     setSelectedRoomId(roomId);
@@ -617,7 +657,46 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
 
         {/* Center/Right Main Panel: Active Room / Peer View */}
         <section className="flex-1 bg-slate-900/60 rounded-2xl border border-white/10 flex flex-col overflow-hidden">
-          {selectedRoom ? (
+          {activeTab === "peers" ? (
+            <div className="flex-1 p-4 overflow-y-auto space-y-4">
+              <h2 className="text-sm font-semibold text-white mb-4">Network Peers</h2>
+              {isLoadingPeers ? (
+                 <div className="text-center py-8 text-xs text-white/40 font-mono">
+                    <RefreshCw className="w-5 h-5 mx-auto mb-2 animate-spin text-white/20" />
+                    Loading peers...
+                 </div>
+              ) : peersError ? (
+                 <div className="text-center py-8 text-xs text-rose-400 font-mono">
+                    {peersError}
+                 </div>
+              ) : meshPeers.length === 0 ? (
+                 <div className="text-center py-8 text-xs text-white/40 font-mono">
+                    No peers discovered yet.
+                 </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {meshPeers.map(peer => (
+                    <PeerDiscoveryCard
+                      key={peer.node_id}
+                      publicKey={peer.node_id}
+                      nodeId={peer.node_id}
+                      alias={peer.alias}
+                      latencyMs={peerLatencies[peer.node_id] ?? null}
+                      pingStatus={peerLatencies[peer.node_id] !== undefined ? "online" : "offline"}
+                      lastSeen={peer.last_seen_at ? new Date(peer.last_seen_at).toLocaleTimeString() : "Unknown"}
+                      onPing={(key) => {
+                        // Simulate a ping response latency for now
+                        setTimeout(() => {
+                           setPeerLatencies(prev => ({ ...prev, [key]: 15 }));
+                        }, 500);
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : selectedRoom ? (
+
             <>
               {/* Room Header */}
               <div className="p-3 sm:p-4 border-b border-white/10 bg-black/40 flex items-center justify-between flex-wrap gap-2">
