@@ -79,21 +79,48 @@ if (-not $candidates) {
 $bin = $candidates[0]
 Write-Step "Binary: $bin"
 
-# --- Optional install to stable path (skip if locked) ---
+# --- Helper: File Hash Comparison for Version Parity ---
+function Test-BinaryParity([string]$sourcePath, [string]$targetPath) {
+    if (-not (Test-Path $sourcePath) -or -not (Test-Path $targetPath)) {
+        return $false
+    }
+    try {
+        $h1 = (Get-FileHash -Path $sourcePath -Algorithm SHA256).Hash
+        $h2 = (Get-FileHash -Path $targetPath -Algorithm SHA256).Hash
+        return ($h1 -eq $h2)
+    } catch {
+        return $false
+    }
+}
+
+# --- Optional install to stable path (skip if locked & verify parity) ---
 if (-not $NoInstall) {
     $installDir = "C:\Users\belal\bin"
     if (Test-Path $installDir) {
+        $olaTarget = Join-Path $installDir "xavier-ola-graph.exe"
+        $binTarget = Join-Path $installDir "xavier.exe"
+
         try {
-            Copy-Item $bin (Join-Path $installDir "xavier-ola-graph.exe") -Force
+            Copy-Item $bin $olaTarget -Force
             Write-Ok "Installed xavier-ola-graph.exe"
         } catch {
             Write-Warn "Could not install xavier-ola-graph.exe: $_"
         }
+
         try {
-            Copy-Item $bin (Join-Path $installDir "xavier.exe") -Force
+            Copy-Item $bin $binTarget -Force
             Write-Ok "Installed xavier.exe"
         } catch {
-            Write-Warn "xavier.exe locked (Grok MCP respawn?) - use xavier-ola-graph.exe: $_"
+            Write-Warn "xavier.exe locked (Grok MCP respawn?) - checking parity: $_"
+        }
+
+        # Check version parity
+        if (Test-Path $binTarget) {
+            $isParity = Test-BinaryParity $bin $binTarget
+            if (-not $isParity) {
+                Write-Warn "VERSION PARITY MISMATCH: $binTarget differs from source $bin (file locked or failed copy)."
+                Write-Warn "Using source binary $bin directly to avoid running stale schema/XRK1 encryption binaries."
+            }
         }
     }
     $dist = Join-Path $rootDir "dist"

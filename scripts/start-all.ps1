@@ -12,10 +12,26 @@ Write-Host "====================================================================
 Write-Host "  STARTING SWAL ECOSYSTEM: Xavier + Gestalt + Panel UI" -ForegroundColor Cyan
 Write-Host "================================================================================" -ForegroundColor Cyan
 
-# 1. Resolve Binaries
+# 1. Resolve Binaries & Parity Verification
 $PSScriptRootResolved = Split-Path -Parent $MyInvocation.MyCommand.Path
-$xavierBin = if (Test-Path "$PSScriptRootResolved\..\target\release\xavier.exe") {
-    "$PSScriptRootResolved\..\target\release\xavier.exe"
+$releaseBin = "$PSScriptRootResolved\..\target\release\xavier.exe"
+$installedBin = "C:\Users\belal\bin\xavier.exe"
+
+$xavierBin = if (Test-Path $releaseBin) {
+    # Check parity if an installed binary exists
+    if (Test-Path $installedBin) {
+        try {
+            $h1 = (Get-FileHash -Path $releaseBin -Algorithm SHA256).Hash
+            $h2 = (Get-FileHash -Path $installedBin -Algorithm SHA256).Hash
+            if ($h1 -ne $h2) {
+                Write-Host "[WARN] Parity mismatch between target\release\xavier.exe and C:\Users\belal\bin\xavier.exe" -ForegroundColor Yellow
+                Write-Host "       Using target\release\xavier.exe to avoid stale database schema / XRK1 crypto drift." -ForegroundColor Gray
+            }
+        } catch {}
+    }
+    $releaseBin
+} elseif (Test-Path $installedBin) {
+    $installedBin
 } elseif (Get-Command xavier -ErrorAction SilentlyContinue) {
     (Get-Command xavier).Source
 } else {
