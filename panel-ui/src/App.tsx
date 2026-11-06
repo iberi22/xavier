@@ -22,6 +22,7 @@ import { AgentResponderSelect } from "./components/Telecom/AgentResponderSelect"
 import DirectChatView from "./components/Telecom/DirectChatView";
 import GroupRoomView from "./components/Telecom/GroupRoomView";
 import TelecomHubView from "./components/Telecom/TelecomHubView";
+import TelecomAuditTrailView from "./components/Telecom/TelecomAuditTrailView";
 import TopStatusBar from "./components/TopStatusBar";
 import ErrorToast from "./components/ui/ErrorToast";
 import WalletView from "./components/WalletView";
@@ -642,6 +643,25 @@ function AppContent() {
 	if (hash === "#/telecom" || hash.startsWith("#/telecom/hub")) {
 		return (
 			<TelecomHubView token={token || undefined} onClose={handleCloseMesh} />
+		);
+	}
+
+	if (
+		hash === "#/telecom/audit-trail" ||
+		hash.startsWith("#/telecom/audit-trail/")
+	) {
+		// No telecom audit feed exists in the daemon yet, so start empty rather than
+		// showing the component's demo events as if they were real security history.
+		return (
+			<div className="min-h-screen bg-slate-950 p-4 sm:p-6">
+				<TelecomAuditTrailView
+					token={token || undefined}
+					initialEvents={[]}
+					onClose={() => {
+						window.location.hash = "#/telecom";
+					}}
+				/>
+			</div>
 		);
 	}
 

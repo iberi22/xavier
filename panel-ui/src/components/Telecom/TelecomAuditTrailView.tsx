@@ -548,7 +548,11 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 					{filteredEvents.length === 0 ? (
 						<div className="p-8 text-center text-white/40 space-y-2">
 							<ShieldAlert className="w-8 h-8 mx-auto text-white/20" aria-hidden="true" />
-							<p className="text-xs">No matching security audit events found.</p>
+							<p className="text-xs">
+								{events.length === 0
+									? "No telecom audit events have been recorded yet."
+									: "No matching security audit events found."}
+							</p>
 						</div>
 					) : (
 						filteredEvents.map((evt) => (
