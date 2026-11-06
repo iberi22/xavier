@@ -27,11 +27,30 @@ TITLE="release pipeline red: ${WORKFLOW_NAME}"
 gh label create "$LABEL" --color B60205 --description "Release/binary pipeline failure" 2>/dev/null || true
 
 # Prints the matching open issue number, or empty if none.
+# Identity is the HTML marker only (label is advisory and may be removed).
 # Must exit non-zero on gh/jq failure (callers check explicitly; bash
 # assignments do not honor errexit for command substitutions).
 find_open_issue() {
-  local open_issues number body
-  open_issues=$(gh issue list --label "$LABEL" --state open --limit 200 --json number,body) || return $?
+  local open_issues number body page per_page
+  # Prefer GitHub search scoped to the marker text so label removal cannot hide
+  # the open incident. Fall back to an unfiltered open-issue scan if search is
+  # unavailable, still without requiring the advisory label.
+  if open_issues=$(gh issue list --state open --limit 100 --search "$MARKER" --json number,body 2>/dev/null); then
+    :
+  else
+    open_issues="[]"
+    page=1
+    per_page=100
+    while [ "$page" -le 10 ]; do
+      chunk=$(gh api "repos/${GITHUB_REPOSITORY}/issues?state=open&per_page=${per_page}&page=${page}") || return $?
+      echo "$chunk" | jq -e 'type == "array"' >/dev/null || return $?
+      count=$(echo "$chunk" | jq 'length') || return $?
+      [ "$count" -gt 0 ] || break
+      open_issues=$(jq -s 'add' <(echo "$open_issues") <(echo "$chunk" | jq '[.[] | {number, body}]')) || return $?
+      [ "$count" -lt "$per_page" ] && break
+      page=$((page + 1))
+    done
+  fi
   if [ -z "$open_issues" ] || [ "$open_issues" = "[]" ]; then
     return 0
   fi
