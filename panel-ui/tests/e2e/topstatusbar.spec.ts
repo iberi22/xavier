@@ -34,6 +34,17 @@ test.describe("TopStatusBar End-to-End Smoke Tests", () => {
     });
 
     // Intercept auth login endpoints
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock-jwt-token",
+          refresh_token: "mock-refresh-token",
+        }),
+      });
+    });
+
     await page.route("**/auth/login", async (route) => {
       await route.fulfill({
         status: 200,

@@ -41,6 +41,28 @@ test.describe("Agent Chat Interactions", () => {
       await route.fulfill({ json: { data: { nodes: [], links: [] } } });
     });
 
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock-jwt-token",
+          refresh_token: "mock-refresh-token",
+        }),
+      });
+    });
+
+    await page.route("**/v1/auth/login", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          token: "mock-jwt-token",
+          user: { id: "1", email: "operator@xavier.local", role: "admin" },
+        }),
+      });
+    });
+
     await page.route("**/auth/login", async (route) => {
       await route.fulfill({
         status: 200,
