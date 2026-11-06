@@ -1,0 +1,89 @@
+name: Release Pipeline Watch
+
+# Opens/updates a deterministic GitHub issue when Release & Multi-Platform
+# Binaries fails (AppImage/CLI/Windows/macOS/server packages), and closes it
+# when the same workflow succeeds again.
+on:
+  workflow_run:
+    workflows: ["Release & Multi-Platform Binaries"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Release workflow run id to reprocess"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+# Shared group serializes marker upserts. queue:max keeps up to 100 pending
+# watchers (GitHub's default queue:single replaces the pending run when a
+# newer one arrives, which would drop failure comments). cancel-in-progress
+# must stay false — it cannot combine with queue:max.
+concurrency:
+  group: release-pipeline-watch
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  upsert-incident:
+    name: Upsert release pipeline incident
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Resolve run metadata
+        id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          WR_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WR_SHA: ${{ github.event.workflow_run.head_sha }}
+          WR_ID: ${{ github.event.workflow_run.id }}
+          WR_URL: ${{ github.event.workflow_run.html_url }}
+          WR_NAME: ${{ github.event.workflow_run.name }}
+          WR_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            case "$INPUT_RUN_ID" in
+              ''|*[!0-9]*) echo "run_id must be numeric"; exit 1 ;;
+            esac
+            META=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${INPUT_RUN_ID}")
+            NAME=$(echo "$META" | jq -r .name)
+            if [ "$NAME" != "Release & Multi-Platform Binaries" ]; then
+              echo "run $INPUT_RUN_ID is '$NAME', expected Release & Multi-Platform Binaries"
+              exit 1
+            fi
+            echo "conclusion=$(echo "$META" | jq -r .conclusion)" >> "$GITHUB_OUTPUT"
+            echo "head_sha=$(echo "$META" | jq -r .head_sha)" >> "$GITHUB_OUTPUT"
+            echo "run_id=$INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "run_url=$(echo "$META" | jq -r .html_url)" >> "$GITHUB_OUTPUT"
+            echo "workflow_name=$NAME" >> "$GITHUB_OUTPUT"
+            echo "head_branch=$(echo "$META" | jq -r .head_branch)" >> "$GITHUB_OUTPUT"
+          else
+            echo "conclusion=$WR_CONCLUSION" >> "$GITHUB_OUTPUT"
+            echo "head_sha=$WR_SHA" >> "$GITHUB_OUTPUT"
+            echo "run_id=$WR_ID" >> "$GITHUB_OUTPUT"
+            echo "run_url=$WR_URL" >> "$GITHUB_OUTPUT"
+            echo "workflow_name=$WR_NAME" >> "$GITHUB_OUTPUT"
+            echo "head_branch=$WR_BRANCH" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run release-pipeline incident upsert
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONCLUSION: ${{ steps.meta.outputs.conclusion }}
+          HEAD_SHA: ${{ steps.meta.outputs.head_sha }}
+          RUN_ID: ${{ steps.meta.outputs.run_id }}
+          RUN_URL: ${{ steps.meta.outputs.run_url }}
+          WORKFLOW_NAME: ${{ steps.meta.outputs.workflow_name }}
+          HEAD_BRANCH: ${{ steps.meta.outputs.head_branch }}
+        run: bash scripts/release-pipeline-incident.sh
