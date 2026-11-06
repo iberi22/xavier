@@ -38,7 +38,7 @@ export default function MeshConfig({ token }: MeshConfigProps) {
     try {
       setIsLoading(true);
       const status = await client.getMeshStatus();
-      setPeers(status.peers);
+      setPeers(status?.peers ?? []);
       setLocalNodeId(status.local_node_id);
       setError(null);
     } catch (e) {
