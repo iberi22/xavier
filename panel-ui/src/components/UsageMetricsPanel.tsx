@@ -93,7 +93,7 @@ export default function UsageMetricsPanel({ token }: UsageMetricsPanelProps) {
 				<tr>
 					<td
 						colSpan={6}
-						className="px-6 py-8 text-center text-sm text-white/30"
+						className="px-6 py-8 text-center text-sm text-[var(--foreground)]/50 dark:text-white/30"
 					>
 						No active provider traffic logs recorded yet.
 					</td>
@@ -109,32 +109,32 @@ export default function UsageMetricsPanel({ token }: UsageMetricsPanelProps) {
 					className={`transition-colors group ${
 						isLocal
 							? "bg-[#39ff14]/5 hover:bg-[#39ff14]/10"
-							: "hover:bg-white/[0.02]"
+							: "hover:bg-[var(--border-subtle)] dark:hover:bg-white/[0.02]"
 					}`}
 				>
 					<td className="px-6 py-4">
 						<span
 							className={`text-sm font-medium capitalize ${
-								isLocal ? "text-[#39ff14] font-semibold" : "text-white"
+								isLocal ? "text-[#39ff14] font-semibold" : "text-[var(--foreground)] dark:text-white"
 							}`}
 						>
 							{providerName}
 						</span>
 					</td>
-					<td className="px-6 py-4 font-mono text-xs text-white/80">
+					<td className="px-6 py-4 font-mono text-xs text-[var(--foreground)]/90 dark:text-white/80">
 						{usage.requests}
 					</td>
-					<td className="px-6 py-4 font-mono text-xs text-white/80">
+					<td className="px-6 py-4 font-mono text-xs text-[var(--foreground)]/90 dark:text-white/80">
 						{usage.tokens.toLocaleString()}
 					</td>
 					<td
 						className={`px-6 py-4 font-mono text-xs ${
-							usage.errors > 0 ? "text-red-400 font-bold" : "text-white/80"
+							usage.errors > 0 ? "text-red-400 font-bold" : "text-[var(--foreground)]/90 dark:text-white/80"
 						}`}
 					>
 						{usage.errors}
 					</td>
-					<td className="px-6 py-4 font-mono text-xs text-white/80">
+					<td className="px-6 py-4 font-mono text-xs text-[var(--foreground)]/90 dark:text-white/80">
 						${usage.cost_usd.toFixed(4)}
 					</td>
 					<td className="px-6 py-4">
@@ -159,7 +159,7 @@ export default function UsageMetricsPanel({ token }: UsageMetricsPanelProps) {
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-3">
 				<RefreshCw className="w-8 h-8 text-[#39ff14] animate-spin opacity-75" />
-				<span className="text-sm text-white/50 font-mono">
+				<span className="text-sm text-[var(--foreground)]/70 dark:text-white/50 font-mono">
 					Loading telemetry...
 				</span>
 			</div>
@@ -167,14 +167,14 @@ export default function UsageMetricsPanel({ token }: UsageMetricsPanelProps) {
 	}
 
 	return (
-		<div className="flex flex-col h-full p-8 text-white space-y-8 overflow-y-auto">
+		<div className="flex flex-col h-full p-8 text-[var(--foreground)] dark:text-white space-y-8 overflow-y-auto">
 			{/* Header */}
 			<div className="flex items-center justify-between">
 				<div>
 					<h2 className="text-3xl font-light tracking-tight">
 						Usage & Telemetry
 					</h2>
-					<p className="text-sm text-white/40 mt-1">
+					<p className="text-sm text-[var(--foreground)]/60 dark:text-white/40 mt-1">
 						Real-time local vs cloud traffic audit logs and cost estimation.
 					</p>
 				</div>
@@ -182,7 +182,7 @@ export default function UsageMetricsPanel({ token }: UsageMetricsPanelProps) {
 					type="button"
 					onClick={() => fetchUsage(true)}
 					disabled={refreshing}
-					className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white/80 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+					className="flex items-center gap-2 px-4 py-2 bg-[var(--border-subtle)] dark:bg-white/5 hover:bg-[var(--border-subtle)]/70 dark:hover:bg-white/10 border border-[var(--border-subtle)] dark:border-white/10 hover:border-[var(--border-subtle)] dark:hover:border-white/20 text-[var(--foreground)]/90 dark:text-white/80 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
 					title="Manual refresh"
 				>
 					<RefreshCw
@@ -240,32 +240,32 @@ export default function UsageMetricsPanel({ token }: UsageMetricsPanelProps) {
 					{/* Providers Table */}
 					<div className="space-y-4">
 						<div className="flex items-center gap-2 px-2">
-							<TrendingUp className="w-4 h-4 text-white/40" />
-							<h3 className="text-xs uppercase tracking-[0.2em] font-bold text-white/40">
+							<TrendingUp className="w-4 h-4 text-[var(--foreground)]/60 dark:text-white/40" />
+							<h3 className="text-xs uppercase tracking-[0.2em] font-bold text-[var(--foreground)]/60 dark:text-white/40">
 								Provider-Specific Telemetry
 							</h3>
 						</div>
 
-						<div className="w-full overflow-hidden border border-white/5 rounded-2xl bg-[#050505]/30">
+						<div className="w-full overflow-hidden border border-[var(--border-subtle)] dark:border-white/5 rounded-2xl bg-[var(--surface-card)]/30 dark:bg-[#050505]/30">
 							<table className="w-full text-left border-collapse">
 								<thead>
-									<tr className="bg-white/5 border-b border-white/5">
-										<th className="px-6 py-4 text-[10px] uppercase tracking-widest text-white/40 font-bold">
+									<tr className="bg-[var(--border-subtle)] dark:bg-white/5 border-b border-[var(--border-subtle)] dark:border-white/5">
+										<th className="px-6 py-4 text-[10px] uppercase tracking-widest text-[var(--foreground)]/60 dark:text-white/40 font-bold">
 											Provider
 										</th>
-										<th className="px-6 py-4 text-[10px] uppercase tracking-widest text-white/40 font-bold">
+										<th className="px-6 py-4 text-[10px] uppercase tracking-widest text-[var(--foreground)]/60 dark:text-white/40 font-bold">
 											Requests
 										</th>
-										<th className="px-6 py-4 text-[10px] uppercase tracking-widest text-white/40 font-bold">
+										<th className="px-6 py-4 text-[10px] uppercase tracking-widest text-[var(--foreground)]/60 dark:text-white/40 font-bold">
 											Tokens Used
 										</th>
-										<th className="px-6 py-4 text-[10px] uppercase tracking-widest text-white/40 font-bold">
+										<th className="px-6 py-4 text-[10px] uppercase tracking-widest text-[var(--foreground)]/60 dark:text-white/40 font-bold">
 											Errors
 										</th>
-										<th className="px-6 py-4 text-[10px] uppercase tracking-widest text-white/40 font-bold">
+										<th className="px-6 py-4 text-[10px] uppercase tracking-widest text-[var(--foreground)]/60 dark:text-white/40 font-bold">
 											Estimated Cost
 										</th>
-										<th className="px-6 py-4 text-[10px] uppercase tracking-widest text-white/40 font-bold text-center">
+										<th className="px-6 py-4 text-[10px] uppercase tracking-widest text-[var(--foreground)]/60 dark:text-white/40 font-bold text-center">
 											Mode
 										</th>
 									</tr>
@@ -297,7 +297,7 @@ function MetricCard({
 	isAlert,
 	isSuccess,
 }: MetricCardProps) {
-	let borderStyle = "border-white/5";
+	let borderStyle = "border-[var(--border-subtle)] dark:border-white/5";
 	let glowStyle = "";
 	if (isAlert) {
 		borderStyle = "border-red-500/20";
@@ -309,15 +309,15 @@ function MetricCard({
 
 	return (
 		<div
-			className={`p-5 bg-[#050505]/40 backdrop-blur-md rounded-2xl border ${borderStyle} ${glowStyle} flex flex-col justify-between h-28 hover:border-white/10 transition-colors`}
+			className={`p-5 bg-[var(--surface-card)]/40 dark:bg-[#050505]/40 backdrop-blur-md rounded-2xl border ${borderStyle} ${glowStyle} flex flex-col justify-between h-28 hover:border-[var(--border-subtle)] dark:hover:border-white/10 transition-colors`}
 		>
 			<div className="flex items-center justify-between gap-2">
-				<span className="text-[9px] uppercase tracking-wider text-white/40 font-bold whitespace-nowrap">
+				<span className="text-[9px] uppercase tracking-wider text-[var(--foreground)]/60 dark:text-white/40 font-bold whitespace-nowrap">
 					{title}
 				</span>
-				<div className="p-1.5 bg-white/5 rounded-lg shrink-0">{icon}</div>
+				<div className="p-1.5 bg-[var(--border-subtle)] dark:bg-white/5 rounded-lg shrink-0">{icon}</div>
 			</div>
-			<span className="text-xl font-semibold font-mono tracking-tight truncate text-white">
+			<span className="text-xl font-semibold font-mono tracking-tight truncate text-[var(--foreground)] dark:text-white">
 				{value}
 			</span>
 		</div>
