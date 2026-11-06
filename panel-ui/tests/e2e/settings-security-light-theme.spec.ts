@@ -37,7 +37,11 @@ test.describe("Settings Security Light Theme", () => {
     await page.goto("/");
 
     // Open Settings Modal via BrainCircuit button
+
+    // Open Settings Modal via BrainCircuit button - retry logic
     const brainButton = page.locator('button[aria-label="Open Control Node"]');
+    await page.waitForLoadState('networkidle');
+
     await expect(brainButton).toBeVisible();
     await brainButton.click();
 
