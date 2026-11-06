@@ -79,7 +79,7 @@ test.describe("Telecom File Transfer Drawer E2E", () => {
   // code. The comment below (line ~105, originally) already flagged this as TDD-style
   // "will fail until integration lands"; wiring the drawer up is a product feature task, not a
   // test fix, so it's marked fixme instead of silently failing CI.
-  test.fixme(
+  test(
     "loads file transfer drawer, simulates progress, completes and captures screenshots",
     async ({ page }) => {
     // Navigate to the Telecom Direct view
@@ -94,19 +94,28 @@ test.describe("Telecom File Transfer Drawer E2E", () => {
     // Simulate triggering the transfer (e.g. attaching a file or clicking a trigger button)
     // Here we assume a file attachment button exists in the DirectChatView.
     // We attach a mock file if the input exists, else we click the attach button.
+    let transferStatusRequests = 0;
+    await page.route("**/panel/api/telecom/transfer/status", async (route) => {
+      transferStatusRequests++;
+      if (transferStatusRequests === 1) {
+        await route.fulfill({ json: { progress: 50, status: "transferring" } });
+      } else if (transferStatusRequests === 2) {
+        await route.fulfill({ json: { progress: 100, status: "verifying" } });
+      } else {
+        await route.fulfill({ json: { progress: 100, status: "completed" } });
+      }
+    });
+
     const fileInput = page.locator('input[type="file"]').first();
-    if (await fileInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-       await fileInput.setInputFiles({
-         name: "TopSecret_Report.pdf",
-         mimeType: "application/pdf",
-         buffer: Buffer.from("mock content")
-       });
-       // Assuming sending the file opens the drawer.
-       const sendButton = page.locator('button[title="Send file"], button[aria-label="Send message"]');
-       if (await sendButton.isVisible()) {
-           await sendButton.click();
-       }
-    }
+    await fileInput.setInputFiles({
+      name: "TopSecret_Report.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("mock content")
+    });
+
+    // Click send button
+    const sendButton = page.locator('button[aria-label="Send direct message"]');
+    await sendButton.click();
 
     // Now we assert the Drawer UI as it SHOULD be rendered by FileTransferDrawer.tsx
     const dialog = page.locator('div[role="dialog"][aria-labelledby="file-transfer-drawer-title"]');
