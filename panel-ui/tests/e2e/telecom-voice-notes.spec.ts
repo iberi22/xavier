@@ -70,6 +70,7 @@ test.describe("Telecom Voice Notes Player E2E Verification", () => {
 
 		await page.addInitScript(() => {
 			window.localStorage.setItem("xavier_onboarding_completed", "true");
+			window.localStorage.setItem("xavier_security_onboarding_completed", "true");
 			window.localStorage.setItem("xavier_token", "mock-jwt-token");
 			window.localStorage.setItem(
 				"auth-storage",
@@ -90,7 +91,7 @@ test.describe("Telecom Voice Notes Player E2E Verification", () => {
 						id: "room_1",
 						name: "Alpha Team",
 						category: "groups",
-						isOnline: true,
+						online: true,
 						unreadCount: 1,
 						lastMessage: "Voice note received",
 						isEncrypted: true,
@@ -123,7 +124,7 @@ test.describe("Telecom Voice Notes Player E2E Verification", () => {
 			);
 		});
 
-		await page.goto("/#/mesh");
+		await page.goto("/#/telecom");
 	});
 
 	// FIXME(#2547 follow-up): this is not an auth-gate issue (out of scope for the panel-ui
@@ -137,7 +138,7 @@ test.describe("Telecom Voice Notes Player E2E Verification", () => {
 	//    audio player) — dead code.
 	// Wiring these up is a product feature task, not a test fix; tracked separately so this
 	// doesn't silently fail CI in the meantime.
-	test.fixme(
+	test(
 		"renders VoiceNotePlayer in chat message, plays audio, and captures waveform visually",
 		async ({ page }) => {
 		await page.waitForLoadState("domcontentloaded");
@@ -154,7 +155,7 @@ test.describe("Telecom Voice Notes Player E2E Verification", () => {
 		await groupsTab.waitFor({ state: "visible", timeout: 10000 });
 		await groupsTab.click();
 
-		const alphaRoom = page.locator('div[role="button"]:has-text("Alpha Team")');
+		const alphaRoom = page.locator('button:has-text("Alpha Team")');
 		await alphaRoom.waitFor({ state: "visible", timeout: 10000 });
 		await alphaRoom.click();
 

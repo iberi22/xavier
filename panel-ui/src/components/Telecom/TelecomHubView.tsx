@@ -20,39 +20,15 @@ import {
   Wifi,
   Zap,
 } from "lucide-react";
-import React, { useCallback, useMemo, useState, useEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiClient } from "../../api/client";
-import { useAuthStore } from "../../auth/AuthProvider";
+import useTelecomRooms, { TelecomRoom, TelecomMessage } from "../../hooks/useTelecomRooms";
 import { MeshPeer } from "../../types";
 import PeerDiscoveryCard from "./PeerDiscoveryCard";
-
+import VoiceNotePlayer from "./VoiceNotePlayer";
 import TopStatusBar from "../TopStatusBar";
 
 export type TelecomTab = "direct" | "groups" | "peers";
-
-export interface TelecomRoom {
-  id: string;
-  name: string;
-  category: TelecomTab;
-  avatar?: string;
-  peerNodeId?: string;
-  lastMessage?: string;
-  lastMessageTime?: string;
-  unreadCount?: number;
-  isOnline?: boolean;
-  isEncrypted?: boolean;
-  securityClassification?: string;
-}
-
-export interface TelecomMessage {
-  id: string;
-  roomId: string;
-  sender: string;
-  text: string;
-  time: string;
-  isSelf: boolean;
-  isEphemeral?: boolean;
-}
 
 export interface TelecomHubViewProps {
   token?: string;
@@ -60,165 +36,15 @@ export interface TelecomHubViewProps {
   initialTab?: TelecomTab;
 }
 
-const MOCK_ROOMS: TelecomRoom[] = [
-  {
-    id: "dir-1",
-    name: "node_alpha_8f (Primary Gateway)",
-    category: "direct",
-    peerNodeId: "node_alpha_8f",
-    lastMessage: "Encrypted Noise handshake complete.",
-    lastMessageTime: "11:02 AM",
-    unreadCount: 2,
-    isOnline: true,
-    isEncrypted: true,
-    securityClassification: "INTERNAL",
-  },
-  {
-    id: "dir-2",
-    name: "node_beta_3a (Storage Relay)",
-    category: "direct",
-    peerNodeId: "node_beta_3a",
-    lastMessage: "WAL checkpoint synced successfully.",
-    lastMessageTime: "10:45 AM",
-    unreadCount: 0,
-    isOnline: true,
-    isEncrypted: true,
-    securityClassification: "INTERNAL",
-  },
-  {
-    id: "dir-3",
-    name: "node_gamma_7c (Worker Edge)",
-    category: "direct",
-    peerNodeId: "node_gamma_7c",
-    lastMessage: "Session ephemeral key rotated.",
-    lastMessageTime: "09:30 AM",
-    unreadCount: 0,
-    isOnline: false,
-    isEncrypted: true,
-    securityClassification: "INTERNAL",
-  },
-  {
-    id: "grp-1",
-    name: "Sovereign Mesh Operators",
-    category: "groups",
-    lastMessage: "Quorum consensus approved proposal #102.",
-    lastMessageTime: "11:10 AM",
-    unreadCount: 5,
-    isOnline: true,
-    isEncrypted: true,
-    securityClassification: "SECRET",
-  },
-  {
-    id: "grp-2",
-    name: "Crypto Telecom Developers",
-    category: "groups",
-    lastMessage: "X25519 DH key exchange benchmark complete.",
-    lastMessageTime: "08:15 AM",
-    unreadCount: 0,
-    isOnline: true,
-    isEncrypted: true,
-    securityClassification: "INTERNAL",
-  },
-  {
-    id: "grp-3",
-    name: "Security & Clearance Gate",
-    category: "groups",
-    lastMessage: "TopSecret clearance audit logged.",
-    lastMessageTime: "Yesterday",
-    unreadCount: 0,
-    isOnline: true,
-    isEncrypted: true,
-    securityClassification: "TOPSECRET",
-  },
-  {
-    id: "peer-1",
-    name: "node_delta_9e (Edge Gateway)",
-    category: "peers",
-    peerNodeId: "node_delta_9e",
-    lastMessage: "Latency: 12ms · Protocol v2.4",
-    lastMessageTime: "Just now",
-    unreadCount: 0,
-    isOnline: true,
-    isEncrypted: true,
-    securityClassification: "INTERNAL",
-  },
-  {
-    id: "peer-2",
-    name: "node_epsilon_4b (Backup Storage)",
-    category: "peers",
-    peerNodeId: "node_epsilon_4b",
-    lastMessage: "Sync Lag: 0.2s · Active",
-    lastMessageTime: "5m ago",
-    unreadCount: 0,
-    isOnline: true,
-    isEncrypted: true,
-    securityClassification: "INTERNAL",
-  },
-];
-
-const INITIAL_MESSAGES: Record<string, TelecomMessage[]> = {
-  "dir-1": [
-    {
-      id: "m-1",
-      roomId: "dir-1",
-      sender: "node_alpha_8f",
-      text: "Establishing P2P Noise Protocol channel...",
-      time: "11:00 AM",
-      isSelf: false,
-    },
-    {
-      id: "m-2",
-      roomId: "dir-1",
-      sender: "node_alpha_8f",
-      text: "Encrypted Noise handshake complete.",
-      time: "11:02 AM",
-      isSelf: false,
-    },
-  ],
-  "grp-1": [
-    {
-      id: "m-3",
-      roomId: "grp-1",
-      sender: "Primary Gateway",
-      text: "Operator quorum activated for Wave 27 deployment.",
-      time: "11:05 AM",
-      isSelf: false,
-    },
-    {
-      id: "m-4",
-      roomId: "grp-1",
-      sender: "Storage Relay",
-      text: "Quorum consensus approved proposal #102.",
-      time: "11:10 AM",
-      isSelf: false,
-    },
-  ],
-  "peer-1": [
-    {
-      id: "m-5",
-      roomId: "peer-1",
-      sender: "node_delta_9e",
-      text: "Peer node delta connected via WebRTC fallback transport.",
-      time: "11:12 AM",
-      isSelf: false,
-    },
-  ],
-};
-
-/**
- * ⚡ Bolt Performance Optimization
- *
- * 💡 What: Extracted room list row into TelecomRoomListItem and wrapped in React.memo()
- * 🎯 Why: Prevents re-rendering all room list items when typing in message composer or switching state.
- * 📊 Impact: Prevents O(N) re-renders during high-frequency chat interactions.
- */
 const TelecomRoomListItem = React.memo(function TelecomRoomListItem({
   room,
   isSelected,
+  lastMessage,
   onSelect,
 }: {
   room: TelecomRoom;
   isSelected: boolean;
+  lastMessage?: string;
   onSelect: (id: string) => void;
 }) {
   const handleClick = useCallback(() => {
@@ -239,21 +65,21 @@ const TelecomRoomListItem = React.memo(function TelecomRoomListItem({
       <div className="relative shrink-0 mt-0.5">
         <div
           className={`w-9 h-9 rounded-lg flex items-center justify-center border ${
-            room.category === "direct"
+            (room.category || "direct") === "direct"
               ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400"
-              : room.category === "groups"
+              : (room.category || "direct") === "groups"
                 ? "bg-purple-500/10 border-purple-500/30 text-purple-400"
                 : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
           }`}
         >
-          {room.category === "direct" && <User className="w-4 h-4" aria-hidden="true" />}
-          {room.category === "groups" && <Users className="w-4 h-4" aria-hidden="true" />}
-          {room.category === "peers" && <Network className="w-4 h-4" aria-hidden="true" />}
+          {(room.category || "direct") === "direct" && <User className="w-4 h-4" aria-hidden="true" />}
+          {(room.category || "direct") === "groups" && <Users className="w-4 h-4" aria-hidden="true" />}
+          {(room.category || "direct") === "peers" && <Network className="w-4 h-4" aria-hidden="true" />}
         </div>
-        {room.isOnline !== undefined && (
+        {room.online !== undefined && (
           <span
             className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-950 ${
-              room.isOnline ? "bg-emerald-400" : "bg-slate-500"
+              room.online ? "bg-emerald-400" : "bg-slate-500"
             }`}
           />
         )}
@@ -264,16 +90,16 @@ const TelecomRoomListItem = React.memo(function TelecomRoomListItem({
           <span className="text-xs font-medium truncate text-white">
             {room.name}
           </span>
-          {room.lastMessageTime && (
+          {room.lastActiveTimestamp && (
             <span className="text-[10px] font-mono text-white/40 shrink-0">
-              {room.lastMessageTime}
+              {room.lastActiveTimestamp}
             </span>
           )}
         </div>
 
         <div className="flex items-center justify-between gap-2 mt-1">
           <p className="text-[11px] text-white/50 truncate font-mono">
-            {room.lastMessage || "No messages yet"}
+            {lastMessage || "No messages yet"}
           </p>
           {(room.unreadCount ?? 0) > 0 && (
             <span className="shrink-0 text-[10px] font-bold font-mono px-1.5 py-0.5 rounded-full bg-[#39ff14] text-black">
@@ -298,6 +124,7 @@ const TelecomMessageItem = React.memo(function TelecomMessageItem({
 }: {
   message: TelecomMessage;
 }) {
+
   return (
     <div
       className={`p-3 rounded-xl max-w-lg space-y-1 ${
@@ -308,18 +135,23 @@ const TelecomMessageItem = React.memo(function TelecomMessageItem({
     >
       <div className="flex items-center justify-between gap-4 text-[10px] font-mono text-white/40">
         <span className={`font-semibold ${message.isSelf ? "text-[#39ff14]" : "text-cyan-400"}`}>
-          {message.sender}
+          {(message.senderAlias || message.senderNodeId)}
         </span>
         <div className="flex items-center gap-1.5">
           {message.isEphemeral && (
-            <span className="text-amber-400 text-[9px] uppercase px-1 rounded bg-amber-500/10 border border-amber-500/20">
+            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase tracking-wide">
               Ephemeral
             </span>
           )}
-          <span>{message.time}</span>
+          <span>{message.timestamp}</span>
         </div>
       </div>
-      <p className="text-xs leading-relaxed font-sans">{message.text}</p>
+      <p className="text-xs leading-relaxed font-sans">{message.content}</p>
+      {message.attachment && message.attachment.type?.startsWith("audio/") && (
+        <div className="mt-2">
+          <VoiceNotePlayer src={message.attachment.url || ""} />
+        </div>
+      )}
     </div>
   );
 });
@@ -370,8 +202,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
   initialTab = "direct",
 }) => {
   const [activeTab, setActiveTab] = useState<TelecomTab>(initialTab);
-  const [rooms, setRooms] = useState<TelecomRoom[]>(MOCK_ROOMS);
-  const [messages, setMessages] = useState<Record<string, TelecomMessage[]>>(INITIAL_MESSAGES);
+  const { rooms, messages, sendMessageOptimistic, markRoomAsRead } = useTelecomRooms();
   const [selectedRoomId, setSelectedRoomId] = useState<string>("dir-1");
   const [searchQuery, setSearchQuery] = useState("");
   const [inputMessage, setInputMessage] = useState("");
@@ -416,16 +247,14 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
   // Handle multi-channel room selection
   const handleSelectRoom = useCallback((roomId: string) => {
     setSelectedRoomId(roomId);
-    setRooms((prevRooms) =>
-      prevRooms.map((r) => (r.id === roomId ? { ...r, unreadCount: 0 } : r)),
-    );
-  }, []);
+    markRoomAsRead(roomId);
+  }, [markRoomAsRead]);
 
   // Filtered rooms for active tab and search query
   const filteredRooms = useMemo(() => {
     return rooms.filter(
       (room) =>
-        room.category === activeTab &&
+        (room.category || "direct") === activeTab &&
         room.name.toLowerCase().includes(searchQuery.toLowerCase()),
     );
   }, [rooms, activeTab, searchQuery]);
@@ -455,38 +284,15 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
       if (!inputMessage.trim() || isSending) return;
 
       setIsSending(true);
-      const now = new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-
-      const newMsg: TelecomMessage = {
-        id: `msg-${Date.now()}`,
-        roomId: selectedRoomId,
-        sender: "Local Node (You)",
-        text: inputMessage.trim(),
-        time: now,
-        isSelf: true,
+      sendMessageOptimistic(selectedRoomId, inputMessage.trim(), {
+        senderAlias: "Local Node (You)",
         isEphemeral,
-      };
-
-      setMessages((prev) => ({
-        ...prev,
-        [selectedRoomId]: [...(prev[selectedRoomId] || []), newMsg],
-      }));
-
-      setRooms((prev) =>
-        prev.map((r) =>
-          r.id === selectedRoomId
-            ? { ...r, lastMessage: newMsg.text, lastMessageTime: now }
-            : r,
-        ),
-      );
+      });
 
       setInputMessage("");
       setIsSending(false);
     },
-    [inputMessage, isSending, selectedRoomId, isEphemeral],
+    [inputMessage, isEphemeral, isSending, selectedRoomId, sendMessageOptimistic]
   );
 
   return (
@@ -643,14 +449,19 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
                 No matching channels found.
               </div>
             ) : (
-              filteredRooms.map((room) => (
-                <TelecomRoomListItem
-                  key={room.id}
-                  room={room}
-                  isSelected={room.id === selectedRoomId}
-                  onSelect={handleSelectRoom}
-                />
-              ))
+              filteredRooms.map((room) => {
+                const roomMsgs = messages[room.id] || [];
+                const lastMsg = roomMsgs.length > 0 ? roomMsgs[roomMsgs.length - 1].content : undefined;
+                return (
+                  <TelecomRoomListItem
+                    key={room.id}
+                    room={room}
+                    isSelected={room.id === selectedRoomId}
+                    lastMessage={lastMsg}
+                    onSelect={handleSelectRoom}
+                  />
+                );
+              })
             )}
           </div>
         </aside>
@@ -714,7 +525,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
                       )}
                     </h2>
                     <p className="text-[10px] text-white/40 font-mono">
-                      Category: {selectedRoom.category.toUpperCase()} · Status: {selectedRoom.isOnline ? "Online" : "Offline"}
+                      Category: {String(selectedRoom.category || "direct").toUpperCase()} · Status: {selectedRoom.online ? "Online" : "Offline"}
                     </p>
                   </div>
                 </div>

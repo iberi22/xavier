@@ -71,6 +71,7 @@ test.describe("Telecom Hub Rooms E2E", () => {
     // Bypass onboarding and set authenticated session
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_onboarding_completed", "true");
+      window.localStorage.setItem("xavier_security_onboarding_completed", "true");
       window.localStorage.setItem("xavier_token", "mock-jwt-token");
       window.localStorage.setItem(
         "auth-storage",
@@ -83,6 +84,52 @@ test.describe("Telecom Hub Rooms E2E", () => {
           version: 0,
         })
       );
+
+      window.localStorage.setItem(
+        "xavier_telecom_rooms",
+        JSON.stringify([
+          {
+            id: "dir-1",
+            name: "node_alpha_8f (Primary Gateway)",
+            category: "direct",
+            peerNodeId: "node_alpha_8f",
+            unreadCount: 2,
+            online: true,
+            isEncrypted: true,
+            securityClassification: "INTERNAL",
+            type: "direct"
+          },
+          {
+            id: "grp-1",
+            name: "Sovereign Mesh Operators",
+            category: "groups",
+            unreadCount: 0,
+            online: true,
+            isEncrypted: true,
+            securityClassification: "CONFIDENTIAL",
+            type: "room"
+          },
+          {
+            id: "peer-1",
+            name: "node_delta_9e",
+            category: "peers",
+            peerNodeId: "node_delta_9e",
+            unreadCount: 0,
+            online: true,
+            isEncrypted: true,
+            securityClassification: "INTERNAL",
+            type: "room"
+          }
+        ])
+      );
+
+      window.localStorage.setItem(
+        "xavier_telecom_messages",
+        JSON.stringify({
+          "dir-1": [],
+          "grp-1": []
+        })
+      );
     });
   });
 
@@ -90,7 +137,6 @@ test.describe("Telecom Hub Rooms E2E", () => {
     // Navigate to Telecom Hub route
     await page.goto("/#/telecom");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(500);
 
     // Verify main header (src/components/Telecom/TelecomHubView.tsx)
     const hubHeader = page.locator("h1", { hasText: "Xavier Telecom Hub" });
@@ -123,7 +169,12 @@ test.describe("Telecom Hub Rooms E2E", () => {
     const activeGroupRoom = page.locator("h2", { hasText: "Sovereign Mesh Operators" });
     await expect(activeGroupRoom).toBeVisible();
 
-    // Send an optimistic message in the room
+    // Send an optimistic message in the room (with ephemeral toggle ON)
+    const ephemeralToggle = page.getByRole("button", { name: /Toggle Ephemeral Mode/i });
+    await expect(ephemeralToggle).toBeVisible();
+    await ephemeralToggle.click();
+    await expect(page.getByText(/Ephemeral:\s*ON/i)).toBeVisible();
+
     const messageInput = page.locator('input[placeholder*="Send encrypted message"]');
     await expect(messageInput).toBeVisible();
     await messageInput.fill("Telecom Hub Optimistic Dispatch Test");
@@ -138,6 +189,7 @@ test.describe("Telecom Hub Rooms E2E", () => {
       .locator("section")
       .getByText("Telecom Hub Optimistic Dispatch Test");
     await expect(sentMsg).toBeVisible();
+    await expect(page.locator("section").getByText("Ephemeral", { exact: true })).toBeVisible();
 
     // Switch to Peers Tab
     await peersTab.click();
