@@ -19,7 +19,7 @@ use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri::menu::{Menu, MenuItemBuilder};
 #[cfg(desktop)]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 const DEFAULT_PORT: u16 = 8006;
@@ -334,8 +334,8 @@ fn sidecar_token(data_dir: &std::path::Path) -> String {
 enum Backend {
     /// A Xavier we do not own answered; nothing was spawned.
     Attached,
-    /// We started the bundled sidecar.
-    Spawned,
+    /// We started the bundled sidecar, with a shared exit error tracker.
+    Spawned(Arc<Mutex<Option<String>>>),
     /// Could not attach or spawn (reason for the UI).
     Unavailable(String),
 }
@@ -382,13 +382,60 @@ fn start_backend(app: &tauri::App, port: u16, state: &SidecarState) -> Backend {
         .args(["http", &port.to_string(), "--mcp-port", "0"])
         .spawn()
     {
-        Ok((_rx, child)) => {
+        Ok((mut rx, child)) => {
             state.set_child(child);
             log::info!(
                 "Xavier sidecar spawned on port {port} (data: {})",
                 data_dir.display()
             );
-            Backend::Spawned
+
+            let exit_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+            let exit_error_clone = exit_error.clone();
+
+            // Monitor sidecar process events (stderr & termination)
+            tauri::async_runtime::spawn(async move {
+                let mut stderr_lines: Vec<String> = Vec::new();
+                while let Some(event) = rx.recv().await {
+                    match event {
+                        CommandEvent::Stderr(bytes) => {
+                            let text = String::from_utf8_lossy(&bytes);
+                            for line in text.lines() {
+                                let trimmed = line.trim();
+                                if !trimmed.is_empty() {
+                                    log::warn!("Sidecar stderr: {trimmed}");
+                                    stderr_lines.push(trimmed.to_string());
+                                    if stderr_lines.len() > 20 {
+                                        stderr_lines.remove(0);
+                                    }
+                                }
+                            }
+                        }
+                        CommandEvent::Terminated(payload) => {
+                            let code = payload.code;
+                            let snippet = if stderr_lines.is_empty() {
+                                "No stderr output captured.".to_string()
+                            } else {
+                                stderr_lines.join("\n")
+                            };
+                            let msg = format!(
+                                "Sidecar process terminated unexpectedly (exit code {:?}).\nDetails:\n{}",
+                                code, snippet
+                            );
+                            log::error!("{msg}");
+                            if let Ok(mut lock) = exit_error_clone.lock() {
+                                *lock = Some(msg);
+                            }
+                            break;
+                        }
+                        CommandEvent::Error(err) => {
+                            log::error!("Sidecar command error: {err}");
+                        }
+                        _ => {}
+                    }
+                }
+            });
+
+            Backend::Spawned(exit_error)
         }
         Err(e) => Backend::Unavailable(format!("Failed to start bundled Xavier: {e}")),
     }
@@ -454,7 +501,7 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let (status, message) = match &backend {
                 Backend::Attached => ("ready", format!("Attached to Xavier on port {port}")),
-                Backend::Spawned => ("ready", format!("Bundled Xavier starting on port {port}")),
+                Backend::Spawned(_) => ("ready", format!("Bundled Xavier starting on port {port}")),
                 Backend::Unavailable(reason) => ("error", reason.clone()),
             };
             if matches!(backend, Backend::Unavailable(_)) {
@@ -466,8 +513,27 @@ pub fn run() {
                 return Ok(());
             }
 
+            let sidecar_err_tracker = match &backend {
+                Backend::Spawned(tracker) => Some(tracker.clone()),
+                _ => None,
+            };
+
             tauri::async_runtime::spawn_blocking(move || {
                 for attempt in 1..=HEALTH_POLL_ATTEMPTS {
+                    // Check if sidecar died prematurely
+                    if let Some(ref tracker) = sidecar_err_tracker {
+                        if let Ok(lock) = tracker.lock() {
+                            if let Some(ref err_msg) = *lock {
+                                log::error!("Sidecar failed on startup: {err_msg}");
+                                let _ = app_handle.emit(
+                                    "backend-health-status",
+                                    serde_json::json!({ "status": "error", "message": err_msg }),
+                                );
+                                return;
+                            }
+                        }
+                    }
+
                     if probe_health(port) {
                         log::info!("Backend healthy on attempt {attempt}");
                         let _ = app_handle.emit(
