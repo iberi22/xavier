@@ -63,29 +63,29 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/20 dark:bg-black/70 backdrop-blur-sm">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
           transition={{ duration: 0.2 }}
-          className="relative w-full max-w-lg bg-[#141518] border border-white/10 rounded-2xl shadow-2xl p-6 text-foreground overflow-hidden"
+          className="relative w-full max-w-lg bg-surface-card dark:bg-[#141518] border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl p-6 text-foreground overflow-hidden"
         >
           {/* Header */}
-          <div className="flex items-center justify-between pb-4 border-b border-white/[0.08]">
+          <div className="flex items-center justify-between pb-4 border-b border-black/[0.08] dark:border-white/[0.08]">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-lg bg-white/5 border border-white/10 text-white/80">
+              <div className="p-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-black/80 dark:text-white/80">
                 <Command className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-white/95">Keyboard Shortcuts</h3>
-                <p className="text-xs text-white/45">Quick navigation & action key bindings</p>
+                <h3 className="text-sm font-semibold text-black/95 dark:text-white/95">Keyboard Shortcuts</h3>
+                <p className="text-xs text-black/45 dark:text-white/45">Quick navigation & action key bindings</p>
               </div>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="p-1 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+              className="p-1 rounded-lg text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
               aria-label="Close Shortcuts Dialog"
             >
               <X className="w-4 h-4" />
@@ -99,21 +99,21 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
               if (items.length === 0) return null;
               return (
                 <div key={cat} className="space-y-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-white/40 px-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-black/40 dark:text-white/40 px-1">
                     {cat}
                   </div>
-                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] divide-y divide-white/[0.04]">
+                  <div className="rounded-xl border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02] divide-y divide-black/[0.04] dark:divide-white/[0.04]">
                     {items.map((item) => (
                       <div
                         key={item.description}
                         className="flex items-center justify-between px-3 py-2 text-xs"
                       >
-                        <span className="text-white/80 font-medium">{item.description}</span>
+                        <span className="text-black/80 dark:text-white/80 font-medium">{item.description}</span>
                         <div className="flex items-center gap-1">
                           {item.keys.map((k) => (
                             <kbd
                               key={k}
-                              className="px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/15 text-[11px] font-mono text-white/90 shadow-sm"
+                              className="px-2 py-0.5 rounded-md bg-black/5 dark:bg-[#1e2025] border border-black/15 dark:border-white/15 text-[11px] font-mono text-black/90 dark:text-white/90 shadow-sm"
                             >
                               {k}
                             </kbd>
@@ -128,11 +128,11 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
           </div>
 
           {/* Footer */}
-          <div className="pt-3 border-t border-white/[0.08] flex justify-end">
+          <div className="pt-3 border-t border-black/[0.08] dark:border-white/[0.08] flex justify-end">
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-xs font-medium text-white transition-colors"
+              className="px-3.5 py-1.5 rounded-lg bg-black/10 dark:bg-white/10 hover:bg-black/15 dark:hover:bg-white/15 text-xs font-medium text-black dark:text-white transition-colors"
             >
               Done
             </button>
