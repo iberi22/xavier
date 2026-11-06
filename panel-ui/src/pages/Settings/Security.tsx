@@ -174,7 +174,7 @@ function ScopeChip({ scope }: { scope: string }) {
 	};
 	return (
 		<span
-			className={`px-1.5 py-0.5 rounded text-[9px] font-mono border uppercase tracking-wider ${colors[scope] || "bg-[var(--foreground)]/5 dark:bg-white/5 text-[var(--foreground)]/40 dark:text-white/40 border-[var(--border-subtle)] dark:border-white/10"}`}
+			className={`px-1.5 py-0.5 rounded text-[9px] font-mono border uppercase tracking-wider ${colors[scope] || "bg-[var(--foreground)]/5 dark:bg-[var(--foreground)]/5 dark:bg-white/5 text-[var(--foreground)]/40 dark:text-[var(--foreground)]/40 dark:text-white/40 border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/10"}`}
 		>
 			{scope}
 		</span>
@@ -206,8 +206,8 @@ function TokensSection() {
 		>
 			<div className="flex items-center justify-between">
 				<div>
-					<h3 className="text-sm font-medium text-[var(--foreground)]/80 dark:text-white/80">API Tokens</h3>
-					<p className="text-[10px] text-[var(--foreground)]/30 dark:text-white/30 mt-0.5">
+					<h3 className="text-sm font-medium text-[var(--foreground)]/80 dark:text-[var(--foreground)]/80 dark:text-white/80">API Tokens</h3>
+					<p className="text-[10px] text-[var(--foreground)]/30 dark:text-[var(--foreground)]/30 dark:text-white/30 mt-0.5">
 						Manage tokens for accessing the Xavier API
 					</p>
 				</div>
@@ -237,7 +237,7 @@ function TokensSection() {
 							<div>
 								<label
 									htmlFor="token-label"
-									className="text-[10px] text-[var(--foreground)]/40 dark:text-white/40 mb-1 block"
+									className="text-[10px] text-[var(--foreground)]/40 dark:text-[var(--foreground)]/40 dark:text-white/40 mb-1 block"
 								>
 									Label
 								</label>
@@ -245,13 +245,13 @@ function TokensSection() {
 									id="token-label"
 									type="text"
 									placeholder="e.g. Jules Agent v2"
-									className="w-full bg-[var(--surface-card)] dark:bg-black/30 border border-[var(--border-subtle)] dark:border-white/10 text-[var(--foreground)]/80 dark:text-white/80 text-xs px-3 py-2 rounded-lg outline-none"
+									className="w-full bg-[var(--surface-card)] dark:bg-[var(--surface-card)] dark:bg-black/30 border border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/10 text-[var(--foreground)]/80 dark:text-[var(--foreground)]/80 dark:text-white/80 text-xs px-3 py-2 rounded-lg outline-none"
 								/>
 							</div>
 							<div>
 								<span
 									id="scopes-label"
-									className="text-[10px] text-[var(--foreground)]/40 dark:text-white/40 mb-1 block"
+									className="text-[10px] text-[var(--foreground)]/40 dark:text-[var(--foreground)]/40 dark:text-white/40 mb-1 block"
 								>
 									Scopes
 								</span>
@@ -278,14 +278,14 @@ function TokensSection() {
 							<div>
 								<label
 									htmlFor="expiration-date"
-									className="text-[10px] text-[var(--foreground)]/40 dark:text-white/40 mb-1 block"
+									className="text-[10px] text-[var(--foreground)]/40 dark:text-[var(--foreground)]/40 dark:text-white/40 mb-1 block"
 								>
 									Expiration (optional)
 								</label>
 								<input
 									id="expiration-date"
 									type="date"
-									className="bg-[var(--surface-card)] dark:bg-black/30 border border-[var(--border-subtle)] dark:border-white/10 text-[var(--foreground)]/80 dark:text-white/80 text-xs px-3 py-2 rounded-lg outline-none [color-scheme:dark]"
+									className="bg-[var(--surface-card)] dark:bg-[var(--surface-card)] dark:bg-black/30 border border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/10 text-[var(--foreground)]/80 dark:text-[var(--foreground)]/80 dark:text-white/80 text-xs px-3 py-2 rounded-lg outline-none [color-scheme:dark]"
 								/>
 							</div>
 							<div className="flex gap-2 pt-1">
@@ -299,7 +299,7 @@ function TokensSection() {
 									type="button"
 									onClick={() => setCreating(false)}
 									aria-label="Cancel Token Creation"
-									className="px-3 py-2 text-[var(--foreground)]/30 dark:text-white/30 hover:text-[var(--foreground)]/60 dark:text-white/60 text-xs border border-[var(--border-subtle)] dark:border-white/10 rounded-lg transition-all"
+									className="px-3 py-2 text-[var(--foreground)]/30 dark:text-[var(--foreground)]/30 dark:text-white/30 hover:text-[var(--foreground)]/60 dark:text-[var(--foreground)]/60 dark:text-white/60 text-xs border border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/10 rounded-lg transition-all"
 								>
 									Cancel
 								</button>
@@ -321,25 +321,25 @@ function TokensSection() {
 				{tokens.map((token) => (
 					<div
 						key={token.id}
-						className={`p-4 rounded-xl border transition-colors ${token.active ? "bg-[var(--foreground)]/[0.02] dark:bg-white/[0.02] border-[var(--border-subtle)] dark:border-white/[0.06]" : "bg-[var(--surface-card)] dark:bg-black/20 border-[var(--border-subtle)] dark:border-white/[0.03] opacity-50"}`}
+						className={`p-4 rounded-xl border transition-colors ${token.active ? "bg-[var(--foreground)]/[0.02] dark:bg-[var(--foreground)]/[0.02] dark:bg-white/[0.02] border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/[0.06]" : "bg-[var(--surface-card)] dark:bg-[var(--surface-card)] dark:bg-black/20 border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/[0.03] opacity-50"}`}
 					>
 						<div className="flex items-start justify-between gap-3">
 							<div className="flex items-center gap-2.5">
 								<div
-									className={`w-6 h-6 rounded-lg flex items-center justify-center ${token.active ? "bg-[#39ff14]/10" : "bg-[var(--foreground)]/5 dark:bg-white/5"}`}
+									className={`w-6 h-6 rounded-lg flex items-center justify-center ${token.active ? "bg-[#39ff14]/10" : "bg-[var(--foreground)]/5 dark:bg-[var(--foreground)]/5 dark:bg-white/5"}`}
 								>
 									{token.active ? (
 										<Key className="w-3 h-3 text-[#39ff14]/70" />
 									) : (
-										<Lock className="w-3 h-3 text-[var(--foreground)]/20 dark:text-white/20" />
+										<Lock className="w-3 h-3 text-[var(--foreground)]/20 dark:text-[var(--foreground)]/20 dark:text-white/20" />
 									)}
 								</div>
 								<div>
-									<p className="text-xs font-medium text-[var(--foreground)]/80 dark:text-white/80">
+									<p className="text-xs font-medium text-[var(--foreground)]/80 dark:text-[var(--foreground)]/80 dark:text-white/80">
 										{token.label}
 									</p>
 									<div className="flex items-center gap-1.5 mt-1">
-										<code className="text-[10px] font-mono text-[var(--foreground)]/40 dark:text-white/40">
+										<code className="text-[10px] font-mono text-[var(--foreground)]/40 dark:text-[var(--foreground)]/40 dark:text-white/40">
 											{revealed.includes(token.id)
 												? "xav_revealed_mock_token_value_here"
 												: token.prefix}
@@ -352,7 +352,7 @@ function TokensSection() {
 													? "Hide token"
 													: "Reveal token"
 											}
-											className="text-[var(--foreground)]/20 dark:text-white/20 hover:text-[var(--foreground)]/50 dark:text-white/50 transition-colors"
+											className="text-[var(--foreground)]/20 dark:text-[var(--foreground)]/20 dark:text-white/20 hover:text-[var(--foreground)]/50 dark:text-[var(--foreground)]/50 dark:text-white/50 transition-colors"
 										>
 											{revealed.includes(token.id) ? (
 												<EyeOff className="w-3 h-3" />
@@ -366,7 +366,7 @@ function TokensSection() {
 												navigator.clipboard.writeText("mock-token")
 											}
 											aria-label="Copy token"
-											className="text-[var(--foreground)]/20 dark:text-white/20 hover:text-[var(--foreground)]/50 dark:text-white/50 transition-colors"
+											className="text-[var(--foreground)]/20 dark:text-[var(--foreground)]/20 dark:text-white/20 hover:text-[var(--foreground)]/50 dark:text-[var(--foreground)]/50 dark:text-white/50 transition-colors"
 										>
 											<Copy className="w-3 h-3" />
 										</button>
@@ -385,13 +385,13 @@ function TokensSection() {
 								</button>
 							)}
 						</div>
-						<div className="flex items-center gap-4 mt-3 pt-2.5 border-t border-[var(--border-subtle)] dark:border-white/[0.04]">
+						<div className="flex items-center gap-4 mt-3 pt-2.5 border-t border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/[0.04]">
 							<div className="flex gap-1">
 								{token.scopes.map((s) => (
 									<ScopeChip key={s} scope={s} />
 								))}
 							</div>
-							<div className="flex items-center gap-1 text-[9px] text-[var(--foreground)]/25 dark:text-white/25 ml-auto">
+							<div className="flex items-center gap-1 text-[9px] text-[var(--foreground)]/25 dark:text-[var(--foreground)]/25 dark:text-white/25 ml-auto">
 								<Clock className="w-2.5 h-2.5" />
 								<span>Created {formatRelative(token.created)}</span>
 								{token.lastUsed && (
@@ -407,7 +407,7 @@ function TokensSection() {
 											className={
 												token.expiresAt < new Date()
 													? "text-red-400"
-													: "text-[var(--foreground)]/25 dark:text-white/25"
+													: "text-[var(--foreground)]/25 dark:text-[var(--foreground)]/25 dark:text-white/25"
 											}
 										>
 											{token.expiresAt < new Date()
@@ -436,10 +436,10 @@ function ApiKeysSection() {
 			className="space-y-4"
 		>
 			<div>
-				<h3 className="text-sm font-medium text-[var(--foreground)]/80 dark:text-white/80">
+				<h3 className="text-sm font-medium text-[var(--foreground)]/80 dark:text-[var(--foreground)]/80 dark:text-white/80">
 					AI Provider API Keys
 				</h3>
-				<p className="text-[10px] text-[var(--foreground)]/30 dark:text-white/30 mt-0.5">
+				<p className="text-[10px] text-[var(--foreground)]/30 dark:text-[var(--foreground)]/30 dark:text-white/30 mt-0.5">
 					Configure API keys for LLM providers. Stored encrypted locally.
 				</p>
 			</div>
@@ -447,14 +447,14 @@ function ApiKeysSection() {
 				{keys.map((key) => (
 					<div
 						key={key.id}
-						className="p-4 rounded-xl bg-[var(--foreground)]/[0.02] dark:bg-white/[0.02] border border-[var(--border-subtle)] dark:border-white/[0.06] space-y-2"
+						className="p-4 rounded-xl bg-[var(--foreground)]/[0.02] dark:bg-[var(--foreground)]/[0.02] dark:bg-white/[0.02] border border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/[0.06] space-y-2"
 					>
 						<div className="flex items-center justify-between">
 							<div className="flex items-center gap-2.5">
-								<div className="w-6 h-6 rounded bg-[var(--foreground)]/5 dark:bg-white/5 flex items-center justify-center text-[9px] font-bold text-[var(--foreground)]/40 dark:text-white/40">
+								<div className="w-6 h-6 rounded bg-[var(--foreground)]/5 dark:bg-[var(--foreground)]/5 dark:bg-white/5 flex items-center justify-center text-[9px] font-bold text-[var(--foreground)]/40 dark:text-[var(--foreground)]/40 dark:text-white/40">
 									{key.provider[0]}
 								</div>
-								<span className="text-xs font-medium text-[var(--foreground)]/80 dark:text-white/80">
+								<span className="text-xs font-medium text-[var(--foreground)]/80 dark:text-[var(--foreground)]/80 dark:text-white/80">
 									{key.provider}
 								</span>
 								{key.active ? (
@@ -464,7 +464,7 @@ function ApiKeysSection() {
 								)}
 							</div>
 							<div className="flex items-center gap-1.5">
-								<span className="text-[9px] text-[var(--foreground)]/25 dark:text-white/25">
+								<span className="text-[9px] text-[var(--foreground)]/25 dark:text-[var(--foreground)]/25 dark:text-white/25">
 									{key.lastValidated
 										? `Validated ${formatRelative(key.lastValidated)}`
 										: "Not validated"}
@@ -472,7 +472,7 @@ function ApiKeysSection() {
 								<button
 									type="button"
 									aria-label="Re-validate provider key"
-									className="p-1.5 text-[var(--foreground)]/20 dark:text-white/20 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-all"
+									className="p-1.5 text-[var(--foreground)]/20 dark:text-[var(--foreground)]/20 dark:text-white/20 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-all"
 									title="Re-validate"
 								>
 									<RefreshCw className="w-3 h-3" />
@@ -483,7 +483,7 @@ function ApiKeysSection() {
 							<input
 								type={revealed.includes(key.id) ? "text" : "password"}
 								defaultValue="mock-api-key-value"
-								className="flex-1 bg-[var(--surface-card)] dark:bg-black/30 border border-[var(--border-subtle)] dark:border-white/10 text-[var(--foreground)]/60 dark:text-white/60 text-xs px-3 py-2 rounded-lg outline-none font-mono focus:border-[#39ff14]/30 transition-all"
+								className="flex-1 bg-[var(--surface-card)] dark:bg-[var(--surface-card)] dark:bg-black/30 border border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/10 text-[var(--foreground)]/60 dark:text-[var(--foreground)]/60 dark:text-white/60 text-xs px-3 py-2 rounded-lg outline-none font-mono focus:border-[#39ff14]/30 transition-all"
 							/>
 							<button
 								type="button"
@@ -499,7 +499,7 @@ function ApiKeysSection() {
 										? "Hide provider key"
 										: "Reveal provider key"
 								}
-								className="px-2 text-[var(--foreground)]/30 dark:text-white/30 hover:text-[var(--foreground)]/60 dark:text-white/60 border border-[var(--border-subtle)] dark:border-white/10 rounded-lg transition-all"
+								className="px-2 text-[var(--foreground)]/30 dark:text-[var(--foreground)]/30 dark:text-white/30 hover:text-[var(--foreground)]/60 dark:text-[var(--foreground)]/60 dark:text-white/60 border border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/10 rounded-lg transition-all"
 							>
 								{revealed.includes(key.id) ? (
 									<EyeOff className="w-3.5 h-3.5" />
@@ -542,15 +542,15 @@ function AuditLogSection() {
 		>
 			<div className="flex items-center justify-between">
 				<div>
-					<h3 className="text-sm font-medium text-[var(--foreground)]/80 dark:text-white/80">Audit Log</h3>
-					<p className="text-[10px] text-[var(--foreground)]/30 dark:text-white/30 mt-0.5">
+					<h3 className="text-sm font-medium text-[var(--foreground)]/80 dark:text-[var(--foreground)]/80 dark:text-white/80">Audit Log</h3>
+					<p className="text-[10px] text-[var(--foreground)]/30 dark:text-[var(--foreground)]/30 dark:text-white/30 mt-0.5">
 						Recent security-relevant events. Persistence pending backend.
 					</p>
 				</div>
 				<button
 					type="button"
 					aria-label="Refresh Audit Log"
-					className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-[var(--foreground)]/30 dark:text-white/30 border border-[var(--border-subtle)] dark:border-white/10 rounded-lg hover:border-[var(--border-subtle)] dark:border-white/20 hover:text-[var(--foreground)]/60 dark:text-white/60 transition-all"
+					className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-[var(--foreground)]/30 dark:text-[var(--foreground)]/30 dark:text-white/30 border border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/10 rounded-lg hover:border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/20 hover:text-[var(--foreground)]/60 dark:text-[var(--foreground)]/60 dark:text-white/60 transition-all"
 				>
 					<RefreshCw className="w-3 h-3" />
 					Refresh
@@ -560,7 +560,7 @@ function AuditLogSection() {
 				{MOCK_AUDIT.map((entry) => (
 					<div
 						key={entry.id}
-						className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border border-[var(--border-subtle)] dark:border-white/[0.04] ${levelBg[entry.level]}`}
+						className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/[0.04] ${levelBg[entry.level]}`}
 					>
 						<Activity
 							className={`w-3 h-3 flex-shrink-0 mt-0.5 ${levelColors[entry.level]}`}
@@ -568,15 +568,15 @@ function AuditLogSection() {
 						<div className="flex-1 min-w-0">
 							<div className="flex items-center justify-between gap-2">
 								<p
-									className={`text-[11px] ${entry.level === "error" ? "text-red-400/80" : entry.level === "warning" ? "text-amber-400/80" : "text-[var(--foreground)]/65 dark:text-white/65"}`}
+									className={`text-[11px] ${entry.level === "error" ? "text-red-400/80" : entry.level === "warning" ? "text-amber-400/80" : "text-[var(--foreground)]/65 dark:text-[var(--foreground)]/65 dark:text-white/65"}`}
 								>
 									{entry.event}
 								</p>
-								<span className="flex-shrink-0 text-[9px] text-[var(--foreground)]/20 dark:text-white/20">
+								<span className="flex-shrink-0 text-[9px] text-[var(--foreground)]/20 dark:text-[var(--foreground)]/20 dark:text-white/20">
 									{formatRelative(entry.timestamp)}
 								</span>
 							</div>
-							<p className="text-[9px] text-[var(--foreground)]/25 dark:text-white/25 mt-0.5 font-mono">
+							<p className="text-[9px] text-[var(--foreground)]/25 dark:text-[var(--foreground)]/25 dark:text-white/25 mt-0.5 font-mono">
 								{entry.source}
 							</p>
 						</div>
@@ -602,10 +602,10 @@ function ProxySection() {
 			className="space-y-4"
 		>
 			<div>
-				<h3 className="text-sm font-medium text-[var(--foreground)]/80 dark:text-white/80">
+				<h3 className="text-sm font-medium text-[var(--foreground)]/80 dark:text-[var(--foreground)]/80 dark:text-white/80">
 					Proxy & Network Security
 				</h3>
-				<p className="text-[10px] text-[var(--foreground)]/30 dark:text-white/30 mt-0.5">
+				<p className="text-[10px] text-[var(--foreground)]/30 dark:text-[var(--foreground)]/30 dark:text-white/30 mt-0.5">
 					Configure outbound proxy, CORS, and network policies.
 				</p>
 			</div>
@@ -613,7 +613,7 @@ function ProxySection() {
 				<div>
 					<label
 						htmlFor="http-proxy"
-						className="text-[10px] uppercase tracking-widest text-[var(--foreground)]/40 dark:text-white/40 mb-1.5 block"
+						className="text-[10px] uppercase tracking-widest text-[var(--foreground)]/40 dark:text-[var(--foreground)]/40 dark:text-white/40 mb-1.5 block"
 					>
 						HTTP Proxy URL
 					</label>
@@ -621,13 +621,13 @@ function ProxySection() {
 						id="http-proxy"
 						type="url"
 						placeholder="http://proxy.internal:8080"
-						className="w-full bg-[var(--surface-card)] dark:bg-black/30 border border-[var(--border-subtle)] dark:border-white/10 text-[var(--foreground)]/80 dark:text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none transition-all focus:border-[#39ff14]/30"
+						className="w-full bg-[var(--surface-card)] dark:bg-[var(--surface-card)] dark:bg-black/30 border border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/10 text-[var(--foreground)]/80 dark:text-[var(--foreground)]/80 dark:text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none transition-all focus:border-[#39ff14]/30"
 					/>
 				</div>
 				<div>
 					<label
 						htmlFor="cors-origins"
-						className="text-[10px] uppercase tracking-widest text-[var(--foreground)]/40 dark:text-white/40 mb-1.5 block"
+						className="text-[10px] uppercase tracking-widest text-[var(--foreground)]/40 dark:text-[var(--foreground)]/40 dark:text-white/40 mb-1.5 block"
 					>
 						Allowed CORS Origins
 					</label>
@@ -635,13 +635,13 @@ function ProxySection() {
 						id="cors-origins"
 						rows={2}
 						placeholder="https://app.xavier.local&#10;http://localhost:3000"
-						className="w-full bg-[var(--surface-card)] dark:bg-black/30 border border-[var(--border-subtle)] dark:border-white/10 text-[var(--foreground)]/80 dark:text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none font-mono resize-none focus:border-[#39ff14]/30 transition-all"
+						className="w-full bg-[var(--surface-card)] dark:bg-[var(--surface-card)] dark:bg-black/30 border border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/10 text-[var(--foreground)]/80 dark:text-[var(--foreground)]/80 dark:text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none font-mono resize-none focus:border-[#39ff14]/30 transition-all"
 					/>
 				</div>
-				<div className="flex items-center justify-between p-3 rounded-lg bg-[var(--foreground)]/[0.02] dark:bg-white/[0.02] border border-[var(--border-subtle)] dark:border-white/[0.05]">
+				<div className="flex items-center justify-between p-3 rounded-lg bg-[var(--foreground)]/[0.02] dark:bg-[var(--foreground)]/[0.02] dark:bg-white/[0.02] border border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/[0.05]">
 					<div>
-						<p className="text-xs text-[var(--foreground)]/70 dark:text-white/70">Enforce HTTPS Only</p>
-						<p className="text-[10px] text-[var(--foreground)]/30 dark:text-white/30">
+						<p className="text-xs text-[var(--foreground)]/70 dark:text-[var(--foreground)]/70 dark:text-white/70">Enforce HTTPS Only</p>
+						<p className="text-[10px] text-[var(--foreground)]/30 dark:text-[var(--foreground)]/30 dark:text-white/30">
 							Reject all non-TLS outbound connections
 						</p>
 					</div>
@@ -655,10 +655,10 @@ function ProxySection() {
 						<div className="absolute top-0.5 left-[calc(100%-18px)] w-4 h-4 rounded-full bg-[#39ff14] transition-all" />
 					</button>
 				</div>
-				<div className="flex items-center justify-between p-3 rounded-lg bg-[var(--foreground)]/[0.02] dark:bg-white/[0.02] border border-[var(--border-subtle)] dark:border-white/[0.05]">
+				<div className="flex items-center justify-between p-3 rounded-lg bg-[var(--foreground)]/[0.02] dark:bg-[var(--foreground)]/[0.02] dark:bg-white/[0.02] border border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/[0.05]">
 					<div>
-						<p className="text-xs text-[var(--foreground)]/70 dark:text-white/70">TPM Hardware Encryption</p>
-						<p className="text-[10px] text-[var(--foreground)]/30 dark:text-white/30">
+						<p className="text-xs text-[var(--foreground)]/70 dark:text-[var(--foreground)]/70 dark:text-white/70">TPM Hardware Encryption</p>
+						<p className="text-[10px] text-[var(--foreground)]/30 dark:text-[var(--foreground)]/30 dark:text-white/30">
 							Use platform TPM for token storage (if available)
 						</p>
 					</div>
@@ -730,10 +730,10 @@ export default function SecurityConfigPanel({
 		<div className={`flex ${embedded ? "h-full" : "h-screen"}`}>
 			{/* Mini sidebar */}
 			{!embedded && (
-				<div className="w-48 border-r border-[var(--border-subtle)] dark:border-white/[0.05] p-4 bg-[var(--surface-card)] dark:bg-black/10 flex flex-col gap-1">
+				<div className="w-48 border-r border-[var(--border-subtle)] dark:border-[var(--border-subtle)] dark:border-white/[0.05] p-4 bg-[var(--surface-card)] dark:bg-[var(--surface-card)] dark:bg-black/10 flex flex-col gap-1">
 					<div className="flex items-center gap-2 mb-4 px-2">
 						<Shield className="w-4 h-4 text-emerald-400" />
-						<span className="text-xs font-semibold text-[var(--foreground)]/70 dark:text-white/70 tracking-wide">
+						<span className="text-xs font-semibold text-[var(--foreground)]/70 dark:text-[var(--foreground)]/70 dark:text-white/70 tracking-wide">
 							Security
 						</span>
 					</div>
@@ -745,7 +745,7 @@ export default function SecurityConfigPanel({
 							className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs transition-all ${
 								activeSection === s.id
 									? "active-tab text-[#39ff14]"
-									: "text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)]/70 dark:text-white/70 hover:bg-[var(--foreground)]/5 dark:bg-white/5"
+									: "text-[var(--foreground)]/40 dark:text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)]/70 dark:text-[var(--foreground)]/70 dark:text-white/70 hover:bg-[var(--foreground)]/5 dark:bg-[var(--foreground)]/5 dark:bg-white/5"
 							}`}
 						>
 							{s.icon}
@@ -759,7 +759,7 @@ export default function SecurityConfigPanel({
 			<div className="flex-1 overflow-y-auto p-6">
 				{/* Embedded mode: tabs row */}
 				{embedded && (
-					<div className="flex gap-1 mb-6 bg-[var(--surface-card)] dark:bg-black/20 rounded-lg p-1 w-fit">
+					<div className="flex gap-1 mb-6 bg-[var(--surface-card)] dark:bg-[var(--surface-card)] dark:bg-black/20 rounded-lg p-1 w-fit">
 						{sections.map((s) => (
 							<button
 								type="button"
@@ -767,8 +767,8 @@ export default function SecurityConfigPanel({
 								onClick={() => setActiveSection(s.id)}
 								className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest transition-all ${
 									activeSection === s.id
-										? "bg-[var(--foreground)]/10 dark:bg-white/10 text-white/90"
-										: "text-[var(--foreground)]/30 dark:text-white/30 hover:text-[var(--foreground)]/60 dark:text-white/60"
+										? "bg-[var(--foreground)]/10 dark:bg-[var(--foreground)]/10 dark:bg-white/10 text-white/90"
+										: "text-[var(--foreground)]/30 dark:text-[var(--foreground)]/30 dark:text-white/30 hover:text-[var(--foreground)]/60 dark:text-[var(--foreground)]/60 dark:text-white/60"
 								}`}
 							>
 								{s.icon}
