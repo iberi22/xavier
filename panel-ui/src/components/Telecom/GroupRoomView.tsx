@@ -242,7 +242,7 @@ const ClearanceBanner = React.memo(function ClearanceBanner({
 			</div>
 
 			<div className="hidden sm:flex items-center gap-2">
-				<span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black/40 border border-white/10 text-white/80 uppercase">
+				<span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[var(--foreground)]/80 uppercase">
 					E2EE Active
 				</span>
 				<Lock className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
@@ -276,7 +276,7 @@ const AvatarGroup = React.memo(function AvatarGroup({
 			{visible.map((m) => (
 				<div
 					key={m.nodeId}
-					className="relative inline-block w-7 h-7 rounded-full border-2 border-slate-900 bg-slate-800 flex items-center justify-center text-[10px] font-mono font-semibold text-emerald-400 ring-1 ring-white/10"
+					className="relative inline-block w-7 h-7 rounded-full border-2 border-slate-900 bg-[var(--surface)] flex items-center justify-center text-[10px] font-mono font-semibold text-emerald-400 ring-1 ring-white/10"
 					title={`${m.alias} (${m.nodeId}) - ${m.role}`}
 				>
 					{m.avatarUrl ? (
@@ -290,13 +290,13 @@ const AvatarGroup = React.memo(function AvatarGroup({
 					)}
 					<span
 						className={`absolute bottom-0 right-0 w-2 h-2 rounded-full border border-slate-900 ${
-							m.isOnline ? "bg-emerald-400" : "bg-slate-500"
+							m.isOnline ? "bg-emerald-400" : "bg-[var(--foreground)]/50"
 						}`}
 					/>
 				</div>
 			))}
 			{overflow > 0 && (
-				<div className="w-7 h-7 rounded-full border-2 border-slate-900 bg-slate-800/90 text-slate-300 flex items-center justify-center text-[10px] font-mono font-bold ring-1 ring-white/10">
+				<div className="w-7 h-7 rounded-full border-2 border-slate-900 bg-[var(--surface)] text-[var(--foreground)]/90 flex items-center justify-center text-[10px] font-mono font-bold ring-1 ring-white/10">
 					+{overflow}
 				</div>
 			)}
@@ -325,22 +325,22 @@ const ParticipantRosterItem = React.memo(function ParticipantRosterItem({
 	);
 
 	return (
-		<div className="p-3 rounded-xl bg-slate-900/60 border border-white/5 hover:border-white/10 transition-colors flex items-center justify-between gap-2">
+		<div className="p-3 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] hover:border-[var(--border-subtle)] transition-colors flex items-center justify-between gap-2">
 			<div className="flex items-center gap-2.5 truncate">
 				<div className="relative flex-shrink-0">
-					<div className="w-8 h-8 rounded-lg bg-slate-800 border border-white/10 flex items-center justify-center text-xs font-mono font-bold text-emerald-400">
+					<div className="w-8 h-8 rounded-lg bg-[var(--surface)] border border-[var(--border-subtle)] flex items-center justify-center text-xs font-mono font-bold text-emerald-400">
 						{member.alias.substring(0, 2).toUpperCase()}
 					</div>
 					<span
 						className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-950 ${
-							member.isOnline ? "bg-emerald-400" : "bg-slate-600"
+							member.isOnline ? "bg-emerald-400" : "bg-[var(--foreground)]/50"
 						}`}
 					/>
 				</div>
 
 				<div className="truncate">
 					<div className="flex items-center gap-1.5 truncate">
-						<span className="text-xs font-medium text-white truncate">
+						<span className="text-xs font-medium text-[var(--foreground)] truncate">
 							{member.alias}
 						</span>
 						{member.role === "Admin" && (
@@ -349,7 +349,7 @@ const ParticipantRosterItem = React.memo(function ParticipantRosterItem({
 							</span>
 						)}
 						{member.role === "Observer" && (
-							<span className="text-[9px] px-1.5 py-0.2 rounded font-mono bg-slate-700/50 text-slate-300 border border-slate-600/40 uppercase">
+							<span className="text-[9px] px-1.5 py-0.2 rounded font-mono bg-[var(--surface-card)] text-[var(--foreground)]/90 border border-[var(--border-subtle)] uppercase">
 								Observer
 							</span>
 						)}
@@ -412,12 +412,12 @@ export const ParticipantRoster = React.memo(function ParticipantRoster({
 	}, [members, searchQuery]);
 
 	return (
-		<div className="flex flex-col h-full bg-slate-900/40 border-l border-white/10 w-full lg:w-80 flex-shrink-0">
+		<div className="flex flex-col h-full bg-[var(--surface-card)] border-l border-[var(--border-subtle)] w-full lg:w-80 flex-shrink-0">
 			{/* Roster Header */}
-			<div className="p-4 border-b border-white/10 flex items-center justify-between">
+			<div className="p-4 border-b border-[var(--border-subtle)] flex items-center justify-between">
 				<div className="flex items-center gap-2">
 					<Users className="w-4 h-4 text-emerald-400" aria-hidden="true" />
-					<h3 className="text-xs font-semibold text-white uppercase tracking-wider">
+					<h3 className="text-xs font-semibold text-[var(--foreground)] uppercase tracking-wider">
 						Member Roster
 					</h3>
 				</div>
@@ -438,7 +438,7 @@ export const ParticipantRoster = React.memo(function ParticipantRoster({
 						placeholder="Search roster..."
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
-						className="w-full bg-slate-950/80 border border-white/10 text-xs rounded-lg pl-8 pr-3 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 font-mono"
+						className="w-full bg-[var(--background)]/80 border border-[var(--border-subtle)] text-xs rounded-lg pl-8 pr-3 py-1.5 text-[var(--foreground)] placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 font-mono"
 						aria-label="Search participant roster"
 					/>
 				</div>
@@ -463,7 +463,7 @@ export const ParticipantRoster = React.memo(function ParticipantRoster({
 			</div>
 
 			{/* Roster Footer Security Summary */}
-			<div className="p-3 border-t border-white/10 bg-slate-950/40 text-[10px] text-slate-400 font-mono flex items-center gap-2">
+			<div className="p-3 border-t border-[var(--border-subtle)] bg-[var(--background)]/40 text-[10px] text-slate-400 font-mono flex items-center gap-2">
 				<KeyRound
 					className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0"
 					aria-hidden="true"
@@ -522,7 +522,7 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
 				className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm ${
 					isSelf
 						? "bg-emerald-600/20 border border-emerald-500/30 text-emerald-100 rounded-br-none"
-						: "bg-slate-800/80 border border-white/10 text-slate-200 rounded-bl-none"
+						: "bg-[var(--surface)] border border-[var(--border-subtle)] text-slate-200 rounded-bl-none"
 				}`}
 			>
 				<p className="whitespace-pre-wrap break-words">{msg.content}</p>
@@ -565,18 +565,18 @@ const TopicEditModal = React.memo(function TopicEditModal({
 
 	return (
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+			className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--surface-card)] backdrop-blur-sm"
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="topic-modal-title"
 		>
-			<div className="bg-slate-900 border border-white/15 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 relative">
-				<div className="flex items-center justify-between border-b border-white/10 pb-3">
+			<div className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 relative">
+				<div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
 					<div className="flex items-center gap-2">
 						<Edit3 className="w-4 h-4 text-emerald-400" aria-hidden="true" />
 						<h3
 							id="topic-modal-title"
-							className="text-sm font-semibold text-white"
+							className="text-sm font-semibold text-[var(--foreground)]"
 						>
 							Update Room Topic & Objective
 						</h3>
@@ -585,7 +585,7 @@ const TopicEditModal = React.memo(function TopicEditModal({
 						type="button"
 						onClick={onClose}
 						aria-label="Close topic modal"
-						className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
+						className="p-1 rounded-lg text-slate-400 hover:text-[var(--foreground)] transition-colors"
 					>
 						<X className="w-4 h-4" aria-hidden="true" />
 					</button>
@@ -604,15 +604,15 @@ const TopicEditModal = React.memo(function TopicEditModal({
 						value={topicInput}
 						onChange={(e) => setTopicInput(e.target.value)}
 						placeholder="Enter group room topic..."
-						className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
+						className="w-full bg-[var(--background)] border border-[var(--border-subtle)] rounded-xl p-3 text-xs text-[var(--foreground)] placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
 					/>
 				</div>
 
-				<div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+				<div className="flex justify-end gap-2 pt-2 border-t border-[var(--border-subtle)]">
 					<button
 						type="button"
 						onClick={onClose}
-						className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-medium hover:bg-slate-700 transition-colors"
+						className="px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)]/90 text-xs font-medium hover:bg-[var(--surface-card)] transition-colors"
 					>
 						Cancel
 					</button>
@@ -744,17 +744,17 @@ export const GroupRoomView: React.FC<GroupRoomViewProps> = ({
 
 	return (
 		<div
-			className={`relative w-full h-screen font-sans bg-slate-950 text-white flex flex-col overflow-hidden ${className}`}
+			className={`relative w-full h-screen font-sans bg-[var(--background)] text-[var(--foreground)] flex flex-col overflow-hidden ${className}`}
 		>
 			{/* Header Bar */}
-			<header className="border-b border-white/10 bg-slate-900/80 backdrop-blur-md px-4 py-3 flex items-center justify-between gap-4">
+			<header className="border-b border-[var(--border-subtle)] bg-[var(--surface-card)] backdrop-blur-md px-4 py-3 flex items-center justify-between gap-4">
 				<div className="flex items-center gap-3 truncate">
 					{onClose && (
 						<button
 							type="button"
 							onClick={onClose}
 							aria-label="Back to Telecom view"
-							className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+							className="p-1.5 rounded-lg bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/10 text-[var(--foreground)]/70 hover:text-[var(--foreground)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
 						>
 							<ArrowLeft className="w-4 h-4" aria-hidden="true" />
 						</button>
@@ -766,10 +766,10 @@ export const GroupRoomView: React.FC<GroupRoomViewProps> = ({
 
 					<div className="truncate">
 						<div className="flex items-center gap-2 truncate">
-							<h1 className="text-sm font-semibold tracking-wide text-white truncate">
+							<h1 className="text-sm font-semibold tracking-wide text-[var(--foreground)] truncate">
 								{activeRoom.name}
 							</h1>
-							<span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-white/10 flex-shrink-0">
+							<span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--surface)] text-[var(--foreground)]/90 border border-[var(--border-subtle)] flex-shrink-0">
 								Epoch {activeRoom.epochId || 1}
 							</span>
 						</div>
@@ -804,7 +804,7 @@ export const GroupRoomView: React.FC<GroupRoomViewProps> = ({
 						type="button"
 						onClick={() => setIsRosterOpenMobile((prev) => !prev)}
 						aria-label="Toggle participant roster"
-						className="lg:hidden p-2 rounded-xl bg-slate-800 border border-white/10 text-slate-300 hover:text-white"
+						className="lg:hidden p-2 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] text-[var(--foreground)]/90 hover:text-[var(--foreground)]"
 					>
 						<Users className="w-4 h-4" aria-hidden="true" />
 					</button>
@@ -814,12 +814,12 @@ export const GroupRoomView: React.FC<GroupRoomViewProps> = ({
 			{/* Main Container */}
 			<div className="flex-1 flex min-h-0 relative">
 				{/* Chat & Room Pane */}
-				<main className="flex-1 flex flex-col min-w-0 bg-slate-950/60 p-4 space-y-4">
+				<main className="flex-1 flex flex-col min-w-0 bg-[var(--background)]/60 p-4 space-y-4">
 					{/* Minimum Required Clearance Banner */}
 					<ClearanceBanner minClearance={activeRoom.minClearance} />
 
 					{/* Topic & Objective Display */}
-					<div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/10 flex items-start justify-between gap-3">
+					<div className="p-3.5 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] flex items-start justify-between gap-3">
 						<div className="flex items-start gap-2.5">
 							<Info
 								className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0"
@@ -840,7 +840,7 @@ export const GroupRoomView: React.FC<GroupRoomViewProps> = ({
 								type="button"
 								onClick={() => setIsTopicModalOpen(true)}
 								aria-label="Edit room topic"
-								className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-colors flex-shrink-0"
+								className="p-1.5 rounded-lg bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/10 text-[var(--foreground)]/90 hover:text-[var(--foreground)] border border-[var(--border-subtle)] transition-colors flex-shrink-0"
 							>
 								<Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
 							</button>
@@ -848,7 +848,7 @@ export const GroupRoomView: React.FC<GroupRoomViewProps> = ({
 					</div>
 
 					{/* Encrypted Broadcast Chat Stream */}
-					<div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-900/30 rounded-2xl border border-white/5">
+					<div className="flex-1 overflow-y-auto p-3 space-y-3 bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)]">
 						{chatLog.map((msg) => (
 							<ChatMessageItem
 								key={msg.id}
@@ -859,7 +859,7 @@ export const GroupRoomView: React.FC<GroupRoomViewProps> = ({
 					</div>
 
 					{/* Message Input Footer Controls */}
-					<footer className="p-3 rounded-2xl bg-slate-900/80 border border-white/10 space-y-2">
+					<footer className="p-3 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-2">
 						<div className="flex items-center gap-2">
 							<button
 								type="button"
@@ -877,7 +877,7 @@ export const GroupRoomView: React.FC<GroupRoomViewProps> = ({
 								className={`p-2.5 rounded-xl border transition-colors flex-shrink-0 ${
 									isEphemeral
 										? "bg-amber-500/20 border-amber-500/40 text-amber-300"
-										: "bg-slate-800 border-white/10 text-slate-400 hover:text-slate-200"
+										: "bg-[var(--surface)] border-[var(--border-subtle)] text-slate-400 hover:text-slate-200"
 								}`}
 							>
 								<Flame className="w-4 h-4" aria-hidden="true" />
@@ -891,7 +891,7 @@ export const GroupRoomView: React.FC<GroupRoomViewProps> = ({
 								placeholder={`Broadcast to #${activeRoom.name}... ${
 									isEphemeral ? "(Off-the-Record Ephemeral)" : ""
 								}`}
-								className="flex-1 bg-slate-950 border border-white/10 text-xs rounded-xl px-3.5 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 font-mono"
+								className="flex-1 bg-[var(--background)] border border-[var(--border-subtle)] text-xs rounded-xl px-3.5 py-2.5 text-[var(--foreground)] placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 font-mono"
 							/>
 
 							<button

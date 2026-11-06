@@ -174,17 +174,17 @@ export const ClearanceBadge: React.FC<ClearanceBadgeProps> = React.memo(
 				{showTooltip && (
 					<div
 						role="tooltip"
-						className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex group-focus-within:flex flex-col bg-[#0a0a0a]/95 border border-white/10 p-2.5 rounded-lg shadow-2xl text-[11px] text-white/90 whitespace-normal min-w-[200px] max-w-[280px] gap-1 z-[100] backdrop-blur-md pointer-events-none transition-all duration-150"
+						className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex group-focus-within:flex flex-col bg-[#0a0a0a]/95 border border-[var(--border-subtle)] p-2.5 rounded-lg shadow-2xl text-[11px] text-[var(--foreground)]/90 whitespace-normal min-w-[200px] max-w-[280px] gap-1 z-[100] backdrop-blur-md pointer-events-none transition-all duration-150"
 					>
-						<div className="font-bold flex items-center justify-between border-b border-white/10 pb-1">
-							<span className="uppercase text-[10px] tracking-wider text-white/60">
+						<div className="font-bold flex items-center justify-between border-b border-[var(--border-subtle)] pb-1">
+							<span className="uppercase text-[10px] tracking-wider text-[var(--foreground)]/60">
 								Security Clearance
 							</span>
 							<span className={`font-mono text-[10px] ${config.textClass}`}>
 								{config.label}
 							</span>
 						</div>
-						<p className="text-white/80 leading-snug">{tooltipText}</p>
+						<p className="text-[var(--foreground)]/80 leading-snug">{tooltipText}</p>
 					</div>
 				)}
 			</div>

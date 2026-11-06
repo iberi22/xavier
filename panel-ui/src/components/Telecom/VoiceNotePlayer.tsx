@@ -265,7 +265,7 @@ export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
 
   return (
     <div
-      className={`group relative flex flex-col gap-2 p-3.5 rounded-2xl bg-slate-900/90 border border-white/10 text-white shadow-lg backdrop-blur-md transition-all hover:border-[#39ff14]/30 ${className}`}
+      className={`group relative flex flex-col gap-2 p-3.5 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[var(--foreground)] shadow-lg backdrop-blur-md transition-all hover:border-[#39ff14]/30 ${className}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -296,11 +296,11 @@ export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
       {/* Top Header Row: Author/Title + Security Tag */}
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-2 truncate">
-          <span className="font-semibold text-white truncate max-w-[180px]">
+          <span className="font-semibold text-[var(--foreground)] truncate max-w-[180px]">
             {title}
           </span>
           {author && (
-            <span className="text-[10px] text-white/50 font-mono truncate">
+            <span className="text-[10px] text-[var(--foreground)]/50 font-mono truncate">
               · {author}
             </span>
           )}
@@ -314,7 +314,7 @@ export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
             </span>
           )}
           {timestamp && (
-            <span className="text-[10px] text-white/40 font-mono">
+            <span className="text-[10px] text-[var(--foreground)]/40 font-mono">
               {timestamp}
             </span>
           )}
@@ -338,7 +338,7 @@ export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
         </button>
 
         {/* Canvas Waveform Preview Container */}
-        <div className="relative flex-1 h-10 flex items-center justify-center bg-black/40 rounded-xl border border-white/5 px-2 overflow-hidden cursor-pointer select-none">
+        <div className="relative flex-1 h-10 flex items-center justify-center bg-[var(--surface-card)] rounded-xl border border-[var(--border-subtle)] px-2 overflow-hidden cursor-pointer select-none">
           <canvas
             ref={canvasRef}
             id={canvasId}
@@ -371,7 +371,7 @@ export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
           type="button"
           onClick={toggleSpeed}
           aria-label={`Playback speed: ${playbackRate}x`}
-          className="px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white text-xs font-mono shrink-0 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
+          className="px-2.5 py-2 rounded-xl bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/10 border border-[var(--border-subtle)] text-[var(--foreground)]/80 hover:text-[var(--foreground)] text-xs font-mono shrink-0 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
         >
           {playbackRate}x
         </button>
@@ -381,7 +381,7 @@ export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
           type="button"
           onClick={toggleMute}
           aria-label={isMuted ? "Unmute audio" : "Mute audio"}
-          className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white shrink-0 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
+          className="p-2 rounded-xl bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/10 border border-[var(--border-subtle)] text-[var(--foreground)]/70 hover:text-[var(--foreground)] shrink-0 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
         >
           {isMuted ? (
             <VolumeX className="w-4 h-4 text-amber-400" aria-hidden="true" />
@@ -392,7 +392,7 @@ export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
       </div>
 
       {/* Progress Indicator Footer */}
-      <div className="flex items-center justify-between text-[10px] font-mono text-white/40 px-1">
+      <div className="flex items-center justify-between text-[10px] font-mono text-[var(--foreground)]/40 px-1">
         <span>{formatTime(currentTime)}</span>
         <div className="flex items-center gap-1">
           <FastForward className="w-2.5 h-2.5 text-[#39ff14]/60" aria-hidden="true" />

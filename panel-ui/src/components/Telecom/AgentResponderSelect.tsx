@@ -187,8 +187,8 @@ const AgentOptionCard = React.memo(function AgentOptionCard({
 			tabIndex={0}
 			className={`group relative p-3.5 rounded-xl cursor-pointer transition-all border outline-none ${
 				isSelected
-					? "bg-[#39ff14]/10 border-[#39ff14]/40 text-white shadow-lg shadow-[#39ff14]/5"
-					: "bg-white/[0.02] hover:bg-white/5 border-white/5 hover:border-white/15 text-white/80"
+					? "bg-[#39ff14]/10 border-[#39ff14]/40 text-[var(--foreground)] shadow-lg shadow-[#39ff14]/5"
+					: "bg-[var(--foreground)]/[0.02] hover:bg-[var(--foreground)]/5 border-[var(--border-subtle)] hover:border-[var(--border-subtle)] text-[var(--foreground)]/80"
 			}`}
 		>
 			<div className="flex items-start justify-between gap-3">
@@ -208,21 +208,21 @@ const AgentOptionCard = React.memo(function AgentOptionCard({
 					</div>
 					<div className="space-y-1">
 						<div className="flex items-center gap-2">
-							<span className="font-semibold text-sm text-white tracking-tight">
+							<span className="font-semibold text-sm text-[var(--foreground)] tracking-tight">
 								{agent.name}
 							</span>
-							<span className="px-2 py-0.5 rounded-md text-[10px] font-mono uppercase bg-white/10 text-white/60 border border-white/10">
+							<span className="px-2 py-0.5 rounded-md text-[10px] font-mono uppercase bg-[var(--foreground)]/10 text-[var(--foreground)]/60 border border-[var(--border-subtle)]">
 								{agent.model}
 							</span>
 						</div>
-						<p className="text-xs text-white/50 leading-relaxed line-clamp-2">
+						<p className="text-xs text-[var(--foreground)]/50 leading-relaxed line-clamp-2">
 							{agent.description}
 						</p>
 						<div className="flex flex-wrap gap-1.5 pt-1">
 							{agent.capabilities.map((cap) => (
 								<span
 									key={cap}
-									className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-white/5 text-white/60 border border-white/5"
+									className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-[var(--foreground)]/5 text-[var(--foreground)]/60 border border-[var(--border-subtle)]"
 								>
 									{cap}
 								</span>
@@ -237,7 +237,7 @@ const AgentOptionCard = React.memo(function AgentOptionCard({
 							className={`w-2 h-2 rounded-full ${
 								agent.online
 									? "bg-[#39ff14] shadow-[0_0_8px_#39ff14]"
-									: "bg-white/20"
+									: "bg-[var(--foreground)]/20"
 							}`}
 							title={agent.online ? "Agent Active" : "Agent Standby"}
 						/>
@@ -386,30 +386,30 @@ export const AgentResponderSelect = React.memo(function AgentResponderSelect({
 
 	return (
 		<div
-			className={`bg-white/[0.03] border border-white/10 rounded-2xl p-5 space-y-5 transition-all ${
+			className={`bg-[var(--foreground)]/[0.03] border border-[var(--border-subtle)] rounded-2xl p-5 space-y-5 transition-all ${
 				disabled ? "opacity-50 pointer-events-none" : ""
 			} ${className}`}
 		>
 			{/* Header with Master Switch Toggle */}
-			<div className="flex items-center justify-between border-b border-white/5 pb-4">
+			<div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-4">
 				<div className="flex items-center gap-3">
 					<div className="p-2.5 rounded-xl bg-[#39ff14]/10 text-[#39ff14] border border-[#39ff14]/20">
 						<Cpu size={20} />
 					</div>
 					<div>
-						<h3 className="text-base font-semibold text-white tracking-tight flex items-center gap-2">
+						<h3 className="text-base font-semibold text-[var(--foreground)] tracking-tight flex items-center gap-2">
 							{label}
 							<span
 								className={`px-2 py-0.5 text-[10px] font-mono rounded-full uppercase border ${
 									activeEnabled
 										? "bg-[#39ff14]/10 text-[#39ff14] border-[#39ff14]/30"
-										: "bg-white/5 text-white/40 border-white/10"
+										: "bg-[var(--foreground)]/5 text-[var(--foreground)]/40 border-[var(--border-subtle)]"
 								}`}
 							>
 								{activeEnabled ? "Active" : "Disabled"}
 							</span>
 						</h3>
-						<p className="text-xs text-white/40 mt-0.5">
+						<p className="text-xs text-[var(--foreground)]/40 mt-0.5">
 							Local AI agent that automatically processes incoming peer
 							telemetry & queries
 						</p>
@@ -424,14 +424,14 @@ export const AgentResponderSelect = React.memo(function AgentResponderSelect({
 					onClick={handleToggleMasterSwitch}
 					disabled={disabled}
 					className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#39ff14]/50 focus:ring-offset-2 focus:ring-offset-black ${
-						activeEnabled ? "bg-[#39ff14]" : "bg-white/10"
+						activeEnabled ? "bg-[#39ff14]" : "bg-[var(--foreground)]/10"
 					}`}
 				>
 					<span
 						className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black shadow-lg ring-0 transition duration-200 ease-in-out flex items-center justify-center ${
 							activeEnabled
 								? "translate-x-5 text-[#39ff14]"
-								: "translate-x-0 text-white/40"
+								: "translate-x-0 text-[var(--foreground)]/40"
 						}`}
 					>
 						<Power size={11} className="stroke-[3]" />
@@ -441,7 +441,7 @@ export const AgentResponderSelect = React.memo(function AgentResponderSelect({
 
 			{/* Selected Agent Dropdown Trigger */}
 			<div className="space-y-2" ref={dropdownRef}>
-				<span className="block text-xs font-medium text-white/60 tracking-wide uppercase">
+				<span className="block text-xs font-medium text-[var(--foreground)]/60 tracking-wide uppercase">
 					Select Active Cognitive Responder
 				</span>
 
@@ -457,10 +457,10 @@ export const AgentResponderSelect = React.memo(function AgentResponderSelect({
 						onKeyDown={handleKeyDown}
 						className={`w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all ${
 							!activeEnabled
-								? "bg-white/[0.01] border-white/5 text-white/30 cursor-not-allowed"
+								? "bg-[var(--foreground)]/[0.01] border-[var(--border-subtle)] text-[var(--foreground)]/30 cursor-not-allowed"
 								: isOpen
-									? "bg-white/10 border-[#39ff14]/50 text-white shadow-lg shadow-[#39ff14]/5 ring-1 ring-[#39ff14]/30"
-									: "bg-white/5 hover:bg-white/[0.08] border-white/10 text-white"
+									? "bg-[var(--foreground)]/10 border-[#39ff14]/50 text-[var(--foreground)] shadow-lg shadow-[#39ff14]/5 ring-1 ring-[#39ff14]/30"
+									: "bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/[0.08] border-[var(--border-subtle)] text-[var(--foreground)]"
 						}`}
 					>
 						{selectedAgent ? (
@@ -483,26 +483,26 @@ export const AgentResponderSelect = React.memo(function AgentResponderSelect({
 								</div>
 								<div className="min-w-0">
 									<div className="flex items-center gap-2">
-										<span className="font-semibold text-sm text-white truncate">
+										<span className="font-semibold text-sm text-[var(--foreground)] truncate">
 											{selectedAgent.name}
 										</span>
-										<span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-white/10 text-white/70 border border-white/10">
+										<span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-[var(--foreground)]/10 text-[var(--foreground)]/70 border border-[var(--border-subtle)]">
 											{selectedAgent.model}
 										</span>
 									</div>
-									<p className="text-xs text-white/40 truncate mt-0.5">
+									<p className="text-xs text-[var(--foreground)]/40 truncate mt-0.5">
 										{selectedAgent.role} • {selectedAgent.capabilities.length}{" "}
 										capabilities
 									</p>
 								</div>
 							</div>
 						) : (
-							<span className="text-sm text-white/40">Select an agent...</span>
+							<span className="text-sm text-[var(--foreground)]/40">Select an agent...</span>
 						)}
 
 						<ChevronDown
 							size={18}
-							className={`text-white/50 shrink-0 transition-transform duration-200 ${
+							className={`text-[var(--foreground)]/50 shrink-0 transition-transform duration-200 ${
 								isOpen ? "rotate-180 text-[#39ff14]" : ""
 							}`}
 						/>
@@ -510,9 +510,9 @@ export const AgentResponderSelect = React.memo(function AgentResponderSelect({
 
 					{/* Dropdown Options Floating Menu */}
 					{isOpen && activeEnabled && (
-						<div className="absolute z-50 left-0 right-0 mt-2 p-2 bg-[#0d1117] border border-white/15 rounded-2xl shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-150">
-							<div className="px-3 py-2 border-b border-white/5 flex items-center justify-between mb-2">
-								<span className="text-[11px] font-semibold uppercase tracking-wider text-white/40">
+						<div className="absolute z-50 left-0 right-0 mt-2 p-2 bg-[#0d1117] border border-[var(--border-subtle)] rounded-2xl shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-150">
+							<div className="px-3 py-2 border-b border-[var(--border-subtle)] flex items-center justify-between mb-2">
+								<span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--foreground)]/40">
 									Available AI Responders ({agents.length})
 								</span>
 								<span className="text-[10px] font-mono text-[#39ff14]">
@@ -542,12 +542,12 @@ export const AgentResponderSelect = React.memo(function AgentResponderSelect({
 
 			{/* Selected Agent Capabilities Summary */}
 			{selectedAgent && activeEnabled && (
-				<div className="p-3.5 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
-					<div className="flex items-center justify-between text-xs text-white/60">
-						<span className="font-semibold uppercase tracking-wider text-[10px] text-white/40 flex items-center gap-1.5">
+				<div className="p-3.5 bg-[var(--foreground)]/[0.02] border border-[var(--border-subtle)] rounded-xl space-y-2">
+					<div className="flex items-center justify-between text-xs text-[var(--foreground)]/60">
+						<span className="font-semibold uppercase tracking-wider text-[10px] text-[var(--foreground)]/40 flex items-center gap-1.5">
 							<Zap size={12} className="text-[#39ff14]" /> Active Capabilities
 						</span>
-						<span className="font-mono text-[10px] text-white/40">
+						<span className="font-mono text-[10px] text-[var(--foreground)]/40">
 							Model: {selectedAgent.model}
 						</span>
 					</div>
@@ -566,8 +566,8 @@ export const AgentResponderSelect = React.memo(function AgentResponderSelect({
 
 			{/* Dispatch Policy Selection */}
 			{activeEnabled && (
-				<div className="space-y-2.5 pt-2 border-t border-white/5">
-					<span className="block text-xs font-medium text-white/60 tracking-wide uppercase">
+				<div className="space-y-2.5 pt-2 border-t border-[var(--border-subtle)]">
+					<span className="block text-xs font-medium text-[var(--foreground)]/60 tracking-wide uppercase">
 						Response Dispatch Policy
 					</span>
 					<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -581,19 +581,19 @@ export const AgentResponderSelect = React.memo(function AgentResponderSelect({
 									onClick={() => handlePolicyChange(pol.type)}
 									className={`p-3 rounded-xl border text-left transition-all ${
 										isSelectedPolicy
-											? "bg-[#39ff14]/10 border-[#39ff14]/40 text-white shadow-md shadow-[#39ff14]/5"
-											: "bg-white/5 hover:bg-white/10 border-white/10 text-white/70"
+											? "bg-[#39ff14]/10 border-[#39ff14]/40 text-[var(--foreground)] shadow-md shadow-[#39ff14]/5"
+											: "bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/10 border-[var(--border-subtle)] text-[var(--foreground)]/70"
 									}`}
 								>
 									<div className="flex items-center justify-between mb-1">
-										<span className="text-xs font-bold text-white tracking-tight">
+										<span className="text-xs font-bold text-[var(--foreground)] tracking-tight">
 											{pol.label}
 										</span>
 										{isSelectedPolicy && (
 											<div className="w-2 h-2 rounded-full bg-[#39ff14]" />
 										)}
 									</div>
-									<p className="text-[11px] text-white/40 leading-snug">
+									<p className="text-[11px] text-[var(--foreground)]/40 leading-snug">
 										{pol.description}
 									</p>
 								</button>

@@ -73,8 +73,8 @@ const TelecomRoomListItem = React.memo(function TelecomRoomListItem({
       aria-selected={isSelected}
       className={`w-full text-left p-3 rounded-xl transition-all flex items-start gap-3 border ${
         isSelected
-          ? "bg-[#39ff14]/10 border-[#39ff14]/40 text-white shadow-[0_0_12px_rgba(57,255,20,0.1)]"
-          : "bg-white/[0.02] border-white/5 hover:bg-white/5 text-white/80 hover:text-white"
+          ? "bg-[#39ff14]/10 border-[#39ff14]/40 text-[var(--foreground)] shadow-[0_0_12px_rgba(57,255,20,0.1)]"
+          : "bg-[var(--foreground)]/[0.02] border-[var(--border-subtle)] hover:bg-[var(--foreground)]/5 text-[var(--foreground)]/80 hover:text-[var(--foreground)]"
       }`}
     >
       <div className="relative shrink-0 mt-0.5">
@@ -102,18 +102,18 @@ const TelecomRoomListItem = React.memo(function TelecomRoomListItem({
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-1">
-          <span className="text-xs font-medium truncate text-white">
+          <span className="text-xs font-medium truncate text-[var(--foreground)]">
             {room.name}
           </span>
           {room.lastActiveTimestamp && (
-            <span className="text-[10px] font-mono text-white/40 shrink-0">
+            <span className="text-[10px] font-mono text-[var(--foreground)]/40 shrink-0">
               {room.lastActiveTimestamp}
             </span>
           )}
         </div>
 
         <div className="flex items-center justify-between gap-2 mt-1">
-          <p className="text-[11px] text-white/50 truncate font-mono">
+          <p className="text-[11px] text-[var(--foreground)]/50 truncate font-mono">
             {lastMessage || "No messages yet"}
           </p>
           {(room.unreadCount ?? 0) > 0 && (
@@ -144,11 +144,11 @@ const TelecomMessageItem = React.memo(function TelecomMessageItem({
     <div
       className={`p-3 rounded-xl max-w-lg space-y-1 ${
         message.isSelf
-          ? "ml-auto bg-[#39ff14]/10 border border-[#39ff14]/30 text-white"
-          : "bg-white/5 border border-white/10 text-white/90"
+          ? "ml-auto bg-[#39ff14]/10 border border-[#39ff14]/30 text-[var(--foreground)]"
+          : "bg-[var(--foreground)]/5 border border-[var(--border-subtle)] text-[var(--foreground)]/90"
       }`}
     >
-      <div className="flex items-center justify-between gap-4 text-[10px] font-mono text-white/40">
+      <div className="flex items-center justify-between gap-4 text-[10px] font-mono text-[var(--foreground)]/40">
         <span className={`font-semibold ${message.isSelf ? "text-[#39ff14]" : "text-cyan-400"}`}>
           {(message.senderAlias || message.senderNodeId)}
         </span>
@@ -184,11 +184,11 @@ const TelecomPeerCard = React.memo(function TelecomPeerCard({
   room: TelecomRoom;
 }) {
   return (
-    <div className="p-4 rounded-xl bg-white/[0.02] border border-white/10 space-y-3">
+    <div className="p-4 rounded-xl bg-[var(--foreground)]/[0.02] border border-[var(--border-subtle)] space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-xs font-mono font-medium text-white">
+          <span className="text-xs font-mono font-medium text-[var(--foreground)]">
             {room.peerNodeId || room.id}
           </span>
         </div>
@@ -197,13 +197,13 @@ const TelecomPeerCard = React.memo(function TelecomPeerCard({
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-white/60">
-        <div className="p-2 rounded-lg bg-black/30 border border-white/5">
-          <span className="text-white/40 block uppercase">Protocol</span>
-          <span className="text-white">v2.4 (Double Ratchet)</span>
+      <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-[var(--foreground)]/60">
+        <div className="p-2 rounded-lg bg-[var(--surface-card)] border border-[var(--border-subtle)]">
+          <span className="text-[var(--foreground)]/40 block uppercase">Protocol</span>
+          <span className="text-[var(--foreground)]">v2.4 (Double Ratchet)</span>
         </div>
-        <div className="p-2 rounded-lg bg-black/30 border border-white/5">
-          <span className="text-white/40 block uppercase">Classification</span>
+        <div className="p-2 rounded-lg bg-[var(--surface-card)] border border-[var(--border-subtle)]">
+          <span className="text-[var(--foreground)]/40 block uppercase">Classification</span>
           <span className="text-[#39ff14]">{room.securityClassification || "INTERNAL"}</span>
         </div>
       </div>
@@ -310,21 +310,21 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
   );
 
   return (
-    <div className="relative w-full h-screen font-sans bg-slate-950 text-white flex flex-col overflow-hidden">
+    <div className="relative w-full h-screen font-sans bg-[var(--background)] text-[var(--foreground)] flex flex-col overflow-hidden">
       {/* Top Status Bar */}
       <div className="relative z-50">
         <TopStatusBar isModalOpen={false} />
       </div>
 
       {/* View Header */}
-      <header className="relative z-40 border-b border-white/10 bg-slate-900/80 backdrop-blur-md px-4 py-3 flex flex-wrap items-center justify-between gap-4 mt-14 sm:mt-16">
+      <header className="relative z-40 border-b border-[var(--border-subtle)] bg-[var(--surface-card)] backdrop-blur-md px-4 py-3 flex flex-wrap items-center justify-between gap-4 mt-14 sm:mt-16">
         <div className="flex items-center gap-3">
           {onClose && (
             <button
               type="button"
               onClick={onClose}
               aria-label="Back to Main View"
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
+              className="p-1.5 rounded-lg bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/10 text-[var(--foreground)]/70 hover:text-[var(--foreground)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
             >
               <ArrowLeft className="w-4 h-4" aria-hidden="true" />
             </button>
@@ -334,10 +334,10 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
               <ShieldCheck className="w-4 h-4 text-[#39ff14]" aria-hidden="true" />
             </div>
             <div>
-              <h1 className="text-sm font-semibold tracking-wide text-white">
+              <h1 className="text-sm font-semibold tracking-wide text-[var(--foreground)]">
                 Xavier Telecom Hub
               </h1>
-              <p className="text-[10px] text-white/50 font-mono">
+              <p className="text-[10px] text-[var(--foreground)]/50 font-mono">
                 Encrypted Multi-Channel Node Router
               </p>
             </div>
@@ -345,12 +345,12 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
         </div>
 
         {/* Security & Transport Status Badge */}
-        <div className="hidden lg:flex items-center gap-4 bg-black/40 border border-white/10 px-3 py-1.5 rounded-full text-xs font-mono">
+        <div className="hidden lg:flex items-center gap-4 bg-[var(--surface-card)] border border-[var(--border-subtle)] px-3 py-1.5 rounded-full text-xs font-mono">
           <div className="flex items-center gap-1.5 text-[#39ff14] text-[11px]">
             <Lock className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Noise-XK Protocol Active</span>
           </div>
-          <div className="w-px h-3 bg-white/10" />
+          <div className="w-px h-3 bg-[var(--foreground)]/10" />
           <div className="flex items-center gap-1 text-cyan-400 text-[11px]">
             <Zap className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Double Ratchet E2EE</span>
@@ -361,7 +361,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
         <div
           role="tablist"
           aria-label="Telecom Multi-Channel Navigation"
-          className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10"
+          className="flex items-center gap-1 bg-[var(--surface-card)] p-1 rounded-xl border border-[var(--border-subtle)]"
         >
           <button
             type="button"
@@ -373,7 +373,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14] ${
               activeTab === "direct"
                 ? "bg-[#39ff14]/20 text-[#39ff14] border border-[#39ff14]/40"
-                : "text-white/60 hover:text-white hover:bg-white/5"
+                : "text-[var(--foreground)]/60 hover:text-[var(--foreground)] hover:bg-[var(--foreground)]/5"
             }`}
           >
             <User className="w-3.5 h-3.5" aria-hidden="true" />
@@ -390,7 +390,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14] ${
               activeTab === "groups"
                 ? "bg-[#39ff14]/20 text-[#39ff14] border border-[#39ff14]/40"
-                : "text-white/60 hover:text-white hover:bg-white/5"
+                : "text-[var(--foreground)]/60 hover:text-[var(--foreground)] hover:bg-[var(--foreground)]/5"
             }`}
           >
             <Users className="w-3.5 h-3.5" aria-hidden="true" />
@@ -407,7 +407,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14] ${
               activeTab === "peers"
                 ? "bg-[#39ff14]/20 text-[#39ff14] border border-[#39ff14]/40"
-                : "text-white/60 hover:text-white hover:bg-white/5"
+                : "text-[var(--foreground)]/60 hover:text-[var(--foreground)] hover:bg-[var(--foreground)]/5"
             }`}
           >
             <Network className="w-3.5 h-3.5" aria-hidden="true" />
@@ -417,18 +417,18 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
       </header>
 
       {/* Main Multi-Channel Content View */}
-      <main className="flex-1 flex overflow-hidden bg-slate-950/60 p-2 sm:p-4 gap-4">
+      <main className="flex-1 flex overflow-hidden bg-[var(--background)]/60 p-2 sm:p-4 gap-4">
         {/* Left Sidebar: Channel Rooms Navigation */}
         <aside
           id={`panel-${activeTab}`}
           role="tabpanel"
           aria-labelledby={`tab-${activeTab}`}
-          className="w-full md:w-80 shrink-0 bg-slate-900/60 rounded-2xl border border-white/10 p-3 flex flex-col gap-3"
+          className="w-full md:w-80 shrink-0 bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] p-3 flex flex-col gap-3"
         >
           {/* Room Search Bar */}
           <div className="relative">
             <Search
-              className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
+              className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--foreground)]/40"
               aria-hidden="true"
             />
             <input
@@ -436,13 +436,13 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={`Search ${activeTab}...`}
-              className="w-full bg-black/40 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-[#39ff14]/50 font-mono"
+              className="w-full bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[var(--foreground)] placeholder-white/30 focus:outline-none focus:border-[#39ff14]/50 font-mono"
             />
           </div>
 
           {/* Category Channel Header */}
           <div className="flex items-center justify-between px-1">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-white/40">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--foreground)]/40">
               {activeTab === "direct" && "Active Direct Encrypted Channels"}
               {activeTab === "groups" && "Active Group Telecom Rooms"}
               {activeTab === "peers" && "Known Peer Node Endpoints"}
@@ -450,7 +450,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
             <button
               type="button"
               aria-label={`Add new ${activeTab} channel`}
-              className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
+              className="p-1 rounded-lg bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/10 text-[var(--foreground)]/60 hover:text-[var(--foreground)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
             >
               <Plus className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
@@ -459,7 +459,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
           {/* Rooms List */}
           <div className="flex-1 overflow-y-auto space-y-2 pr-1">
             {filteredRooms.length === 0 ? (
-              <div className="text-center py-8 text-xs text-white/40 font-mono">
+              <div className="text-center py-8 text-xs text-[var(--foreground)]/40 font-mono">
                 No matching channels found.
               </div>
             ) : (
@@ -481,13 +481,13 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
         </aside>
 
         {/* Center/Right Main Panel: Active Room / Peer View */}
-        <section className="flex-1 bg-slate-900/60 rounded-2xl border border-white/10 flex flex-col overflow-hidden">
+        <section className="flex-1 bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] flex flex-col overflow-hidden">
           {activeTab === "peers" ? (
             <div className="flex-1 p-4 overflow-y-auto space-y-4">
-              <h2 className="text-sm font-semibold text-white mb-4">Network Peers</h2>
+              <h2 className="text-sm font-semibold text-[var(--foreground)] mb-4">Network Peers</h2>
               {isLoadingPeers ? (
-                 <div className="text-center py-8 text-xs text-white/40 font-mono">
-                    <RefreshCw className="w-5 h-5 mx-auto mb-2 animate-spin text-white/20" />
+                 <div className="text-center py-8 text-xs text-[var(--foreground)]/40 font-mono">
+                    <RefreshCw className="w-5 h-5 mx-auto mb-2 animate-spin text-[var(--foreground)]/20" />
                     Loading peers...
                  </div>
               ) : peersError ? (
@@ -495,7 +495,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
                     {peersError}
                  </div>
               ) : meshPeers.length === 0 ? (
-                 <div className="text-center py-8 text-xs text-white/40 font-mono">
+                 <div className="text-center py-8 text-xs text-[var(--foreground)]/40 font-mono">
                     No peers discovered yet.
                  </div>
               ) : (
@@ -518,7 +518,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
 
             <>
               {/* Room Header */}
-              <div className="p-3 sm:p-4 border-b border-white/10 bg-black/40 flex items-center justify-between flex-wrap gap-2">
+              <div className="p-3 sm:p-4 border-b border-[var(--border-subtle)] bg-[var(--surface-card)] flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-[#39ff14]/10 border border-[#39ff14]/30 flex items-center justify-center text-[#39ff14]">
                     {selectedRoom.category === "direct" && <User className="w-4 h-4" aria-hidden="true" />}
@@ -526,13 +526,13 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
                     {selectedRoom.category === "peers" && <Network className="w-4 h-4" aria-hidden="true" />}
                   </div>
                   <div>
-                    <h2 className="text-xs sm:text-sm font-semibold text-white flex items-center gap-2">
+                    <h2 className="text-xs sm:text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
                       <span>{selectedRoom.name}</span>
                       {selectedRoom.isEncrypted && (
                         <Lock className="w-3 h-3 text-[#39ff14]" aria-label="End-to-end encrypted" />
                       )}
                     </h2>
-                    <p className="text-[10px] text-white/40 font-mono">
+                    <p className="text-[10px] text-[var(--foreground)]/40 font-mono">
                       Category: {String(selectedRoom.category || "direct").toUpperCase()} · Status: {selectedRoom.online ? "Online" : "Offline"}
                     </p>
                   </div>
@@ -546,7 +546,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
                     className={`px-2.5 py-1 rounded-lg text-[10px] font-mono flex items-center gap-1.5 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14] ${
                       isEphemeral
                         ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                        : "bg-white/5 text-white/50 border border-white/10 hover:text-white"
+                        : "bg-[var(--foreground)]/5 text-[var(--foreground)]/50 border border-[var(--border-subtle)] hover:text-[var(--foreground)]"
                     }`}
                   >
                     <Clock className="w-3 h-3" aria-hidden="true" />
@@ -559,8 +559,8 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
               <div className="flex-1 p-4 overflow-y-auto space-y-3 min-h-[280px]">
                 {activeMessages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-2">
-                    <MessageSquare className="w-8 h-8 text-white/20" aria-hidden="true" />
-                    <p className="text-xs text-white/50 font-mono">
+                    <MessageSquare className="w-8 h-8 text-[var(--foreground)]/20" aria-hidden="true" />
+                    <p className="text-xs text-[var(--foreground)]/50 font-mono">
                       No encrypted messages in this channel yet.
                     </p>
                   </div>
@@ -574,14 +574,14 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
               {/* Message Composer Input Form */}
               <form
                 onSubmit={handleSendMessage}
-                className="p-3 border-t border-white/10 bg-black/40 flex items-center gap-2"
+                className="p-3 border-t border-[var(--border-subtle)] bg-[var(--surface-card)] flex items-center gap-2"
               >
                 <input
                   type="text"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
                   placeholder={`Send encrypted message to ${selectedRoom.name}...`}
-                  className="flex-1 bg-white/5 border border-white/10 text-xs text-white px-3 py-2 rounded-xl focus:outline-none focus:border-[#39ff14]/50 font-mono placeholder-white/30"
+                  className="flex-1 bg-[var(--foreground)]/5 border border-[var(--border-subtle)] text-xs text-[var(--foreground)] px-3 py-2 rounded-xl focus:outline-none focus:border-[#39ff14]/50 font-mono placeholder-white/30"
                 />
                 <button
                   type="submit"
@@ -595,7 +595,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
               </form>
             </>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center p-6 text-center text-white/40 font-mono text-xs">
+            <div className="h-full flex flex-col items-center justify-center p-6 text-center text-[var(--foreground)]/40 font-mono text-xs">
               Select a channel to view encrypted communication.
             </div>
           )}
@@ -603,15 +603,15 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
 
         {/* Right Information Panel (Peer / Room Security Metadata) */}
         {selectedRoom && (
-          <aside className="hidden xl:flex w-72 shrink-0 bg-slate-900/60 rounded-2xl border border-white/10 p-4 flex-col gap-4">
-            <div className="flex items-center gap-2 pb-2 border-b border-white/10">
+          <aside className="hidden xl:flex w-72 shrink-0 bg-[var(--surface-card)] rounded-2xl border border-[var(--border-subtle)] p-4 flex-col gap-4">
+            <div className="flex items-center gap-2 pb-2 border-b border-[var(--border-subtle)]">
               <Shield className="w-4 h-4 text-[#39ff14]" aria-hidden="true" />
-              <h3 className="text-xs font-semibold text-white">Security & Key Info</h3>
+              <h3 className="text-xs font-semibold text-[var(--foreground)]">Security & Key Info</h3>
             </div>
 
             <TelecomPeerCard room={selectedRoom} />
 
-            <div className="p-3 rounded-xl bg-black/30 border border-white/5 space-y-2 text-[10px] font-mono text-white/60">
+            <div className="p-3 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-2 text-[10px] font-mono text-[var(--foreground)]/60">
               <div className="flex justify-between">
                 <span>Signal Ratchet:</span>
                 <span className="text-emerald-400">Synced</span>

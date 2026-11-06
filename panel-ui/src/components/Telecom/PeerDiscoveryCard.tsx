@@ -162,7 +162,7 @@ export const PeerDiscoveryCard: React.FC<PeerDiscoveryCardProps> = ({
   return (
     <div
       data-testid="peer-discovery-card"
-      className={`p-5 rounded-2xl bg-slate-900/90 border border-white/10 shadow-xl backdrop-blur-md flex flex-col justify-between gap-4 transition-all hover:border-white/20 ${className}`}
+      className={`p-5 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-xl backdrop-blur-md flex flex-col justify-between gap-4 transition-all hover:border-[var(--border-subtle)] ${className}`}
     >
       {/* Header: Peer Alias & Latency Badge */}
       <div className="flex items-start justify-between gap-3">
@@ -172,7 +172,7 @@ export const PeerDiscoveryCard: React.FC<PeerDiscoveryCardProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-white tracking-wide">
+              <h3 className="text-sm font-semibold text-[var(--foreground)] tracking-wide">
                 {displayAlias}
               </h3>
               <ShieldCheck
@@ -181,7 +181,7 @@ export const PeerDiscoveryCard: React.FC<PeerDiscoveryCardProps> = ({
               />
             </div>
             {nodeId && (
-              <p className="text-[11px] font-mono text-white/50 tracking-tight">
+              <p className="text-[11px] font-mono text-[var(--foreground)]/50 tracking-tight">
                 Node ID: {nodeId}
               </p>
             )}
@@ -202,15 +202,15 @@ export const PeerDiscoveryCard: React.FC<PeerDiscoveryCardProps> = ({
       </div>
 
       {/* Public Key Snippet with Copy Button */}
-      <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
-        <div className="flex items-center justify-between text-[10px] text-white/40 uppercase tracking-wider font-mono">
+      <div className="p-3 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-1.5">
+        <div className="flex items-center justify-between text-[10px] text-[var(--foreground)]/40 uppercase tracking-wider font-mono">
           <span>Cryptographic Public Key</span>
           <span>Ed25519 / Secp256k1</span>
         </div>
         <div className="flex items-center justify-between gap-2">
           <code
             data-testid="public-key-snippet"
-            className="text-xs font-mono text-white/90 select-all tracking-wide truncate"
+            className="text-xs font-mono text-[var(--foreground)]/90 select-all tracking-wide truncate"
           >
             {truncatedKey}
           </code>
@@ -218,7 +218,7 @@ export const PeerDiscoveryCard: React.FC<PeerDiscoveryCardProps> = ({
             type="button"
             onClick={handleCopyKey}
             aria-label="Copy public key to clipboard"
-            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14] shrink-0 flex items-center gap-1 text-[10px]"
+            className="p-1.5 rounded-lg bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/10 text-[var(--foreground)]/70 hover:text-[var(--foreground)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14] shrink-0 flex items-center gap-1 text-[10px]"
           >
             {copied ? (
               <>
@@ -236,9 +236,9 @@ export const PeerDiscoveryCard: React.FC<PeerDiscoveryCardProps> = ({
       </div>
 
       {/* Footer / Action Controls */}
-      <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/5 text-xs text-white/50">
+      <div className="flex items-center justify-between gap-3 pt-2 border-t border-[var(--border-subtle)] text-xs text-[var(--foreground)]/50">
         <div className="flex items-center gap-1.5 text-[11px] font-mono">
-          <Activity className="w-3.5 h-3.5 text-white/40" aria-hidden="true" />
+          <Activity className="w-3.5 h-3.5 text-[var(--foreground)]/40" aria-hidden="true" />
           <span>Last active: {lastSeen}</span>
         </div>
 
@@ -249,7 +249,7 @@ export const PeerDiscoveryCard: React.FC<PeerDiscoveryCardProps> = ({
               onClick={handlePingNode}
               disabled={isPinging}
               aria-label={`Ping node ${displayAlias}`}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
+              className="p-2 rounded-xl bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/10 border border-[var(--border-subtle)] text-[var(--foreground)]/70 hover:text-[var(--foreground)] transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
             >
               <RefreshCw
                 className={`w-3.5 h-3.5 ${isPinging ? "animate-spin text-cyan-400" : ""}`}
