@@ -435,7 +435,18 @@ async function fetchMaloca<T>(
     throw new MalocaHttpError(errorMsg, response.status);
   }
 
-  return response.json() as Promise<T>;
+  // A 2xx that is not JSON usually means the request fell through to the SPA's
+  // index.html (route not mounted on this daemon). Report that instead of leaking a
+  // raw "Unexpected token '<'" SyntaxError into the UI.
+  const body = await response.text();
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    throw new MalocaHttpError(
+      `The daemon returned a non-JSON response for ${prefix}${endpoint}. Is the Maloca API available on this node?`,
+      response.status,
+    );
+  }
 }
 
 /**

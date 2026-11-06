@@ -124,8 +124,7 @@ export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
 
   // Play / Pause audio element effect with fallback simulation timer
   useEffect(() => {
-    let animationFrameId: number;
-    let timerId: NodeJS.Timeout;
+    let timerId: ReturnType<typeof setInterval> | undefined;
 
     if (src && audioRef.current) {
       if (isPlaying) {
@@ -152,7 +151,6 @@ export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
     }
 
     return () => {
-      if (animationFrameId) cancelAnimationFrame(animationFrameId);
       if (timerId) clearInterval(timerId);
     };
   }, [isPlaying, src, playbackRate, duration, onEnded]);

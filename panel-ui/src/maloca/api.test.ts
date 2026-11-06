@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { malocaApi, probeMarketplaceAvailable } from "./api";
+import { MalocaHttpError, malocaApi, probeMarketplaceAvailable } from "./api";
 import { AUTH_TOKEN_KEY } from "./authPrompt";
 
 const session = {
@@ -245,5 +245,22 @@ describe("marketplace availability probe and consent scope", () => {
     });
     await malocaApi.getMarketplaceConsent("node_1");
     expect(fn.mock.calls[0][0]).toBe("/v2/marketplace/consent?node_id=node_1");
+  });
+});
+
+describe("fetchMaloca non-JSON responses", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reports an HTML fallback page as a readable MalocaHttpError", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<!doctype html><html></html>", { status: 200, headers: { "Content-Type": "text/html" } })),
+    );
+    const err = await malocaApi.getPack().catch((e) => e);
+    expect(err).toBeInstanceOf(MalocaHttpError);
+    expect(String(err.message)).toContain("non-JSON response for /maloca/pack");
+    expect(String(err.message)).not.toContain("Unexpected token");
   });
 });
