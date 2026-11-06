@@ -164,11 +164,11 @@ export function PluginsManager({ token }: PluginsManagerProps) {
     >
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-light text-white tracking-tight flex items-center gap-2">
+          <h2 className="text-2xl font-light text-[var(--foreground)] dark:text-white tracking-tight flex items-center gap-2">
             <Zap className="w-6 h-6 text-[#39ff14]" />
             Dynamic Plugin Ecosystem
           </h2>
-          <p className="text-sm text-white/40 mt-1">
+          <p className="text-sm text-[var(--foreground)]/40 dark:text-white/40 mt-1">
             Manage dynamic extensions, Colby McHenry CodeGraph Engine, and kernel proxies.
           </p>
         </div>
@@ -176,7 +176,7 @@ export function PluginsManager({ token }: PluginsManagerProps) {
           type="button"
           onClick={() => void fetchPlugins()}
           disabled={loading}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 hover:text-white text-xs font-medium tracking-wide transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-black/5 dark:bg-white/5 border border-[var(--border-subtle)] dark:border-white/10 hover:bg-black/10 dark:hover:bg-white/10 text-[var(--foreground)]/80 dark:text-white/80 hover:text-[var(--foreground)] dark:hover:text-white text-xs font-medium tracking-wide transition-colors disabled:opacity-50"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           Refresh
@@ -190,7 +190,7 @@ export function PluginsManager({ token }: PluginsManagerProps) {
       )}
 
       {loading ? (
-        <div className="flex-1 flex items-center justify-center py-20 text-white/40">
+        <div className="flex-1 flex items-center justify-center py-20 text-[var(--foreground)]/40 dark:text-white/40">
           <Loader2 className="w-6 h-6 animate-spin text-[#39ff14] mr-3" />
           <span className="text-sm">Loading available plugins...</span>
         </div>
@@ -246,19 +246,19 @@ const PluginCard = React.memo(function PluginCard({
   const statusText = getStatusText();
 
   return (
-    <div className="p-5 rounded-2xl bg-[#050505]/60 border border-white/10 hover:border-[#39ff14]/30 transition-all flex flex-col justify-between space-y-4">
+    <div className="p-5 rounded-2xl bg-[var(--surface-card)] dark:bg-[#050505]/60 border border-[var(--border-subtle)] dark:border-white/10 hover:border-[#39ff14]/30 transition-all flex flex-col justify-between space-y-4">
       <div>
         <div className="flex items-start justify-between gap-3 mb-2">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-white/5 text-[#39ff14] border border-white/5">
+            <div className="p-2 rounded-lg bg-black/5 dark:bg-white/5 text-[#39ff14] border border-[var(--border-subtle)] dark:border-white/5">
               <Package className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-medium text-white tracking-wide">
+              <h3 className="text-base font-medium text-[var(--foreground)] dark:text-white tracking-wide">
                 {String(plugin.name)}
               </h3>
               {plugin.version && (
-                <span className="text-[10px] font-mono text-white/40">
+                <span className="text-[10px] font-mono text-[var(--foreground)]/40 dark:text-white/40">
                   v{plugin.version}
                 </span>
               )}
@@ -271,7 +271,7 @@ const PluginCard = React.memo(function PluginCard({
                 ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
                 : isInstalled
                 ? "bg-[#39ff14]/10 text-[#39ff14] border-[#39ff14]/30 shadow-[0_0_10px_rgba(57,255,20,0.15)]"
-                : "bg-white/5 text-white/40 border-white/10"
+                : "bg-black/5 dark:bg-white/5 text-[var(--foreground)]/40 dark:text-white/40 border-[var(--border-subtle)] dark:border-white/10"
             }`}
           >
             {isInstalling ? (
@@ -283,7 +283,7 @@ const PluginCard = React.memo(function PluginCard({
           </span>
         </div>
 
-        <p className="text-xs text-white/60 leading-relaxed">
+        <p className="text-xs text-[var(--foreground)]/60 dark:text-white/60 leading-relaxed">
           {plugin.description || "No description provided."}
         </p>
 
@@ -292,7 +292,7 @@ const PluginCard = React.memo(function PluginCard({
             {plugin.languages.map((lang) => (
               <span
                 key={lang}
-                className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-white/50 border border-white/5 uppercase"
+                className="px-2 py-0.5 rounded text-[10px] font-mono bg-black/5 dark:bg-white/5 text-[var(--foreground)]/50 dark:text-white/50 border border-[var(--border-subtle)] dark:border-white/5 uppercase"
               >
                 {lang}
               </span>
@@ -301,12 +301,12 @@ const PluginCard = React.memo(function PluginCard({
         )}
       </div>
 
-      <div className="pt-2 border-t border-white/5 flex justify-end">
+      <div className="pt-2 border-t border-[var(--border-subtle)] dark:border-white/5 flex justify-end">
         {isInstalled ? (
           <button
             type="button"
             disabled
-            className="w-full py-2 px-4 rounded-xl bg-white/5 text-white/40 text-xs font-semibold cursor-default flex items-center justify-center gap-2"
+            className="w-full py-2 px-4 rounded-xl bg-black/5 dark:bg-white/5 text-[var(--foreground)]/40 dark:text-white/40 text-xs font-semibold cursor-default flex items-center justify-center gap-2"
           >
             <CheckCircle2 className="w-4 h-4 text-[#39ff14]" />
             {plugin.name === "codegraph" ? "Active (Sidecar)" : "Installed"}
