@@ -1,10 +1,9 @@
 import { expect, test } from "@playwright/test";
-import path from "node:path";
 
 test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
   test("opens settings, iterates tabs, toggles options, verifies notifications, and captures visual artifact", async ({
     page,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(120_000);
     // 1. Intercept API routes with deterministic mock data.
     // Playwright tries the most recently registered route first, so the /v1
@@ -244,7 +243,6 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
     // 3. Navigate to application root
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(1000);
 
     // If login is shown, log in
     const loginButton = page.locator('button:has-text("INITIALIZE SESSION")');
@@ -255,7 +253,7 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
         await passwordInput.fill("password123");
       }
       await loginButton.click();
-      await page.waitForTimeout(1000);
+      await expect(loginButton).not.toBeVisible();
     }
 
     // 4. Open Settings Modal via BrainCircuit button
@@ -316,28 +314,29 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
 
     const initialChecked = await toggleSwitch.getAttribute("aria-checked");
     await toggleSwitch.click({ force: true });
-    await page.waitForTimeout(150);
-    const updatedChecked = await toggleSwitch.getAttribute("aria-checked");
-    expect(updatedChecked).not.toBe(initialChecked);
+    if (initialChecked === "true") {
+      await expect(toggleSwitch).toHaveAttribute("aria-checked", "false");
+    } else {
+      await expect(toggleSwitch).toHaveAttribute("aria-checked", "true");
+    }
 
     // 7. Test Segmented / Conversation Width buttons
     const narrowBtn = page.getByRole("button", { name: "Narrow" });
     if (await narrowBtn.isVisible()) {
       await narrowBtn.click({ force: true });
-      await page.waitForTimeout(150);
+      // The component should visually indicate active state (based on the class change to bg-[#25272c])
+      await expect(narrowBtn).toHaveClass(/bg-\[#25272c\]|bg-foreground\/10/);
     }
 
     // Also verify theme mode buttons (Monitor, Sun, Moon)
     const sunBtn = page.locator('button[aria-label="Light theme"]');
     if (await sunBtn.isVisible()) {
       await sunBtn.click({ force: true });
-      await page.waitForTimeout(300);
       await expect(page.locator("html")).toHaveAttribute("data-theme", "studio-bone");
 
       // Switch back to Dark theme
       const moonBtn = page.locator('button[aria-label="Dark theme"]');
       await moonBtn.click({ force: true });
-      await page.waitForTimeout(300);
       await expect(page.locator("html")).toHaveAttribute("data-theme", "studio-dark");
     }
 
@@ -346,14 +345,12 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
     if (await sliderInput.isVisible()) {
       await sliderInput.fill("15");
       await sliderInput.dispatchEvent("change");
-      await page.waitForTimeout(100);
-      const newValue = await sliderInput.inputValue();
-      expect(newValue).toBe("15");
+      await expect(sliderInput).toHaveValue("15");
     }
 
     // 8. Close Settings Modal
     await closeModalBtn.click({ force: true });
-    await page.waitForTimeout(300);
+    await expect(closeModalBtn).not.toBeVisible();
 
     // 9. Test Notifications Bell interaction
     const bellButton = page.getByRole("button", { name: "Notifications" });
@@ -361,7 +358,7 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
 
     // Open notifications dropdown
     await bellButton.click({ force: true });
-    await page.waitForTimeout(300);
+    const notifDropdown = page.getByRole("menu"); // Adjust if it's a different role or locator, typically we'll wait for the alert below
 
     // Verify mock notification items render
     const notifItem = page.getByText("E2E Antigravity Alert");
@@ -371,12 +368,10 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
     const markAllReadBtn = page.getByRole("button", { name: "All read" });
     if (await markAllReadBtn.isVisible()) {
       await markAllReadBtn.click({ force: true });
-      await page.waitForTimeout(150);
     } else {
       const markReadBtn = page.getByRole("button", { name: "Mark as read" }).first();
       if (await markReadBtn.isVisible()) {
         await markReadBtn.click({ force: true });
-        await page.waitForTimeout(150);
       }
     }
 
@@ -386,13 +381,10 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
 
     // Close notifications dropdown
     await page.keyboard.press("Escape");
-    await page.waitForTimeout(200);
+    await expect(notifDropdown).not.toBeVisible();
 
     // 10. Capture full visual artifact
-    const screenshotPath = path.join(process.cwd(), "antigravity_complete_suite.png");
+    const screenshotPath = testInfo.outputPath("antigravity_complete_suite.png");
     await page.screenshot({ path: screenshotPath, fullPage: true });
-
-    // Also verify screenshot file was created
-    expect(screenshotPath).toBeTruthy();
   });
 });
