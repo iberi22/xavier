@@ -27,17 +27,18 @@ TITLE="release pipeline red: ${WORKFLOW_NAME}"
 gh label create "$LABEL" --color B60205 --description "Release/binary pipeline failure" 2>/dev/null || true
 
 # Prints the matching open issue number, or empty if none.
-# Propagates gh/jq failures (fail-closed) so callers never mutate after a broken lookup.
+# Must exit non-zero on gh/jq failure (callers check explicitly; bash
+# assignments do not honor errexit for command substitutions).
 find_open_issue() {
   local open_issues number body
-  open_issues=$(gh issue list --label "$LABEL" --state open --limit 200 --json number,body)
+  open_issues=$(gh issue list --label "$LABEL" --state open --limit 200 --json number,body) || return $?
   if [ -z "$open_issues" ] || [ "$open_issues" = "[]" ]; then
     return 0
   fi
-  echo "$open_issues" | jq -e 'type == "array"' >/dev/null
+  echo "$open_issues" | jq -e 'type == "array"' >/dev/null || return $?
   while IFS= read -r number; do
     [ -n "$number" ] || continue
-    body=$(echo "$open_issues" | jq -r --argjson n "$number" '.[] | select(.number == $n) | .body // empty')
+    body=$(echo "$open_issues" | jq -r --argjson n "$number" '.[] | select(.number == $n) | .body // empty') || return $?
     if [[ "$body" == *"$MARKER"* ]]; then
       echo "$number"
       return 0
@@ -46,7 +47,16 @@ find_open_issue() {
   return 0
 }
 
+# Bash does not trip set -e on failed command substitutions in assignments.
+# Capture status explicitly so lookup failures abort before any mutation.
+set +e
 EXISTING=$(find_open_issue)
+LOOKUP_RC=$?
+set -e
+if [ "$LOOKUP_RC" -ne 0 ]; then
+  echo "release-pipeline-incident: issue lookup failed (rc=$LOOKUP_RC); aborting without mutations" >&2
+  exit "$LOOKUP_RC"
+fi
 
 if [ "$CONCLUSION" = "failure" ] || [ "$CONCLUSION" = "cancelled" ] || [ "$CONCLUSION" = "timed_out" ]; then
   REF_LINE=""
