@@ -304,6 +304,7 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 	const [isTransferDrawerOpen, setIsTransferDrawerOpen] = useState(false);
 	const [transferStatus, setTransferStatus] = useState<"idle" | "transferring" | "paused" | "verifying" | "completed" | "failed">("idle");
 	const [transferProgress, setTransferProgress] = useState(0);
+	const [transferChunks, setTransferChunks] = useState({ received: 0, total: 0 });
 	const [transferFile, setTransferFile] = useState<File | null>(null);
 
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -314,6 +315,9 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 		if (update) {
 			if (update.status) setTransferStatus(update.status);
 			if (update.chunkProgress !== undefined) setTransferProgress(update.chunkProgress);
+			if (update.receivedChunks !== undefined && update.totalChunks !== undefined) {
+				setTransferChunks({ received: update.receivedChunks, total: update.totalChunks });
+			}
 		}
 	}, []);
 
@@ -358,6 +362,7 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 			setIsTransferDrawerOpen(true);
 			setTransferStatus("transferring");
 			setTransferProgress(0);
+			setTransferChunks({ received: 0, total: 0 });
 		}
 
 		const newMsg: DirectChatMessage = {
@@ -675,10 +680,8 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 				direction="upload"
 				status={transferStatus}
 				chunkProgress={transferProgress}
-				totalChunks={100}
-				receivedChunks={transferProgress}
-				transferRate={1536} // mock 1.5MB/s
-				sha256Hash={transferStatus === "completed" ? "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" : ""}
+				totalChunks={transferChunks.total}
+				receivedChunks={transferChunks.received}
 				onOpenFile={() => {}}
 				onPause={() => setTransferStatus("paused")}
 				onResume={() => setTransferStatus("transferring")}
