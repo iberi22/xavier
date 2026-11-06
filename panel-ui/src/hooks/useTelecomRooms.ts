@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
  * Interface representing a Telecom Chat Room or Direct Peer Channel.
  */
 export interface TelecomRoom {
+  category?: string;
+  isEncrypted?: boolean;
+  securityClassification?: string;
+  peerNodeId?: string;
   id: string;
   name: string;
   type: "room" | "direct";
@@ -146,12 +150,15 @@ export function getStoredRooms(): TelecomRoom[] {
         id: String(item.id || ""),
         name: String(item.name || "unnamed"),
         type: item.type === "direct" ? "direct" : "room",
+        category: item.category || "direct",
         unreadCount: typeof item.unreadCount === "number" ? Math.max(0, item.unreadCount) : 0,
         lastActiveTimestamp: typeof item.lastActiveTimestamp === "number" ? item.lastActiveTimestamp : Date.now(),
         description: item.description ? String(item.description) : undefined,
         alias: item.alias ? String(item.alias) : undefined,
         nodeId: item.nodeId ? String(item.nodeId) : undefined,
         online: typeof item.online === "boolean" ? item.online : undefined,
+        isEncrypted: item.isEncrypted ?? true,
+        securityClassification: item.securityClassification ?? "INTERNAL"
       }));
     }
     return DEFAULT_ROOMS;
@@ -179,7 +186,18 @@ export function getStoredMessages(): Record<string, TelecomMessage[]> {
     if (!raw) return DEFAULT_MESSAGES;
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed;
+      const normalized: Record<string, TelecomMessage[]> = {};
+      for (const key of Object.keys(parsed)) {
+        if (Array.isArray(parsed[key])) {
+          normalized[key] = parsed[key].map((msg: any) => ({
+            ...msg,
+            senderAlias: msg.senderAlias || msg.sender || "Unknown",
+            content: msg.content || msg.text || "",
+            timestamp: msg.timestamp || msg.time || new Date().toISOString()
+          }));
+        }
+      }
+      return normalized;
     }
     return DEFAULT_MESSAGES;
   } catch {
