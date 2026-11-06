@@ -85,7 +85,7 @@ function DepthDots({ score }: { score: number }) {
         <div
           key={i}
           className={`w-2 h-2 rounded-full transition-colors ${
-            i < filled ? "bg-emerald-400" : "bg-white/15"
+            i < filled ? "bg-emerald-400" : "bg-[color:color-mix(in_srgb,var(--foreground)_15%,transparent)]"
           }`}
         />
       ))}
@@ -124,7 +124,7 @@ function SessionCard({
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-3 mb-2">
-            <h3 className="text-sm font-semibold text-white leading-snug">{title}</h3>
+            <h3 className="text-sm font-semibold text-[var(--foreground)] leading-snug">{title}</h3>
           </div>
 
           {/* Technique + depth */}
@@ -140,13 +140,13 @@ function SessionCard({
           </div>
 
           {/* Preview */}
-          <p className="text-xs text-white/40 italic leading-relaxed mb-4">
+          <p className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] italic leading-relaxed mb-4">
             &ldquo;{preview}&rdquo;
           </p>
 
           {/* Footer */}
           <div className="flex items-center justify-between">
-            <span className="text-xs font-mono text-white/25 capitalize">
+            <span className="text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_25%,transparent)] capitalize">
               {challenge.challenge_type} · confianza {Math.round(challenge.confidence_score * 100)}%
             </span>
             <button
@@ -268,7 +268,7 @@ function IntrospectionChat({
           type="button"
           onClick={onBack}
           aria-label="Volver"
-          className="p-1.5 rounded-lg hover:bg-white/5 text-white/40 hover:text-white transition-colors"
+          className="p-1.5 rounded-lg hover:bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)] text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] hover:text-[var(--foreground)] transition-colors"
         >
           <ArrowLeft size={18} />
         </button>
@@ -276,7 +276,7 @@ function IntrospectionChat({
           {TYPE_ICON[challenge.challenge_type]}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-white truncate">
+          <p className="text-sm font-semibold text-[var(--foreground)] truncate">
             {challenge.description || challenge.raw_content.slice(0, 60)}
           </p>
           <div className="flex items-center gap-2 mt-0.5">
@@ -291,7 +291,7 @@ function IntrospectionChat({
             type="button"
             onClick={completeSession}
             disabled={loading}
-            className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white border border-white/10 transition-all"
+            className="text-xs px-3 py-1.5 rounded-lg bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] hover:text-[var(--foreground)] border border-[var(--border-subtle)] transition-all"
           >
             Completar
           </button>
@@ -317,7 +317,7 @@ function IntrospectionChat({
                     <Brain size={14} className="text-emerald-400" />
                   </div>
                   <div className="bg-[#0d0d12] border border-white/8 rounded-2xl rounded-tl-sm px-4 py-3">
-                    <p className="text-sm text-white/85 leading-relaxed">{turn.content}</p>
+                    <p className="text-sm text-[color:color-mix(in_srgb,var(--foreground)_85%,transparent)] leading-relaxed">{turn.content}</p>
                   </div>
                 </div>
               )}
@@ -337,7 +337,7 @@ function IntrospectionChat({
                 <Brain size={14} className="text-emerald-400" />
               </div>
               <div className="bg-[#0d0d12] border border-white/8 rounded-2xl px-4 py-3">
-                <Loader2 size={16} className="text-white/40 animate-spin" />
+                <Loader2 size={16} className="text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] animate-spin" />
               </div>
             </div>
           </div>
@@ -360,7 +360,7 @@ function IntrospectionChat({
               {session.insights.map((insight, i) => (
                 <li key={i} className="flex items-start gap-2">
                   <span className="text-emerald-400/50 text-xs mt-0.5 font-mono">{i + 1}.</span>
-                  <p className="text-xs text-white/70 leading-relaxed">{insight}</p>
+                  <p className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] leading-relaxed">{insight}</p>
                 </li>
               ))}
             </ul>
@@ -401,7 +401,7 @@ function IntrospectionChat({
                 }
               }}
               placeholder="Escribe tu respuesta... (Enter para enviar, Shift+Enter para nueva línea)"
-              className="flex-1 bg-[#0d0d12] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/25 resize-none focus:outline-none focus:border-emerald-500/40 transition-colors"
+              className="flex-1 bg-[#0d0d12] border border-[var(--border-subtle)] rounded-xl px-4 py-3 text-sm text-[var(--foreground)] placeholder:text-[color:color-mix(in_srgb,var(--foreground)_25%,transparent)] resize-none focus:outline-none focus:border-emerald-500/40 transition-colors"
               rows={2}
               disabled={loading}
             />
@@ -486,8 +486,8 @@ export function IntrospectionTab() {
             <Brain size={20} className="text-violet-400" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-white">Sesiones de Introspección</h2>
-            <p className="text-xs text-white/40 font-mono">
+            <h2 className="text-base font-semibold text-[var(--foreground)]">Sesiones de Introspección</h2>
+            <p className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] font-mono">
               Xavier detectó momentos para reflexión profunda
             </p>
           </div>
@@ -501,7 +501,7 @@ export function IntrospectionTab() {
           type="button"
           onClick={fetchAvailable}
           disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono bg-white/5 hover:bg-white/8 text-white/50 hover:text-white border border-white/10 rounded-lg transition-all disabled:opacity-30"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--foreground)_8%,transparent)] text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] hover:text-[var(--foreground)] border border-[var(--border-subtle)] rounded-lg transition-all disabled:opacity-30"
         >
           {loading ? <Loader2 size={13} className="animate-spin" /> : "↻"} Actualizar
         </button>
@@ -510,15 +510,15 @@ export function IntrospectionTab() {
       {/* Available techniques (from /introspection/available) */}
       {techniques.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-4 shrink-0">
-          <span className="text-[10px] font-mono text-white/30 uppercase tracking-wider">Técnica</span>
+          <span className="text-[10px] font-mono text-[color:color-mix(in_srgb,var(--foreground)_30%,transparent)] uppercase tracking-wider">Técnica</span>
           <button
             type="button"
             onClick={() => setTechniqueOverride(null)}
             aria-pressed={techniqueOverride === null}
             className={`text-xs font-mono px-2 py-0.5 rounded border transition-all ${
               techniqueOverride === null
-                ? "text-white bg-white/10 border-white/30"
-                : "text-white/40 border-white/10 hover:text-white/70"
+                ? "text-[var(--foreground)] bg-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] border-white/30"
+                : "text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] border-[var(--border-subtle)] hover:text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)]"
             }`}
           >
             Recomendada
@@ -534,7 +534,7 @@ export function IntrospectionTab() {
                 onClick={() => known && setTechniqueOverride(t)}
                 aria-pressed={active}
                 className={`text-xs font-mono px-2 py-0.5 rounded border transition-all disabled:opacity-30 ${
-                  known ? (active ? TECHNIQUE_COLORS[t] : "text-white/40 border-white/10 hover:text-white/70") : "border-white/10"
+                  known ? (active ? TECHNIQUE_COLORS[t] : "text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] border-[var(--border-subtle)] hover:text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)]") : "border-[var(--border-subtle)]"
                 }`}
               >
                 {known ? TECHNIQUE_LABELS[t] : t}
@@ -548,7 +548,7 @@ export function IntrospectionTab() {
       <div className="flex-1 overflow-y-auto pr-1">
         {loading && challenges.length === 0 && (
           <div className="flex items-center justify-center h-48">
-            <Loader2 size={24} className="text-white/20 animate-spin" />
+            <Loader2 size={24} className="text-[color:color-mix(in_srgb,var(--foreground)_20%,transparent)] animate-spin" />
           </div>
         )}
 
@@ -564,11 +564,11 @@ export function IntrospectionTab() {
 
         {!loading && challenges.length === 0 && !error && (
           <div className="flex flex-col items-center justify-center h-48 text-center">
-            <Brain size={36} className="text-white/10 mb-3" />
-            <p className="text-sm text-white/30 font-mono">
+            <Brain size={36} className="text-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] mb-3" />
+            <p className="text-sm text-[color:color-mix(in_srgb,var(--foreground)_30%,transparent)] font-mono">
               No hay sesiones disponibles aún
             </p>
-            <p className="text-xs text-white/20 mt-1">
+            <p className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_20%,transparent)] mt-1">
               Xavier generará sesiones a medida que detecte patrones en tus conversaciones
             </p>
           </div>
