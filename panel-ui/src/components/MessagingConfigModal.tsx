@@ -230,7 +230,7 @@ function StatusDot({ status }: { status: ConnectionStatus }) {
       glow: "shadow-[0_0_6px_rgba(74,222,128,0.6)]",
       label: "Connected",
     },
-    disconnected: { color: "bg-white/20", glow: "", label: "Not connected" },
+    disconnected: { color: "bg-black/20 dark:bg-white/20", glow: "", label: "Not connected" },
     testing: {
       color: "bg-yellow-400 animate-pulse",
       glow: "shadow-[0_0_6px_rgba(250,204,21,0.5)]",
@@ -245,7 +245,7 @@ function StatusDot({ status }: { status: ConnectionStatus }) {
   return (
     <div className="flex items-center gap-1.5">
       <div className={`w-1.5 h-1.5 rounded-full ${cfg.color} ${cfg.glow}`} />
-      <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest">
+      <span className="text-[10px] font-mono text-black/50 dark:text-white/40 uppercase tracking-widest">
         {cfg.label}
       </span>
     </div>
@@ -278,27 +278,27 @@ function PermissionsPanel() {
   };
   return (
     <div className="space-y-2">
-      <h4 className="text-[10px] uppercase tracking-widest text-white/30 mb-3">
+      <h4 className="text-[10px] uppercase tracking-widest text-black/40 dark:text-white/30 mb-3">
         Channel Permissions
       </h4>
       {Object.entries(perms).map(([key, val]) => (
         <div
           key={key}
-          className="flex items-center justify-between p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.05] hover:border-white/10 transition-colors"
+          className="flex items-center justify-between p-2.5 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.05] dark:border-white/[0.05] hover:border-black/10 dark:border-white/10 transition-colors"
         >
           <div>
-            <p className="text-xs text-white/70">{labels[key]?.label}</p>
-            <p className="text-[10px] text-white/30 mt-0.5">
+            <p className="text-xs text-black/70 dark:text-white/70">{labels[key]?.label}</p>
+            <p className="text-[10px] text-black/40 dark:text-white/30 mt-0.5">
               {labels[key]?.desc}
             </p>
           </div>
           <button
             type="button"
             onClick={() => setPerms((p) => ({ ...p, [key]: !p[key] }))}
-            className={`relative w-9 h-5 rounded-full transition-all duration-300 flex-shrink-0 ml-3 ${val ? "bg-[#39ff14]/20 border border-[#39ff14]/30" : "bg-white/5 border border-white/10"}`}
+            className={`relative w-9 h-5 rounded-full transition-all duration-300 flex-shrink-0 ml-3 ${val ? "bg-[#39ff14]/20 border border-[#39ff14]/30" : "bg-black/5 dark:bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10"}`}
           >
             <div
-              className={`absolute top-0.5 w-4 h-4 rounded-full transition-all duration-300 ${val ? "left-[calc(100%-18px)] bg-[#39ff14]" : "left-0.5 bg-white/30"}`}
+              className={`absolute top-0.5 w-4 h-4 rounded-full transition-all duration-300 ${val ? "left-[calc(100%-18px)] bg-[#39ff14]" : "left-0.5 bg-white dark:bg-black/30 dark:bg-white/30"}`}
             />
           </button>
         </div>
@@ -335,17 +335,17 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
         <div className="flex items-center gap-3">
           <div className={platform.color}>{platform.icon}</div>
           <div>
-            <p className="text-sm font-semibold text-white/90">
+            <p className="text-sm font-semibold text-black/90 dark:text-white/90">
               {platform.label}
             </p>
-            <p className="text-[10px] text-white/40">{platform.description}</p>
+            <p className="text-[10px] text-black/50 dark:text-white/40">{platform.description}</p>
           </div>
         </div>
         <StatusDot status={status} />
       </div>
 
       {/* Section tabs */}
-      <div className="flex gap-1 mb-4 bg-black/20 rounded-lg p-1">
+      <div className="flex gap-1 mb-4 bg-gray-100 dark:bg-black/20 rounded-lg p-1">
         {(["credentials", "permissions", "advanced"] as const).map((s) => (
           <button
             type="button"
@@ -353,8 +353,8 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
             onClick={() => setActiveSection(s)}
             className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest rounded-md transition-all duration-200 ${
               activeSection === s
-                ? "bg-white/10 text-white/90"
-                : "text-white/30 hover:text-white/60"
+                ? "bg-black/10 dark:bg-white/10 text-black/90 dark:text-white/90"
+                : "text-black/40 dark:text-white/30 hover:text-black/60 dark:text-white/60"
             }`}
           >
             {s === "credentials"
@@ -380,7 +380,7 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                 <div key={field.key}>
                   <label
                     htmlFor={`input-${field.key}`}
-                    className="text-[10px] uppercase tracking-widest text-white/40 mb-1.5 block"
+                    className="text-[10px] uppercase tracking-widest text-black/50 dark:text-white/40 mb-1.5 block"
                   >
                     {field.label}
                   </label>
@@ -400,7 +400,7 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                         }))
                       }
                       placeholder={field.placeholder}
-                      className="w-full bg-black/30 border border-white/10 focus:border-[#39ff14]/30 focus:shadow-[0_0_10px_rgba(57,255,20,0.08)] text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none transition-all font-mono pr-16"
+                      className="w-full bg-white dark:bg-black/30 border border-black/10 dark:border-white/10 focus:border-[#39ff14]/30 focus:shadow-[0_0_10px_rgba(57,255,20,0.08)] text-black/80 dark:text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none transition-all font-mono pr-16"
                     />
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
                       {field.type === "password" && (
@@ -412,7 +412,7 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                               [field.key]: !r[field.key],
                             }))
                           }
-                          className="p-1 text-white/30 hover:text-white/60 transition-colors"
+                          className="p-1 text-black/40 dark:text-white/30 hover:text-black/60 dark:text-white/60 transition-colors"
                         >
                           {revealed[field.key] ? (
                             <EyeOff className="w-3.5 h-3.5" />
@@ -426,7 +426,7 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                           type="button"
                           aria-label={`Copy ${field.label}`}
                           onClick={() => handleCopy(values[field.key])}
-                          className="p-1 text-white/30 hover:text-white/60 transition-colors"
+                          className="p-1 text-black/40 dark:text-white/30 hover:text-black/60 dark:text-white/60 transition-colors"
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
@@ -434,7 +434,7 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                     </div>
                   </div>
                   {field.hint && (
-                    <p className="text-[10px] text-white/25 mt-1">
+                    <p className="text-[10px] text-black/40 dark:text-white/25 mt-1">
                       {field.hint}
                     </p>
                   )}
@@ -447,7 +447,7 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                   type="button"
                   onClick={handleTest}
                   disabled={status === "testing"}
-                  className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-xs text-white/60 hover:text-white/80 hover:border-white/20 transition-all disabled:opacity-40"
+                  className="flex items-center gap-2 px-4 py-2 bg-black/5 dark:bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg text-xs text-black/60 dark:text-white/60 hover:text-black/80 dark:text-white/80 hover:border-black/20 dark:hover:border-white/20 transition-all disabled:opacity-40"
                 >
                   {status === "testing" ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -499,13 +499,13 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
               exit={{ opacity: 0, x: -10 }}
               className="space-y-4"
             >
-              <h4 className="text-[10px] uppercase tracking-widest text-white/30 mb-3">
+              <h4 className="text-[10px] uppercase tracking-widest text-black/40 dark:text-white/30 mb-3">
                 Advanced Settings
               </h4>
               <div>
                 <label
                   htmlFor="adv-rate-limit"
-                  className="text-[10px] uppercase tracking-widest text-white/40 mb-1.5 block"
+                  className="text-[10px] uppercase tracking-widest text-black/50 dark:text-white/40 mb-1.5 block"
                 >
                   Rate Limit (msg/min)
                 </label>
@@ -513,13 +513,13 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                   id="adv-rate-limit"
                   type="number"
                   defaultValue={30}
-                  className="w-full bg-black/30 border border-white/10 text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none font-mono"
+                  className="w-full bg-white dark:bg-black/30 border border-black/10 dark:border-white/10 text-black/80 dark:text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none font-mono"
                 />
               </div>
               <div>
                 <label
                   htmlFor="adv-msg-prefix"
-                  className="text-[10px] uppercase tracking-widest text-white/40 mb-1.5 block"
+                  className="text-[10px] uppercase tracking-widest text-black/50 dark:text-white/40 mb-1.5 block"
                 >
                   Message Prefix
                 </label>
@@ -527,13 +527,13 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                   id="adv-msg-prefix"
                   type="text"
                   defaultValue="[Xavier]"
-                  className="w-full bg-black/30 border border-white/10 text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none font-mono"
+                  className="w-full bg-white dark:bg-black/30 border border-black/10 dark:border-white/10 text-black/80 dark:text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none font-mono"
                 />
               </div>
               <div>
                 <label
                   htmlFor="adv-retry-attempts"
-                  className="text-[10px] uppercase tracking-widest text-white/40 mb-1.5 block"
+                  className="text-[10px] uppercase tracking-widest text-black/50 dark:text-white/40 mb-1.5 block"
                 >
                   Retry Attempts
                 </label>
@@ -541,7 +541,7 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                   id="adv-retry-attempts"
                   type="number"
                   defaultValue={3}
-                  className="w-full bg-black/30 border border-white/10 text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none font-mono"
+                  className="w-full bg-white dark:bg-black/30 border border-black/10 dark:border-white/10 text-black/80 dark:text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none font-mono"
                 />
               </div>
               <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/15 flex items-start gap-2">
@@ -572,7 +572,7 @@ export default function MessagingConfigModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="absolute inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      className="absolute inset-0 z-[70] flex items-center justify-center bg-gray-100 dark:bg-black/20 dark:bg-black/70 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <motion.div
@@ -580,19 +580,19 @@ export default function MessagingConfigModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 12 }}
         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-        className="relative w-[780px] max-w-[95vw] h-[560px] max-h-[90vh] bg-[#060606] border border-white/[0.06] rounded-2xl flex flex-col shadow-2xl overflow-hidden"
+        className="relative w-[780px] max-w-[95vw] h-[560px] max-h-[90vh] bg-white dark:bg-[#060606] border border-black/[0.06] dark:border-white/[0.06] rounded-2xl flex flex-col shadow-2xl overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.05] bg-black/20">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-black/[0.05] dark:border-white/[0.05] bg-gray-100 dark:bg-black/20">
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-center">
               <Zap className="w-3.5 h-3.5 text-[#39ff14]/70" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-white/90 tracking-wide">
+              <h2 className="text-sm font-semibold text-black/90 dark:text-white/90 tracking-wide">
                 Messaging Integrations
               </h2>
-              <p className="text-[10px] text-white/30">
+              <p className="text-[10px] text-black/40 dark:text-white/30">
                 Connect Xavier to external communication channels
               </p>
             </div>
@@ -601,7 +601,7 @@ export default function MessagingConfigModal({
             type="button"
             aria-label="Close modal"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-white/30 hover:text-white/70 hover:bg-white/5 transition-all"
+            className="p-1.5 rounded-lg text-black/40 dark:text-white/30 hover:text-black/70 dark:text-white/70 hover:bg-black/5 dark:bg-white/5 transition-all"
           >
             <X className="w-4 h-4" />
           </button>
@@ -609,7 +609,7 @@ export default function MessagingConfigModal({
 
         <div className="flex flex-1 overflow-hidden">
           {/* Sidebar — Platform tabs */}
-          <div className="w-44 border-r border-white/[0.05] bg-black/10 p-3 flex flex-col gap-1">
+          <div className="w-44 border-r border-black/[0.05] dark:border-white/[0.05] bg-gray-50 dark:bg-black/10 p-3 flex flex-col gap-1">
             {PLATFORMS.map((p) => {
               const isActive = p.id === activeTab;
               const mockConnected = MOCK_STATUS[p.id] === "connected";
@@ -620,17 +620,17 @@ export default function MessagingConfigModal({
                   onClick={() => setActiveTab(p.id)}
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all duration-200 group relative ${
                     isActive
-                      ? "bg-white/[0.06] border border-white/[0.08]"
-                      : "hover:bg-white/[0.03] border border-transparent"
+                      ? "bg-black/[0.06] dark:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.08]"
+                      : "hover:bg-black/[0.03] dark:hover:bg-white/[0.03] border border-transparent"
                   }`}
                 >
                   <span
-                    className={`${isActive ? p.color : "text-white/30 group-hover:text-white/50"} transition-colors`}
+                    className={`${isActive ? p.color : "text-black/40 dark:text-white/30 group-hover:text-black/60 dark:group-hover:text-white/50"} transition-colors`}
                   >
                     {p.icon}
                   </span>
                   <span
-                    className={`text-xs font-medium ${isActive ? "text-white/90" : "text-white/40 group-hover:text-white/70"} transition-colors`}
+                    className={`text-xs font-medium ${isActive ? "text-black/90 dark:text-white/90" : "text-black/50 dark:text-white/40 group-hover:text-black/70 dark:text-white/70"} transition-colors`}
                   >
                     {p.label}
                   </span>
@@ -638,19 +638,19 @@ export default function MessagingConfigModal({
                     <div className="absolute right-2.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_4px_rgba(74,222,128,0.5)]" />
                   )}
                   {isActive && (
-                    <ChevronRight className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-white/20" />
+                    <ChevronRight className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-black/40 dark:text-white/20" />
                   )}
                 </button>
               );
             })}
 
             {/* Info footer */}
-            <div className="mt-auto pt-3 border-t border-white/[0.05]">
-              <div className="flex items-center gap-1.5 text-[9px] text-white/20">
+            <div className="mt-auto pt-3 border-t border-black/[0.05] dark:border-white/[0.05]">
+              <div className="flex items-center gap-1.5 text-[9px] text-black/40 dark:text-white/20">
                 <Shield className="w-2.5 h-2.5" />
                 <span>Tokens encrypted locally</span>
               </div>
-              <div className="flex items-center gap-1.5 text-[9px] text-white/20 mt-1">
+              <div className="flex items-center gap-1.5 text-[9px] text-black/40 dark:text-white/20 mt-1">
                 <Bell className="w-2.5 h-2.5" />
                 <span>Mocks — backend pending</span>
               </div>
@@ -687,7 +687,7 @@ export function MessagingConfigInner({
   return (
     <div className="flex h-full overflow-hidden">
       {/* Sidebar */}
-      <div className="w-44 border-r border-white/[0.05] bg-black/10 p-3 flex flex-col gap-1">
+      <div className="w-44 border-r border-black/[0.05] dark:border-white/[0.05] bg-gray-50 dark:bg-black/10 p-3 flex flex-col gap-1">
         {PLATFORMS.map((p) => {
           const isActive = p.id === activeTab;
           const mockConnected = MOCK_STATUS[p.id] === "connected";
@@ -698,17 +698,17 @@ export function MessagingConfigInner({
               onClick={() => setActiveTab(p.id)}
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all duration-200 group relative ${
                 isActive
-                  ? "bg-white/[0.06] border border-white/[0.08]"
-                  : "hover:bg-white/[0.03] border border-transparent"
+                  ? "bg-black/[0.06] dark:bg-white/[0.06] border border-black/[0.08] dark:border-white/[0.08]"
+                  : "hover:bg-black/[0.03] dark:hover:bg-white/[0.03] border border-transparent"
               }`}
             >
               <span
-                className={`${isActive ? p.color : "text-white/30 group-hover:text-white/50"} transition-colors`}
+                className={`${isActive ? p.color : "text-black/40 dark:text-white/30 group-hover:text-black/60 dark:group-hover:text-white/50"} transition-colors`}
               >
                 {p.icon}
               </span>
               <span
-                className={`text-xs font-medium ${isActive ? "text-white/90" : "text-white/40 group-hover:text-white/70"} transition-colors`}
+                className={`text-xs font-medium ${isActive ? "text-black/90 dark:text-white/90" : "text-black/50 dark:text-white/40 group-hover:text-black/70 dark:text-white/70"} transition-colors`}
               >
                 {p.label}
               </span>
@@ -716,17 +716,17 @@ export function MessagingConfigInner({
                 <div className="absolute right-2.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_4px_rgba(74,222,128,0.5)]" />
               )}
               {isActive && (
-                <ChevronRight className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-white/20" />
+                <ChevronRight className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-black/40 dark:text-white/20" />
               )}
             </button>
           );
         })}
-        <div className="mt-auto pt-3 border-t border-white/[0.05]">
-          <div className="flex items-center gap-1.5 text-[9px] text-white/20">
+        <div className="mt-auto pt-3 border-t border-black/[0.05] dark:border-white/[0.05]">
+          <div className="flex items-center gap-1.5 text-[9px] text-black/40 dark:text-white/20">
             <Shield className="w-2.5 h-2.5" />
             <span>Tokens encrypted locally</span>
           </div>
-          <div className="flex items-center gap-1.5 text-[9px] text-white/20 mt-1">
+          <div className="flex items-center gap-1.5 text-[9px] text-black/40 dark:text-white/20 mt-1">
             <Bell className="w-2.5 h-2.5" />
             <span>Mocks — backend pending</span>
           </div>
