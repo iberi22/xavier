@@ -20,6 +20,10 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_TARGET_DIR: target
 
+concurrency:
+  group: pr-gate-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   pr-parity-gate:
     name: Local CI Parity Check
