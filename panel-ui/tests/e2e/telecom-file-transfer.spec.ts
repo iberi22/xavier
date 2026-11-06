@@ -21,7 +21,7 @@ test.describe("Telecom File Transfer Drawer E2E", () => {
   test.beforeEach(async ({ page }) => {
     // Intercept API routes
     await page.route("**/health", async (route) => {
-      await route.fulfill({ json: { status: "online" } });
+      await route.fulfill({ json: { status: "ok" } });
     });
 
     await page.route("**/panel/api/**", async (route) => {

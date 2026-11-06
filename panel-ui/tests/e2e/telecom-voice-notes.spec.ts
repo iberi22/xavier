@@ -26,7 +26,7 @@ const ARTIFACT_DIR = getWritableDir(
 test.describe("Telecom Voice Notes Player E2E Verification", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.route("**/health", async (route) => {
-			await route.fulfill({ json: { status: "online" } });
+			await route.fulfill({ json: { status: "ok" } });
 		});
 
 		await page.route("**/auth/login", async (route) => {

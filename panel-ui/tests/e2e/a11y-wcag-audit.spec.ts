@@ -21,7 +21,7 @@ test.describe("Full panel accessibility & WCAG 2.1 AA automated audit E2E test",
   test.beforeEach(async ({ page }) => {
     // Mock health
     await page.route("**/health", async (route) => {
-      await route.fulfill({ json: { status: "online" } });
+      await route.fulfill({ json: { status: "ok" } });
     });
 
     // Mock initial threads
@@ -51,6 +51,7 @@ test.describe("Full panel accessibility & WCAG 2.1 AA automated audit E2E test",
       });
     });
 
+    await page.route("**/auth/refresh", async (route) => { await route.fulfill({ json: { access_token: "mock-jwt-token", refresh_token: "mock-rt-token" } }); });
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_onboarding_completed", "true");
       window.localStorage.setItem("xavier_token", "mock-jwt-token");

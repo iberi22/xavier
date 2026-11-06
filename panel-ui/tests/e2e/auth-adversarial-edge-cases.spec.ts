@@ -4,7 +4,7 @@ test.describe("Auth Adversarial, Fuzzing & Edge-Cases E2E Suite", () => {
   test.beforeEach(async ({ page }) => {
     // Mock health
     await page.route("**/health", async (route) => {
-      await route.fulfill({ json: { status: "online" } });
+      await route.fulfill({ json: { status: "ok" } });
     });
 
     // Mock providers config

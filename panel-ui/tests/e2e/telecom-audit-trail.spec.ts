@@ -6,7 +6,7 @@ test.describe("Telecom audit trail route (#/telecom/audit-trail)", () => {
   test.beforeEach(async ({ page }) => {
     // Intercept API routes
     await page.route("**/health", async (route) => {
-      await route.fulfill({ json: { status: "online" } });
+      await route.fulfill({ json: { status: "ok" } });
     });
 
     await page.route("**/panel/api/**", async (route) => {
