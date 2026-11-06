@@ -20,6 +20,7 @@ assert_contains "$WF" 'Release & Multi-Platform Binaries'
 assert_contains "$WF" 'release-pipeline-incident.sh'
 assert_contains "$WF" 'workflow_run:'
 assert_contains "$WF" 'issues: write'
+assert_contains "$WF" 'release-pipeline-watch-${{ github.event.workflow_run.id'
 
 MARKER_LINE=$(grep -E 'MARKER=' "$SCRIPT" | head -1)
 assert_contains <(echo "$MARKER_LINE") 'release-pipeline-failure:'
@@ -30,7 +31,7 @@ assert_not_contains <(echo "$MARKER_LINE") 'HEAD_SHA'
 assert_contains "$SCRIPT" 'LOOKUP_RC'
 assert_contains "$SCRIPT" 'aborting without mutations'
 assert_contains "$SCRIPT" '--search'
-# Must not require the advisory label for identity
+assert_contains "$SCRIPT" 'exceeded'
 if grep -n 'gh issue list --label' "$SCRIPT"; then
   echo "lookup still depends on label filter"; exit 1
 fi
@@ -45,36 +46,6 @@ set -e
 [ "$RC0" -ne 0 ] || { echo "expected missing-env failure"; exit 1; }
 assert_contains "$WORKDIR/err0.txt" 'CONCLUSION'
 
-cat > "$WORKDIR/gh" <<'GH'
-#!/bin/bash
-echo "gh $*" >> "$(dirname "$0")/gh.log"
-case "$1 $2" in
-  "label create") exit 0 ;;
-  "issue list")
-    # Fail closed path for API errors
-    if [[ "$*" == *"--search"* ]]; then
-      echo "simulated GitHub list failure" >&2
-      exit 1
-    fi
-    echo "[]"
-    exit 0
-    ;;
-  "issue create"|"issue comment"|"issue close")
-    echo "MUTATION:$1 $2" >> "$(dirname "$0")/mutations.log"
-    exit 0
-    ;;
-  *)
-    echo "unexpected gh invocation: $*" >&2
-    exit 99
-    ;;
-esac
-GH
-chmod +x "$WORKDIR/gh"
-: > "$WORKDIR/gh.log"
-: > "$WORKDIR/mutations.log"
-
-# When search fails, script falls back to gh api pagination — make that fail too
-# by also providing a failing `gh api` via same binary.
 cat > "$WORKDIR/gh" <<'GH'
 #!/bin/bash
 LOGDIR="$(dirname "$0")"
@@ -96,7 +67,7 @@ echo "unexpected gh invocation: $*" >&2
 exit 99
 GH
 chmod +x "$WORKDIR/gh"
-
+: > "$WORKDIR/mutations.log"
 set +e
 env PATH="$WORKDIR:$PATH" GITHUB_REPOSITORY='southwest-ai-labs/xavier' \
   CONCLUSION=failure HEAD_SHA=abc1234 RUN_ID=1 RUN_URL=https://example.test \
@@ -108,14 +79,48 @@ set -e
 assert_contains "$WORKDIR/err1.txt" 'aborting without mutations'
 assert_eq "$(wc -l < "$WORKDIR/mutations.log" | tr -d ' ')" "0"
 
-# Happy path: marker match without label, then create when absent
 cat > "$WORKDIR/gh" <<'GH'
 #!/bin/bash
 LOGDIR="$(dirname "$0")"
 echo "gh $*" >> "$LOGDIR/gh.log"
 if [ "$1" = "label" ] && [ "$2" = "create" ]; then exit 0; fi
 if [ "$1" = "issue" ] && [ "$2" = "list" ]; then
-  # Return an unlabeled issue that still carries the marker
+  echo "search unavailable" >&2
+  exit 1
+fi
+if [ "$1" = "api" ]; then
+  python3 - <<'PY'
+import json
+print(json.dumps([{"number": i, "body": "x", "pull_request": None} for i in range(100)]))
+PY
+  exit 0
+fi
+if [ "$1" = "issue" ] && { [ "$2" = "create" ] || [ "$2" = "comment" ] || [ "$2" = "close" ]; }; then
+  echo "MUTATION:$1 $2" >> "$LOGDIR/mutations.log"
+  exit 0
+fi
+echo "unexpected gh invocation: $*" >&2
+exit 99
+GH
+chmod +x "$WORKDIR/gh"
+: > "$WORKDIR/mutations.log"
+set +e
+env PATH="$WORKDIR:$PATH" GITHUB_REPOSITORY='southwest-ai-labs/xavier' \
+  CONCLUSION=failure HEAD_SHA=abc1234 RUN_ID=3 RUN_URL=https://example.test \
+  WORKFLOW_NAME='Release & Multi-Platform Binaries' \
+  bash "$SCRIPT" >"$WORKDIR/out_cap.txt" 2>"$WORKDIR/err_cap.txt"
+RC_CAP=$?
+set -e
+[ "$RC_CAP" -ne 0 ] || { echo "expected pagination-cap abort"; cat "$WORKDIR/out_cap.txt" "$WORKDIR/err_cap.txt"; exit 1; }
+assert_contains "$WORKDIR/err_cap.txt" 'exceeded'
+assert_eq "$(wc -l < "$WORKDIR/mutations.log" | tr -d ' ')" "0"
+
+cat > "$WORKDIR/gh" <<'GH'
+#!/bin/bash
+LOGDIR="$(dirname "$0")"
+echo "gh $*" >> "$LOGDIR/gh.log"
+if [ "$1" = "label" ] && [ "$2" = "create" ]; then exit 0; fi
+if [ "$1" = "issue" ] && [ "$2" = "list" ]; then
   cat <<'JSON'
 [{"number":42,"body":"old\n<!-- release-pipeline-failure:Release & Multi-Platform Binaries -->\n","labels":[]}]
 JSON
@@ -151,5 +156,29 @@ env PATH="$WORKDIR:$PATH" GITHUB_REPOSITORY='southwest-ai-labs/xavier' \
   WORKFLOW_NAME='Release & Multi-Platform Binaries' \
   bash "$SCRIPT" >"$WORKDIR/out4.txt" 2>"$WORKDIR/err4.txt"
 assert_contains "$WORKDIR/mutations.log" 'MUTATION:close:42'
+
+cat > "$WORKDIR/gh" <<'GH'
+#!/bin/bash
+LOGDIR="$(dirname "$0")"
+echo "gh $*" >> "$LOGDIR/gh.log"
+if [ "$1" = "label" ] && [ "$2" = "create" ]; then exit 0; fi
+if [ "$1" = "issue" ] && [ "$2" = "list" ]; then
+  echo '[]'
+  exit 0
+fi
+if [ "$1" = "issue" ] && [ "$2" = "create" ]; then
+  echo "MUTATION:create" >> "$LOGDIR/mutations.log"
+  exit 0
+fi
+echo "unexpected gh invocation: $*" >&2
+exit 99
+GH
+chmod +x "$WORKDIR/gh"
+: > "$WORKDIR/mutations.log"
+env PATH="$WORKDIR:$PATH" GITHUB_REPOSITORY='southwest-ai-labs/xavier' \
+  CONCLUSION=failure HEAD_SHA=abc1234 RUN_ID=11 RUN_URL=https://example.test \
+  WORKFLOW_NAME='Release & Multi-Platform Binaries' \
+  bash "$SCRIPT" >"$WORKDIR/out5.txt" 2>"$WORKDIR/err5.txt"
+assert_contains "$WORKDIR/mutations.log" 'MUTATION:create'
 
 echo "OK: release-pipeline-incident contract"

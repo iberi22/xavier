@@ -41,14 +41,21 @@ find_open_issue() {
     open_issues="[]"
     page=1
     per_page=100
-    while [ "$page" -le 10 ]; do
+    max_pages=50
+    while :; do
       chunk=$(gh api "repos/${GITHUB_REPOSITORY}/issues?state=open&per_page=${per_page}&page=${page}") || return $?
       echo "$chunk" | jq -e 'type == "array"' >/dev/null || return $?
       count=$(echo "$chunk" | jq 'length') || return $?
       [ "$count" -gt 0 ] || break
-      open_issues=$(jq -s 'add' <(echo "$open_issues") <(echo "$chunk" | jq '[.[] | {number, body}]')) || return $?
-      [ "$count" -lt "$per_page" ] && break
+      open_issues=$(jq -s 'add' <(echo "$open_issues") <(echo "$chunk" | jq '[.[] | select(.pull_request == null) | {number, body}]')) || return $?
+      if [ "$count" -lt "$per_page" ]; then
+        break
+      fi
       page=$((page + 1))
+      if [ "$page" -gt "$max_pages" ]; then
+        echo "release-pipeline-incident: open-issue scan exceeded ${max_pages} pages; aborting to avoid incomplete lookup" >&2
+        return 2
+      fi
     done
   fi
   if [ -z "$open_issues" ] || [ "$open_issues" = "[]" ]; then
