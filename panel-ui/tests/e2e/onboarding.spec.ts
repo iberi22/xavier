@@ -216,9 +216,14 @@ test.describe("Onboarding Flow (pending wave-theme)", () => {
     });
 
     // Navigate with a cloud environment trigger (hash starts with #/session)
+    // We use about:blank first to force a full document load, as the beforeEach block
+    // leaves us at "/" where the 2FA interstitial state is already initialized.
+    // A hash-only navigation would not re-run the useState initializer that checks for #/session.
+    await page.goto("about:blank");
     await page.goto("/#/session?cloud_domain_test=1");
-    await page.waitForTimeout(1000); // Give it a moment to render TopStatusBar
 
+    // Wait for the app to be fully loaded first to avoid a false positive in the negative hidden check.
+    await expect(page.locator("#root")).toBeVisible();
     // Assert that 'INITIALIZING XAVIER_' is never rendered (i.e. onboarding is bypassed)
     await expect(page.getByText('INITIALIZING XAVIER_')).toBeHidden();
 
