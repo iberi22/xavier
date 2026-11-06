@@ -36,7 +36,7 @@ test.describe.fixme("Decentralized Node Login & Genesis Mesh E2E (pending wave-t
     });
 
     await page.route("**/health", async (route) => {
-      await route.fulfill({ json: { status: "online", service: "xaviercloud" } });
+      await route.fulfill({ json: { status: "ok", service: "xaviercloud" } });
     });
 
     await page.route("**/panel/api/threads", async (route) => {
@@ -53,6 +53,7 @@ test.describe.fixme("Decentralized Node Login & Genesis Mesh E2E (pending wave-t
     });
 
     // Clear prior storage to ensure we land on clean Login
+    await page.route("**/auth/refresh", async (route) => { await route.fulfill({ json: { access_token: "mock-jwt-token", refresh_token: "mock-rt-token" } }); });
     await page.addInitScript(() => {
       window.localStorage.removeItem("xavier_token");
       window.localStorage.removeItem("swal_node_session_v1");

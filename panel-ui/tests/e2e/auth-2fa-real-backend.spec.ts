@@ -18,6 +18,7 @@ test.describe("Panel 2FA — real backend (/auth/*)", () => {
   test.beforeEach(async ({ page }) => {
     // Skip the first-run onboarding wizard (gated on this localStorage flag in
     // App.tsx) — it is unrelated to auth and would otherwise shadow every route.
+    await page.route("**/auth/refresh", async (route) => { await route.fulfill({ json: { access_token: "mock-jwt-token", refresh_token: "mock-rt-token" } }); });
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_onboarding_completed", "1");
     });

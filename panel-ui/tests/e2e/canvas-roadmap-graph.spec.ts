@@ -20,7 +20,7 @@ const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT
 test.describe("GraphCanvas interactive roadmap navigation & node filtering", () => {
   test.beforeEach(async ({ page }) => {
     await page.route("**/health", async (route) => {
-      await route.fulfill({ json: { status: "online" } });
+      await route.fulfill({ json: { status: "ok" } });
     });
 
     await page.route("**/panel/api/threads", async (route) => {
@@ -62,6 +62,7 @@ test.describe("GraphCanvas interactive roadmap navigation & node filtering", () 
       });
     });
 
+    await page.route("**/auth/refresh", async (route) => { await route.fulfill({ json: { access_token: "mock-jwt-token", refresh_token: "mock-rt-token" } }); });
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_onboarding_completed", "true");
       window.localStorage.setItem("xavier_token", "mock-jwt-token");

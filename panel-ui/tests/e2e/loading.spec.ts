@@ -11,6 +11,7 @@ test.describe("Loading and Error UI states", () => {
       });
     });
 
+    await page.route("**/auth/refresh", async (route) => { await route.fulfill({ json: { access_token: "mock-jwt-token", refresh_token: "mock-rt-token" } }); });
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_onboarding_completed", "true");
       window.localStorage.setItem("xavier_token", "mock-token");
@@ -18,7 +19,7 @@ test.describe("Loading and Error UI states", () => {
 
     await page.goto("/");
     // Verify either TopStatusBar or LoginPage is visible without crashing
-    const appElement = page.locator("header, [class*='TopStatusBar'], h1:has-text('XAVIER LOGIN')");
+    const appElement = page.locator("button[aria-label='Open Control Node'], h1:has-text('XAVIER LOGIN')");
     await expect(appElement.first()).toBeVisible();
   });
 });

@@ -4,9 +4,10 @@ test.describe("Agent Chat Interactions", () => {
   test.beforeEach(async ({ page }) => {
     // Mock health
     await page.route("**/health", async (route) => {
-      await route.fulfill({ json: { status: "online" } });
+      await route.fulfill({ json: { status: "ok" } });
     });
 
+    await page.route("**/auth/refresh", async (route) => { await route.fulfill({ json: { access_token: "mock-jwt-token", refresh_token: "mock-rt-token" } }); });
     // Mock the provider config probe: a reachable config marks the panel configured
     await page.route("**/v1/config/providers", async (route) => {
       await route.fulfill({

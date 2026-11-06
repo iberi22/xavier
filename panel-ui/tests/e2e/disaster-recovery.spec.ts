@@ -43,7 +43,7 @@ test.describe("Sovereign Recovery Modal & Disaster Recovery Wizard E2E", () => {
     });
 
     await page.route("**/health", async (route) => {
-      await route.fulfill({ json: { status: "online", service: "xaviercloud" } });
+      await route.fulfill({ json: { status: "ok", service: "xaviercloud" } });
     });
 
     await page.route("**/panel/api/**", async (route) => {

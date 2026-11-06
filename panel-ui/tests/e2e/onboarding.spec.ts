@@ -24,7 +24,7 @@ test.describe("Onboarding Flow (pending wave-theme)", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ status: "online", version: "1.0.0" }),
+        body: JSON.stringify({ status: "ok", version: "1.0.0" }),
       });
     });
 
