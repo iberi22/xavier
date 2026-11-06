@@ -74,6 +74,9 @@ export function reconnectBackoff(
   return Math.min(delay, maxMs);
 }
 
+/** Stable default so `connect` keeps its identity across renders. */
+const DEFAULT_PING_PAYLOAD: Record<string, unknown> = { event_type: "ping" };
+
 /**
  * Converts an HTTP(S) API URL or path into a WebSocket WS(S) URL for telecom streaming.
  */
@@ -119,7 +122,7 @@ export function useTelecomSocket(
     heartbeatIntervalMs = 30000,
     baseBackoffMs = 1000,
     maxBackoffMs = 30000,
-    pingPayload = { event_type: "ping" },
+    pingPayload = DEFAULT_PING_PAYLOAD,
   } = options;
 
   const [isConnected, setIsConnected] = useState<boolean>(false);
@@ -140,6 +143,13 @@ export function useTelecomSocket(
   useEffect(() => {
     onFrameRef.current = onFrame;
   }, [onFrame]);
+
+  // Read the heartbeat payload through a ref: callers often pass an inline object, and making
+  // `connect` depend on it would tear down and reopen the socket on every render.
+  const pingPayloadRef = useRef(pingPayload);
+  useEffect(() => {
+    pingPayloadRef.current = pingPayload;
+  }, [pingPayload]);
 
   const clearTimers = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -202,10 +212,9 @@ export function useTelecomSocket(
         if (heartbeatIntervalMs > 0) {
           heartbeatTimerRef.current = setInterval(() => {
             if (socketRef.current?.readyState === WebSocket.OPEN) {
+              const payload = pingPayloadRef.current;
               const pingMsg =
-                typeof pingPayload === "string"
-                  ? pingPayload
-                  : JSON.stringify(pingPayload);
+                typeof payload === "string" ? payload : JSON.stringify(payload);
               socketRef.current.send(pingMsg);
             }
           }, heartbeatIntervalMs);
@@ -287,7 +296,6 @@ export function useTelecomSocket(
     disconnect,
     clearTimers,
     heartbeatIntervalMs,
-    pingPayload,
     baseBackoffMs,
     maxBackoffMs,
   ]);

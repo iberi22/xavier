@@ -22,6 +22,9 @@ import React, {
 	useRef,
 	useState,
 } from "react";
+import FileTransferDrawer from "./FileTransferDrawer";
+import { useTelecomSocket, type TelecomFrame } from "../../hooks/useTelecomSocket";
+import { parseFileTransferFrame } from "./fileTransferUtils";
 
 /** Receipt status for 1-to-1 direct chat messages */
 export type ReceiptStatus = "sending" | "sent" | "delivered" | "read";
@@ -297,8 +300,28 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 	const [searchQuery, setSearchQuery] = useState("");
 	const [isSearchOpen, setIsSearchOpen] = useState(false);
 
+	// File Transfer Drawer State
+	const [isTransferDrawerOpen, setIsTransferDrawerOpen] = useState(false);
+	const [transferStatus, setTransferStatus] = useState<"idle" | "transferring" | "paused" | "verifying" | "completed" | "failed">("idle");
+	const [transferProgress, setTransferProgress] = useState(0);
+	const [transferChunks, setTransferChunks] = useState({ received: 0, total: 0 });
+	const [transferFile, setTransferFile] = useState<File | null>(null);
+
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+	const handleTelecomFrame = useCallback((frame: TelecomFrame) => {
+		const update = parseFileTransferFrame(frame);
+		if (update) {
+			if (update.status) setTransferStatus(update.status);
+			if (update.chunkProgress !== undefined) setTransferProgress(update.chunkProgress);
+			if (update.receivedChunks !== undefined && update.totalChunks !== undefined) {
+				setTransferChunks({ received: update.receivedChunks, total: update.totalChunks });
+			}
+		}
+	}, []);
+
+	useTelecomSocket(peer.nodeId, { onFrame: handleTelecomFrame });
 
 	// Sync external messages prop
 	useEffect(() => {
@@ -333,6 +356,14 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 	const handleSend = () => {
 		const trimmed = inputText.trim();
 		if (!trimmed && !selectedFile) return;
+
+		if (selectedFile) {
+			setTransferFile(selectedFile);
+			setIsTransferDrawerOpen(true);
+			setTransferStatus("transferring");
+			setTransferProgress(0);
+			setTransferChunks({ received: 0, total: 0 });
+		}
 
 		const newMsg: DirectChatMessage = {
 			id: `msg-${Date.now()}`,
@@ -639,6 +670,26 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 					</button>
 				</div>
 			</footer>
+
+			{/* File Transfer Drawer */}
+			<FileTransferDrawer
+				isOpen={isTransferDrawerOpen}
+				onClose={() => setIsTransferDrawerOpen(false)}
+				fileName={transferFile?.name || "Unknown File"}
+				fileSize={transferFile?.size || 0}
+				direction="upload"
+				status={transferStatus}
+				chunkProgress={transferProgress}
+				totalChunks={transferChunks.total}
+				receivedChunks={transferChunks.received}
+				onOpenFile={() => {}}
+				onPause={() => setTransferStatus("paused")}
+				onResume={() => setTransferStatus("transferring")}
+				onCancel={() => {
+					setTransferStatus("idle");
+					setIsTransferDrawerOpen(false);
+				}}
+			/>
 		</div>
 	);
 };
