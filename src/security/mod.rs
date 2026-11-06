@@ -373,41 +373,6 @@ impl SecurityService {
         self.config.clone()
     }
 
-    fn resolve_master_password(&self) -> String {
-        let vault = crate::secrets::vault::HardwareVault::new("xavier");
-        match vault.get_secret(&self.config.master_key_name) {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::debug!(
-                    key_name = %self.config.master_key_name,
-                    error = %e,
-                    "Hardware vault key lookup failed or hardware token unavailable, falling back to MasterKeyManager derived key"
-                );
-                match crate::security::encryption_keys::MasterKeyManager::load_or_init() {
-                    Ok(mkm) => {
-                        let mut key_buf = [0u8; 32];
-                        if mkm
-                            .derive_key(b"xavier-master-key-v1", &mut key_buf)
-                            .is_ok()
-                        {
-                            crate::utils::crypto::hex_encode(&key_buf)
-                        } else {
-                            tracing::warn!("Failed to derive key from MasterKeyManager, using fallback password");
-                            crate::utils::crypto::hex_encode(&[0x58u8; 32])
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            error = %e,
-                            "MasterKeyManager load_or_init failed, using fallback password to ensure server startup resilience"
-                        );
-                        crate::utils::crypto::hex_encode(&[0x58u8; 32])
-                    }
-                }
-            }
-        }
-    }
-
     /// Get or initialize the KeyManager using hardware-backed master key
     pub fn get_key_manager(&self) -> Result<Arc<crate::crypto::KeyManager>> {
         if let Some(mgr) = self
@@ -427,7 +392,38 @@ impl SecurityService {
             return Ok(mgr.clone());
         }
 
-        let password = self.resolve_master_password();
+        let vault = crate::secrets::vault::HardwareVault::new("xavier");
+        let password = match vault.get_secret(&self.config.master_key_name) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::debug!(
+                    key_name = %self.config.master_key_name,
+                    error = %e,
+                    "Hardware vault key lookup failed or hardware token unavailable, falling back to MasterKeyManager derived key"
+                );
+                // If not found in vault, check MasterKeyManager fallback
+                if let Ok(mkm) = crate::security::encryption_keys::MasterKeyManager::load_or_init()
+                {
+                    let mut key_buf = [0u8; 32];
+                    if mkm
+                        .derive_key(b"xavier-master-key-v1", &mut key_buf)
+                        .is_ok()
+                    {
+                        crate::utils::crypto::hex_encode(&key_buf)
+                    } else {
+                        return Err(anyhow!(
+                            "Master key not found in vault: {}",
+                            self.config.master_key_name
+                        ));
+                    }
+                } else {
+                    return Err(anyhow!(
+                        "Master key not found in vault: {}",
+                        self.config.master_key_name
+                    ));
+                }
+            }
+        };
 
         // We need a salt. In a real scenario, the salt should be stored in the DB.
         // For now, let's assume the KeyManager handles its own salt or we'll pass it from storage.
@@ -443,7 +439,21 @@ impl SecurityService {
     /// Get KEK using the master password from vault
     pub fn get_kek(&self) -> Result<crate::crypto::keys::KEK> {
         let mgr = self.get_key_manager()?;
-        let password = self.resolve_master_password();
+        let vault = crate::secrets::vault::HardwareVault::new("xavier");
+        let password = match vault.get_secret(&self.config.master_key_name) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::debug!(
+                    key_name = %self.config.master_key_name,
+                    error = %e,
+                    "Hardware vault secret missing or unavailable for KEK, falling back to MasterKeyManager derived key"
+                );
+                let mkm = crate::security::encryption_keys::MasterKeyManager::load_or_init()?;
+                let mut key_buf = [0u8; 32];
+                mkm.derive_key(b"xavier-master-key-v1", &mut key_buf)?;
+                crate::utils::crypto::hex_encode(&key_buf)
+            }
+        };
         Ok(mgr.derive_kek(&password)?)
     }
 }
@@ -672,16 +682,6 @@ mod tests {
 
         // In paranoid mode, should block with lower confidence
         assert!(!result.allowed);
-    }
-
-    #[test]
-    fn test_resilient_key_manager_and_kek_initialization() {
-        let service = SecurityService::new();
-        // Even when master key is not in HardwareVault, get_key_manager and get_kek must not error
-        let mgr = service.get_key_manager();
-        assert!(mgr.is_ok(), "KeyManager should initialize via fallback");
-        let kek = service.get_kek();
-        assert!(kek.is_ok(), "KEK should derive via fallback");
     }
 
     #[test]
