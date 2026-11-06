@@ -57,7 +57,7 @@ export function EphemeralMessageToggle({
 
 	return (
 		<div
-			className={`rounded-xl border border-white/10 bg-[#08080a] p-4 transition-colors ${
+			className={`rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] p-4 transition-colors ${
 				disabled ? "opacity-50 cursor-not-allowed" : ""
 			} ${className}`}
 		>
@@ -67,14 +67,14 @@ export function EphemeralMessageToggle({
 						className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
 							enabled
 								? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-								: "bg-white/5 text-white/40 border border-white/5"
+								: "bg-[var(--foreground)]/5 text-[var(--foreground)]/40 border border-[var(--border-subtle)]"
 						}`}
 					>
 						<ShieldAlert className="h-5 w-5" aria-hidden="true" />
 					</div>
 					<div>
 						<div className="flex items-center gap-2">
-							<span id={labelId} className="text-sm font-semibold text-white">
+							<span id={labelId} className="text-sm font-semibold text-[var(--foreground)]">
 								Ephemeral Messaging (OTR)
 							</span>
 							{enabled && (
@@ -83,7 +83,7 @@ export function EphemeralMessageToggle({
 								</span>
 							)}
 						</div>
-						<p id={descriptionId} className="text-xs text-white/50">
+						<p id={descriptionId} className="text-xs text-[var(--foreground)]/50">
 							Auto-destruct messages after configured TTL duration
 						</p>
 					</div>
@@ -100,7 +100,7 @@ export function EphemeralMessageToggle({
 					disabled={disabled}
 					onClick={handleToggle}
 					className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#08080a] disabled:cursor-not-allowed disabled:opacity-50 ${
-						enabled ? "bg-amber-500" : "bg-white/15"
+						enabled ? "bg-amber-500" : "bg-[var(--foreground)]/15"
 					}`}
 				>
 					<span className="sr-only">Toggle Ephemeral Messaging</span>
@@ -114,13 +114,13 @@ export function EphemeralMessageToggle({
 			</div>
 
 			{enabled && (
-				<div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between gap-3">
-					<div className="flex items-center gap-1.5 text-xs text-white/60">
+				<div className="mt-4 pt-3 border-t border-[var(--border-subtle)] flex items-center justify-between gap-3">
+					<div className="flex items-center gap-1.5 text-xs text-[var(--foreground)]/60">
 						<Timer className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
 						<span>Message TTL:</span>
 					</div>
 
-					<div className="flex items-center gap-1 rounded-lg bg-white/5 p-1 border border-white/5">
+					<div className="flex items-center gap-1 rounded-lg bg-[var(--foreground)]/5 p-1 border border-[var(--border-subtle)]">
 						{TTL_OPTIONS.map((option) => {
 							const isSelected = ttl === option.value;
 							return (
@@ -134,7 +134,7 @@ export function EphemeralMessageToggle({
 									className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
 										isSelected
 											? "bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-xs"
-											: "text-white/60 hover:text-white hover:bg-white/5"
+											: "text-[var(--foreground)]/60 hover:text-[var(--foreground)] hover:bg-[var(--foreground)]/5"
 									} disabled:cursor-not-allowed disabled:opacity-50`}
 								>
 									{option.label}

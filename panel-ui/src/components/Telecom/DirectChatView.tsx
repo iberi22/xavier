@@ -161,19 +161,19 @@ export const MessageItem = React.memo(function MessageItem({
 			case "sending":
 				return (
 					<span title="Sending...">
-						<Clock className="w-3 h-3 text-zinc-500 animate-spin" />
+						<Clock className="w-3 h-3 text-[var(--foreground)]/50 animate-spin" />
 					</span>
 				);
 			case "sent":
 				return (
 					<span title="Sent">
-						<Check className="w-3.5 h-3.5 text-zinc-400" />
+						<Check className="w-3.5 h-3.5 text-[var(--foreground)]/70" />
 					</span>
 				);
 			case "delivered":
 				return (
 					<span title="Delivered">
-						<CheckCheck className="w-3.5 h-3.5 text-zinc-400" />
+						<CheckCheck className="w-3.5 h-3.5 text-[var(--foreground)]/70" />
 					</span>
 				);
 			case "read":
@@ -199,7 +199,7 @@ export const MessageItem = React.memo(function MessageItem({
 			case "Internal":
 				return "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
 			default:
-				return "bg-zinc-800 text-zinc-400 border-zinc-700";
+				return "bg-[var(--surface)] text-[var(--foreground)]/70 border-[var(--border-subtle)]";
 		}
 	};
 
@@ -213,7 +213,7 @@ export const MessageItem = React.memo(function MessageItem({
 		>
 			{/* Header Info Above Bubble */}
 			<div className="flex items-center gap-2 mb-1 px-1 text-[10px] font-mono">
-				<span className="font-semibold text-zinc-300">
+				<span className="font-semibold text-[var(--foreground)]/90">
 					{msg.senderAlias || (msg.isSelf ? "You" : "Peer")}
 				</span>
 
@@ -234,7 +234,7 @@ export const MessageItem = React.memo(function MessageItem({
 					</span>
 				)}
 
-				<span className="text-zinc-500">{msg.timestamp}</span>
+				<span className="text-[var(--foreground)]/50">{msg.timestamp}</span>
 			</div>
 
 			{/* Message Bubble Container */}
@@ -242,21 +242,21 @@ export const MessageItem = React.memo(function MessageItem({
 				className={`max-w-[88%] sm:max-w-[75%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-lg ${
 					msg.isSelf
 						? "bg-emerald-600/20 border border-emerald-500/30 text-emerald-50 rounded-br-none"
-						: "bg-zinc-800/90 border border-zinc-700/70 text-zinc-100 rounded-bl-none"
+						: "bg-[var(--surface)] border border-[var(--border-subtle)] text-[var(--foreground)] rounded-bl-none"
 				}`}
 			>
 				<p className="whitespace-pre-wrap break-words">{msg.content}</p>
 
 				{/* Attachment Box */}
 				{msg.attachment && (
-					<div className="mt-2.5 pt-2 border-t border-white/10 flex items-center gap-2 text-[11px]">
+					<div className="mt-2.5 pt-2 border-t border-[var(--border-subtle)] flex items-center gap-2 text-[11px]">
 						<FileText className="w-4 h-4 text-emerald-400 flex-shrink-0" />
 						<div className="truncate">
-							<span className="font-mono truncate block text-zinc-200">
+							<span className="font-mono truncate block text-[var(--foreground)]">
 								{msg.attachment.name}
 							</span>
 							{msg.attachment.size && (
-								<span className="text-[9px] text-zinc-400 block font-mono">
+								<span className="text-[9px] text-[var(--foreground)]/70 block font-mono">
 									{msg.attachment.size}
 								</span>
 							)}
@@ -266,7 +266,7 @@ export const MessageItem = React.memo(function MessageItem({
 
 				{/* Self Receipt Checkmark Footer */}
 				{msg.isSelf && (
-					<div className="flex items-center justify-end gap-1.5 mt-1 text-[10px] text-zinc-400 font-mono">
+					<div className="flex items-center justify-end gap-1.5 mt-1 text-[10px] text-[var(--foreground)]/70 font-mono">
 						<span className="text-[9px] opacity-70 capitalize">
 							{msg.status}
 						</span>
@@ -439,17 +439,17 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 
 	return (
 		<div
-			className={`flex flex-col h-full w-full bg-[#08080a] border border-zinc-800 text-zinc-100 rounded-xl overflow-hidden shadow-2xl ${className}`}
+			className={`flex flex-col h-full w-full bg-[var(--surface)] border border-[var(--border-subtle)] text-[var(--foreground)] rounded-xl overflow-hidden shadow-2xl ${className}`}
 		>
 			{/* 1-to-1 Room Header */}
-			<header className="px-4 py-3 border-b border-zinc-800/80 bg-[#0c0c0e] flex items-center justify-between gap-3">
+			<header className="px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--surface-card)] flex items-center justify-between gap-3">
 				<div className="flex items-center gap-3 min-w-0">
 					{onBack && (
 						<button
 							type="button"
 							onClick={onBack}
 							aria-label="Back to messages list"
-							className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 transition-colors"
+							className="p-1.5 rounded-lg text-[var(--foreground)]/70 hover:text-[var(--foreground)] hover:bg-[var(--surface)] transition-colors"
 						>
 							<ArrowLeft className="w-4 h-4" aria-hidden="true" />
 						</button>
@@ -468,16 +468,16 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 
 					<div className="min-w-0">
 						<div className="flex items-center gap-2">
-							<h2 className="text-sm font-semibold text-zinc-100 truncate">
+							<h2 className="text-sm font-semibold text-[var(--foreground)] truncate">
 								{peer.alias}
 							</h2>
-							<span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-zinc-800/80 text-zinc-400 border border-zinc-700/60">
+							<span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[var(--surface)] text-[var(--foreground)]/70 border border-[var(--border-subtle)]">
 								{peer.nodeId}
 							</span>
 						</div>
-						<p className="text-[10px] text-zinc-400 flex items-center gap-1 mt-0.5">
+						<p className="text-[10px] text-[var(--foreground)]/70 flex items-center gap-1 mt-0.5">
 							<span
-								className={peer.online ? "text-emerald-400" : "text-zinc-500"}
+								className={peer.online ? "text-emerald-400" : "text-[var(--foreground)]/50"}
 							>
 								{peer.online
 									? "Online · Direct Link Active"
@@ -495,8 +495,8 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 						aria-label="Search conversation messages"
 						className={`p-2 rounded-lg text-xs font-mono transition-colors ${
 							isSearchOpen
-								? "bg-zinc-800 text-zinc-100"
-								: "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60"
+								? "bg-[var(--surface)] text-[var(--foreground)]"
+								: "text-[var(--foreground)]/70 hover:text-[var(--foreground)] hover:bg-[var(--surface)]"
 						}`}
 					>
 						<Search className="w-4 h-4" aria-hidden="true" />
@@ -511,22 +511,22 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 
 			{/* Search Bar Collapsible */}
 			{isSearchOpen && (
-				<div className="px-4 py-2 border-b border-zinc-800 bg-zinc-900/60">
+				<div className="px-4 py-2 border-b border-[var(--border-subtle)] bg-[var(--surface-card)]">
 					<div className="relative flex items-center">
-						<Search className="w-3.5 h-3.5 absolute left-3 text-zinc-500" />
+						<Search className="w-3.5 h-3.5 absolute left-3 text-[var(--foreground)]/50" />
 						<input
 							type="text"
 							placeholder="Search in encrypted chat..."
 							value={searchQuery}
 							onChange={(e) => setSearchQuery(e.target.value)}
-							className="w-full bg-zinc-950 border border-zinc-800 text-xs rounded-lg pl-8 pr-8 py-1.5 text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 font-mono"
+							className="w-full bg-[var(--background)] border border-[var(--border-subtle)] text-xs rounded-lg pl-8 pr-8 py-1.5 text-[var(--foreground)] placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 font-mono"
 						/>
 						{searchQuery && (
 							<button
 								type="button"
 								onClick={() => setSearchQuery("")}
 								aria-label="Clear message search"
-								className="absolute right-2 text-zinc-500 hover:text-zinc-300 p-1"
+								className="absolute right-2 text-[var(--foreground)]/50 hover:text-[var(--foreground)]/90 p-1"
 							>
 								<X className="w-3.5 h-3.5" aria-hidden="true" />
 							</button>
@@ -543,11 +543,11 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 							initial={{ opacity: 0 }}
 							animate={{ opacity: 1 }}
 							exit={{ opacity: 0 }}
-							className="h-full flex flex-col items-center justify-center text-zinc-500 text-xs my-8"
+							className="h-full flex flex-col items-center justify-center text-[var(--foreground)]/50 text-xs my-8"
 						>
-							<Lock className="w-8 h-8 mb-2 text-zinc-600" />
+							<Lock className="w-8 h-8 mb-2 text-[var(--foreground)]/30" />
 							<p>1-to-1 Encrypted Direct Channel</p>
-							<p className="text-[10px] text-zinc-600 mt-1">
+							<p className="text-[10px] text-[var(--foreground)]/30 mt-1">
 								Messages are end-to-end encrypted with perfect forward secrecy.
 							</p>
 						</motion.div>
@@ -562,11 +562,11 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 
 			{/* Attachment Preview Container */}
 			{selectedFile && (
-				<div className="px-4 py-2 bg-zinc-900/90 border-t border-zinc-800 flex items-center justify-between text-xs">
-					<div className="flex items-center gap-2 text-zinc-300 truncate">
+				<div className="px-4 py-2 bg-[var(--surface-card)] border-t border-[var(--border-subtle)] flex items-center justify-between text-xs">
+					<div className="flex items-center gap-2 text-[var(--foreground)]/90 truncate">
 						<Paperclip className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
 						<span className="font-mono truncate">{selectedFile.name}</span>
-						<span className="text-[10px] text-zinc-500 font-mono">
+						<span className="text-[10px] text-[var(--foreground)]/50 font-mono">
 							({(selectedFile.size / 1024).toFixed(1)} KB)
 						</span>
 					</div>
@@ -574,7 +574,7 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 						type="button"
 						onClick={() => setSelectedFile(null)}
 						aria-label="Remove attached file"
-						className="text-zinc-500 hover:text-zinc-300 p-1"
+						className="text-[var(--foreground)]/50 hover:text-[var(--foreground)]/90 p-1"
 					>
 						<X className="w-4 h-4" aria-hidden="true" />
 					</button>
@@ -582,7 +582,7 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 			)}
 
 			{/* Input Toolbar & Controls */}
-			<footer className="p-3 border-t border-zinc-800/80 bg-[#0c0c0e]">
+			<footer className="p-3 border-t border-[var(--border-subtle)] bg-[var(--surface-card)]">
 				{/* Ephemeral & Clearance Settings Row */}
 				<div className="flex items-center justify-between mb-2 px-1 text-xs">
 					<div className="flex items-center gap-2">
@@ -594,7 +594,7 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 							className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono transition-all ${
 								isEphemeral
 									? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-									: "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-zinc-200"
+									: "bg-[var(--surface-card)] text-[var(--foreground)]/70 border border-[var(--border-subtle)] hover:text-[var(--foreground)]"
 							}`}
 						>
 							<Flame
@@ -610,7 +610,7 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 								setClearanceLevel(e.target.value as ClearanceLevel)
 							}
 							aria-label="Select security clearance level"
-							className="bg-zinc-900 border border-zinc-800 text-[10px] font-mono text-zinc-300 px-2 py-1 rounded-lg focus:outline-none focus:border-emerald-500/50 cursor-pointer"
+							className="bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[10px] font-mono text-[var(--foreground)]/90 px-2 py-1 rounded-lg focus:outline-none focus:border-emerald-500/50 cursor-pointer"
 						>
 							<option value="Unclassified">Unclassified</option>
 							<option value="Internal">Internal</option>
@@ -620,7 +620,7 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 						</select>
 					</div>
 
-					<span className="hidden sm:flex items-center gap-1 text-[9px] text-zinc-500 font-mono">
+					<span className="hidden sm:flex items-center gap-1 text-[9px] text-[var(--foreground)]/50 font-mono">
 						<Wifi className="w-2.5 h-2.5 text-emerald-400" />
 						<span>P2P Channel Active</span>
 					</span>
@@ -642,7 +642,7 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 						className={`p-2.5 rounded-lg border transition-colors flex-shrink-0 ${
 							selectedFile
 								? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
-								: "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+								: "bg-[var(--surface-card)] border-[var(--border-subtle)] text-[var(--foreground)]/70 hover:text-[var(--foreground)] hover:border-[var(--border-subtle)]"
 						}`}
 					>
 						<Paperclip className="w-4 h-4" aria-hidden="true" />
@@ -655,7 +655,7 @@ export const DirectChatView: React.FC<DirectChatViewProps> = ({
 						value={inputText}
 						onChange={(e) => setInputText(e.target.value)}
 						onKeyDown={handleKeyDown}
-						className="flex-1 bg-zinc-900 border border-zinc-800 text-xs rounded-lg px-3.5 py-2.5 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 font-mono"
+						className="flex-1 bg-[var(--surface-card)] border border-[var(--border-subtle)] text-xs rounded-lg px-3.5 py-2.5 text-[var(--foreground)] placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 font-mono"
 					/>
 
 					{/* Send Button */}

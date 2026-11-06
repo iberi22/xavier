@@ -204,7 +204,7 @@ export const AuditEventItem = React.memo(function AuditEventItem({
 			case "Internal":
 				return "bg-cyan-500/20 text-cyan-300 border-cyan-500/40";
 			default:
-				return "bg-slate-500/20 text-slate-300 border-slate-500/40";
+				return "bg-[var(--foreground)]/50/20 text-[var(--foreground)]/90 border-slate-500/40";
 		}
 	};
 
@@ -228,13 +228,13 @@ export const AuditEventItem = React.memo(function AuditEventItem({
 		>
 			{/* Timeline vertical connector line */}
 			<div
-				className="absolute left-[11px] top-6 bottom-0 w-px bg-white/10 group-last:hidden"
+				className="absolute left-[11px] top-6 bottom-0 w-px bg-[var(--foreground)]/10 group-last:hidden"
 				aria-hidden="true"
 			/>
 
 			{/* Timeline dot icon container */}
 			<div
-				className={`absolute left-0 top-1 w-6 h-6 rounded-full border flex items-center justify-center bg-slate-950 ${
+				className={`absolute left-0 top-1 w-6 h-6 rounded-full border flex items-center justify-center bg-[var(--background)] ${
 					event.outcome === "BLOCKED" || event.outcome === "FAILED"
 						? "border-rose-500/50 text-rose-400"
 						: "border-emerald-500/50 text-emerald-400"
@@ -247,8 +247,8 @@ export const AuditEventItem = React.memo(function AuditEventItem({
 			<div
 				className={`p-4 rounded-xl border transition-all ${
 					isSelected
-						? "bg-white/[0.08] border-[#39ff14]/50 shadow-[0_0_15px_rgba(57,255,20,0.1)]"
-						: "bg-white/[0.02] border-white/10 hover:bg-white/[0.04] hover:border-white/20"
+						? "bg-[var(--foreground)]/[0.08] border-[#39ff14]/50 shadow-[0_0_15px_rgba(57,255,20,0.1)]"
+						: "bg-[var(--foreground)]/[0.02] border-[var(--border-subtle)] hover:bg-[var(--foreground)]/[0.04] hover:border-[var(--border-subtle)]"
 				}`}
 			>
 				<div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -270,19 +270,19 @@ export const AuditEventItem = React.memo(function AuditEventItem({
 						</code>
 					</div>
 
-					<div className="flex items-center gap-1.5 text-xs text-white/40 font-mono">
+					<div className="flex items-center gap-1.5 text-xs text-[var(--foreground)]/40 font-mono">
 						<Clock className="w-3.5 h-3.5" aria-hidden="true" />
 						<span>{formattedTime}</span>
 					</div>
 				</div>
 
-				<p className="text-xs text-white/80 leading-relaxed font-sans mb-3">
+				<p className="text-xs text-[var(--foreground)]/80 leading-relaxed font-sans mb-3">
 					{event.details}
 				</p>
 
-				<div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5 text-[11px] font-mono text-white/50">
+				<div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[var(--border-subtle)] text-[11px] font-mono text-[var(--foreground)]/50">
 					<div className="flex items-center gap-3">
-						<span>Participant: <code className="text-white/80">{event.participantId}</code></span>
+						<span>Participant: <code className="text-[var(--foreground)]/80">{event.participantId}</code></span>
 						<span>Channel: <code className="text-cyan-400">{event.channelId}</code></span>
 					</div>
 
@@ -380,16 +380,16 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 	}, [events]);
 
 	return (
-		<div className="relative w-full h-full min-h-[600px] font-sans bg-slate-950 text-white flex flex-col rounded-2xl border border-white/10 overflow-hidden">
+		<div className="relative w-full h-full min-h-[600px] font-sans bg-[var(--background)] text-[var(--foreground)] flex flex-col rounded-2xl border border-[var(--border-subtle)] overflow-hidden">
 			{/* Top Bar Header */}
-			<header className="p-4 bg-slate-900/90 border-b border-white/10 flex flex-wrap items-center justify-between gap-3">
+			<header className="p-4 bg-[var(--surface-card)] border-b border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-3">
 				<div className="flex items-center gap-3">
 					{onClose && (
 						<button
 							type="button"
 							onClick={onClose}
 							aria-label="Back to previous view"
-							className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
+							className="p-1.5 rounded-lg bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/10 text-[var(--foreground)]/70 hover:text-[var(--foreground)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
 						>
 							<ArrowLeft className="w-4 h-4" aria-hidden="true" />
 						</button>
@@ -399,10 +399,10 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 							<Shield className="w-4 h-4 text-[#39ff14]" aria-hidden="true" />
 						</div>
 						<div>
-							<h1 className="text-sm font-semibold tracking-wide text-white">
+							<h1 className="text-sm font-semibold tracking-wide text-[var(--foreground)]">
 								Telecom Clearance & Security Audit Trail
 							</h1>
-							<p className="text-[10px] text-white/50 font-mono">
+							<p className="text-[10px] text-[var(--foreground)]/50 font-mono">
 								Real-time Security Verification & Wallet Signature Log
 							</p>
 						</div>
@@ -414,7 +414,7 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 						type="button"
 						onClick={handleRefresh}
 						aria-label="Refresh audit timeline"
-						className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
+						className="p-2 rounded-xl bg-[var(--foreground)]/5 border border-[var(--border-subtle)] hover:bg-[var(--foreground)]/10 text-[var(--foreground)]/80 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
 					>
 						<RefreshCw
 							className={`w-4 h-4 ${isRefreshing ? "animate-spin text-[#39ff14]" : ""}`}
@@ -426,7 +426,7 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 						type="button"
 						onClick={handleExportLogs}
 						aria-label="Export security audit log JSON"
-						className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-xl text-xs font-medium text-white/80 hover:bg-white/10 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
+						className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--foreground)]/5 border border-[var(--border-subtle)] rounded-xl text-xs font-medium text-[var(--foreground)]/80 hover:bg-[var(--foreground)]/10 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]"
 					>
 						<Download className="w-3.5 h-3.5" aria-hidden="true" />
 						<span>Export Log</span>
@@ -441,33 +441,33 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 
 			{/* Summary Metrics Bar */}
 			<section
-				className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-black/40 border-b border-white/10"
+				className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-[var(--surface-card)] border-b border-[var(--border-subtle)]"
 				aria-label="Security Metrics Summary"
 			>
-				<div className="p-3 rounded-xl bg-white/[0.02] border border-white/10">
-					<span className="text-[10px] uppercase font-mono text-white/40 block">Total Events</span>
-					<span className="text-lg font-mono font-bold text-white">{stats.total}</span>
+				<div className="p-3 rounded-xl bg-[var(--foreground)]/[0.02] border border-[var(--border-subtle)]">
+					<span className="text-[10px] uppercase font-mono text-[var(--foreground)]/40 block">Total Events</span>
+					<span className="text-lg font-mono font-bold text-[var(--foreground)]">{stats.total}</span>
 				</div>
-				<div className="p-3 rounded-xl bg-white/[0.02] border border-white/10">
-					<span className="text-[10px] uppercase font-mono text-white/40 block">Clearance Checks</span>
+				<div className="p-3 rounded-xl bg-[var(--foreground)]/[0.02] border border-[var(--border-subtle)]">
+					<span className="text-[10px] uppercase font-mono text-[var(--foreground)]/40 block">Clearance Checks</span>
 					<span className="text-lg font-mono font-bold text-emerald-400">{stats.clearances}</span>
 				</div>
-				<div className="p-3 rounded-xl bg-white/[0.02] border border-white/10">
-					<span className="text-[10px] uppercase font-mono text-white/40 block">Signature Validations</span>
+				<div className="p-3 rounded-xl bg-[var(--foreground)]/[0.02] border border-[var(--border-subtle)]">
+					<span className="text-[10px] uppercase font-mono text-[var(--foreground)]/40 block">Signature Validations</span>
 					<span className="text-lg font-mono font-bold text-cyan-400">{stats.signatures}</span>
 				</div>
-				<div className="p-3 rounded-xl bg-white/[0.02] border border-white/10">
-					<span className="text-[10px] uppercase font-mono text-white/40 block">Blocked Attempts</span>
+				<div className="p-3 rounded-xl bg-[var(--foreground)]/[0.02] border border-[var(--border-subtle)]">
+					<span className="text-[10px] uppercase font-mono text-[var(--foreground)]/40 block">Blocked Attempts</span>
 					<span className="text-lg font-mono font-bold text-rose-400">{stats.blocked}</span>
 				</div>
 			</section>
 
 			{/* Controls Toolbar: Search & Category Filter Pills */}
-			<div className="p-4 border-b border-white/10 bg-slate-900/40 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+			<div className="p-4 border-b border-[var(--border-subtle)] bg-[var(--surface-card)] flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
 				{/* Search Input */}
 				<div className="relative flex-1 max-w-md">
 					<Search
-						className="w-4 h-4 absolute left-3 top-2.5 text-white/40"
+						className="w-4 h-4 absolute left-3 top-2.5 text-[var(--foreground)]/40"
 						aria-hidden="true"
 					/>
 					<input
@@ -475,13 +475,13 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
 						placeholder="Filter by participant, channel, action, or details..."
-						className="w-full pl-9 pr-3 py-1.5 bg-white/5 border border-white/10 rounded-xl text-xs text-white placeholder-white/40 focus:outline-none focus:border-[#39ff14]/50 font-mono"
+						className="w-full pl-9 pr-3 py-1.5 bg-[var(--foreground)]/5 border border-[var(--border-subtle)] rounded-xl text-xs text-[var(--foreground)] placeholder-white/40 focus:outline-none focus:border-[#39ff14]/50 font-mono"
 					/>
 				</div>
 
 				{/* Category Filter Pills */}
 				<div
-					className="flex flex-wrap items-center gap-1.5 bg-black/40 p-1 rounded-xl border border-white/10"
+					className="flex flex-wrap items-center gap-1.5 bg-[var(--surface-card)] p-1 rounded-xl border border-[var(--border-subtle)]"
 					aria-label="Filter events by category"
 				>
 					<button
@@ -490,7 +490,7 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 						className={`px-3 py-1 rounded-lg text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14] ${
 							filterCategory === "all"
 								? "bg-[#39ff14]/20 text-[#39ff14] border border-[#39ff14]/40"
-								: "text-white/60 hover:text-white"
+								: "text-[var(--foreground)]/60 hover:text-[var(--foreground)]"
 						}`}
 					>
 						All ({events.length})
@@ -502,7 +502,7 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 						className={`px-3 py-1 rounded-lg text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14] ${
 							filterCategory === "clearance"
 								? "bg-[#39ff14]/20 text-[#39ff14] border border-[#39ff14]/40"
-								: "text-white/60 hover:text-white"
+								: "text-[var(--foreground)]/60 hover:text-[var(--foreground)]"
 						}`}
 					>
 						Clearance Checks
@@ -514,7 +514,7 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 						className={`px-3 py-1 rounded-lg text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14] ${
 							filterCategory === "signature"
 								? "bg-[#39ff14]/20 text-[#39ff14] border border-[#39ff14]/40"
-								: "text-white/60 hover:text-white"
+								: "text-[var(--foreground)]/60 hover:text-[var(--foreground)]"
 						}`}
 					>
 						Wallet Signatures
@@ -526,7 +526,7 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 						className={`px-3 py-1 rounded-lg text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14] ${
 							filterCategory === "blocked"
 								? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
-								: "text-white/60 hover:text-white"
+								: "text-[var(--foreground)]/60 hover:text-[var(--foreground)]"
 						}`}
 					>
 						Blocked ({stats.blocked})
@@ -546,8 +546,8 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 					aria-label="Security verification timeline log"
 				>
 					{filteredEvents.length === 0 ? (
-						<div className="p-8 text-center text-white/40 space-y-2">
-							<ShieldAlert className="w-8 h-8 mx-auto text-white/20" aria-hidden="true" />
+						<div className="p-8 text-center text-[var(--foreground)]/40 space-y-2">
+							<ShieldAlert className="w-8 h-8 mx-auto text-[var(--foreground)]/20" aria-hidden="true" />
 							<p className="text-xs">
 								{events.length === 0
 									? "No telecom audit events have been recorded yet."
@@ -569,13 +569,13 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 				{/* Event Inspector Drawer */}
 				{selectedEvent && (
 					<aside
-						className="p-4 overflow-y-auto bg-black/40 space-y-4"
+						className="p-4 overflow-y-auto bg-[var(--surface-card)] space-y-4"
 						aria-label="Selected Event Inspector"
 					>
-						<div className="flex items-center justify-between border-b border-white/10 pb-3">
+						<div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
 							<div className="flex items-center gap-2">
 								<KeyRound className="w-4 h-4 text-[#39ff14]" aria-hidden="true" />
-								<h2 className="text-xs font-semibold font-mono text-white">
+								<h2 className="text-xs font-semibold font-mono text-[var(--foreground)]">
 									Event Inspector ({selectedEvent.id})
 								</h2>
 							</div>
@@ -583,7 +583,7 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 								type="button"
 								onClick={() => setSelectedEvent(null)}
 								aria-label="Close event inspector"
-								className="text-xs text-white/40 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14] rounded px-1"
+								className="text-xs text-[var(--foreground)]/40 hover:text-[var(--foreground)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14] rounded px-1"
 							>
 								Close ✕
 							</button>
@@ -591,54 +591,54 @@ export const TelecomAuditTrailView: React.FC<TelecomAuditTrailViewProps> = ({
 
 						<div className="space-y-3 text-xs font-mono">
 							<div>
-								<span className="text-white/40 block text-[10px] uppercase">Timestamp</span>
-								<span className="text-white/90">{selectedEvent.timestamp}</span>
+								<span className="text-[var(--foreground)]/40 block text-[10px] uppercase">Timestamp</span>
+								<span className="text-[var(--foreground)]/90">{selectedEvent.timestamp}</span>
 							</div>
 
 							<div>
-								<span className="text-white/40 block text-[10px] uppercase">Action</span>
+								<span className="text-[var(--foreground)]/40 block text-[10px] uppercase">Action</span>
 								<span className="text-[#39ff14] font-bold">{selectedEvent.action}</span>
 							</div>
 
 							<div>
-								<span className="text-white/40 block text-[10px] uppercase">Participant Identity</span>
+								<span className="text-[var(--foreground)]/40 block text-[10px] uppercase">Participant Identity</span>
 								<span className="text-cyan-300">{selectedEvent.participantId}</span>
 							</div>
 
 							<div>
-								<span className="text-white/40 block text-[10px] uppercase">Channel Target</span>
+								<span className="text-[var(--foreground)]/40 block text-[10px] uppercase">Channel Target</span>
 								<span className="text-cyan-300">{selectedEvent.channelId}</span>
 							</div>
 
 							<div>
-								<span className="text-white/40 block text-[10px] uppercase">Clearance Level</span>
+								<span className="text-[var(--foreground)]/40 block text-[10px] uppercase">Clearance Level</span>
 								<span className="text-purple-300">{selectedEvent.clearanceLevel}</span>
 							</div>
 
 							{selectedEvent.signaturePreview && (
 								<div>
-									<span className="text-white/40 block text-[10px] uppercase">
+									<span className="text-[var(--foreground)]/40 block text-[10px] uppercase">
 										Ed25519 Wallet Signature
 									</span>
-									<code className="block p-2 rounded bg-white/5 border border-white/10 text-[10px] text-emerald-300 break-all">
+									<code className="block p-2 rounded bg-[var(--foreground)]/5 border border-[var(--border-subtle)] text-[10px] text-emerald-300 break-all">
 										{selectedEvent.signaturePreview}
 									</code>
 								</div>
 							)}
 
 							<div>
-								<span className="text-white/40 block text-[10px] uppercase">Event Details</span>
-								<p className="p-2.5 rounded bg-white/[0.02] border border-white/10 text-white/80 font-sans text-xs leading-relaxed">
+								<span className="text-[var(--foreground)]/40 block text-[10px] uppercase">Event Details</span>
+								<p className="p-2.5 rounded bg-[var(--foreground)]/[0.02] border border-[var(--border-subtle)] text-[var(--foreground)]/80 font-sans text-xs leading-relaxed">
 									{selectedEvent.details}
 								</p>
 							</div>
 
 							{selectedEvent.metadata && (
 								<div>
-									<span className="text-white/40 block text-[10px] uppercase mb-1">
+									<span className="text-[var(--foreground)]/40 block text-[10px] uppercase mb-1">
 										Metadata Context
 									</span>
-									<pre className="p-2.5 rounded bg-black/60 border border-white/10 text-[10px] text-white/70 overflow-x-auto">
+									<pre className="p-2.5 rounded bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[10px] text-[var(--foreground)]/70 overflow-x-auto">
 										{JSON.stringify(selectedEvent.metadata, null, 2)}
 									</pre>
 								</div>
