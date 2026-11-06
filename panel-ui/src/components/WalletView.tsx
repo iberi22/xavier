@@ -44,21 +44,21 @@ interface KarmaEvent {
  */
 const KarmaEventItem = React.memo(function KarmaEventItem({ ev }: { ev: KarmaEvent }) {
   return (
-    <div className="p-3.5 flex items-center justify-between text-xs hover:bg-white/[0.01] transition-colors">
+    <div className="p-3.5 flex items-center justify-between text-xs hover:bg-slate-50 dark:hover:bg-white/[0.01] transition-colors">
       <div className="flex items-center gap-3">
         <div className="w-7 h-7 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
           <Zap className="w-3.5 h-3.5" />
         </div>
         <div>
-          <p className="text-white font-medium">{ev.title}</p>
-          <p className="text-[10px] text-white/40 font-mono">
+          <p className="text-slate-900 dark:text-white font-medium">{ev.title}</p>
+          <p className="text-[10px] text-slate-400 dark:text-white/40 font-mono">
             {new Date(ev.timestamp).toLocaleTimeString()} · Verificado por Génesis
           </p>
         </div>
       </div>
       <div className="text-right">
         <span className="font-mono text-emerald-400 font-bold">+{ev.amount} KARMA</span>
-        <p className="text-[9px] text-white/30 uppercase font-mono">Confirmado</p>
+        <p className="text-[9px] text-slate-400 dark:text-white/30 uppercase font-mono">Confirmado</p>
       </div>
     </div>
   );
@@ -165,24 +165,24 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-6 overflow-y-auto font-sans">
-      <div className="relative w-full max-w-4xl bg-[#0a0c10] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 dark:bg-black/85 backdrop-blur-md p-3 sm:p-6 overflow-y-auto font-sans">
+      <div className="relative w-full max-w-4xl bg-white dark:bg-[#0a0c10] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         
         {/* Modal Top Bar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/[0.02]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02]">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
               <Wallet className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white tracking-wide flex items-center gap-2">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-wide flex items-center gap-2">
                 Billetera Soberana SWAL
                 <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                   Capa 0 Mesh Activa
                 </span>
               </h2>
-              <p className="text-xs text-white/50 font-mono">
-                Nodo Local: <span className="text-white/80">{nodeId.slice(0, 18)}...</span>
+              <p className="text-xs text-slate-500 dark:text-white/50 font-mono">
+                Nodo Local: <span className="text-slate-700 dark:text-white/80">{nodeId.slice(0, 18)}...</span>
               </p>
             </div>
           </div>
@@ -190,7 +190,7 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+            className="p-2 rounded-lg text-slate-500 dark:text-white/60 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer"
             aria-label="Cerrar Billetera"
           >
             <X className="w-5 h-5" />
@@ -214,11 +214,11 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
                   {karma}
                   <span className="text-xs font-normal text-amber-400/70 uppercase">XP / Karma</span>
                 </div>
-                <p className="text-[11px] text-white/60 mt-1">
+                <p className="text-[11px] text-slate-500 dark:text-white/60 mt-1">
                   Recompensas por tiempo activo (PoA)
                 </p>
               </div>
-              <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] font-mono text-white/40">
+              <div className="pt-2 border-t border-slate-100 dark:border-white/5 flex items-center justify-between text-[11px] font-mono text-slate-400 dark:text-white/40">
                 <span>Latido cada 5 min</span>
                 <span className="text-emerald-400 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> +1 Karma
@@ -237,11 +237,11 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
                   {karma}.00
                   <span className="text-xs font-normal text-indigo-400/70 uppercase">SWAL</span>
                 </div>
-                <p className="text-[11px] text-white/60 mt-1">
+                <p className="text-[11px] text-slate-500 dark:text-white/60 mt-1">
                   Asignación canjeable 1:1 on-chain
                 </p>
               </div>
-              <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] font-mono text-white/40">
+              <div className="pt-2 border-t border-slate-100 dark:border-white/5 flex items-center justify-between text-[11px] font-mono text-slate-400 dark:text-white/40">
                 <span>Merkle Rollup</span>
                 <span className="text-indigo-400">Listo para Anclaje</span>
               </div>
@@ -254,15 +254,15 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
                 <Cpu className="w-4 h-4" />
               </div>
               <div className="my-3">
-                <div className="text-sm font-bold text-white font-mono flex items-center gap-2">
+                <div className="text-sm font-bold text-slate-900 dark:text-white font-mono flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   {genesisNode}
                 </div>
-                <p className="text-[11px] text-white/60 mt-1">
+                <p className="text-[11px] text-slate-500 dark:text-white/60 mt-1">
                   Faro de sincronización edge activo
                 </p>
               </div>
-              <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] font-mono text-white/40">
+              <div className="pt-2 border-t border-slate-100 dark:border-white/5 flex items-center justify-between text-[11px] font-mono text-slate-400 dark:text-white/40">
                 <span>Cero Gas Local</span>
                 <span className="text-emerald-400">Soberano</span>
               </div>
@@ -271,20 +271,20 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
           </div>
 
           {/* Section: Autonomous Agent Session Key Delegation (Account Abstraction) */}
-          <div className="bg-white/[0.02] border border-white/10 rounded-xl p-5 space-y-4">
+          <div className="bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/10 rounded-xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
                   <Bot className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                     Gestión Autónoma Delegada al Agente
                     <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
                       Session Keys (ERC-4337)
                     </span>
                   </h3>
-                  <p className="text-xs text-white/60">
+                  <p className="text-xs text-slate-500 dark:text-white/60">
                     Permite a tu agente reclamar Karma y realizar rollups dentro de un límite estricto sin acceso a tu clave privada.
                   </p>
                 </div>
@@ -297,7 +297,7 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
                 aria-label="Gestión Autónoma Delegada al Agente"
                 onClick={handleToggleDelegation}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 ${
-                  agentDelegationEnabled ? "bg-emerald-500" : "bg-white/20"
+                  agentDelegationEnabled ? "bg-emerald-500" : "bg-slate-200 dark:bg-white/20"
                 }`}
               >
                 <span
@@ -309,9 +309,9 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
             </div>
 
             {agentDelegationEnabled && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-white/5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100 dark:border-white/5">
                 <div>
-                  <label className="block text-xs font-mono text-white/70 mb-1">
+                  <label className="block text-xs font-mono text-slate-600 dark:text-white/70 mb-1">
                     Tope de Gasto Diario del Agente (SWAL / día)
                   </label>
                   <div className="flex items-center gap-2">
@@ -319,13 +319,13 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
                       type="number"
                       value={dailyLimit}
                       onChange={(e) => handleUpdateLimit(e.target.value)}
-                      className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white font-mono w-32 focus:outline-none focus:border-amber-400/50"
+                      className="bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white font-mono w-32 focus:outline-none focus:border-amber-400/50"
                       min="1"
                       max="1000"
                     />
-                    <span className="text-xs text-white/50 font-mono">SWAL máx / 24h</span>
+                    <span className="text-xs text-slate-500 dark:text-white/50 font-mono">SWAL máx / 24h</span>
                   </div>
-                  <p className="text-[10px] text-white/40 mt-1">
+                  <p className="text-[10px] text-slate-400 dark:text-white/40 mt-1">
                     Protección estricta: el agente nunca puede exceder este monto.
                   </p>
                 </div>
@@ -333,13 +333,13 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
                 <div className="flex flex-col justify-center space-y-2">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span className="text-xs text-white/80">
+                    <span className="text-xs text-slate-700 dark:text-white/80">
                       Clave de Sesión efímera aislada en memoria
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Lock className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span className="text-xs text-white/80">
+                    <span className="text-xs text-slate-700 dark:text-white/80">
                       Llave raíz Knox / TPM 100% protegida contra drenado
                     </span>
                   </div>
@@ -349,16 +349,16 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
           </div>
 
           {/* Section: Layer 1 Polygon Payout Address & Sync */}
-          <div className="bg-white/[0.02] border border-white/10 rounded-xl p-5 space-y-4">
+          <div className="bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/10 rounded-xl p-5 space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
                 <Layers className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   Retiro y Anclaje a Polygon PoS (Capa 1)
                 </h3>
-                <p className="text-xs text-white/60">
+                <p className="text-xs text-slate-500 dark:text-white/60">
                   Vincula tu dirección pública de Polygon para recibir tokens SWAL al ejecutar el rollup.
                 </p>
               </div>
@@ -371,7 +371,7 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
                   placeholder="0x... (Dirección pública Polygon / EVM)"
                   value={polygonAddress}
                   onChange={(e) => setPolygonAddress(e.target.value)}
-                  className="flex-1 bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm text-white font-mono focus:outline-none focus:border-indigo-400/50"
+                  className="flex-1 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-4 py-2 text-sm text-slate-900 dark:text-white font-mono focus:outline-none focus:border-indigo-400/50"
                 />
                 <button
                   type="submit"
@@ -382,8 +382,8 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
               </div>
             </form>
 
-            <div className="flex items-center justify-between pt-2 border-t border-white/5">
-              <div className="text-xs text-white/50 font-mono">
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-white/5">
+              <div className="text-xs text-slate-500 dark:text-white/50 font-mono">
                 Estado de Anclaje: <span className="text-emerald-400">Listo ({karma} Karma acumulados)</span>
               </div>
 
@@ -391,7 +391,7 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
                 type="button"
                 onClick={handleSyncToPolygon}
                 disabled={isSyncing || karma <= 0}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500/30 to-purple-500/30 border border-indigo-500/50 hover:border-indigo-400 text-white rounded-lg text-xs font-mono font-bold transition-all shadow-lg cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500/30 to-purple-500/30 border border-indigo-500/50 hover:border-indigo-400 text-slate-900 dark:text-white rounded-lg text-xs font-mono font-bold transition-all shadow-lg cursor-pointer disabled:opacity-50"
               >
                 {isSyncing ? (
                   <>
@@ -415,10 +415,10 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
 
           {/* Section: Activity & Karma Ledger */}
           <div className="space-y-3">
-            <h3 className="text-xs font-mono uppercase tracking-wider text-white/50 font-semibold px-1">
+            <h3 className="text-xs font-mono uppercase tracking-wider text-slate-500 dark:text-white/50 font-semibold px-1">
               Registro Contable de Karma y Nodos
             </h3>
-            <div className="bg-white/[0.02] border border-white/10 rounded-xl divide-y divide-white/5 overflow-hidden">
+            <div className="bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/10 rounded-xl divide-y divide-slate-200 dark:divide-white/5 overflow-hidden">
               {recentEvents.map((ev) => (
                 <KarmaEventItem key={ev.id} ev={ev} />
               ))}
@@ -428,12 +428,12 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-3 border-t border-white/10 bg-white/[0.02] flex items-center justify-between text-[11px] font-mono text-white/50">
+        <div className="px-6 py-3 border-t border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-white/50">
           <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={handleCopyNodeId}
-              className="hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               {copiedKey ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               {copiedKey ? "Node ID Copiado" : "Copiar Node ID"}
