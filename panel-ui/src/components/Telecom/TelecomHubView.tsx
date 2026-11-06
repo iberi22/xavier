@@ -205,7 +205,7 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
   const handleSelectRoom = useCallback((roomId: string) => {
     setSelectedRoomId(roomId);
     markRoomAsRead(roomId);
-  }, []);
+  }, [markRoomAsRead]);
 
   // Filtered rooms for active tab and search query
   const filteredRooms = useMemo(() => {
