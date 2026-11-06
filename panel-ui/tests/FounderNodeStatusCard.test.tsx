@@ -94,8 +94,8 @@ describe("FounderNodeStatusCard Component", () => {
 
     const cardElement = container?.querySelector('[data-testid="founder-node-status-card"]');
     expect(cardElement).not.toBeNull();
-    expect(cardElement?.className).toContain("bg-white");
-    expect(cardElement?.className).toContain("dark:bg-[#0a0a0a]");
+    expect(cardElement?.className).toContain("bg-[var(--surface-card");
+    expect(cardElement?.className).toContain("dark:bg-[var(--surface-card");
   });
 
   it("calls onClose when close button is clicked", async () => {
