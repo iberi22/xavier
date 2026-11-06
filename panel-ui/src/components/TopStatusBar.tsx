@@ -9,6 +9,7 @@ import {
   Key,
   MessageCircle,
   MessageSquare,
+  MoreHorizontal,
   RefreshCw,
   Send,
   Server,
@@ -90,6 +91,7 @@ export default React.memo(function TopStatusBar({
   const [retryCount, setRetryCount] = useState(0);
   const [remoteUrl, setRemoteUrlState] = useState<string>(getRemoteUrl());
   const [showNodeModal, setShowNodeModal] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   // Manual Memory Sync state
   const [showSyncPopover, setShowSyncPopover] = useState(false);
@@ -550,7 +552,19 @@ export default React.memo(function TopStatusBar({
             )}
           </motion.button>
 
-          {/* Maloca ops workspace */}
+          {/* Mobile Overflow Menu Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowMobileMenu(!showMobileMenu)}
+            className="sm:hidden bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2 py-1 flex items-center justify-center h-7 shrink-0 hover:bg-white/5 transition-colors"
+            title="More status"
+            aria-label="More status"
+          >
+            <MoreHorizontal className="w-4 h-4 text-white/70" />
+          </button>
+
+          <div className={`sm:flex gap-2 ${showMobileMenu ? "flex flex-col absolute top-10 right-0 bg-[#0a0a0a]/95 p-3 rounded-xl border border-white/10 shadow-2xl z-50 items-end" : "hidden"} flex-row items-start`}>
+            {/* Maloca ops workspace */}
           <motion.button
             layout
             transition={spring}
@@ -717,6 +731,7 @@ export default React.memo(function TopStatusBar({
               </AnimatePresence>
             </div>
           )}
+          </div>
         </motion.div>
       </div>
 

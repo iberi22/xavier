@@ -144,4 +144,46 @@ test.describe("TopStatusBar End-to-End Smoke Tests", () => {
       }, { timeout: 10_000 })
       .toBe(true);
   });
+
+  test("mobile layout should not have horizontal overflow and overflow menu is accessible", async ({ page }, testInfo) => {
+    // Fill login details if on login page
+    const loginButton = page.locator('button:has-text("INITIALIZE SESSION")');
+    if (await loginButton.isVisible()) {
+      await page.fill('input[type="email"]', "operator@xavier.local");
+      const otherMethodsBtn = page.locator('button:has-text("Otros métodos")');
+      if (await otherMethodsBtn.isVisible()) {
+        await otherMethodsBtn.click();
+      }
+      const passwordInput = page.locator('input[type="password"]');
+      if (await passwordInput.isVisible()) {
+        await passwordInput.fill("password123");
+      }
+      await loginButton.click();
+    }
+
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    // Wait for the components to load
+    await expect(page.locator("span", { hasText: /^Xavier/ })).toBeVisible();
+
+    // Check overflow menu button is visible on mobile
+    const moreBtn = page.locator('button[aria-label="More status"]');
+    await expect(moreBtn).toBeVisible();
+
+    // Verify there is no horizontal scroll
+    const hasHorizontalOverflow = await page.evaluate(() => {
+      return document.documentElement.scrollWidth > document.documentElement.clientWidth;
+    });
+    expect(hasHorizontalOverflow).toBe(false);
+
+    await moreBtn.click();
+
+    // Check one of the secondary pills is now visible in the dropdown
+    const syncBtn = page.locator('button[aria-label="Memory Sync Control & Status"]');
+    await expect(syncBtn).toBeVisible();
+
+    // Capture screenshot using testInfo.outputPath
+    const screenshotPath = testInfo.outputPath("mobile-topstatusbar.png");
+    await page.screenshot({ path: screenshotPath });
+  });
 });
