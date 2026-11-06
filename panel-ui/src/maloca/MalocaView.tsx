@@ -106,7 +106,9 @@ export default function MalocaView({ onClose }: Props) {
               return (
                 <button
                   key={tab.id}
+                  type="button"
                   onClick={() => setActiveTab(tab.id)}
+                  aria-current={isActive ? "page" : undefined}
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all whitespace-nowrap lg:whitespace-normal text-left
                     ${isActive
                       ? 'bg-white/10 text-white shadow-[inset_3px_0_0_#39ff14]'
