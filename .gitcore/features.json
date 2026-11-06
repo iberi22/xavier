@@ -4665,7 +4665,7 @@
       "github_issue": null,
       "last_tested": "2026-11-05",
       "notes": "Ola 4 architectural requirement REQ-MESH-012. Protects reasoning continuity across long-running sessions and multi-device handoffs.",
-      "implemented_in": "src/cli/commands/airgap.rs, src/crypto/airgap_capsule.rs, src/node_identity/shamir.rs",
+      "implemented_in": "src/cli/commands/airgap.rs, crates/xavier-crypto/src/airgap_capsule.rs, src/node_identity/shamir.rs",
       "tests": [
         "test_unpack_capsule_exceeds_size",
         "node_identity::shamir::tests::shamir_2_of_3_any_pair"
