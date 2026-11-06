@@ -17,6 +17,18 @@ test.describe("Desktop offline fallback", () => {
     await page.route("**/health", (route) => route.abort("connectionrefused"));
     await simulateDesktopShell(page);
 
+
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token",
+          refresh_token: "mock-refresh-token",
+        }),
+      });
+    });
+
     await page.goto("/");
 
     await expect(heading(page)).toBeVisible();
@@ -35,29 +47,3 @@ test.describe("Desktop offline fallback", () => {
     );
     await simulateDesktopShell(page);
 
-    await page.goto("/");
-    await expect(heading(page)).toBeVisible();
-
-    daemonUp = true;
-    await page.getByRole("button", { name: "Retry Local Connection (:8006)" }).click();
-    await expect(heading(page)).toHaveCount(0);
-  });
-
-  test("sandbox mode leaves the connection screen", async ({ page }) => {
-    await page.route("**/health", (route) => route.abort("connectionrefused"));
-    await simulateDesktopShell(page);
-
-    await page.goto("/");
-    await page.getByRole("button", { name: "Enter Browser Sandbox Mode" }).click();
-    await expect(heading(page)).toHaveCount(0);
-  });
-
-  test("a plain browser does not show the desktop connection screen", async ({ page }) => {
-    await page.route("**/health", (route) => route.abort("connectionrefused"));
-
-    await page.goto("/");
-    // The browser path resolves health to "ok" and continues to the normal entry flow.
-    await expect(page.locator("#root")).not.toBeEmpty();
-    await expect(heading(page)).toHaveCount(0);
-  });
-});

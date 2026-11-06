@@ -199,7 +199,19 @@ test.describe("Xavier Generative UI (OpenUI)", () => {
 			window.localStorage.setItem("xavier_onboarding_completed", "true");
 		});
 
-		await page.goto("/");
+
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token",
+          refresh_token: "mock-refresh-token",
+        }),
+      });
+    });
+
+    await page.goto("/");
 
 		// 1. Login flow as the app executes it
 		await expect(

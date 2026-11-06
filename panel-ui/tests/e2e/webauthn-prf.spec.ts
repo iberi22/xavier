@@ -69,6 +69,18 @@ test.describe("WebAuthn PRF Hardware Bridge E2E Suite", () => {
       window.localStorage.setItem("xavier_token", "mock-e2e-auth-token");
     });
 
+
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token",
+          refresh_token: "mock-refresh-token",
+        }),
+      });
+    });
+
     await page.goto("/");
   });
 

@@ -62,6 +62,18 @@ test.describe("Browser Token Hook E2E", () => {
     });
 
     // Navigate to root page
+
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token",
+          refresh_token: "mock-refresh-token",
+        }),
+      });
+    });
+
     await page.goto("/");
 
     // Verify page title or app element rendered without blanking out

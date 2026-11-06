@@ -16,6 +16,18 @@ test.describe("Loading and Error UI states", () => {
       window.localStorage.setItem("xavier_token", "mock-token");
     });
 
+
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token",
+          refresh_token: "mock-refresh-token",
+        }),
+      });
+    });
+
     await page.goto("/");
     // Verify either TopStatusBar or LoginPage is visible without crashing
     const appElement = page.locator("header, [class*='TopStatusBar'], h1:has-text('XAVIER LOGIN')");

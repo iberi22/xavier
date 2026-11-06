@@ -102,6 +102,7 @@ test.describe("Plugins Manager E2E Verification", () => {
     // Bypass onboarding and set authenticated session
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_onboarding_completed", "true");
+      window.localStorage.setItem("xavier_security_onboarding_completed", "true");
       window.localStorage.setItem("xavier_token", "mock-jwt-token");
       window.sessionStorage.setItem("xavier.rt", "mock-rt-token");
       window.localStorage.setItem(
@@ -118,6 +119,18 @@ test.describe("Plugins Manager E2E Verification", () => {
     });
 
     // Navigate to root
+
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token",
+          refresh_token: "mock-refresh-token",
+        }),
+      });
+    });
+
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(1000);
