@@ -321,6 +321,7 @@ export function useTelecomRooms(initialActiveRoomId = "room-general") {
         senderAlias?: string;
         senderNodeId?: string;
         attachment?: TelecomMessage["attachment"];
+        isEphemeral?: boolean;
       }
     ): TelecomMessage => {
       const now = new Date();
@@ -339,6 +340,7 @@ export function useTelecomRooms(initialActiveRoomId = "room-general") {
         pending: true,
         failed: false,
         attachment: options?.attachment,
+        isEphemeral: options?.isEphemeral,
       };
 
       updateMessages((prev) => {

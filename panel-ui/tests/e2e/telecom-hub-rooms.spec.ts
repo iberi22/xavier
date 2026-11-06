@@ -169,6 +169,11 @@ test.describe("Telecom Hub Rooms E2E", () => {
     const activeGroupRoom = page.locator("h2", { hasText: "Sovereign Mesh Operators" });
     await expect(activeGroupRoom).toBeVisible();
 
+    // Toggle Ephemeral Mode
+    const ephemeralToggle = page.locator('button[aria-label="Toggle Ephemeral Mode"]');
+    await expect(ephemeralToggle).toBeVisible();
+    await ephemeralToggle.click();
+
     // Send an optimistic message in the room
     const messageInput = page.locator('input[placeholder*="Send encrypted message"]');
     await expect(messageInput).toBeVisible();
@@ -184,6 +189,10 @@ test.describe("Telecom Hub Rooms E2E", () => {
       .locator("section")
       .getByText("Telecom Hub Optimistic Dispatch Test");
     await expect(sentMsg).toBeVisible();
+
+    // Verify Ephemeral badge is rendered with the message
+    const ephemeralBadge = page.locator("section").getByText("Ephemeral").first();
+    await expect(ephemeralBadge).toBeVisible();
 
     // Switch to Peers Tab
     await peersTab.click();

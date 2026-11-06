@@ -49,15 +49,6 @@ export const getLatencyColor = (
   latencyMs: number | null | undefined,
   pingStatus?: string,
 ): LatencyColorInfo => {
-  if (pingStatus === "pinging") {
-    return {
-      bg: "bg-cyan-500/10",
-      text: "text-cyan-400",
-      border: "border-cyan-500/30",
-      dotBg: "bg-cyan-400 animate-ping",
-      label: "Pinging...",
-    };
-  }
   if (pingStatus === "offline" || latencyMs === null || latencyMs === undefined) {
     return {
       bg: "bg-rose-500/10",
@@ -65,6 +56,15 @@ export const getLatencyColor = (
       border: "border-rose-500/30",
       dotBg: "bg-rose-500",
       label: "Offline",
+    };
+  }
+  if (pingStatus === "pinging") {
+    return {
+      bg: "bg-cyan-500/10",
+      text: "text-cyan-400",
+      border: "border-cyan-500/30",
+      dotBg: "bg-cyan-400 animate-ping",
+      label: "Pinging...",
     };
   }
   if (latencyMs < 50) {
