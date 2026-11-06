@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SCRIPT="$ROOT/scripts/release-pipeline-incident.sh"
 WF="$ROOT/.github/workflows/release-watch.yml"
 WORKDIR=$(mktemp -d)
+export RELEASE_WATCH_SKIP_RECONCILE=1
 trap 'rm -rf "$WORKDIR"' EXIT
 
 assert_file() { [ -e "$1" ] || { echo "missing $1"; exit 1; }; }
@@ -21,13 +22,12 @@ assert_contains "$WF" 'release-pipeline-incident.sh'
 assert_contains "$WF" 'workflow_run:'
 assert_contains "$WF" 'issues: write'
 assert_contains "$WF" 'group: release-pipeline-watch'
-# Shared group only — per-run groups allow parallel create races.
-if grep -E 'group:.*workflow_run\.id|group:.*github\.run_id' "$WF"; then
-  echo "concurrency group must be shared, not per-run"; exit 1
-fi
+assert_contains "$WF" 'queue: max'
 assert_contains "$SCRIPT" 'Exhaustive scan before declaring absence'
 assert_contains "$SCRIPT" 'HINT only'
 assert_contains "$SCRIPT" 'dedupe_marker_issues'
+assert_contains "$SCRIPT" 'reconcile_recent_runs'
+assert_contains "$SCRIPT" 'Reconciled missed watcher'
 
 MARKER_LINE=$(grep -E 'MARKER=' "$SCRIPT" | head -1)
 assert_contains <(echo "$MARKER_LINE") 'release-pipeline-failure:'

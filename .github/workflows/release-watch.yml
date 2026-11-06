@@ -19,12 +19,14 @@ permissions:
   actions: read
   issues: write
 
-# Single shared group serializes lookup/create across all release-watch
-# runs (workflow_run + workflow_dispatch). cancel-in-progress=false keeps
-# the in-flight upsert; pending runs queue behind it.
+# Shared group serializes marker upserts. queue:max keeps up to 100 pending
+# watchers (GitHub's default queue:single replaces the pending run when a
+# newer one arrives, which would drop failure comments). cancel-in-progress
+# must stay false — it cannot combine with queue:max.
 concurrency:
   group: release-pipeline-watch
   cancel-in-progress: false
+  queue: max
 
 jobs:
   upsert-incident:

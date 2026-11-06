@@ -106,6 +106,38 @@ dedupe_marker_issues() {
   return 0
 }
 
+# Comment on recent unprocessed release failures.
+# Belt-and-suspenders with concurrency.queue:max so a cancelled/skipped
+# watcher cannot permanently drop a failure comment.
+reconcile_recent_runs() {
+  local keep="${1:-}" runs run_id conclusion url sha body already
+  [ -n "$keep" ] || return 0
+  runs=$(gh run list --workflow "Release & Multi-Platform Binaries" --limit 15 --json databaseId,conclusion,url,headSha,status) || return $?
+  echo "$runs" | jq -e 'type == "array"' >/dev/null || return $?
+  body=$(gh issue view "$keep" --json body,comments --jq '{body:.body, comments:[.comments[].body]}') || return $?
+  while IFS= read -r run_id; do
+    [ -n "$run_id" ] || continue
+    conclusion=$(echo "$runs" | jq -r --argjson id "$run_id" '.[] | select(.databaseId == $id) | .conclusion // empty') || return $?
+    url=$(echo "$runs" | jq -r --argjson id "$run_id" '.[] | select(.databaseId == $id) | .url // empty') || return $?
+    sha=$(echo "$runs" | jq -r --argjson id "$run_id" '.[] | select(.databaseId == $id) | .headSha // empty') || return $?
+    already=$(echo "$body" | jq -r --arg id "$run_id" --arg url "$url" '[.body, (.comments // [])[]] | join("\n") | (contains($id) or contains($url))') || return $?
+    if [ "$already" = "true" ]; then
+      continue
+    fi
+    case "$conclusion" in
+      failure|cancelled|timed_out)
+        echo "Reconcile: commenting missed $conclusion run $run_id on #$keep"
+        {
+          echo "Reconciled missed watcher event ($conclusion) for run $run_id @ \`${sha:0:7}\`."
+          echo "Run: $url"
+        } > /tmp/release-pipeline-reconcile.md
+        gh issue comment "$keep" --body-file /tmp/release-pipeline-reconcile.md || return $?
+        ;;
+    esac
+  done < <(echo "$runs" | jq -r '.[].databaseId')
+  return 0
+}
+
 # Bash does not trip set -e on failed command substitutions in assignments.
 # Capture status explicitly so lookup failures abort before any mutation.
 set +e
@@ -170,4 +202,26 @@ elif [ "$CONCLUSION" = "success" ]; then
   fi
 else
   echo "Ignoring conclusion=$CONCLUSION"
+fi
+
+# Reconcile recent release runs against the open incident (if any).
+if [ "${RELEASE_WATCH_SKIP_RECONCILE:-}" = "1" ]; then
+  echo "reconcile skipped (RELEASE_WATCH_SKIP_RECONCILE=1)"
+else
+  set +e
+  RECON_KEEP=${KEEP:-$EXISTING}
+  if [ -z "${RECON_KEEP:-}" ]; then
+    RECON_KEEP=$(find_open_issue)
+    RECON_RC=$?
+  else
+    RECON_RC=0
+  fi
+  set -e
+  if [ "${RECON_RC:-0}" -ne 0 ]; then
+    echo "release-pipeline-incident: reconcile lookup failed (rc=$RECON_RC)" >&2
+    exit "$RECON_RC"
+  fi
+  if [ -n "${RECON_KEEP:-}" ]; then
+    reconcile_recent_runs "$RECON_KEEP"
+  fi
 fi
