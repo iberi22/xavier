@@ -138,6 +138,11 @@ const TelecomMessageItem = React.memo(function TelecomMessageItem({
           {(message.senderAlias || message.senderNodeId)}
         </span>
         <div className="flex items-center gap-1.5">
+          {message.isEphemeral && (
+            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase tracking-wide">
+              Ephemeral
+            </span>
+          )}
           <span>{message.timestamp}</span>
         </div>
       </div>
@@ -279,12 +284,15 @@ export const TelecomHubView: React.FC<TelecomHubViewProps> = ({
       if (!inputMessage.trim() || isSending) return;
 
       setIsSending(true);
-      sendMessageOptimistic(selectedRoomId, inputMessage.trim(), { senderAlias: "Local Node (You)" });
+      sendMessageOptimistic(selectedRoomId, inputMessage.trim(), {
+        senderAlias: "Local Node (You)",
+        isEphemeral,
+      });
 
       setInputMessage("");
       setIsSending(false);
     },
-    [inputMessage, isSending, selectedRoomId, sendMessageOptimistic]
+    [inputMessage, isEphemeral, isSending, selectedRoomId, sendMessageOptimistic]
   );
 
   return (

@@ -33,10 +33,12 @@ export interface TelecomMessage {
   isSelf: boolean;
   pending?: boolean;
   failed?: boolean;
+  isEphemeral?: boolean;
   attachment?: {
     name: string;
     size?: string;
     type?: string;
+    url?: string;
   };
 }
 
@@ -321,6 +323,7 @@ export function useTelecomRooms(initialActiveRoomId = "room-general") {
         senderAlias?: string;
         senderNodeId?: string;
         attachment?: TelecomMessage["attachment"];
+        isEphemeral?: boolean;
       }
     ): TelecomMessage => {
       const now = new Date();
@@ -338,6 +341,7 @@ export function useTelecomRooms(initialActiveRoomId = "room-general") {
         isSelf: true,
         pending: true,
         failed: false,
+        isEphemeral: options?.isEphemeral,
         attachment: options?.attachment,
       };
 
