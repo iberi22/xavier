@@ -33,7 +33,19 @@ test.describe("Notifications Dropdown E2E", () => {
 			window.localStorage.setItem("xavier_token", "mock-token");
 		});
 
-		await page.goto("/");
+
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token",
+          refresh_token: "mock-refresh-token",
+        }),
+      });
+    });
+
+    await page.goto("/");
 	});
 
 	test("notifications dropdown opens without crash and renders skeleton or notifications list", async ({

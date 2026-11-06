@@ -71,6 +71,18 @@ test.describe("Full panel accessibility & WCAG 2.1 AA automated audit E2E test",
 
   test("runs automated accessibility assertions and captures visual states", async ({ page }) => {
     // 1. Navigate to main shell
+
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token",
+          refresh_token: "mock-refresh-token",
+        }),
+      });
+    });
+
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(1000);
