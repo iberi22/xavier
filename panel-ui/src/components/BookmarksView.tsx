@@ -46,10 +46,10 @@ export default React.memo(function BookmarksView({
 		>
 			<div className="mb-8 flex items-end justify-between shrink-0">
 				<div>
-					<h2 className="text-3xl font-light text-white tracking-tight">
+					<h2 className="text-3xl font-light text-[var(--foreground)] tracking-tight">
 						Saved Artifacts
 					</h2>
-					<p className="text-sm text-white/40 mt-1">
+					<p className="text-sm text-[var(--foreground)]/40 mt-1">
 						Generations and visual references bookmarked during conversations.
 					</p>
 				</div>
@@ -63,7 +63,7 @@ export default React.memo(function BookmarksView({
 						onClick={() => setActiveCategory(cat)}
 						aria-pressed={activeCategory === cat}
 						className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-all whitespace-nowrap focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 focus-visible:outline-none
-              ${activeCategory === cat ? "bg-[#39ff14] text-[#050505] shadow-[0_0_15px_rgba(57,255,20,0.3)]" : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white"}`}
+              ${activeCategory === cat ? "bg-[#39ff14] text-[#050505] shadow-[0_0_15px_rgba(57,255,20,0.3)]" : "bg-black/5 dark:bg-white/5 text-black/60 dark:text-white/60 hover:bg-black/10 dark:hover:bg-white/10 hover:text-black dark:hover:text-white"}`}
 					>
 						{cat !== "All" && (
 							<Folder className="w-3.5 h-3.5" aria-hidden="true" />
