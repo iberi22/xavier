@@ -141,7 +141,7 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
   };
 
   return (
-    <div className="bg-[#050505]/80 border border-white/10 rounded-[24px] p-6 backdrop-blur-xl shadow-2xl space-y-6">
+    <div className="bg-[var(--surface)]/80 dark:bg-[#050505]/80 border border-[var(--border-subtle)] dark:border-white/10 rounded-[24px] p-6 backdrop-blur-xl shadow-2xl space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="relative">
@@ -152,7 +152,7 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
               <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-[#39ff14] animate-ping opacity-75" />
             )}
           </div>
-          <h3 className="text-xs uppercase tracking-[0.2em] font-bold text-white/80">
+          <h3 className="text-xs uppercase tracking-[0.2em] font-bold text-[var(--foreground)]/80 dark:text-white/80">
             Offline Model Manager (Local GGUF Engine)
           </h3>
         </div>
@@ -160,7 +160,7 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
           onClick={loadData}
           disabled={loading || downloading || savingConfig}
           aria-label="Refrescar modelos offline"
-          className="p-1.5 hover:bg-white/5 rounded-lg transition-colors text-white/40 hover:text-white/80 disabled:opacity-30"
+          className="p-1.5 hover:bg-[var(--surface-card)] dark:bg-white/5 rounded-lg transition-colors text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)]/80 dark:text-white/80 disabled:opacity-30"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
         </button>
@@ -184,43 +184,43 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
         {/* Left Side: Server Status & Auto-Start & Folders */}
         <div className="space-y-6">
           {/* Hardware & Server Status */}
-          <div className="bg-white/5 border border-white/5 rounded-xl p-4 space-y-3">
-            <h4 className="text-[10px] uppercase text-white/50 tracking-widest font-bold">
+          <div className="bg-[var(--surface-card)] dark:bg-white/5 border border-[var(--border-subtle)] dark:border-white/5 rounded-xl p-4 space-y-3">
+            <h4 className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest font-bold">
               Estado del Motor
             </h4>
             {status ? (
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div>
-                  <span className="text-white/40 block mb-0.5">CPU/GPU</span>
-                  <span className="font-semibold text-white/90 truncate block">
+                  <span className="text-[var(--foreground)]/40 dark:text-white/40 block mb-0.5">CPU/GPU</span>
+                  <span className="font-semibold text-[var(--foreground)]/90 dark:text-white/90 truncate block">
                     {status.gpu_vendor}
                   </span>
                 </div>
                 <div>
-                  <span className="text-white/40 block mb-0.5">
+                  <span className="text-[var(--foreground)]/40 dark:text-white/40 block mb-0.5">
                     VRAM Disponible
                   </span>
-                  <span className="font-semibold text-white/90 truncate block">
+                  <span className="font-semibold text-[var(--foreground)]/90 dark:text-white/90 truncate block">
                     {status.gpu_detected ? `${status.vram_mb} MB` : "N/A"}
                   </span>
                 </div>
                 <div>
-                  <span className="text-white/40 block mb-0.5">
+                  <span className="text-[var(--foreground)]/40 dark:text-white/40 block mb-0.5">
                     Puerto Servidor
                   </span>
-                  <span className="font-mono text-white/90 block">
+                  <span className="font-mono text-[var(--foreground)]/90 dark:text-white/90 block">
                     :{status.port}
                   </span>
                 </div>
                 <div>
-                  <span className="text-white/40 block mb-0.5">Estado</span>
+                  <span className="text-[var(--foreground)]/40 dark:text-white/40 block mb-0.5">Estado</span>
                   <span className="font-semibold text-[#39ff14] uppercase tracking-wider block">
                     {status.engine_status}
                   </span>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-white/40 text-xs">
+              <div className="flex items-center gap-2 text-[var(--foreground)]/40 dark:text-white/40 text-xs">
                 <Loader2 className="w-4 h-4 animate-spin text-[#39ff14]" />
                 Detectando hardware...
               </div>
@@ -228,13 +228,13 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
           </div>
 
           {/* Auto-Start Switch */}
-          <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all">
+          <div className="flex items-center justify-between p-4 rounded-xl bg-[var(--surface-card)] dark:bg-white/5 border border-[var(--border-subtle)] dark:border-white/5 hover:border-[var(--border-subtle)] dark:border-white/10 transition-all">
             <div>
-              <h4 className="text-white/90 text-xs font-semibold mb-0.5 flex items-center gap-2">
+              <h4 className="text-[var(--foreground)]/90 dark:text-white/90 text-xs font-semibold mb-0.5 flex items-center gap-2">
                 <Power className="w-3.5 h-3.5 text-[#39ff14]" />
                 Auto-Start (Arranque Automático)
               </h4>
-              <p className="text-[10px] text-white/40">
+              <p className="text-[10px] text-[var(--foreground)]/40 dark:text-white/40">
                 Inicia el último modelo usado automáticamente al iniciar Xavier.
               </p>
             </div>
@@ -259,7 +259,7 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
 
           {/* Local Directories Settings */}
           <div className="space-y-3">
-            <h4 className="text-[10px] uppercase text-white/50 tracking-widest font-bold">
+            <h4 className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest font-bold">
               Directorios de Búsqueda
             </h4>
 
@@ -270,13 +270,13 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
                 onChange={(e) => setNewDir(e.target.value)}
                 placeholder="ej: /Users/xavier/models"
                 aria-label="Añadir directorio adicional"
-                className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-2 text-xs font-mono text-white/90 outline-none focus:border-[#39ff14]/40 placeholder:text-white/20"
+                className="flex-1 bg-[var(--background)]/60 dark:bg-black/60 border border-[var(--border-subtle)] dark:border-white/10 rounded-xl px-4 py-2 text-xs font-mono text-[var(--foreground)]/90 dark:text-white/90 outline-none focus:border-[#39ff14]/40 placeholder:text-[var(--foreground)]/20 dark:placeholder:text-white/20"
               />
               <button
                 type="submit"
                 disabled={savingConfig || !newDir.trim()}
                 aria-label="Añadir carpeta"
-                className="px-3 py-2 bg-white/5 hover:bg-[#39ff14]/10 border border-white/10 hover:border-[#39ff14]/30 text-white hover:text-[#39ff14] rounded-xl text-xs transition-all flex items-center justify-center gap-1 shrink-0 disabled:opacity-40"
+                className="px-3 py-2 bg-[var(--surface-card)] dark:bg-white/5 hover:bg-[#39ff14]/10 border border-[var(--border-subtle)] dark:border-white/10 hover:border-[#39ff14]/30 text-[var(--foreground)] dark:text-white hover:text-[#39ff14] rounded-xl text-xs transition-all flex items-center justify-center gap-1 shrink-0 disabled:opacity-40"
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -284,7 +284,7 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
 
             <div className="space-y-2 max-h-36 overflow-y-auto">
               {localDirs.length === 0 ? (
-                <p className="text-[10px] text-white/30 italic">
+                <p className="text-[10px] text-[var(--foreground)]/30 dark:text-white/30 italic">
                   No hay directorios adicionales configurados. (Se usará la ruta
                   por defecto).
                 </p>
@@ -305,7 +305,7 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
         <div className="space-y-6">
           {/* HuggingFace Downloader */}
           <form onSubmit={handleDownloadModel} className="space-y-3">
-            <h4 className="text-[10px] uppercase text-white/50 tracking-widest font-bold">
+            <h4 className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest font-bold">
               Descargar desde HuggingFace
             </h4>
             <div className="flex gap-2">
@@ -315,12 +315,12 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
                 onChange={(e) => setDownloadUrl(e.target.value)}
                 placeholder="Pegar URL directa de GGUF o HuggingFace"
                 aria-label="URL HuggingFace de GGUF"
-                className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-mono text-white/90 outline-none focus:border-[#39ff14]/40 placeholder:text-white/20"
+                className="flex-1 bg-[var(--background)]/60 dark:bg-black/60 border border-[var(--border-subtle)] dark:border-white/10 rounded-xl px-4 py-2.5 text-xs font-mono text-[var(--foreground)]/90 dark:text-white/90 outline-none focus:border-[#39ff14]/40 placeholder:text-[var(--foreground)]/20 dark:placeholder:text-white/20"
               />
               <button
                 type="submit"
                 disabled={downloading || !downloadUrl.trim()}
-                className="px-4 py-2.5 bg-white/5 hover:bg-[#39ff14]/10 border border-white/10 hover:border-[#39ff14]/30 hover:text-[#39ff14] text-white/80 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-40"
+                className="px-4 py-2.5 bg-[var(--surface-card)] dark:bg-white/5 hover:bg-[#39ff14]/10 border border-[var(--border-subtle)] dark:border-white/10 hover:border-[#39ff14]/30 hover:text-[#39ff14] text-[var(--foreground)]/80 dark:text-white/80 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-40"
               >
                 {downloading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -334,12 +334,12 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
 
           {/* Discovered Models */}
           <div className="space-y-3">
-            <h4 className="text-[10px] uppercase text-white/50 tracking-widest font-bold">
+            <h4 className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest font-bold">
               Modelos Descubiertos (.gguf)
             </h4>
             <div className="space-y-2 max-h-56 overflow-y-auto">
               {models.length === 0 ? (
-                <div className="border border-dashed border-white/10 p-6 rounded-xl text-center text-xs text-white/30 italic">
+                <div className="border border-dashed border-[var(--border-subtle)] dark:border-white/10 p-6 rounded-xl text-center text-xs text-[var(--foreground)]/30 dark:text-white/30 italic">
                   No se encontraron archivos GGUF en las carpetas especificadas.
                 </div>
               ) : (
@@ -379,16 +379,16 @@ const LocalDirItem = React.memo(function LocalDirItem({
   onRemove: (dir: string) => void;
 }) {
   return (
-    <div className="flex items-center justify-between bg-black/40 border border-white/5 p-2 rounded-xl">
-      <span className="text-[11px] font-mono text-white/80 truncate pr-2 flex items-center gap-1.5">
-        <Folder className="w-3.5 h-3.5 text-white/40 shrink-0" />
+    <div className="flex items-center justify-between bg-[var(--background)]/40 dark:bg-black/40 border border-[var(--border-subtle)] dark:border-white/5 p-2 rounded-xl">
+      <span className="text-[11px] font-mono text-[var(--foreground)]/80 dark:text-white/80 truncate pr-2 flex items-center gap-1.5">
+        <Folder className="w-3.5 h-3.5 text-[var(--foreground)]/40 dark:text-white/40 shrink-0" />
         {dir}
       </span>
       <button
         type="button"
         onClick={() => onRemove(dir)}
         aria-label={`Eliminar directorio ${dir}`}
-        className="p-1 text-white/40 hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-all"
+        className="p-1 text-[var(--foreground)]/40 dark:text-white/40 hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-all"
       >
         <Trash2 className="w-3.5 h-3.5" />
       </button>
@@ -410,16 +410,16 @@ const ModelItem = React.memo(function ModelItem({
   model: OfflineModel;
 }) {
   return (
-    <div className="bg-white/5 border border-white/5 p-3 rounded-xl hover:border-white/10 transition-all flex flex-col gap-1">
+    <div className="bg-[var(--surface-card)] dark:bg-white/5 border border-[var(--border-subtle)] dark:border-white/5 p-3 rounded-xl hover:border-[var(--border-subtle)] dark:border-white/10 transition-all flex flex-col gap-1">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-white/90 truncate pr-2">
+        <span className="text-xs font-bold text-[var(--foreground)]/90 dark:text-white/90 truncate pr-2">
           {model.name}
         </span>
         <span className="text-[10px] bg-[#39ff14]/10 border border-[#39ff14]/20 text-[#39ff14] px-1.5 py-0.5 rounded font-bold uppercase shrink-0">
           {model.quantization || "GGUF"}
         </span>
       </div>
-      <div className="flex justify-between items-center text-[10px] text-white/40 font-mono">
+      <div className="flex justify-between items-center text-[10px] text-[var(--foreground)]/40 dark:text-white/40 font-mono">
         <span className="truncate pr-4" title={model.path}>
           {model.path}
         </span>
