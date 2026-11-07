@@ -329,17 +329,17 @@ export default React.memo(function GraphView({
       ref={containerRef}
     >
       <div className="absolute top-6 left-6 z-10 pointer-events-auto">
-        <div className="bg-[#050505]/80 backdrop-blur border border-white/10 rounded-xl overflow-hidden transition-all duration-300 shadow-xl">
+        <div className="bg-[var(--surface-card)]/80 backdrop-blur border border-[var(--border-subtle)] rounded-xl overflow-hidden transition-all duration-300 shadow-xl">
           <button
             type="button"
             aria-expanded={showStats}
             onClick={() => setShowStats(!showStats)}
-            className="px-4 py-3 text-xs text-white/80 hover:text-white flex items-center justify-between w-full min-w-[220px]"
+            className="px-4 py-3 text-xs text-[var(--foreground)]/80 hover:text-[var(--foreground)] flex items-center justify-between w-full min-w-[220px]"
           >
             <span className="font-mono tracking-widest uppercase">
               System Diagnostics
             </span>
-            <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-white/80 hover:bg-white/20 transition-colors">
+            <span className="text-[10px] bg-[var(--foreground)]/10 px-2 py-1 rounded text-[var(--foreground)]/80 hover:bg-white/20 transition-colors">
               {showStats ? "Ocultar" : "Ver más"}
             </span>
           </button>
@@ -351,38 +351,38 @@ export default React.memo(function GraphView({
                 exit={{ height: 0, opacity: 0 }}
                 className="overflow-hidden"
               >
-                <div className="p-4 pt-2 border-t border-white/10 text-xs text-white/70 space-y-2">
-                  <div className="flex justify-between text-white mb-2 font-medium">
+                <div className="p-4 pt-2 border-t border-[var(--border-subtle)] text-xs text-[var(--foreground)]/70 space-y-2">
+                  <div className="flex justify-between text-[var(--foreground)] mb-2 font-medium">
                     <span>Total Nodes:</span> <span>{stats.total}</span>
                   </div>
-                  <div className="flex justify-between text-[10px] text-white/50">
+                  <div className="flex justify-between text-[10px] text-[var(--foreground)]/50">
                     <span>↳ Orgs:</span> <span>{stats.orgs}</span>
                   </div>
-                  <div className="flex justify-between text-[10px] text-white/50">
+                  <div className="flex justify-between text-[10px] text-[var(--foreground)]/50">
                     <span>↳ Projects:</span> <span>{stats.projects}</span>
                   </div>
-                  <div className="flex justify-between text-[10px] text-white/50">
+                  <div className="flex justify-between text-[10px] text-[var(--foreground)]/50">
                     <span>↳ Subprojects:</span> <span>{stats.subprojects}</span>
                   </div>
-                  <div className="flex justify-between text-[10px] text-white/50">
+                  <div className="flex justify-between text-[10px] text-[var(--foreground)]/50">
                     <span>↳ Sessions:</span> <span>{stats.sessions}</span>
                   </div>
-                  <div className="flex justify-between pt-3 border-t border-white/5 mt-3 text-white/90">
+                  <div className="flex justify-between pt-3 border-t border-[var(--border-subtle)] mt-3 text-[var(--foreground)]/90">
                     <span>Links Count:</span> <span>{data.links.length}</span>
                   </div>
-                  <div className="flex justify-between pt-1 border-white/5 mt-1 text-white/90">
+                  <div className="flex justify-between pt-1 border-[var(--border-subtle)] mt-1 text-[var(--foreground)]/90">
                     <span>Max Depth (Levels):</span>{" "}
                     <span>{stats.maxDepth}</span>
                   </div>
                   {stats.newestNode && (
-                    <div className="pt-3 border-t border-white/5 mt-3">
-                      <span className="block text-[10px] uppercase text-white/40 mb-1 tracking-widest">
+                    <div className="pt-3 border-t border-[var(--border-subtle)] mt-3">
+                      <span className="block text-[10px] uppercase text-[var(--foreground)]/40 mb-1 tracking-widest">
                         Recent Activity
                       </span>
                       <span className="text-[#39ff14]/90 block w-[180px] font-medium leading-tight">
                         {stats.newestNode.label}
                       </span>
-                      <span className="text-[10px] text-white/50 font-mono mt-1 block">
+                      <span className="text-[10px] text-[var(--foreground)]/50 font-mono mt-1 block">
                         {stats.newestNode.date}
                       </span>
                     </div>
@@ -394,7 +394,7 @@ export default React.memo(function GraphView({
         </div>
       </div>
 
-      <div className="absolute inset-0 bg-[#020202]">
+      <div className="absolute inset-0 bg-[var(--background)]">
         <ForceGraph2D
           ref={fgRef}
           width={dimensions.width}
@@ -435,11 +435,11 @@ export default React.memo(function GraphView({
 
       {isFullGraphEmpty && data.nodes.length === 0 && (
         <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
-          <div className="pointer-events-auto text-center max-w-sm px-6 py-8 rounded-2xl border border-white/10 bg-[#050505]/90 backdrop-blur-md shadow-2xl">
-            <p className="text-sm text-white/80 font-medium mb-1">
+          <div className="pointer-events-auto text-center max-w-sm px-6 py-8 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)]/90 backdrop-blur-md shadow-2xl">
+            <p className="text-sm text-[var(--foreground)]/80 font-medium mb-1">
               No roadmap nodes yet
             </p>
-            <p className="text-xs text-white/40 mb-5 leading-relaxed">
+            <p className="text-xs text-[var(--foreground)]/40 mb-5 leading-relaxed">
               Build an org → project → session topology for this workspace. It
               saves to Xavier automatically.
             </p>
@@ -456,7 +456,7 @@ export default React.memo(function GraphView({
 
       {!isFullGraphEmpty && data.nodes.length === 0 && (
         <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
-          <p className="pointer-events-auto text-xs text-white/40 px-4 py-2 rounded-lg border border-white/10 bg-black/70">
+          <p className="pointer-events-auto text-xs text-[var(--foreground)]/40 px-4 py-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--background)]/70">
             No nodes match the current filters
           </p>
         </div>
@@ -469,7 +469,7 @@ export default React.memo(function GraphView({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 10 }}
             transition={{ duration: 0.15 }}
-            className="fixed z-[100] bg-[#050505]/95 border border-[#39ff14]/30 rounded-xl p-4 shadow-[0_0_20px_rgba(57,255,20,0.1)] backdrop-blur-xl pointer-events-none"
+            className="fixed z-[100] bg-[var(--surface-card)]/95 border border-[#39ff14]/30 rounded-xl p-4 shadow-[0_0_20px_rgba(57,255,20,0.1)] backdrop-blur-xl pointer-events-none"
             style={{
               left: mousePos.x + 20,
               top: mousePos.y + 20,
@@ -482,34 +482,34 @@ export default React.memo(function GraphView({
                 {hoveredNode.type}
               </span>
               {hoveredNode.date && (
-                <span className="text-[10px] text-white/40 ml-auto whitespace-nowrap">
+                <span className="text-[10px] text-[var(--foreground)]/40 ml-auto whitespace-nowrap">
                   {hoveredNode.date}
                 </span>
               )}
             </div>
-            <h3 className="text-white font-medium mb-1 leading-tight">
+            <h3 className="text-[var(--foreground)] font-medium mb-1 leading-tight">
               {hoveredNode.label}
             </h3>
-            <p className="text-xs text-white/50 mb-3">
+            <p className="text-xs text-[var(--foreground)]/50 mb-3">
               {hoveredNode.description}
             </p>
 
-            <div className="flex flex-col gap-1.5 mt-2 border-t border-white/5 pt-3">
+            <div className="flex flex-col gap-1.5 mt-2 border-t border-[var(--border-subtle)] pt-3">
               {(hoveredNode.relatedFiles?.length ?? 0) > 0 && (
-                <div className="flex items-center gap-2 text-[10px] text-white/60">
+                <div className="flex items-center gap-2 text-[10px] text-[var(--foreground)]/60">
                   <FileText className="w-3 h-3 text-blue-400" />
                   <span>{hoveredNode.relatedFiles!.length} linked files</span>
                 </div>
               )}
               {(hoveredNode.commits?.length ?? 0) > 0 && (
-                <div className="flex items-center gap-2 text-[10px] text-white/60">
+                <div className="flex items-center gap-2 text-[10px] text-[var(--foreground)]/60">
                   <GitCommit className="w-3 h-3 text-orange-400" />
                   <span>{hoveredNode.commits!.length} recent commits</span>
                 </div>
               )}
             </div>
             {hoveredNode.parentId && (
-              <p className="text-[10px] text-white/30 mt-3 border-t border-white/5 pt-2 truncate">
+              <p className="text-[10px] text-[var(--foreground)]/30 mt-3 border-t border-[var(--border-subtle)] pt-2 truncate">
                 Parent:{" "}
                 {data.nodes.find(
                   (n: GraphNode) => n.id === hoveredNode.parentId,
@@ -522,12 +522,12 @@ export default React.memo(function GraphView({
 
       {contextMenu && (
         <div
-          className="fixed z-50 bg-[#0a0a0a] border border-white/10 rounded-xl shadow-2xl overflow-hidden py-1 min-w-[160px]"
+          className="fixed z-50 bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-xl shadow-2xl overflow-hidden py-1 min-w-[160px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
             type="button"
-            className="w-full text-left px-4 py-2 text-sm text-white/80 hover:bg-white/10 transition-colors"
+            className="w-full text-left px-4 py-2 text-sm text-[var(--foreground)]/80 hover:bg-[var(--foreground)]/10 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
               setEditNode(contextMenu.node);
@@ -538,7 +538,7 @@ export default React.memo(function GraphView({
           </button>
           <button
             type="button"
-            className="w-full text-left px-4 py-2 text-sm text-white/80 hover:bg-white/10 transition-colors"
+            className="w-full text-left px-4 py-2 text-sm text-[var(--foreground)]/80 hover:bg-[var(--foreground)]/10 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
               handleAddSub(contextMenu.node.id);
@@ -546,7 +546,7 @@ export default React.memo(function GraphView({
           >
             Add Sub-project
           </button>
-          <div className="h-px w-full bg-white/5 my-1" />
+          <div className="h-px w-full bg-[var(--foreground)]/5 my-1" />
           <button
             type="button"
             className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors"
@@ -566,33 +566,33 @@ export default React.memo(function GraphView({
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
-            className="fixed z-[60] inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+            className="fixed z-[60] inset-0 flex items-center justify-center bg-[var(--background)]/40 backdrop-blur-sm"
           >
-            <div className="bg-[#050505] border border-[#39ff14]/30 rounded-2xl p-6 w-[400px] shadow-[0_0_30px_rgba(57,255,20,0.1)]">
-              <h3 className="text-xl text-white font-light tracking-tight mb-4">
+            <div className="bg-[var(--surface-card)] border border-[#39ff14]/30 rounded-2xl p-6 w-[400px] shadow-[0_0_30px_rgba(57,255,20,0.1)]">
+              <h3 className="text-xl text-[var(--foreground)] font-light tracking-tight mb-4">
                 Edit Node Metadata
               </h3>
               <div className="space-y-4">
                 <div>
-                  <label className="text-[10px] uppercase text-white/50 tracking-widest mb-2 block">
+                  <label className="text-[10px] uppercase text-[var(--foreground)]/50 tracking-widest mb-2 block">
                     Label
                   </label>
                   <input
                     type="text"
                     defaultValue={editNode.label}
                     id="edit-node-label"
-                    className="w-full bg-[#0a0a0a] border border-[#1a1a1a] focus:border-[#39ff14] text-white/90 text-sm px-4 py-3 rounded-xl outline-none transition-all"
+                    className="w-full bg-[var(--surface-card)] border border-[var(--border-subtle)] focus:border-[#39ff14] text-[var(--foreground)]/90 text-sm px-4 py-3 rounded-xl outline-none transition-all"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] uppercase text-white/50 tracking-widest mb-2 block">
+                  <label className="text-[10px] uppercase text-[var(--foreground)]/50 tracking-widest mb-2 block">
                     Description
                   </label>
                   <input
                     type="text"
                     defaultValue={editNode.description}
                     id="edit-node-desc"
-                    className="w-full bg-[#0a0a0a] border border-[#1a1a1a] focus:border-[#39ff14] text-white/90 text-sm px-4 py-3 rounded-xl outline-none transition-all"
+                    className="w-full bg-[var(--surface-card)] border border-[var(--border-subtle)] focus:border-[#39ff14] text-[var(--foreground)]/90 text-sm px-4 py-3 rounded-xl outline-none transition-all"
                   />
                 </div>
               </div>
@@ -600,7 +600,7 @@ export default React.memo(function GraphView({
                 <button
                   type="button"
                   onClick={() => setEditNode(null)}
-                  className="flex-1 px-4 py-2 rounded-lg bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition-colors text-sm"
+                  className="flex-1 px-4 py-2 rounded-lg bg-[var(--foreground)]/5 text-[var(--foreground)]/70 hover:bg-[var(--foreground)]/10 hover:text-[var(--foreground)] transition-colors text-sm"
                 >
                   Cancel
                 </button>
@@ -640,17 +640,17 @@ export default React.memo(function GraphView({
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 50 }}
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="absolute top-0 right-0 bottom-0 w-[400px] max-w-[90vw] bg-[#050505]/95 shadow-[0_0_40px_rgba(0,0,0,0.8)] border-l border-white/10 flex flex-col z-30 backdrop-blur-xl"
+            className="absolute top-0 right-0 bottom-0 w-[400px] max-w-[90vw] bg-[var(--surface-card)]/95 shadow-[0_0_40px_rgba(0,0,0,0.8)] border-l border-[var(--border-subtle)] flex flex-col z-30 backdrop-blur-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-6 border-b border-white/5">
+            <div className="flex items-center justify-between p-6 border-b border-[var(--border-subtle)]">
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[10px] uppercase tracking-widest text-[#39ff14] font-mono">
                     {selectedNode.type}
                   </span>
                 </div>
-                <h2 className="text-xl text-white font-medium">
+                <h2 className="text-xl text-[var(--foreground)] font-medium">
                   {selectedNode.label}
                 </h2>
               </div>
@@ -659,7 +659,7 @@ export default React.memo(function GraphView({
                 onClick={() => setSelectedNode(null)}
                 aria-label="Close details"
                 title="Close"
-                className="p-2 text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                className="p-2 text-[var(--foreground)]/50 hover:text-[var(--foreground)] transition-colors bg-[var(--foreground)]/5 hover:bg-[var(--foreground)]/10 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
               >
                 <X className="w-4 h-4" aria-hidden="true" />
               </button>
@@ -667,15 +667,15 @@ export default React.memo(function GraphView({
 
             <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-hide">
               <section>
-                <p className="text-sm text-white/70 leading-relaxed mb-4">
+                <p className="text-sm text-[var(--foreground)]/70 leading-relaxed mb-4">
                   {selectedNode.description}
                 </p>
                 {selectedNode.reason && (
-                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5">
-                    <h4 className="text-[10px] uppercase text-white/40 tracking-widest mb-1 pointer-events-none">
+                  <div className="bg-[var(--surface-card)] rounded-xl p-4 border border-[var(--border-subtle)]">
+                    <h4 className="text-[10px] uppercase text-[var(--foreground)]/40 tracking-widest mb-1 pointer-events-none">
                       Creation Motive
                     </h4>
-                    <p className="text-sm text-white/80">
+                    <p className="text-sm text-[var(--foreground)]/80">
                       {selectedNode.reason}
                     </p>
                   </div>
@@ -683,28 +683,28 @@ export default React.memo(function GraphView({
               </section>
 
               <section className="grid grid-cols-2 gap-4">
-                <div className="bg-[#0a0a0a] rounded-xl p-3 border border-white/5 flex items-center gap-3">
+                <div className="bg-[var(--surface-card)] rounded-xl p-3 border border-[var(--border-subtle)] flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
                     <Calendar className="w-4 h-4 text-blue-400" />
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase text-white/40">
+                    <p className="text-[10px] uppercase text-[var(--foreground)]/40">
                       Creation Date
                     </p>
-                    <p className="text-xs text-white tracking-wide">
+                    <p className="text-xs text-[var(--foreground)] tracking-wide">
                       {selectedNode.date || "Unknown"}
                     </p>
                   </div>
                 </div>
-                <div className="bg-[#0a0a0a] rounded-xl p-3 border border-white/5 flex items-center gap-3">
+                <div className="bg-[var(--surface-card)] rounded-xl p-3 border border-[var(--border-subtle)] flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
                     <Flag className="w-4 h-4 text-purple-400" />
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase text-white/40">
+                    <p className="text-[10px] uppercase text-[var(--foreground)]/40">
                       Milestone
                     </p>
-                    <p className="text-xs text-white tracking-wide">
+                    <p className="text-xs text-[var(--foreground)] tracking-wide">
                       {selectedNode.milestone || "None"}
                     </p>
                   </div>
@@ -714,7 +714,7 @@ export default React.memo(function GraphView({
               {selectedNode.relatedFiles &&
                 selectedNode.relatedFiles.length > 0 && (
                   <section>
-                    <h4 className="text-[10px] uppercase text-white/40 tracking-widest mb-3 flex items-center gap-2">
+                    <h4 className="text-[10px] uppercase text-[var(--foreground)]/40 tracking-widest mb-3 flex items-center gap-2">
                       <FileText className="w-3 h-3" /> Related Files
                     </h4>
                     <ul className="space-y-2">
@@ -722,7 +722,7 @@ export default React.memo(function GraphView({
                         (file: string, i: number) => (
                           <li
                             key={i}
-                            className="text-xs text-white/80 flex items-center gap-2 before:content-[''] before:w-1 before:h-1 before:bg-[#39ff14] before:rounded-full bg-white/5 p-2 rounded-lg"
+                            className="text-xs text-[var(--foreground)]/80 flex items-center gap-2 before:content-[''] before:w-1 before:h-1 before:bg-[#39ff14] before:rounded-full bg-[var(--foreground)]/5 p-2 rounded-lg"
                           >
                             {file}
                           </li>
@@ -734,14 +734,14 @@ export default React.memo(function GraphView({
 
               {selectedNode.decisions && selectedNode.decisions.length > 0 && (
                 <section>
-                  <h4 className="text-[10px] uppercase text-white/40 tracking-widest mb-3 flex items-center gap-2">
+                  <h4 className="text-[10px] uppercase text-[var(--foreground)]/40 tracking-widest mb-3 flex items-center gap-2">
                     <CheckSquare className="w-3 h-3" /> Key Decisions
                   </h4>
                   <ul className="space-y-2">
                     {selectedNode.decisions.map((dec: string, i: number) => (
                       <li
                         key={i}
-                        className="text-xs text-white/80 p-2 border-l-2 border-[#39ff14]/50 bg-gradient-to-r from-[#39ff14]/10 to-transparent"
+                        className="text-xs text-[var(--foreground)]/80 p-2 border-l-2 border-[#39ff14]/50 bg-gradient-to-r from-[#39ff14]/10 to-transparent"
                       >
                         {dec}
                       </li>
@@ -752,16 +752,16 @@ export default React.memo(function GraphView({
 
               {selectedNode.commits && selectedNode.commits.length > 0 && (
                 <section>
-                  <h4 className="text-[10px] uppercase text-white/40 tracking-widest mb-3 flex items-center gap-2">
+                  <h4 className="text-[10px] uppercase text-[var(--foreground)]/40 tracking-widest mb-3 flex items-center gap-2">
                     <GitCommit className="w-3 h-3" /> Associated Commits
                   </h4>
-                  <div className="space-y-2 relative before:absolute before:inset-y-2 before:left-2.5 before:w-px before:bg-white/10">
+                  <div className="space-y-2 relative before:absolute before:inset-y-2 before:left-2.5 before:w-px before:bg-[var(--foreground)]/10">
                     {selectedNode.commits.map((commit: string, i: number) => (
                       <div
                         key={i}
-                        className="relative flex items-center gap-3 pl-8 text-xs text-white/70"
+                        className="relative flex items-center gap-3 pl-8 text-xs text-[var(--foreground)]/70"
                       >
-                        <div className="absolute left-1.5 w-2 h-2 rounded-full border border-white/30 bg-[#050505]" />
+                        <div className="absolute left-1.5 w-2 h-2 rounded-full border border-white/30 bg-[var(--surface-card)]" />
                         <span className="font-mono text-orange-400">
                           {commit.split(" - ")[0]}
                         </span>
@@ -777,7 +777,7 @@ export default React.memo(function GraphView({
               {selectedNode.iterations &&
                 selectedNode.iterations.length > 0 && (
                   <section>
-                    <h4 className="text-[10px] uppercase text-white/40 tracking-widest mb-3 flex items-center gap-2">
+                    <h4 className="text-[10px] uppercase text-[var(--foreground)]/40 tracking-widest mb-3 flex items-center gap-2">
                       <RefreshCw className="w-3 h-3" /> Iterations & Queries
                     </h4>
                     <div className="flex flex-wrap gap-2">
