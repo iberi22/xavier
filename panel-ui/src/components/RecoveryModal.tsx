@@ -116,18 +116,18 @@ export const RecoveryModal: React.FC<RecoveryModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="relative w-full max-w-2xl bg-[#0f1013] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-2xl bg-[var(--surface-card)] dark:bg-[#0f1013] border border-[var(--border-subtle)] dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/40">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-subtle)] dark:border-white/10 bg-[var(--surface)] dark:bg-black/40">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-[#39ff14]/10 border border-[#39ff14]/30 text-[#39ff14]">
               <Key size={20} />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white tracking-wide">
+              <h2 className="text-lg font-semibold text-[var(--foreground)] dark:text-white tracking-wide">
                 Disaster Recovery Wizard
               </h2>
-              <p className="text-xs text-white/50">
+              <p className="text-xs text-[var(--foreground)]/50 dark:text-white/50">
                 Sovereign Node Backup & Recovery Mnemonic
               </p>
             </div>
@@ -136,21 +136,21 @@ export const RecoveryModal: React.FC<RecoveryModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Cerrar"
-            className="p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-1.5 rounded-lg text-[var(--foreground)]/50 dark:text-white/50 hover:text-[var(--foreground)] dark:text-white hover:bg-[var(--foreground)]/10 dark:bg-white/10 transition-colors"
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Tab Selection */}
-        <div className="flex border-b border-white/10 bg-black/20 px-6 pt-2 gap-2">
+        <div className="flex border-b border-[var(--border-subtle)] dark:border-white/10 bg-[var(--surface)]/50 dark:bg-black/20 px-6 pt-2 gap-2">
           <button
             type="button"
             onClick={() => setActiveTab("backup")}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
               activeTab === "backup"
                 ? "border-[#39ff14] text-[#39ff14] bg-[#39ff14]/5"
-                : "border-transparent text-white/40 hover:text-white/80"
+                : "border-transparent text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)]/80 dark:text-white/80"
             }`}
           >
             <ShieldAlert size={14} /> Backup Node
@@ -161,7 +161,7 @@ export const RecoveryModal: React.FC<RecoveryModalProps> = ({
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold tracking-wider uppercase border-b-2 transition-all ${
               activeTab === "restore"
                 ? "border-[#39ff14] text-[#39ff14] bg-[#39ff14]/5"
-                : "border-transparent text-white/40 hover:text-white/80"
+                : "border-transparent text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)]/80 dark:text-white/80"
             }`}
           >
             <RefreshCw size={14} /> Restore Node
@@ -188,34 +188,34 @@ export const RecoveryModal: React.FC<RecoveryModalProps> = ({
 
               {/* Seed Phrase Display */}
               <div>
-                <h3 className="text-xs uppercase tracking-widest text-white/50 mb-3 font-mono">
+                <h3 className="text-xs uppercase tracking-widest text-[var(--foreground)]/50 dark:text-white/50 mb-3 font-mono">
                   1. Save Your Mnemonic Words
                 </h3>
                 <SeedPhraseDisplay phrase={mnemonic} />
               </div>
 
               {/* Quiz Section */}
-              <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-4">
+              <div className="p-4 rounded-xl bg-[var(--foreground)]/5 dark:bg-white/5 border border-[var(--border-subtle)] dark:border-white/10 space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs uppercase tracking-widest text-white/80 font-mono flex items-center gap-2">
+                  <h3 className="text-xs uppercase tracking-widest text-[var(--foreground)]/80 dark:text-white/80 font-mono flex items-center gap-2">
                     <CheckCircle2 size={14} className="text-[#39ff14]" />
                     2. Backup Verification Quiz
                   </h3>
                   <button
                     type="button"
                     onClick={generateQuiz}
-                    className="flex items-center gap-1 text-[11px] text-white/50 hover:text-white transition-colors"
+                    className="flex items-center gap-1 text-[11px] text-[var(--foreground)]/50 dark:text-white/50 hover:text-[var(--foreground)] dark:text-white transition-colors"
                   >
                     <RefreshCw size={12} /> Refresh Quiz
                   </button>
                 </div>
-                <p className="text-xs text-white/60">
+                <p className="text-xs text-[var(--foreground)]/60 dark:text-white/60">
                   To confirm you have stored your phrase safely, please type word <span className="text-[#39ff14] font-bold font-mono">#{quizIndices[0] + 1}</span> and word <span className="text-[#39ff14] font-bold font-mono">#{quizIndices[1] + 1}</span>.
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] uppercase font-mono text-white/40 mb-1">
+                    <label className="block text-[10px] uppercase font-mono text-[var(--foreground)]/40 dark:text-white/40 mb-1">
                       Word #{quizIndices[0] + 1}
                     </label>
                     <input
@@ -226,11 +226,11 @@ export const RecoveryModal: React.FC<RecoveryModalProps> = ({
                         setQuizSuccess(false);
                       }}
                       placeholder={`Enter word #${quizIndices[0] + 1}`}
-                      className="w-full bg-black/50 border border-white/15 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-[#39ff14] transition-colors"
+                      className="w-full bg-[var(--background)] dark:bg-black/50 border border-[var(--border-subtle)] dark:border-white/15 rounded-lg px-3 py-2 text-xs font-mono text-[var(--foreground)] dark:text-white focus:outline-none focus:border-[#39ff14] transition-colors"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] uppercase font-mono text-white/40 mb-1">
+                    <label className="block text-[10px] uppercase font-mono text-[var(--foreground)]/40 dark:text-white/40 mb-1">
                       Word #{quizIndices[1] + 1}
                     </label>
                     <input
@@ -241,7 +241,7 @@ export const RecoveryModal: React.FC<RecoveryModalProps> = ({
                         setQuizSuccess(false);
                       }}
                       placeholder={`Enter word #${quizIndices[1] + 1}`}
-                      className="w-full bg-black/50 border border-white/15 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-[#39ff14] transition-colors"
+                      className="w-full bg-[var(--background)] dark:bg-black/50 border border-[var(--border-subtle)] dark:border-white/15 rounded-lg px-3 py-2 text-xs font-mono text-[var(--foreground)] dark:text-white focus:outline-none focus:border-[#39ff14] transition-colors"
                     />
                   </div>
                 </div>
@@ -270,7 +270,7 @@ export const RecoveryModal: React.FC<RecoveryModalProps> = ({
                 className={`w-full py-3 rounded-xl font-mono text-xs uppercase tracking-widest font-bold transition-all flex items-center justify-center gap-2 ${
                   isQuizPassed
                     ? "bg-[#39ff14] text-black hover:bg-[#32e011] shadow-[0_0_20px_rgba(57,255,20,0.3)] cursor-pointer"
-                    : "bg-white/10 text-white/30 cursor-not-allowed border border-white/5"
+                    : "bg-[var(--foreground)]/10 dark:bg-white/10 text-[var(--foreground)]/30 dark:text-white/30 cursor-not-allowed border border-[var(--border-subtle)] dark:border-white/5"
                 }`}
               >
                 <CheckCircle2 size={16} /> I have securely backed up my key
@@ -290,7 +290,7 @@ export const RecoveryModal: React.FC<RecoveryModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs uppercase tracking-widest text-white/60 font-mono mb-2">
+                <label className="block text-xs uppercase tracking-widest text-[var(--foreground)]/60 dark:text-white/60 font-mono mb-2">
                   Enter 12 or 24 Word Mnemonic
                 </label>
                 <textarea
@@ -301,12 +301,12 @@ export const RecoveryModal: React.FC<RecoveryModalProps> = ({
                   }}
                   rows={4}
                   placeholder="e.g. abandon amount abandon amount abandon amount abandon amount abandon amount abandon announce"
-                  className="w-full bg-black/50 border border-white/15 rounded-xl p-3 text-xs font-mono text-white placeholder-white/20 focus:outline-none focus:border-[#39ff14] transition-colors resize-none"
+                  className="w-full bg-[var(--background)] dark:bg-black/50 border border-[var(--border-subtle)] dark:border-white/15 rounded-xl p-3 text-xs font-mono text-[var(--foreground)] dark:text-white placeholder-[var(--foreground)]/20 dark:placeholder-white/20 focus:outline-none focus:border-[#39ff14] transition-colors resize-none"
                 />
-                <div className="flex items-center justify-between mt-2 text-[11px] font-mono text-white/40">
+                <div className="flex items-center justify-between mt-2 text-[11px] font-mono text-[var(--foreground)]/40 dark:text-white/40">
                   <span>
                     Word count:{" "}
-                    <strong className="text-white/80">
+                    <strong className="text-[var(--foreground)]/80 dark:text-white/80">
                       {
                         restoreText
                           .trim()
