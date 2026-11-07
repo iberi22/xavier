@@ -20,6 +20,7 @@ import React, {
 } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import type { GraphData, GraphLink, GraphNode } from "../types";
+import { useTheme } from "../lib/theme/theme-provider";
 
 interface GraphCanvasProps {
   data: GraphData;
@@ -52,6 +53,8 @@ export default React.memo(function GraphCanvas({
   onNodeSelect,
   isCodeMode = false,
 }: GraphCanvasProps) {
+  const { resolvedTheme } = useTheme();
+  const isLight = resolvedTheme === "studio-bone" ;
   const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({
@@ -247,12 +250,12 @@ export default React.memo(function GraphCanvas({
         }
       }
 
-      ctx.fillStyle = isHovered ? "#ffffff" : nodeColor;
+      ctx.fillStyle = isHovered ? (isLight ? "#1c1c1f" : "#ffffff") : nodeColor;
 
       // Outer glow for hovered/selected nodes
       if (isHovered || isSelected || intensity > 0.1) {
         ctx.shadowBlur = (isSelected ? 20 : 10 + intensity * 15) / globalScale;
-        ctx.shadowColor = isHovered || isSelected ? "#ffffff" : nodeColor;
+        ctx.shadowColor = isHovered || isSelected ? (isLight ? "#1c1c1f" : "#ffffff") : nodeColor;
       } else {
         ctx.shadowBlur = 0;
       }
@@ -262,7 +265,7 @@ export default React.memo(function GraphCanvas({
 
       // Draw label if zoomed in or hovered/selected
       if (globalScale > 1.8 || isHovered || isSelected) {
-        ctx.fillStyle = isSelected ? "#39ff14" : "rgba(255, 255, 255, 0.85)";
+        ctx.fillStyle = isSelected ? "#39ff14" : (isLight ? "rgba(28, 28, 31, 0.85)" : "rgba(255, 255, 255, 0.85)");
         ctx.font = `${isHovered || isSelected ? 8 : 6}px monospace`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
@@ -287,8 +290,8 @@ export default React.memo(function GraphCanvas({
       ctx.strokeStyle = isSelectedLink
         ? "rgba(57, 255, 20, 0.8)"
         : isHoveredLink
-          ? "rgba(255, 255, 255, 0.5)"
-          : "rgba(255, 255, 255, 0.12)";
+          ? (isLight ? "rgba(28, 28, 31, 0.5)" : "rgba(255, 255, 255, 0.5)")
+          : (isLight ? "rgba(28, 28, 31, 0.12)" : "rgba(255, 255, 255, 0.12)");
 
       ctx.lineWidth =
         isSelectedLink || isHoveredLink ? 1.5 / globalScale : 0.8 / globalScale;

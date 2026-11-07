@@ -23,6 +23,7 @@ import ForceGraph2D, {
   NodeObject,
 } from "react-force-graph-2d";
 import type { GraphData, GraphLink, GraphNode } from "../types";
+import { useTheme } from "../lib/theme/theme-provider";
 
 interface GraphViewProps {
   data: GraphData;
@@ -44,6 +45,8 @@ export default React.memo(function GraphView({
   onUpdateData,
   isFullGraphEmpty = false,
 }: GraphViewProps) {
+  const { resolvedTheme } = useTheme();
+  const isLight = resolvedTheme === "studio-bone" ;
   const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({
@@ -267,7 +270,7 @@ export default React.memo(function GraphView({
       ctx.beginPath();
       ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
       ctx.fillStyle = isHovered
-        ? "#fff"
+        ? (isLight ? "#1c1c1f" : "#fff")
         : node.type === "organization"
           ? "#39ff14"
           : node.type === "project"
@@ -289,7 +292,7 @@ export default React.memo(function GraphView({
 
       // Draw label if expanded or zoomed in enough
       if (isExp || globalScale > 2) {
-        ctx.fillStyle = isExp ? "#0a0a0a" : "rgba(255, 255, 255, 0.8)";
+        ctx.fillStyle = isExp ? (isLight ? "#ffffff" : "#0a0a0a") : (isLight ? "rgba(28, 28, 31, 0.8)" : "rgba(255, 255, 255, 0.8)");
         ctx.font = `${isExp ? 10 : 4}px monospace`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -311,7 +314,7 @@ export default React.memo(function GraphView({
         hoveredNode && (hoveredNode.id === s.id || hoveredNode.id === t.id);
       ctx.strokeStyle = isHoveredLink
         ? "rgba(57, 255, 20, 0.8)"
-        : "rgba(57, 255, 20, 0.15)";
+        : (isLight ? "rgba(28, 28, 31, 0.15)" : "rgba(57, 255, 20, 0.15)");
       ctx.lineWidth = isHoveredLink ? 2 / globalScale : 1 / globalScale;
       ctx.moveTo(s.x, s.y);
       ctx.lineTo(t.x, t.y);
