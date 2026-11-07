@@ -40,7 +40,7 @@ test.describe("Full panel accessibility & WCAG 2.1 AA automated audit E2E test",
       await route.fulfill({ json: { data: { nodes: [], links: [] } } });
     });
 
-    await page.route("**/auth/login", async (route) => {
+    await page.route("**/auth/refresh", async (route) => { await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ access_token: "mock-jwt-token", refresh_token: "mock-rt-token" }) }); }); await page.route("**/auth/login", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
