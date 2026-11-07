@@ -42,6 +42,25 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
       });
     });
 
+    await page.route("**/v1/auth/login", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          token: "mock-jwt-token",
+          user: { id: "1", email: "operator@xavier.local", role: "admin" },
+        }),
+      });
+    });
+
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ token: "mock-jwt-token" }),
+      });
+    });
+
     // Bypass onboarding and set authenticated session
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_onboarding_completed", "true");
@@ -63,7 +82,6 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
     // 1. Navigate to the app root
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(1000);
 
     // If login is shown, log in
     const loginButton = page.locator('button:has-text("INITIALIZE SESSION")');
@@ -74,8 +92,7 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
         await passwordInput.fill("password123");
       }
       await loginButton.click();
-      await page.waitForTimeout(1000);
-    }
+          }
 
     // 2. Verify Studio Dark is applied by default
     const htmlElement = page.locator("html");
@@ -106,7 +123,6 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
     // Appearance is default tab or switch to it
     const appearanceSidebarBtn = page.locator('button:has-text("Appearance")').first();
     await appearanceSidebarBtn.click();
-    await page.waitForTimeout(600);
 
     // Verify Antigravity Appearance content
     await expect(page.locator('h1:has-text("Appearance")')).toBeVisible();
@@ -126,7 +142,6 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
     // 4. Switch to Light Mode (Sun icon)
     const sunBtn = page.locator('button[aria-label="Light theme"]');
     await sunBtn.click();
-    await page.waitForTimeout(600);
 
     // Verify DOM theme attribute switched to studio-bone
     await expect(htmlElement).toHaveAttribute("data-theme", "studio-bone");
@@ -139,13 +154,11 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
     // 5. Switch to Dark Mode (Moon icon)
     const moonBtn = page.locator('button[aria-label="Dark theme"]');
     await moonBtn.click();
-    await page.waitForTimeout(600);
-    await expect(htmlElement).toHaveAttribute("data-theme", "studio-dark");
+        await expect(htmlElement).toHaveAttribute("data-theme", "studio-dark");
     await expect(htmlElement).toHaveClass(/studio-dark/);
 
     // Close modal
     await modal.click();
-    await page.waitForTimeout(400);
-  });
+      });
 });
 

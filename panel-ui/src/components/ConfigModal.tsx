@@ -419,14 +419,14 @@ export default function ConfigModal({
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.96, y: 8 }}
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-      className="relative z-20 w-[960px] h-[640px] max-w-[95vw] rounded-2xl flex flex-row overflow-hidden shadow-2xl bg-[#141518]/95 border border-white/[0.08] backdrop-blur-2xl text-foreground"
+      className="relative z-20 w-[960px] h-[640px] max-w-[95vw] rounded-2xl flex flex-row overflow-hidden shadow-2xl bg-[var(--surface-card)] dark:bg-[#141518]/95 border border-[var(--border-subtle)] dark:border-white/[0.08] backdrop-blur-2xl text-foreground"
     >
       {/* Left Sidebar */}
-      <div className="w-56 shrink-0 bg-[#111215]/80 border-r border-white/[0.06] flex flex-col justify-between p-3 select-none">
+      <div className="w-56 shrink-0 bg-[var(--surface)] dark:bg-[#111215]/80 border-r border-[var(--border-subtle)] dark:border-white/[0.06] flex flex-col justify-between p-3 select-none">
         <div className="space-y-4 overflow-y-auto">
           {/* Settings Group */}
           <div>
-            <div className="px-2 py-1 text-[11px] font-medium text-white/40 tracking-wider">
+            <div className="px-2 py-1 text-[11px] font-medium text-[var(--foreground)]/40 dark:text-white/40 tracking-wider">
               Settings
             </div>
             <div className="space-y-0.5 mt-1">
@@ -448,8 +448,8 @@ export default function ConfigModal({
                     onClick={() => setMainTab(item.id)}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
                       isSelected
-                        ? "bg-white/10 text-white font-semibold shadow-sm"
-                        : "text-white/60 hover:text-white/90 hover:bg-white/[0.04]"
+                        ? "bg-black/5 dark:bg-black/10 dark:bg-white/10 text-[var(--foreground)] dark:text-white font-semibold shadow-sm"
+                        : "text-[var(--foreground)]/60 dark:text-white/60 hover:text-[var(--foreground)]/90 dark:hover:text-[var(--foreground)]/90 dark:text-white/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
                     }`}
                   >
                     {item.label}
@@ -462,13 +462,13 @@ export default function ConfigModal({
           {/* Projects Group */}
           <div>
             <div className="flex items-center justify-between px-2 py-1">
-              <span className="text-[11px] font-medium text-white/40 tracking-wider">
+              <span className="text-[11px] font-medium text-[var(--foreground)]/40 dark:text-white/40 tracking-wider">
                 Projects
               </span>
               <button
                 type="button"
                 onClick={handleAddProject}
-                className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white transition-colors"
+                className="p-0.5 rounded hover:bg-black/5 dark:bg-black/10 dark:bg-white/10 text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)] dark:hover:text-white transition-colors"
                 title="Add Project"
                 aria-label="Add Project"
               >
@@ -485,8 +485,8 @@ export default function ConfigModal({
                     onClick={() => handleSwitchWorkspace(proj)}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
                       isSelected && mainTab !== "appearance"
-                        ? "bg-white/10 text-white font-semibold"
-                        : "text-white/60 hover:text-white/90 hover:bg-white/[0.04]"
+                        ? "bg-black/5 dark:bg-black/10 dark:bg-white/10 text-[var(--foreground)] dark:text-white font-semibold"
+                        : "text-[var(--foreground)]/60 dark:text-white/60 hover:text-[var(--foreground)]/90 dark:hover:text-[var(--foreground)]/90 dark:text-white/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
                     }`}
                   >
                     {proj}
@@ -498,7 +498,7 @@ export default function ConfigModal({
 
           {/* Not in Project Group */}
           <div>
-            <div className="px-2 py-1 text-[11px] font-medium text-white/40 tracking-wider">
+            <div className="px-2 py-1 text-[11px] font-medium text-[var(--foreground)]/40 dark:text-white/40 tracking-wider">
               Not in Project
             </div>
             <div className="space-y-0.5 mt-1">
@@ -507,8 +507,8 @@ export default function ConfigModal({
                 onClick={() => setMainTab("messaging")}
                 className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
                   mainTab === "messaging"
-                    ? "bg-white/10 text-white font-semibold"
-                    : "text-white/60 hover:text-white/90 hover:bg-white/[0.04]"
+                    ? "bg-black/5 dark:bg-black/10 dark:bg-white/10 text-[var(--foreground)] dark:text-white font-semibold"
+                    : "text-[var(--foreground)]/60 dark:text-white/60 hover:text-[var(--foreground)]/90 dark:hover:text-[var(--foreground)]/90 dark:text-white/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
                 }`}
               >
                 Conversations
@@ -518,18 +518,18 @@ export default function ConfigModal({
         </div>
 
         {/* Footer Items */}
-        <div className="pt-2 border-t border-white/[0.06] space-y-0.5">
+        <div className="pt-2 border-t border-[var(--border-subtle)] dark:border-white/[0.06] space-y-0.5">
           <button
             type="button"
             onClick={() => setShowShortcuts(true)}
-            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/60 hover:text-white/90 hover:bg-white/[0.04] transition-all duration-150"
+            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-[var(--foreground)]/60 dark:text-white/60 hover:text-[var(--foreground)]/90 dark:hover:text-[var(--foreground)]/90 dark:text-white/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all duration-150"
           >
             Shortcuts
           </button>
           <button
             type="button"
             onClick={() => setShowFeedback(true)}
-            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/60 hover:text-white/90 hover:bg-white/[0.04] transition-all duration-150"
+            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-[var(--foreground)]/60 dark:text-white/60 hover:text-[var(--foreground)]/90 dark:hover:text-[var(--foreground)]/90 dark:text-white/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-all duration-150"
           >
             Provide Feedback
           </button>
@@ -537,15 +537,15 @@ export default function ConfigModal({
       </div>
 
       {/* Right Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative bg-[#131417]/60">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative bg-[var(--background)] dark:bg-[var(--background)] dark:bg-[#131417]/60">
         {/* Top Header with Close Button and preserving tabs */}
         <div className="flex items-center justify-between pl-8 pr-6 pt-5 pb-1">
-          <div className="flex items-center gap-1.5 overflow-x-auto text-xs text-white/40">
+          <div className="flex items-center gap-1.5 overflow-x-auto text-xs text-[var(--foreground)]/40 dark:text-white/40">
             {/* Preserved tab switchers (subtle badges for other settings) */}
             <button
               onClick={() => setMainTab("config")}
               className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                mainTab === "config" ? "text-white bg-white/10" : "hover:text-white/70"
+                mainTab === "config" ? "text-[var(--foreground)] dark:text-white bg-black/5 dark:bg-white/10" : "hover:text-[var(--foreground)]/70 dark:hover:text-[var(--foreground)]/70 dark:hover:text-white/70"
               }`}
             >
               Configuration
@@ -553,7 +553,7 @@ export default function ConfigModal({
             <button
               onClick={() => setMainTab("providers")}
               className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                mainTab === "providers" ? "text-white bg-white/10" : "hover:text-white/70"
+                mainTab === "providers" ? "text-[var(--foreground)] dark:text-white bg-black/5 dark:bg-white/10" : "hover:text-[var(--foreground)]/70 dark:hover:text-[var(--foreground)]/70 dark:hover:text-white/70"
               }`}
             >
               Providers
@@ -561,7 +561,7 @@ export default function ConfigModal({
             <button
               onClick={() => setMainTab("usage")}
               className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                mainTab === "usage" ? "text-white bg-white/10" : "hover:text-white/70"
+                mainTab === "usage" ? "text-[var(--foreground)] dark:text-white bg-black/5 dark:bg-white/10" : "hover:text-[var(--foreground)]/70 dark:hover:text-[var(--foreground)]/70 dark:hover:text-white/70"
               }`}
             >
               Usage Metrics
@@ -569,7 +569,7 @@ export default function ConfigModal({
             <button
               onClick={() => setMainTab("messaging")}
               className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                mainTab === "messaging" ? "text-white bg-white/10" : "hover:text-white/70"
+                mainTab === "messaging" ? "text-[var(--foreground)] dark:text-white bg-black/5 dark:bg-white/10" : "hover:text-[var(--foreground)]/70 dark:hover:text-[var(--foreground)]/70 dark:hover:text-white/70"
               }`}
             >
               Messaging
@@ -577,7 +577,7 @@ export default function ConfigModal({
             <button
               onClick={() => setMainTab("security")}
               className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                mainTab === "security" ? "text-white bg-white/10" : "hover:text-white/70"
+                mainTab === "security" ? "text-[var(--foreground)] dark:text-white bg-black/5 dark:bg-white/10" : "hover:text-[var(--foreground)]/70 dark:hover:text-[var(--foreground)]/70 dark:hover:text-white/70"
               }`}
             >
               Security
@@ -585,7 +585,7 @@ export default function ConfigModal({
             <button
               onClick={() => setMainTab("mesh")}
               className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                mainTab === "mesh" ? "text-white bg-white/10" : "hover:text-white/70"
+                mainTab === "mesh" ? "text-[var(--foreground)] dark:text-white bg-black/5 dark:bg-white/10" : "hover:text-[var(--foreground)]/70 dark:hover:text-[var(--foreground)]/70 dark:hover:text-white/70"
               }`}
             >
               Mesh
@@ -593,7 +593,7 @@ export default function ConfigModal({
             <button
               onClick={() => setMainTab("memory")}
               className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                mainTab === "memory" ? "text-white bg-white/10" : "hover:text-white/70"
+                mainTab === "memory" ? "text-[var(--foreground)] dark:text-white bg-black/5 dark:bg-white/10" : "hover:text-[var(--foreground)]/70 dark:hover:text-[var(--foreground)]/70 dark:hover:text-white/70"
               }`}
             >
               Memory
@@ -601,7 +601,7 @@ export default function ConfigModal({
             <button
               onClick={() => setMainTab("agents")}
               className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                mainTab === "agents" ? "text-white bg-white/10" : "hover:text-white/70"
+                mainTab === "agents" ? "text-[var(--foreground)] dark:text-white bg-black/5 dark:bg-white/10" : "hover:text-[var(--foreground)]/70 dark:hover:text-[var(--foreground)]/70 dark:hover:text-white/70"
               }`}
             >
               Agents
@@ -609,7 +609,7 @@ export default function ConfigModal({
             <button
               onClick={() => setMainTab("plugins")}
               className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                mainTab === "plugins" ? "text-white bg-white/10" : "hover:text-white/70"
+                mainTab === "plugins" ? "text-[var(--foreground)] dark:text-white bg-black/5 dark:bg-white/10" : "hover:text-[var(--foreground)]/70 dark:hover:text-[var(--foreground)]/70 dark:hover:text-white/70"
               }`}
             >
               Plugins
@@ -617,7 +617,7 @@ export default function ConfigModal({
             <button
               onClick={() => setMainTab("graph")}
               className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                mainTab === "graph" ? "text-white bg-white/10" : "hover:text-white/70"
+                mainTab === "graph" ? "text-[var(--foreground)] dark:text-white bg-black/5 dark:bg-white/10" : "hover:text-[var(--foreground)]/70 dark:hover:text-[var(--foreground)]/70 dark:hover:text-white/70"
               }`}
             >
               Roadmap
@@ -625,7 +625,7 @@ export default function ConfigModal({
             <button
               onClick={() => setMainTab("bookmarks")}
               className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                mainTab === "bookmarks" ? "text-white bg-white/10" : "hover:text-white/70"
+                mainTab === "bookmarks" ? "text-[var(--foreground)] dark:text-white bg-black/5 dark:bg-white/10" : "hover:text-[var(--foreground)]/70 dark:hover:text-[var(--foreground)]/70 dark:hover:text-white/70"
               }`}
             >
               Saved Artifacts
@@ -634,7 +634,7 @@ export default function ConfigModal({
 
           <button
             onClick={onClose}
-            className="p-1 hover:bg-white/10 rounded-full transition-colors text-white/40 hover:text-white group shrink-0"
+            className="p-1 hover:bg-black/5 dark:bg-white/10 rounded-full transition-colors text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)] dark:hover:text-white group shrink-0"
             title="Close"
             aria-label="Cerrar ventana de configuración"
           >
@@ -672,11 +672,11 @@ export default function ConfigModal({
               className="w-full h-full relative flex flex-col"
             >
               {/* Sub-tab list switcher inside graph section (Accessible WAI-ARIA) */}
-              <div className="flex items-center justify-between px-8 py-3 bg-[#0a0a0a]/80 border-b border-white/5 shrink-0 z-40">
+              <div className="flex items-center justify-between px-8 py-3 bg-[var(--surface)] dark:bg-[#0a0a0a]/80 border-b border-[var(--border-subtle)] dark:border-white/5 shrink-0 z-40">
                 <div
                   role="tablist"
                   aria-label="Knowledge layers"
-                  className="flex bg-white/5 p-1 rounded-xl gap-1 border border-white/5"
+                  className="flex bg-black/5 dark:bg-black/5 dark:bg-white/5 p-1 rounded-xl gap-1 border border-[var(--border-subtle)] dark:border-white/5"
                 >
                   <button
                     role="tab"
@@ -694,7 +694,7 @@ export default function ConfigModal({
                     className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
                       subLayer === "roadmap"
                         ? "bg-[#39ff14] text-black shadow-[0_0_15px_rgba(57,255,20,0.3)] font-bold"
-                        : "text-white/60 hover:text-white hover:bg-white/5"
+                        : "text-[var(--foreground)]/60 dark:text-white/60 hover:text-[var(--foreground)] dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5"
                     }`}
                   >
                     Roadmap
@@ -718,7 +718,7 @@ export default function ConfigModal({
                     className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
                       subLayer === "memory"
                         ? "bg-[#39ff14] text-black shadow-[0_0_15px_rgba(57,255,20,0.3)] font-bold"
-                        : "text-white/60 hover:text-white hover:bg-white/5"
+                        : "text-[var(--foreground)]/60 dark:text-white/60 hover:text-[var(--foreground)] dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5"
                     }`}
                   >
                     Memory KG
@@ -739,7 +739,7 @@ export default function ConfigModal({
                     className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
                       subLayer === "code"
                         ? "bg-[#39ff14] text-black shadow-[0_0_15px_rgba(57,255,20,0.3)] font-bold"
-                        : "text-white/60 hover:text-white hover:bg-white/5"
+                        : "text-[var(--foreground)]/60 dark:text-white/60 hover:text-[var(--foreground)] dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5"
                     }`}
                   >
                     Code
@@ -751,7 +751,7 @@ export default function ConfigModal({
                   <button
                     type="button"
                     onClick={handleResetCodeOverview}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 hover:text-white text-xs font-medium tracking-wide transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-black/5 dark:bg-white/5 border border-[var(--border-subtle)] dark:border-white/10 hover:bg-black/5 dark:bg-black/10 dark:bg-white/10 text-[var(--foreground)]/80 dark:text-white/80 hover:text-[var(--foreground)] dark:hover:text-white text-xs font-medium tracking-wide transition-colors"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
                     Reset to Overview
@@ -768,7 +768,7 @@ export default function ConfigModal({
                     aria-labelledby="tab-sub-roadmap"
                     className="w-full h-full relative"
                   >
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex gap-4 bg-[#0a0a0a]/90 backdrop-blur-md p-4 rounded-xl border border-white/10 shadow-2xl items-end">
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex gap-4 bg-[var(--surface)] dark:bg-[#0a0a0a]/90 backdrop-blur-md p-4 rounded-xl border border-[var(--border-subtle)] dark:border-white/10 shadow-2xl items-end">
                       {(startDate ||
                         endDate ||
                         selectedMilestone !== "all") && (
@@ -787,35 +787,35 @@ export default function ConfigModal({
                         </button>
                       )}
                       <div className="flex flex-col">
-                        <label className="text-[10px] uppercase text-white/50 tracking-widest mb-1">
+                        <label className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest mb-1">
                           Start Date
                         </label>
                         <input
                           type="date"
                           value={startDate}
                           onChange={(e) => setStartDate(e.target.value)}
-                          className="h-7 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-white/90 outline-none focus:border-[#39ff14] transition-colors [color-scheme:dark]"
+                          className="h-7 bg-black/5 dark:bg-black/10 dark:bg-black/50 border border-[var(--border-subtle)] dark:border-white/10 rounded-lg px-2 py-1 text-xs text-[var(--foreground)]/90 dark:text-[var(--foreground)]/90 dark:text-white/90 outline-none focus:border-[#39ff14] transition-colors [color-scheme:dark]"
                         />
                       </div>
                       <div className="flex flex-col">
-                        <label className="text-[10px] uppercase text-white/50 tracking-widest mb-1">
+                        <label className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest mb-1">
                           End Date
                         </label>
                         <input
                           type="date"
                           value={endDate}
                           onChange={(e) => setEndDate(e.target.value)}
-                          className="h-7 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-white/90 outline-none focus:border-[#39ff14] transition-colors [color-scheme:dark]"
+                          className="h-7 bg-black/5 dark:bg-black/10 dark:bg-black/50 border border-[var(--border-subtle)] dark:border-white/10 rounded-lg px-2 py-1 text-xs text-[var(--foreground)]/90 dark:text-[var(--foreground)]/90 dark:text-white/90 outline-none focus:border-[#39ff14] transition-colors [color-scheme:dark]"
                         />
                       </div>
                       <div className="flex flex-col">
-                        <label className="text-[10px] uppercase text-white/50 tracking-widest mb-1">
+                        <label className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest mb-1">
                           Milestone
                         </label>
                         <select
                           value={selectedMilestone}
                           onChange={(e) => setSelectedMilestone(e.target.value)}
-                          className="h-7 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-white/90 outline-none focus:border-[#39ff14] transition-colors w-32 appearance-none"
+                          className="h-7 bg-black/5 dark:bg-black/10 dark:bg-black/50 border border-[var(--border-subtle)] dark:border-white/10 rounded-lg px-2 py-1 text-xs text-[var(--foreground)]/90 dark:text-[var(--foreground)]/90 dark:text-white/90 outline-none focus:border-[#39ff14] transition-colors w-32 appearance-none"
                         >
                           <option value="all">All Milestones</option>
                           {milestones.map((m) => (
@@ -863,13 +863,13 @@ export default function ConfigModal({
                     {codeStats &&
                     codeStats.total_symbols === 0 &&
                     !codeLoading ? (
-                      <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#050505]/80 p-6">
-                        <div className="flex flex-col items-center max-w-sm text-center bg-[#0a0a0a] border border-white/10 rounded-[24px] p-8 shadow-2xl">
+                      <div className="absolute inset-0 z-30 flex items-center justify-center bg-white/80 dark:bg-[var(--surface)] dark:bg-white/80 dark:bg-white/80 dark:bg-white dark:bg-white/80 dark:bg-white dark:bg-[#050505]/80 p-6">
+                        <div className="flex flex-col items-center max-w-sm text-center bg-[var(--surface-card)] dark:bg-[#0a0a0a] border border-[var(--border-subtle)] dark:border-white/10 rounded-[24px] p-8 shadow-2xl">
                           <Cpu className="w-12 h-12 text-[#39ff14] mb-4 animate-pulse" />
-                          <h3 className="text-lg font-light text-white mb-2 tracking-tight">
+                          <h3 className="text-lg font-light text-[var(--foreground)] dark:text-[var(--foreground)] dark:text-white mb-2 tracking-tight">
                             Scan Codebase
                           </h3>
-                          <p className="text-xs text-white/40 leading-relaxed mb-6">
+                          <p className="text-xs text-[var(--foreground)]/40 dark:text-white/40 leading-relaxed mb-6">
                             Index symbols, classes, structs, and calls within
                             your "src/" directory to navigate relationships.
                           </p>
@@ -934,14 +934,14 @@ export default function ConfigModal({
               {/* Embedded messaging config — no close button, no backdrop */}
               <div className="p-6 h-full flex flex-col">
                 <div className="mb-4">
-                  <h2 className="text-2xl font-light text-white tracking-tight">
+                  <h2 className="text-2xl font-light text-[var(--foreground)] dark:text-white tracking-tight">
                     Messaging Integrations
                   </h2>
-                  <p className="text-sm text-white/40 mt-1">
+                  <p className="text-sm text-[var(--foreground)]/40 dark:text-white/40 mt-1">
                     Configure external communication channels for Xavier.
                   </p>
                 </div>
-                <div className="flex-1 bg-black/20 border border-white/[0.04] rounded-2xl overflow-hidden">
+                <div className="flex-1 bg-black/5 dark:bg-black/20 border border-[var(--border-subtle)] dark:border-white/[0.04] rounded-2xl overflow-hidden">
                   <MessagingEmbedded />
                 </div>
               </div>
@@ -957,10 +957,10 @@ export default function ConfigModal({
             >
               <div className="p-6">
                 <div className="mb-4">
-                  <h2 className="text-2xl font-light text-white tracking-tight">
+                  <h2 className="text-2xl font-light text-[var(--foreground)] dark:text-white tracking-tight">
                     Security & Tokens
                   </h2>
-                  <p className="text-sm text-white/40 mt-1">
+                  <p className="text-sm text-[var(--foreground)]/40 dark:text-white/40 mt-1">
                     Manage API tokens, provider keys, audit log, and network
                     settings.
                   </p>
@@ -1066,7 +1066,7 @@ function TabButton({
     <button
       onClick={onClick}
       className={`flex items-center gap-2 pb-1 relative transition-colors duration-300 text-sm font-medium tracking-wide
-        ${active ? "text-[#39ff14]" : "text-white/40 hover:text-white/80"}`}
+        ${active ? "text-[#39ff14]" : "text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)]/80 dark:hover:text-white/80"}`}
     >
       {icon}
       {label}
@@ -1278,7 +1278,7 @@ function ConfigView({
       className="flex h-full w-full"
     >
       {/* Sidebar */}
-      <div className="w-64 border-r border-white/5 p-6 flex flex-col bg-black/10 overflow-y-auto justify-between">
+      <div className="w-64 border-r border-[var(--border-subtle)] dark:border-white/5 p-6 flex flex-col bg-black/5 dark:bg-black/5 dark:bg-black/10 overflow-y-auto justify-between">
         <div className="flex flex-col gap-6">
           <nav className="flex flex-col gap-2">
             {tabs.map((tab) => (
@@ -1289,7 +1289,7 @@ function ConfigView({
                   ${
                     activeTab === tab.id
                       ? "active-tab text-[#39ff14]"
-                      : "text-white/40 hover:text-white/80 hover:bg-white/5"
+                      : "text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)]/80 dark:hover:text-white/80 hover:bg-black/5 dark:hover:bg-white/5"
                   }`}
               >
                 {tab.icon}
@@ -1299,15 +1299,15 @@ function ConfigView({
           </nav>
 
           {/* Projects / Workspaces Section */}
-          <div className="border-t border-white/5 pt-4">
+          <div className="border-t border-[var(--border-subtle)] dark:border-white/5 pt-4">
             <div className="flex items-center justify-between px-2 mb-2">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-white/40 font-semibold">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--foreground)]/40 dark:text-white/40 font-semibold">
                 Projects
               </span>
               <button
                 type="button"
                 onClick={handleAddProject}
-                className="p-1 rounded hover:bg-white/10 text-white/50 hover:text-[#39ff14] transition-colors"
+                className="p-1 rounded hover:bg-black/5 dark:bg-black/10 dark:bg-white/10 text-[var(--foreground)]/50 dark:text-[var(--foreground)]/50 dark:text-white/50 hover:text-[#39ff14] transition-colors"
                 title="Add Project"
                 aria-label="Add Project"
               >
@@ -1325,11 +1325,11 @@ function ConfigView({
                     className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono transition-all text-left ${
                       isSelected
                         ? "bg-[#39ff14]/10 text-[#39ff14] border border-[#39ff14]/30 font-semibold"
-                        : "text-white/60 hover:text-white hover:bg-white/5"
+                        : "text-[var(--foreground)]/60 dark:text-white/60 hover:text-[var(--foreground)] dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5"
                     }`}
                   >
                     <div className="flex items-center gap-2 truncate">
-                      <Folder className="w-3 h-3 text-white/40 shrink-0" />
+                      <Folder className="w-3 h-3 text-[var(--foreground)]/40 dark:text-white/40 shrink-0" />
                       <span className="truncate">{ws}</span>
                     </div>
                     {isSelected && (
@@ -1355,15 +1355,15 @@ function ConfigView({
               className="flex flex-col gap-8 max-w-2xl h-full"
             >
               <div>
-                <h2 className="text-3xl font-light text-white tracking-tight">
+                <h2 className="text-3xl font-light text-[var(--foreground)] dark:text-white tracking-tight">
                   Topology Stats
                 </h2>
-                <p className="text-sm text-white/40 mt-1">
+                <p className="text-sm text-[var(--foreground)]/40 dark:text-white/40 mt-1">
                   Distribution of nodes across different depth levels.
                 </p>
               </div>
 
-              <div className="flex-1 min-h-[300px] w-full mt-4 bg-[#050505]/50 border border-[#0d2a13]/80 rounded-xl p-6">
+              <div className="flex-1 min-h-[300px] w-full mt-4 bg-[var(--surface)] dark:bg-[var(--surface)] dark:bg-white dark:bg-[var(--surface)] dark:bg-white dark:bg-[#050505]/50 border border-[#0d2a13]/80 rounded-xl p-6">
                 {topologyData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
@@ -1409,7 +1409,7 @@ function ConfigView({
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-white/30 text-sm">
+                  <div className="w-full h-full flex items-center justify-center text-[var(--foreground)]/30 dark:text-[var(--foreground)]/30 dark:text-white/30 text-sm">
                     No graph data available.
                   </div>
                 )}
@@ -1426,10 +1426,10 @@ function ConfigView({
               className="flex flex-col gap-8 max-w-2xl"
             >
               <div>
-                <h2 className="text-3xl font-light text-white tracking-tight">
+                <h2 className="text-3xl font-light text-[var(--foreground)] dark:text-white tracking-tight">
                   Memory Management
                 </h2>
-                <p className="text-sm text-white/40 mt-1">
+                <p className="text-sm text-[var(--foreground)]/40 dark:text-white/40 mt-1">
                   Configure vector stores and working memory parameters.
                 </p>
               </div>
@@ -1492,10 +1492,10 @@ function ConfigView({
               className="flex flex-col gap-8 max-w-2xl"
             >
               <div>
-                <h2 className="text-3xl font-light text-white tracking-tight">
+                <h2 className="text-3xl font-light text-[var(--foreground)] dark:text-white tracking-tight">
                   Advanced System Settings
                 </h2>
-                <p className="text-sm text-white/40 mt-1">
+                <p className="text-sm text-[var(--foreground)]/40 dark:text-white/40 mt-1">
                   Core system overrides and security policies.
                 </p>
               </div>
@@ -1541,10 +1541,10 @@ function ConfigView({
               className="flex flex-col gap-8 max-w-2xl"
             >
               <div>
-                <h2 className="text-3xl font-light text-white tracking-tight">
+                <h2 className="text-3xl font-light text-[var(--foreground)] dark:text-white tracking-tight">
                   AI Models & Routing
                 </h2>
-                <p className="text-sm text-white/40 mt-1">
+                <p className="text-sm text-[var(--foreground)]/40 dark:text-white/40 mt-1">
                   Configure generation pipelines and intelligent routing.
                 </p>
               </div>
@@ -1585,7 +1585,7 @@ function ConfigView({
               key="placeholder"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex flex-col items-center justify-center h-64 text-white/30"
+              className="flex flex-col items-center justify-center h-64 text-[var(--foreground)]/30 dark:text-[var(--foreground)]/30 dark:text-white/30"
             >
               <Layers className="w-12 h-12 mb-4 opacity-20" />
               <p>Select a category to view specific configuration layers</p>
@@ -1601,10 +1601,10 @@ function ConfigView({
               className="flex flex-col gap-8 max-w-2xl h-full"
             >
               <div>
-                <h2 className="text-3xl font-light text-white tracking-tight">
+                <h2 className="text-3xl font-light text-[var(--foreground)] dark:text-white tracking-tight">
                   Server & Network
                 </h2>
-                <p className="text-sm text-white/40 mt-1">
+                <p className="text-sm text-[var(--foreground)]/40 dark:text-white/40 mt-1">
                   Configure Xavier's connectivity, P2P Cloud Relays, and Data
                   Commons.
                 </p>
@@ -1634,10 +1634,10 @@ function ToggleRow({
 }) {
   const [checked, setChecked] = useState(defaultChecked);
   return (
-    <div className="flex items-center justify-between p-4 rounded-xl bg-[#050505]/50 border border-[#0d2a13]/80 hover:border-[#1a4a23] transition-colors">
+    <div className="flex items-center justify-between p-4 rounded-xl bg-[var(--surface)] dark:bg-[var(--surface)] dark:bg-white dark:bg-[var(--surface)] dark:bg-white dark:bg-[#050505]/50 border border-[#0d2a13]/80 hover:border-[#1a4a23] transition-colors">
       <div>
-        <h4 className="text-white/90 text-sm font-medium mb-1">{label}</h4>
-        <p className="text-xs text-white/40">{description}</p>
+        <h4 className="text-[var(--foreground)]/90 dark:text-[var(--foreground)]/90 dark:text-white/90 text-sm font-medium mb-1">{label}</h4>
+        <p className="text-xs text-[var(--foreground)]/40 dark:text-white/40">{description}</p>
       </div>
       <button
         type="button"
@@ -1645,7 +1645,7 @@ function ToggleRow({
         aria-checked={checked}
         aria-label={`Toggle ${label}`}
         onClick={() => setChecked(!checked)}
-        className={`relative w-12 h-7 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${checked ? "bg-[#39ff14] shadow-[0_0_15px_rgba(57,255,20,0.4)]" : "bg-white/10"}`}
+        className={`relative w-12 h-7 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${checked ? "bg-[#39ff14] shadow-[0_0_15px_rgba(57,255,20,0.4)]" : "bg-black/5 dark:bg-white/10"}`}
       >
         <div
           className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform duration-300 ${checked ? "translate-x-5" : "translate-x-0 opacity-60"}`}
@@ -1675,9 +1675,9 @@ function SliderInput({
   const inputId = useId();
 
   return (
-    <div className="p-4 rounded-xl bg-[#050505]/50 border border-[#0d2a13]/80">
+    <div className="p-4 rounded-xl bg-[var(--surface)] dark:bg-[var(--surface)] dark:bg-white dark:bg-[var(--surface)] dark:bg-white dark:bg-[#050505]/50 border border-[#0d2a13]/80">
       <div className="flex items-center justify-between mb-4">
-        <label htmlFor={inputId} className="text-[10px] uppercase text-white/50 tracking-widest">
+        <label htmlFor={inputId} className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest">
           {label}
         </label>
         <span className="text-[#39ff14] text-xs font-mono neon-text">
@@ -1693,10 +1693,10 @@ function SliderInput({
           step={step}
           value={value}
           onChange={(e) => setValue(Number(e.target.value))}
-          className="w-full h-1 bg-[#1a1a1a] rounded-lg appearance-none cursor-pointer absolute top-1/2 -translate-y-1/2 z-10 opacity-0 w-full"
+          className="w-full h-1 bg-black/5 dark:bg-black/10 dark:bg-black/10 dark:bg-[#1a1a1a] rounded-lg appearance-none cursor-pointer absolute top-1/2 -translate-y-1/2 z-10 opacity-0 w-full"
         />
         {/* Custom Track */}
-        <div className="w-full h-1 bg-[#1a1a1a] rounded-lg relative overflow-visible">
+        <div className="w-full h-1 bg-black/5 dark:bg-black/10 dark:bg-black/10 dark:bg-[#1a1a1a] rounded-lg relative overflow-visible">
           <div
             className="h-full bg-[#39ff14] rounded-lg shadow-[0_0_10px_#39ff14]"
             style={{ width: `${percentage}%` }}
@@ -1724,14 +1724,14 @@ function TextInput({
   const inputId = useId();
   return (
     <div>
-      <label htmlFor={inputId} className="text-[10px] uppercase text-white/50 tracking-widest mb-2 block">
+      <label htmlFor={inputId} className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest mb-2 block">
         {label}
       </label>
       <input
         id={inputId}
         type={type}
         defaultValue={defaultValue}
-        className="w-full bg-[#050505]/80 border border-[#1a1a1a] focus:border-[#39ff14] focus:shadow-[0_0_15px_rgba(57,255,20,0.2)] text-white/90 text-sm px-4 py-3 rounded-xl outline-none transition-all"
+        className="w-full bg-white/80 dark:bg-[var(--surface)] dark:bg-white/80 dark:bg-white dark:bg-white dark:bg-[#050505]/80 border border-[var(--border-subtle)] dark:border-[#1a1a1a] focus:border-[#39ff14] focus:shadow-[0_0_15px_rgba(57,255,20,0.2)] text-[var(--foreground)]/90 dark:text-[var(--foreground)]/90 dark:text-white/90 text-sm px-4 py-3 rounded-xl outline-none transition-all"
       />
     </div>
   );
@@ -1749,22 +1749,22 @@ function SelectInput({
   const inputId = useId();
   return (
     <div>
-      <label htmlFor={inputId} className="text-[10px] uppercase text-white/50 tracking-widest mb-2 block">
+      <label htmlFor={inputId} className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest mb-2 block">
         {label}
       </label>
       <div className="relative">
         <select
           id={inputId}
           defaultValue={defaultValue}
-          className="w-full bg-[#050505]/80 border border-[#1a1a1a] focus:border-[#39ff14] focus:shadow-[0_0_15px_rgba(57,255,20,0.2)] text-white/90 text-sm px-4 py-3 rounded-xl outline-none transition-all appearance-none cursor-pointer"
+          className="w-full bg-white/80 dark:bg-[var(--surface)] dark:bg-white/80 dark:bg-white dark:bg-white dark:bg-[#050505]/80 border border-[var(--border-subtle)] dark:border-[#1a1a1a] focus:border-[#39ff14] focus:shadow-[0_0_15px_rgba(57,255,20,0.2)] text-[var(--foreground)]/90 dark:text-[var(--foreground)]/90 dark:text-white/90 text-sm px-4 py-3 rounded-xl outline-none transition-all appearance-none cursor-pointer"
         >
           {options.map((opt) => (
-            <option key={opt} value={opt} className="bg-[#050505]">
+            <option key={opt} value={opt} className="bg-[var(--surface)] dark:bg-white dark:bg-white dark:bg-[#050505]">
               {opt}
             </option>
           ))}
         </select>
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-white/40">
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--foreground)]/40 dark:text-white/40">
           <svg
             width="12"
             height="12"
