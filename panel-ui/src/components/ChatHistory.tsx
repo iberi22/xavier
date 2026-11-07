@@ -215,11 +215,11 @@ const ChatMessageItem = memo(function ChatMessageItem({
     >
       {/* Avatar */}
       {msg.role === "assistant" ? (
-        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-[#39ff14]/10 border border-[#39ff14]/20 flex items-center justify-center mt-1">
-          <div className="w-1.5 h-1.5 rounded-full bg-[#39ff14] msg-active-dot" />
+        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-emerald-500/10 dark:bg-[#39ff14]/10 border border-emerald-500/20 dark:border-[#39ff14]/20 flex items-center justify-center mt-1">
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-[#39ff14] msg-active-dot" />
         </div>
       ) : (
-        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/10 border border-white/[0.12] flex items-center justify-center mt-1 text-[9px] font-bold text-white/50 uppercase">
+        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-black/10 dark:bg-white/10 border border-black/[0.12] dark:border-white/[0.12] flex items-center justify-center mt-1 text-[9px] font-bold text-slate-500 dark:text-white/50 uppercase">
           U
         </div>
       )}
@@ -231,17 +231,17 @@ const ChatMessageItem = memo(function ChatMessageItem({
         <div
           className={`px-4 py-3 rounded-2xl backdrop-blur-md ${
             msg.role === "user"
-              ? "bg-white/[0.05] border border-white/[0.07] text-white/80 shadow-sm rounded-tr-sm"
-              : "bg-[#39ff14]/[0.025] border border-[#39ff14]/[0.09] text-[#39ff14] neon-glow-subtle w-full rounded-tl-sm"
+              ? "bg-black/[0.05] dark:bg-white/[0.05] border border-black/[0.07] dark:border-white/[0.07] text-slate-800 dark:text-white/80 shadow-sm rounded-tr-sm"
+              : "bg-emerald-500/[0.05] dark:bg-[#39ff14]/[0.025] border border-emerald-500/20 dark:border-[#39ff14]/[0.09] text-emerald-700 dark:text-[#39ff14] dark:neon-glow-subtle w-full rounded-tl-sm"
           }`}
         >
           {msg.role === "assistant" && (
-            <div className="flex items-center justify-between mb-2.5 border-b border-[#39ff14]/[0.08] pb-2">
+            <div className="flex items-center justify-between mb-2.5 border-b border-emerald-500/20 dark:border-[#39ff14]/[0.08] pb-2">
               <div className="flex items-center gap-2 opacity-50">
-                <span className="text-[9px] uppercase tracking-[0.15em] font-bold">
+                <span className="text-[9px] uppercase tracking-[0.15em] font-bold text-emerald-800 dark:text-[#39ff14]">
                   Xavier Agent
                 </span>
-                <span className="text-[9px] opacity-60">
+                <span className="text-[9px] opacity-60 text-emerald-800 dark:text-[#39ff14]">
                   {new Date(msg.created_at).toLocaleTimeString()}
                 </span>
               </div>
@@ -294,7 +294,7 @@ const ChatMessageItem = memo(function ChatMessageItem({
                 <div className="flex flex-col gap-2 w-full">
                   <RenderSurface nodes={openUiNodes} />
                   <div
-                    className="plain-text text-xs text-white/50 border-t border-[#39ff14]/10 pt-2 font-mono"
+                    className="plain-text text-xs text-slate-500 dark:text-white/50 border-t border-emerald-500/10 dark:border-[#39ff14]/10 pt-2 font-mono"
                     data-testid="assistant-plain-text"
                   >
                     {mainText}
@@ -319,7 +319,7 @@ const ChatMessageItem = memo(function ChatMessageItem({
 
         {/* Timestamp below bubble for user messages */}
         {msg.role === "user" && (
-          <span className="text-[9px] text-white/20 mt-1 mr-1">
+          <span className="text-[9px] text-slate-400 dark:text-white/20 mt-1 mr-1">
             {new Date(msg.created_at).toLocaleTimeString()}
           </span>
         )}
