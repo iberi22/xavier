@@ -91,16 +91,16 @@ export default function WorkspaceSelector() {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-3 py-1 flex items-center gap-2 h-7 text-white/80 shrink-0 hover:bg-white/5 hover:border-white/20 transition-all text-xs font-mono group"
+        className="bg-[var(--surface-card)]/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md border border-[var(--border-subtle)] dark:border-white/10 shadow-lg rounded-full px-3 py-1 flex items-center gap-2 h-7 text-[var(--foreground)]/80 dark:text-white/80 shrink-0 hover:bg-[var(--foreground)]/5 dark:hover:bg-white/5 hover:border-[var(--foreground)]/20 dark:hover:border-white/20 transition-all text-xs font-mono group"
         title={`Active Workspace: ${activeWorkspace}`}
         aria-label={`Select workspace. Active: ${activeWorkspace}`}
       >
-        <Folder className="w-3 h-3 text-emerald-400 group-hover:scale-110 transition-transform" />
-        <span className="font-semibold text-[10px] uppercase tracking-wider text-white/90">
+        <Folder className="w-3 h-3 text-emerald-500 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
+        <span className="font-semibold text-[10px] uppercase tracking-wider text-[var(--foreground)]/90 dark:text-white/90">
           {activeWorkspace}
         </span>
         <ChevronDown
-          className={`w-3 h-3 text-white/40 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+          className={`w-3 h-3 text-[var(--foreground)]/40 dark:text-white/40 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
         />
       </button>
 
@@ -111,10 +111,10 @@ export default function WorkspaceSelector() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="absolute left-0 top-full mt-2 w-52 bg-[#0a0a0a]/95 backdrop-blur-xl border border-white/10 rounded-xl p-2 shadow-2xl z-[70] flex flex-col gap-1 text-xs"
+            className="absolute left-0 top-full mt-2 w-52 bg-[var(--surface-card)]/95 dark:bg-[#0a0a0a]/95 backdrop-blur-xl border border-[var(--border-subtle)] dark:border-white/10 rounded-xl p-2 shadow-2xl z-[70] flex flex-col gap-1 text-xs"
           >
-            <div className="flex items-center justify-between px-2 py-1 border-b border-white/5 mb-1">
-              <span className="text-[9px] uppercase tracking-widest text-white/40 font-mono font-semibold">
+            <div className="flex items-center justify-between px-2 py-1 border-b border-[var(--border-subtle)] dark:border-white/5 mb-1">
+              <span className="text-[9px] uppercase tracking-widest text-[var(--foreground)]/40 dark:text-white/40 font-mono font-semibold">
                 Workspaces / Vaults
               </span>
             </div>
@@ -129,25 +129,25 @@ export default function WorkspaceSelector() {
                     onClick={() => switchWorkspace(ws)}
                     className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-colors font-mono ${
                       isSelected
-                        ? "bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/30"
-                        : "text-white/70 hover:bg-white/5 hover:text-white"
+                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 font-semibold border border-emerald-500/30"
+                        : "text-[var(--foreground)]/70 dark:text-white/70 hover:bg-[var(--foreground)]/5 dark:hover:bg-white/5 hover:text-[var(--foreground)] dark:hover:text-white"
                     }`}
                   >
                     <span className="truncate">{ws}</span>
                     {isSelected && (
-                      <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                      <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
                     )}
                   </button>
                 );
               })}
             </div>
 
-            <div className="border-t border-white/5 pt-1.5 mt-1">
+            <div className="border-t border-[var(--border-subtle)] dark:border-white/5 pt-1.5 mt-1">
               {!showAddInput ? (
                 <button
                   type="button"
                   onClick={() => setShowAddInput(true)}
-                  className="w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-white/50 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors font-mono text-[11px]"
+                  className="w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[var(--foreground)]/50 dark:text-white/50 hover:text-emerald-600 dark:hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors font-mono text-[11px]"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>New Workspace</span>
@@ -160,12 +160,12 @@ export default function WorkspaceSelector() {
                     onChange={(e) => setNewWorkspaceName(e.target.value)}
                     placeholder="workspace-name"
                     autoFocus
-                    className="flex-1 bg-black/60 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white font-mono placeholder:text-white/30 focus:outline-none focus:border-emerald-400"
+                    className="flex-1 bg-[var(--background)]/60 dark:bg-black/60 border border-[var(--border-subtle)] dark:border-white/10 rounded-lg px-2 py-1 text-[11px] text-[var(--foreground)] dark:text-white font-mono placeholder:text-[var(--foreground)]/30 dark:placeholder:text-white/30 focus:outline-none focus:border-emerald-500 dark:focus:border-emerald-400"
                   />
                   <button
                     type="submit"
                     disabled={!newWorkspaceName.trim()}
-                    className="px-2 py-1 bg-emerald-500 text-black font-semibold rounded-lg text-[10px] uppercase disabled:opacity-40 hover:bg-emerald-400 transition-colors"
+                    className="px-2 py-1 bg-emerald-500 text-white dark:text-black font-semibold rounded-lg text-[10px] uppercase disabled:opacity-40 hover:bg-emerald-400 transition-colors"
                   >
                     Add
                   </button>
