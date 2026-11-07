@@ -45,7 +45,7 @@ export function RegistryTab() {
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="glass-panel p-4 border border-[var(--border-subtle)] rounded-xl bg-[var(--surface)]">
-          <div className="flex items-center gap-2 mb-2 text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)]">
+          <div className="flex items-center gap-2 mb-2 text-[var(--foreground)]">
             <Network size={14} className="text-cyan-400" />
             <span className="text-xs uppercase tracking-wider font-mono">Mode</span>
           </div>
@@ -53,7 +53,7 @@ export function RegistryTab() {
         </div>
 
         <div className="glass-panel p-4 border border-[var(--border-subtle)] rounded-xl bg-[var(--surface)] lg:col-span-2">
-          <div className="flex items-center gap-2 mb-2 text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)]">
+          <div className="flex items-center gap-2 mb-2 text-[var(--foreground)]">
             <Key size={14} className="text-cyan-400" />
             <span className="text-xs uppercase tracking-wider font-mono">Genesis Node</span>
           </div>
@@ -61,24 +61,24 @@ export function RegistryTab() {
         </div>
 
         <div className="glass-panel p-4 border border-[var(--border-subtle)] rounded-xl bg-[var(--surface)]">
-          <div className="flex items-center gap-2 mb-2 text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)]">
+          <div className="flex items-center gap-2 mb-2 text-[var(--foreground)]">
             <Server size={14} className="text-cyan-400" />
             <span className="text-xs uppercase tracking-wider font-mono">Active Nodes</span>
           </div>
-          <div className="text-2xl font-bold text-[var(--foreground)]">{mesh.nodes.filter(n => n.active).length} <span className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] font-normal">/ {mesh.nodes.length}</span></div>
+          <div className="text-2xl font-bold text-[var(--foreground)]">{mesh.nodes.filter(n => n.active).length} <span className="text-xs text-[var(--foreground)] font-normal">/ {mesh.nodes.length}</span></div>
         </div>
       </div>
 
       <div className="glass-panel border border-[var(--border-subtle)] rounded-xl bg-[var(--surface)] overflow-hidden">
-        <div className="p-4 border-b border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--foreground)_2%,transparent)]">
+        <div className="p-4 border-b border-[var(--border-subtle)] bg-white/[0.02]">
           <h3 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
             <Cpu size={14} className="text-emerald-400" />
             Node Directory
           </h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)]">
-            <thead className="bg-[color:color-mix(in_srgb,var(--foreground)_2%,transparent)] text-xs uppercase text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] font-mono">
+          <table className="w-full text-left text-sm text-[var(--foreground)]">
+            <thead className="bg-white/[0.02] text-xs uppercase text-[var(--foreground)] font-mono">
               <tr>
                 <th className="px-4 py-3 font-medium">Node ID</th>
                 <th className="px-4 py-3 font-medium">Role</th>
@@ -89,10 +89,10 @@ export function RegistryTab() {
             </thead>
             <tbody className="divide-y divide-white/5">
               {mesh.nodes.map((node) => (
-                <tr key={node.node_id} className="hover:bg-[color:color-mix(in_srgb,var(--foreground)_2%,transparent)] transition-colors">
+                <tr key={node.node_id} className="hover:bg-white/[0.02] transition-colors">
                   <td className="px-4 py-3 font-mono text-xs text-emerald-400">{node.node_id}</td>
                   <td className="px-4 py-3">
-                    <span className="px-2 py-0.5 rounded text-xs border border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)]">
+                    <span className="px-2 py-0.5 rounded text-xs border border-[var(--border-subtle)] bg-white/5">
                       {node.role}
                     </span>
                   </td>
@@ -103,12 +103,12 @@ export function RegistryTab() {
                       {node.active ? 'Active' : 'Offline'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)]">{node.note}</td>
+                  <td className="px-4 py-3 text-xs text-[var(--foreground)]">{node.note}</td>
                 </tr>
               ))}
               {mesh.nodes.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-xs text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] italic">
+                  <td colSpan={5} className="px-4 py-8 text-center text-xs text-[var(--foreground)] italic">
                     No nodes registered in the mesh topology.
                   </td>
                 </tr>

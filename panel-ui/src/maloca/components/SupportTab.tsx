@@ -42,7 +42,7 @@ export function SupportTab() {
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'open': return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
-      case 'closed': return 'text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)] border-[var(--border-subtle)]';
+      case 'closed': return 'text-[var(--foreground)] bg-white/5 border-[var(--border-subtle)]';
       case 'in_progress': return 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20';
       default: return 'text-amber-400 bg-amber-400/10 border-amber-400/20';
     }
@@ -66,9 +66,9 @@ export function SupportTab() {
 
       {tickets.length === 0 ? (
         <div className="glass-panel p-12 flex flex-col items-center justify-center text-center border border-[var(--border-subtle)] rounded-xl bg-[var(--surface)]">
-          <MessageSquare size={32} className="text-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] mb-4" />
-          <h4 className="text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] font-medium mb-1">Queue Empty</h4>
-          <p className="text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] text-sm">No support tickets currently require attention.</p>
+          <MessageSquare size={32} className="text-[var(--foreground)] mb-4" />
+          <h4 className="text-[var(--foreground)] font-medium mb-1">Queue Empty</h4>
+          <p className="text-[var(--foreground)] text-sm">No support tickets currently require attention.</p>
         </div>
       ) : (
         <div className="grid gap-3">
@@ -77,16 +77,16 @@ export function SupportTab() {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
-                    <span className="font-mono text-xs text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)]">#{ticket.id.substring(0, 8)}</span>
+                    <span className="font-mono text-xs text-[var(--foreground)]">#{ticket.id.substring(0, 8)}</span>
                     <h4 className="text-[var(--foreground)] font-medium text-sm">{ticket.title}</h4>
                     <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-mono border ${getStatusColor(ticket.status)}`}>
                       {ticket.status}
                     </span>
                   </div>
-                  <p className="text-sm text-[color:color-mix(in_srgb,var(--foreground)_60%,transparent)] line-clamp-2">{ticket.body}</p>
+                  <p className="text-sm text-[var(--foreground)] line-clamp-2">{ticket.body}</p>
                 </div>
               </div>
-              <div className="mt-4 flex items-center gap-4 text-xs text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)]">
+              <div className="mt-4 flex items-center gap-4 text-xs text-[var(--foreground)]">
                 <div className="flex items-center gap-1.5">
                   <Clock size={12} />
                   {new Date(ticket.created_at).toLocaleDateString()}

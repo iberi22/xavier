@@ -32,7 +32,7 @@ function RoadmapCard({ title, summary }: RoadmapCardProps) {
     <section className="glass-panel p-4 border border-[var(--border-subtle)] rounded-xl bg-[var(--surface)]" aria-label={title}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h4 className="text-[var(--foreground)] font-medium text-sm">{title}</h4>
-        <div className="flex flex-wrap gap-2 text-[11px] font-mono text-[color:color-mix(in_srgb,var(--foreground)_60%,transparent)]">
+        <div className="flex flex-wrap gap-2 text-[11px] font-mono text-[var(--foreground)]">
           <span>{summary.total} total</span>
           <span className="text-emerald-400">{summary.stable} stable</span>
           <span className="text-amber-400">{summary.in_progress} in progress</span>
@@ -41,7 +41,7 @@ function RoadmapCard({ title, summary }: RoadmapCardProps) {
       </div>
 
       <div className="mt-3 flex items-center gap-3">
-        <div className="flex-1 h-1.5 bg-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] rounded-full overflow-hidden">
+        <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
           <div
             className="h-full bg-emerald-400 rounded-full transition-all duration-500"
             style={{ width: `${pct}%` }}
@@ -57,7 +57,7 @@ function RoadmapCard({ title, summary }: RoadmapCardProps) {
         <div className="mt-3">
           <button
             type="button"
-            className="flex items-center gap-1 text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_60%,transparent)] hover:text-[var(--foreground)] transition-colors"
+            className="flex items-center gap-1 text-xs font-mono text-[var(--foreground)] hover:text-[var(--foreground)] transition-colors"
             aria-expanded={expanded}
             aria-controls={listId}
             onClick={() => setExpanded((v) => !v)}
@@ -72,11 +72,11 @@ function RoadmapCard({ title, summary }: RoadmapCardProps) {
                   key={feature.id}
                   className="flex items-center justify-between gap-3 text-xs border-t border-[var(--border-subtle)] pt-1.5"
                 >
-                  <span className="text-[color:color-mix(in_srgb,var(--foreground)_80%,transparent)]">
+                  <span className="text-[var(--foreground)]">
                     {feature.name}
-                    <span className="ml-2 font-mono text-[color:color-mix(in_srgb,var(--foreground)_30%,transparent)]">{feature.id}</span>
+                    <span className="ml-2 font-mono text-[var(--foreground)]">{feature.id}</span>
                   </span>
-                  <span className="font-mono text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] whitespace-nowrap">
+                  <span className="font-mono text-[var(--foreground)] whitespace-nowrap">
                     {feature.status} · {Math.round(clampPct(feature.progress_pct))}%
                   </span>
                 </li>
@@ -129,8 +129,8 @@ export function RoadmapTab() {
   if (!roadmap || isRoadmapEmpty(roadmap)) {
     return (
       <div className="text-center py-12 border border-dashed border-[var(--border-subtle)] rounded-xl bg-[var(--surface)]">
-        <Map size={32} className="mx-auto text-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] mb-3" />
-        <p className="text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] text-sm">No roadmap features are available yet.</p>
+        <Map size={32} className="mx-auto text-[var(--foreground)] mb-3" />
+        <p className="text-[var(--foreground)] text-sm">No roadmap features are available yet.</p>
       </div>
     );
   }
@@ -142,7 +142,7 @@ export function RoadmapTab() {
           <Map size={18} className="text-emerald-400" />
           Roadmap
         </h3>
-        <p className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] mt-1">Feature progress grouped by wave</p>
+        <p className="text-xs text-[var(--foreground)] mt-1">Feature progress grouped by wave</p>
       </div>
 
       <div className="grid gap-3">

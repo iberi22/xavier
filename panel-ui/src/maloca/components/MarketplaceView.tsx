@@ -184,7 +184,7 @@ export function MarketplaceView() {
             className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
               subView === "catalogue"
                 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                : "text-[color:color-mix(in_srgb,var(--foreground)_60%,transparent)] hover:text-[var(--foreground)] hover:bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)]"
+                : "text-[var(--foreground)] hover:text-[var(--foreground)] hover:bg-white/5"
             }`}
           >
             Buyer Catalogue ({listings.filter((l) => !l.revoked_at_ms).length})
@@ -195,7 +195,7 @@ export function MarketplaceView() {
             className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
               subView === "seller"
                 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                : "text-[color:color-mix(in_srgb,var(--foreground)_60%,transparent)] hover:text-[var(--foreground)] hover:bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)]"
+                : "text-[var(--foreground)] hover:text-[var(--foreground)] hover:bg-white/5"
             }`}
           >
             Seller Console
@@ -206,7 +206,7 @@ export function MarketplaceView() {
             className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
               subView === "consent"
                 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                : "text-[color:color-mix(in_srgb,var(--foreground)_60%,transparent)] hover:text-[var(--foreground)] hover:bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)]"
+                : "text-[var(--foreground)] hover:text-[var(--foreground)] hover:bg-white/5"
             }`}
           >
             Consent Screen ({consentState.toUpperCase()})
@@ -217,7 +217,7 @@ export function MarketplaceView() {
           type="button"
           onClick={() => void fetchMarketData()}
           disabled={loading}
-          className="flex items-center gap-1.5 text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] hover:text-[var(--foreground)] transition-colors"
+          className="flex items-center gap-1.5 text-xs font-mono text-[var(--foreground)] hover:text-[var(--foreground)] transition-colors"
           title="Refresh Data"
         >
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
@@ -244,20 +244,20 @@ export function MarketplaceView() {
       {subView === "catalogue" && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-[color:color-mix(in_srgb,var(--foreground)_80%,transparent)] uppercase tracking-wider font-mono">
+            <h2 className="text-sm font-semibold text-[var(--foreground)] uppercase tracking-wider font-mono">
               Available Data Packages
             </h2>
-            <span className="text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)]">Settlement: Off-Chain Credits</span>
+            <span className="text-xs font-mono text-[var(--foreground)]">Settlement: Off-Chain Credits</span>
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center h-36 text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] font-mono text-xs">
+            <div className="flex items-center justify-center h-36 text-[var(--foreground)] font-mono text-xs">
               Loading marketplace listings...
             </div>
           ) : listings.length === 0 ? (
             <div className="p-8 text-center border border-dashed border-[var(--border-subtle)] rounded-2xl">
-              <ShoppingBag className="w-8 h-8 text-[color:color-mix(in_srgb,var(--foreground)_20%,transparent)] mx-auto mb-2" />
-              <p className="text-sm text-[color:color-mix(in_srgb,var(--foreground)_60%,transparent)] font-mono">No listings available in this network yet.</p>
+              <ShoppingBag className="w-8 h-8 text-[var(--foreground)] mx-auto mb-2" />
+              <p className="text-sm text-[var(--foreground)] font-mono">No listings available in this network yet.</p>
               <button
                 type="button"
                 onClick={() => setSubView("seller")}
@@ -277,7 +277,7 @@ export function MarketplaceView() {
                     key={item.id}
                     className={`glass-panel p-5 rounded-2xl border transition-all ${
                       isRevoked
-                        ? "border-rose-900/40 bg-[color:color-mix(in_srgb,var(--background)_100%,transparent)] opacity-60"
+                        ? "border-rose-900/40 bg-[var(--surface)] opacity-60"
                         : "border-[var(--border-subtle)] bg-[var(--surface)] hover:border-emerald-500/30"
                     }`}
                   >
@@ -294,11 +294,11 @@ export function MarketplaceView() {
                       </span>
                     </div>
 
-                    <p className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_60%,transparent)] mb-4 line-clamp-2">
+                    <p className="text-xs text-[var(--foreground)] mb-4 line-clamp-2">
                       {item.description || "No description provided."}
                     </p>
 
-                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] mb-4 border-t border-[var(--border-subtle)] pt-3">
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-[var(--foreground)] mb-4 border-t border-[var(--border-subtle)] pt-3">
                       <span className="flex items-center gap-1">
                         <Tag size={12} className="text-emerald-400" />
                         License: {item.license}
@@ -337,18 +337,18 @@ export function MarketplaceView() {
 
           {receipts.length > 0 && (
             <div className="mt-8 pt-6 border-t border-[var(--border-subtle)]">
-              <h3 className="text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] uppercase tracking-wider mb-3">
+              <h3 className="text-xs font-mono text-[var(--foreground)] uppercase tracking-wider mb-3">
                 My Purchases & Receipts ({receipts.length})
               </h3>
               <div className="space-y-2">
                 {receipts.map((r) => (
                   <div
                     key={r.id}
-                    className="p-3 bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)] rounded-xl border border-[var(--border-subtle)] flex items-center justify-between text-xs font-mono"
+                    className="p-3 bg-white/5 rounded-xl border border-[var(--border-subtle)] flex items-center justify-between text-xs font-mono"
                   >
                     <div>
-                      <span className="text-[color:color-mix(in_srgb,var(--foreground)_80%,transparent)] font-bold">Listing ID:</span> {r.listing_id}
-                      <span className="text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] ml-2">Receipt: {r.id.slice(0, 8)}...</span>
+                      <span className="text-[var(--foreground)] font-bold">Listing ID:</span> {r.listing_id}
+                      <span className="text-[var(--foreground)] ml-2">Receipt: {r.id.slice(0, 8)}...</span>
                     </div>
                     <span className="text-emerald-400 font-bold">{r.amount_credits} CREDITS</span>
                   </div>
@@ -364,64 +364,64 @@ export function MarketplaceView() {
         <div className="space-y-6">
           <div className="glass-panel p-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)]">
             <h2 className="text-base font-semibold text-[var(--foreground)] mb-1">Publish New Dataset / Package</h2>
-            <p className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] mb-6 font-mono">
+            <p className="text-xs text-[var(--foreground)] mb-6 font-mono">
               Listings are recorded on SQLite v2 and broadcast to authorized mesh buyers.
             </p>
 
             <form onSubmit={handleCreateListing} className="space-y-4 max-w-xl">
               <div>
-                <label className="block text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] mb-1">Seller Identity / Node ID</label>
+                <label className="block text-xs font-mono text-[var(--foreground)] mb-1">Seller Identity / Node ID</label>
                 <input
                   type="text"
                   required
                   value={sellerId}
                   onChange={(e) => setSellerId(e.target.value)}
-                  className="w-full bg-[color:color-mix(in_srgb,var(--background)_100%,transparent)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] mb-1">Listing Title</label>
+                <label className="block text-xs font-mono text-[var(--foreground)] mb-1">Listing Title</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Colombian Biology QA Dataset (ICFES High Quality)"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full bg-[color:color-mix(in_srgb,var(--background)_100%,transparent)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] mb-1">Description</label>
+                <label className="block text-xs font-mono text-[var(--foreground)] mb-1">Description</label>
                 <textarea
                   rows={3}
                   placeholder="Package contents, schema information, provenance details..."
                   value={newDesc}
                   onChange={(e) => setNewDesc(e.target.value)}
-                  className="w-full bg-[color:color-mix(in_srgb,var(--background)_100%,transparent)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500 resize-none"
+                  className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500 resize-none"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] mb-1">Price (Credits)</label>
+                  <label className="block text-xs font-mono text-[var(--foreground)] mb-1">Price (Credits)</label>
                   <input
                     type="number"
                     min={0}
                     required
                     value={newPrice}
                     onChange={(e) => setNewPrice(Number(e.target.value))}
-                    className="w-full bg-[color:color-mix(in_srgb,var(--background)_100%,transparent)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] mb-1">License</label>
+                  <label className="block text-xs font-mono text-[var(--foreground)] mb-1">License</label>
                   <select
                     value={newLicense}
                     onChange={(e) => setNewLicense(e.target.value)}
-                    className="w-full bg-[color:color-mix(in_srgb,var(--background)_100%,transparent)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
                   >
                     <option value="cc-by-4.0">cc-by-4.0</option>
                     <option value="cc0-1.0">cc0-1.0</option>
@@ -432,12 +432,12 @@ export function MarketplaceView() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] mb-1">Terms Version</label>
+                  <label className="block text-xs font-mono text-[var(--foreground)] mb-1">Terms Version</label>
                   <input
                     type="text"
                     value={newTermsVersion}
                     onChange={(e) => setNewTermsVersion(e.target.value)}
-                    className="w-full bg-[color:color-mix(in_srgb,var(--background)_100%,transparent)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -448,7 +448,7 @@ export function MarketplaceView() {
                   disabled={isPublishing || !isSigningAvailable}
                   className={`flex items-center gap-2 px-5 py-2.5 font-semibold rounded-xl text-xs font-mono transition-all ${
                     !isSigningAvailable
-                      ? "bg-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] cursor-not-allowed border border-[var(--border-subtle)]"
+                      ? "bg-white/10 text-[var(--foreground)] cursor-not-allowed border border-[var(--border-subtle)]"
                       : "bg-emerald-500 text-black hover:bg-emerald-400 shadow-[0_0_15px_rgba(57,255,20,0.3)]"
                   }`}
                   title={!isSigningAvailable ? "Signing required (ed25519 publisher signature)" : undefined}
@@ -467,7 +467,7 @@ export function MarketplaceView() {
 
           {/* Manage Published Listings */}
           <div>
-            <h3 className="text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] uppercase tracking-wider mb-3">
+            <h3 className="text-xs font-mono text-[var(--foreground)] uppercase tracking-wider mb-3">
               Published Listings Management
             </h3>
             <div className="space-y-2">
@@ -478,7 +478,7 @@ export function MarketplaceView() {
                 >
                   <div>
                     <span className="text-[var(--foreground)] font-semibold">{l.title}</span>
-                    <span className="text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] ml-2 font-mono text-[11px]">{l.id}</span>
+                    <span className="text-[var(--foreground)] ml-2 font-mono text-[11px]">{l.id}</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-emerald-400 font-bold">{l.price_credits} credits</span>
@@ -489,7 +489,7 @@ export function MarketplaceView() {
                         onClick={() => void handleRevokeListing(l.id)}
                         className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${
                           !isSigningAvailable
-                            ? "bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)] text-[color:color-mix(in_srgb,var(--foreground)_30%,transparent)] border border-[var(--border-subtle)] cursor-not-allowed"
+                            ? "bg-white/5 text-[var(--foreground)] border border-[var(--border-subtle)] cursor-not-allowed"
                             : "bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30"
                         }`}
                         title={!isSigningAvailable ? "Signing required to revoke" : undefined}
@@ -515,14 +515,14 @@ export function MarketplaceView() {
               <Shield className="w-5 h-5 text-emerald-400" />
               <h2 className="text-base font-semibold text-[var(--foreground)]">Data Node Participation Consent</h2>
             </div>
-            <p className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] mb-6 font-mono leading-relaxed">
+            <p className="text-xs text-[var(--foreground)] mb-6 font-mono leading-relaxed">
               Define the boundary for telemetry, dataset sharing and P2P exchange for this node.
               State changes require affirmative terms and version acknowledgment.
             </p>
 
             <form onSubmit={handleSaveConsent} className="space-y-5 max-w-xl">
               <div>
-                <label className="block text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] mb-1">Target Node ID</label>
+                <label className="block text-xs font-mono text-[var(--foreground)] mb-1">Target Node ID</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -536,12 +536,12 @@ export function MarketplaceView() {
                         setActiveConsentNodeId(consentNodeId.trim());
                       }
                     }}
-                    className="flex-1 bg-[color:color-mix(in_srgb,var(--background)_100%,transparent)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
+                    className="flex-1 bg-[var(--surface)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
                   />
                   <button
                     type="button"
                     onClick={() => setActiveConsentNodeId(consentNodeId.trim())}
-                    className="px-3 py-2 bg-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--foreground)_20%,transparent)] text-[var(--foreground)] rounded-xl text-xs font-mono transition-colors"
+                    className="px-3 py-2 bg-white/10 hover:bg-white/20 text-[var(--foreground)] rounded-xl text-xs font-mono transition-colors"
                   >
                     Load Node
                   </button>
@@ -549,7 +549,7 @@ export function MarketplaceView() {
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] mb-2">Consent Tier</label>
+                <label className="block text-xs font-mono text-[var(--foreground)] mb-2">Consent Tier</label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
                     { id: "off", label: "Off", desc: "No telemetry or data leaves node." },
@@ -564,13 +564,13 @@ export function MarketplaceView() {
                       className={`p-3 rounded-xl border text-left transition-all ${
                         consentState === tier.id
                           ? "border-emerald-500/60 bg-emerald-500/10 text-[var(--foreground)] shadow-[inset_0_0_8px_rgba(57,255,20,0.1)]"
-                          : "border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--background)_100%,transparent)] text-[color:color-mix(in_srgb,var(--foreground)_60%,transparent)] hover:border-black/20 dark:border-black/20 dark:border-white/20"
+                          : "border-[var(--border-subtle)] bg-[var(--surface)] text-[var(--foreground)] hover:border-[var(--border-subtle)]"
                       }`}
                     >
                       <div className="font-mono text-xs font-bold capitalize text-[var(--foreground)] mb-0.5">
                         {tier.label}
                       </div>
-                      <div className="text-[10px] text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] leading-tight">{tier.desc}</div>
+                      <div className="text-[10px] text-[var(--foreground)] leading-tight">{tier.desc}</div>
                     </button>
                   ))}
                 </div>
@@ -578,26 +578,26 @@ export function MarketplaceView() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] mb-1">Terms Version</label>
+                  <label className="block text-xs font-mono text-[var(--foreground)] mb-1">Terms Version</label>
                   <input
                     type="text"
                     required
                     aria-label="Terms Version"
                     value={consentTermsVer}
                     onChange={(e) => setConsentTermsVer(e.target.value)}
-                    className="w-full bg-[color:color-mix(in_srgb,var(--background)_100%,transparent)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] mb-1">Consent Version</label>
+                  <label className="block text-xs font-mono text-[var(--foreground)] mb-1">Consent Version</label>
                   <input
                     type="text"
                     required
                     aria-label="Consent Version"
                     value={consentVer}
                     onChange={(e) => setConsentVer(e.target.value)}
-                    className="w-full bg-[color:color-mix(in_srgb,var(--background)_100%,transparent)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--foreground)] focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -608,7 +608,7 @@ export function MarketplaceView() {
                   disabled={isSavingConsent || !isSigningAvailable}
                   className={`flex items-center gap-2 px-5 py-2.5 font-semibold rounded-xl text-xs font-mono transition-all ${
                     !isSigningAvailable
-                      ? "bg-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] cursor-not-allowed border border-[var(--border-subtle)]"
+                      ? "bg-white/10 text-[var(--foreground)] cursor-not-allowed border border-[var(--border-subtle)]"
                       : "bg-emerald-500 text-black hover:bg-emerald-400 shadow-[0_0_15px_rgba(57,255,20,0.3)]"
                   }`}
                   title={!isSigningAvailable ? "Signing required (ed25519 node signature)" : undefined}
@@ -627,7 +627,7 @@ export function MarketplaceView() {
 
           {/* Historical / Active Node Consents */}
           <div>
-            <h3 className="text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] uppercase tracking-wider mb-3">
+            <h3 className="text-xs font-mono text-[var(--foreground)] uppercase tracking-wider mb-3">
               Recorded Node Consents
             </h3>
             <div className="space-y-2">
@@ -638,7 +638,7 @@ export function MarketplaceView() {
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-[var(--foreground)] font-semibold">{c.node_id}</span>
-                    <span className="text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] text-[11px]">Terms: {c.terms_version}</span>
+                    <span className="text-[var(--foreground)] text-[11px]">Terms: {c.terms_version}</span>
                   </div>
                   <span
                     className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${

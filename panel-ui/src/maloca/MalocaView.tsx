@@ -42,7 +42,7 @@ export default function MalocaView({ onClose }: Props) {
       case "roadmap": return <RoadmapTab />;
       case "explain": return <ExplainTab />;
       default: return (
-        <div className="flex items-center justify-center h-48 text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] font-mono text-sm">
+        <div className="flex items-center justify-center h-48 text-[var(--foreground)] font-mono text-sm">
           Module '{activeTab}' under construction...
         </div>
       );
@@ -57,7 +57,7 @@ export default function MalocaView({ onClose }: Props) {
         {onClose && (
           <button
             type="button"
-            className="absolute top-6 right-6 p-2 rounded-full bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] hover:text-[var(--foreground)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 z-50"
+            className="absolute top-6 right-6 p-2 rounded-full bg-white/5 hover:bg-white/10 text-[var(--foreground)] hover:text-[var(--foreground)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 z-50"
             onClick={onClose}
             aria-label="Cerrar Maloca"
           >
@@ -72,7 +72,7 @@ export default function MalocaView({ onClose }: Props) {
               <span className="w-3 h-3 rounded-full bg-[#39ff14] shadow-[0_0_12px_rgba(57,255,20,0.5)] animate-pulse" />
               Maloca Ops Hub
             </h1>
-            <p className="text-sm font-mono text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)]">Primary Xavier Ecosystem Workspace</p>
+            <p className="text-sm font-mono text-[var(--foreground)]">Primary Xavier Ecosystem Workspace</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -91,7 +91,7 @@ export default function MalocaView({ onClose }: Props) {
         {deviceKey && (
           <div className="my-4 p-3 glass-panel border border-emerald-500/40 rounded-lg bg-[var(--surface)] shrink-0">
             <span className="text-xs text-emerald-400 font-mono mb-1 block">Attestation Key (WebAuthn PRF):</span>
-            <code className="text-[11px] font-mono text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] break-all bg-[color:color-mix(in_srgb,var(--background)_100%,transparent)] p-2 rounded block">
+            <code className="text-[11px] font-mono text-[var(--foreground)] break-all bg-[var(--surface)] p-2 rounded block">
               {deviceKey}
             </code>
           </div>
@@ -109,8 +109,8 @@ export default function MalocaView({ onClose }: Props) {
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all whitespace-nowrap lg:whitespace-normal text-left
                     ${isActive
-                      ? 'bg-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[var(--foreground)] shadow-[inset_3px_0_0_#39ff14]'
-                      : 'text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)] hover:text-[color:color-mix(in_srgb,var(--foreground)_80%,transparent)]'}`}
+                      ? 'bg-white/10 text-[var(--foreground)] shadow-[inset_3px_0_0_#39ff14]'
+                      : 'text-[var(--foreground)] hover:bg-white/5 hover:text-[var(--foreground)]'}`}
                 >
                   <Icon size={18} className={isActive ? 'text-[#39ff14]' : ''} />
                   <div className="hidden sm:block">

@@ -85,7 +85,7 @@ function DepthDots({ score }: { score: number }) {
         <div
           key={i}
           className={`w-2 h-2 rounded-full transition-colors ${
-            i < filled ? "bg-emerald-400" : "bg-[color:color-mix(in_srgb,var(--foreground)_15%,transparent)]"
+            i < filled ? "bg-emerald-400" : "bg-white/15"
           }`}
         />
       ))}
@@ -113,7 +113,7 @@ function SessionCard({
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`relative group bg-[#0d0d12] border border-white/8 border-l-2 ${TYPE_ACCENT[challenge.challenge_type]} rounded-xl p-5 hover:border-white/15 transition-all duration-200 cursor-default`}
+      className={`relative group bg-[var(--surface)] border border-[var(--border-subtle)] border-l-2 ${TYPE_ACCENT[challenge.challenge_type]} rounded-xl p-5 hover:border-[var(--border-subtle)] transition-all duration-200 cursor-default`}
     >
       <div className="flex items-start gap-4">
         {/* Type icon */}
@@ -140,13 +140,13 @@ function SessionCard({
           </div>
 
           {/* Preview */}
-          <p className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] italic leading-relaxed mb-4">
+          <p className="text-xs text-[var(--foreground)] italic leading-relaxed mb-4">
             &ldquo;{preview}&rdquo;
           </p>
 
           {/* Footer */}
           <div className="flex items-center justify-between">
-            <span className="text-xs font-mono text-[color:color-mix(in_srgb,var(--foreground)_25%,transparent)] capitalize">
+            <span className="text-xs font-mono text-[var(--foreground)] capitalize">
               {challenge.challenge_type} · confianza {Math.round(challenge.confidence_score * 100)}%
             </span>
             <button
@@ -263,12 +263,12 @@ function IntrospectionChat({
   return (
     <div className="flex flex-col h-full">
       {/* Chat header */}
-      <div className="flex items-center gap-3 pb-4 border-b border-white/8 shrink-0">
+      <div className="flex items-center gap-3 pb-4 border-b border-[var(--border-subtle)] shrink-0">
         <button
           type="button"
           onClick={onBack}
           aria-label="Volver"
-          className="p-1.5 rounded-lg hover:bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)] text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] hover:text-[var(--foreground)] transition-colors"
+          className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--foreground)] hover:text-[var(--foreground)] transition-colors"
         >
           <ArrowLeft size={18} />
         </button>
@@ -291,7 +291,7 @@ function IntrospectionChat({
             type="button"
             onClick={completeSession}
             disabled={loading}
-            className="text-xs px-3 py-1.5 rounded-lg bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] hover:text-[var(--foreground)] border border-[var(--border-subtle)] transition-all"
+            className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[var(--foreground)] hover:text-[var(--foreground)] border border-[var(--border-subtle)] transition-all"
           >
             Completar
           </button>
@@ -316,8 +316,8 @@ function IntrospectionChat({
                   <div className="mt-1 p-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 shrink-0">
                     <Brain size={14} className="text-emerald-400" />
                   </div>
-                  <div className="bg-[#0d0d12] border border-white/8 rounded-2xl rounded-tl-sm px-4 py-3">
-                    <p className="text-sm text-[color:color-mix(in_srgb,var(--foreground)_85%,transparent)] leading-relaxed">{turn.content}</p>
+                  <div className="bg-[var(--surface)] border border-[var(--border-subtle)] rounded-2xl rounded-tl-sm px-4 py-3">
+                    <p className="text-sm text-[var(--foreground)] leading-relaxed">{turn.content}</p>
                   </div>
                 </div>
               )}
@@ -336,8 +336,8 @@ function IntrospectionChat({
               <div className="p-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                 <Brain size={14} className="text-emerald-400" />
               </div>
-              <div className="bg-[#0d0d12] border border-white/8 rounded-2xl px-4 py-3">
-                <Loader2 size={16} className="text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] animate-spin" />
+              <div className="bg-[var(--surface)] border border-[var(--border-subtle)] rounded-2xl px-4 py-3">
+                <Loader2 size={16} className="text-[var(--foreground)] animate-spin" />
               </div>
             </div>
           </div>
@@ -360,7 +360,7 @@ function IntrospectionChat({
               {session.insights.map((insight, i) => (
                 <li key={i} className="flex items-start gap-2">
                   <span className="text-emerald-400/50 text-xs mt-0.5 font-mono">{i + 1}.</span>
-                  <p className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)] leading-relaxed">{insight}</p>
+                  <p className="text-xs text-[var(--foreground)] leading-relaxed">{insight}</p>
                 </li>
               ))}
             </ul>
@@ -389,7 +389,7 @@ function IntrospectionChat({
 
       {/* Input */}
       {!isComplete ? (
-        <div className="pt-3 border-t border-white/8 shrink-0">
+        <div className="pt-3 border-t border-[var(--border-subtle)] shrink-0">
           <div className="flex gap-2">
             <textarea
               value={input}
@@ -401,7 +401,7 @@ function IntrospectionChat({
                 }
               }}
               placeholder="Escribe tu respuesta... (Enter para enviar, Shift+Enter para nueva línea)"
-              className="flex-1 bg-[#0d0d12] border border-[var(--border-subtle)] rounded-xl px-4 py-3 text-sm text-[var(--foreground)] placeholder:text-[color:color-mix(in_srgb,var(--foreground)_25%,transparent)] resize-none focus:outline-none focus:border-emerald-500/40 transition-colors"
+              className="flex-1 bg-[var(--surface)] border border-[var(--border-subtle)] rounded-xl px-4 py-3 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground)] resize-none focus:outline-none focus:border-emerald-500/40 transition-colors"
               rows={2}
               disabled={loading}
             />
@@ -416,7 +416,7 @@ function IntrospectionChat({
           </div>
         </div>
       ) : (
-        <div className="pt-3 border-t border-white/8 shrink-0">
+        <div className="pt-3 border-t border-[var(--border-subtle)] shrink-0">
           <div className="flex items-center justify-center gap-2 text-xs text-emerald-400/70 font-mono">
             <CheckCircle2 size={14} />
             Sesión completada · Los insights serán marcados para entrenamiento
@@ -487,7 +487,7 @@ export function IntrospectionTab() {
           </div>
           <div>
             <h2 className="text-base font-semibold text-[var(--foreground)]">Sesiones de Introspección</h2>
-            <p className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] font-mono">
+            <p className="text-xs text-[var(--foreground)] font-mono">
               Xavier detectó momentos para reflexión profunda
             </p>
           </div>
@@ -501,7 +501,7 @@ export function IntrospectionTab() {
           type="button"
           onClick={fetchAvailable}
           disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono bg-[color:color-mix(in_srgb,var(--foreground)_5%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--foreground)_8%,transparent)] text-[color:color-mix(in_srgb,var(--foreground)_50%,transparent)] hover:text-[var(--foreground)] border border-[var(--border-subtle)] rounded-lg transition-all disabled:opacity-30"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono bg-white/5 hover:bg-white/8 text-[var(--foreground)] hover:text-[var(--foreground)] border border-[var(--border-subtle)] rounded-lg transition-all disabled:opacity-30"
         >
           {loading ? <Loader2 size={13} className="animate-spin" /> : "↻"} Actualizar
         </button>
@@ -510,15 +510,15 @@ export function IntrospectionTab() {
       {/* Available techniques (from /introspection/available) */}
       {techniques.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-4 shrink-0">
-          <span className="text-[10px] font-mono text-[color:color-mix(in_srgb,var(--foreground)_30%,transparent)] uppercase tracking-wider">Técnica</span>
+          <span className="text-[10px] font-mono text-[var(--foreground)] uppercase tracking-wider">Técnica</span>
           <button
             type="button"
             onClick={() => setTechniqueOverride(null)}
             aria-pressed={techniqueOverride === null}
             className={`text-xs font-mono px-2 py-0.5 rounded border transition-all ${
               techniqueOverride === null
-                ? "text-[var(--foreground)] bg-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] border-white/30"
-                : "text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] border-[var(--border-subtle)] hover:text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)]"
+                ? "text-[var(--foreground)] bg-white/10 border-[var(--border-subtle)]"
+                : "text-[var(--foreground)] border-[var(--border-subtle)] hover:text-[var(--foreground)]"
             }`}
           >
             Recomendada
@@ -534,7 +534,7 @@ export function IntrospectionTab() {
                 onClick={() => known && setTechniqueOverride(t)}
                 aria-pressed={active}
                 className={`text-xs font-mono px-2 py-0.5 rounded border transition-all disabled:opacity-30 ${
-                  known ? (active ? TECHNIQUE_COLORS[t] : "text-[color:color-mix(in_srgb,var(--foreground)_40%,transparent)] border-[var(--border-subtle)] hover:text-[color:color-mix(in_srgb,var(--foreground)_70%,transparent)]") : "border-[var(--border-subtle)]"
+                  known ? (active ? TECHNIQUE_COLORS[t] : "text-[var(--foreground)] border-[var(--border-subtle)] hover:text-[var(--foreground)]") : "border-[var(--border-subtle)]"
                 }`}
               >
                 {known ? TECHNIQUE_LABELS[t] : t}
@@ -548,7 +548,7 @@ export function IntrospectionTab() {
       <div className="flex-1 overflow-y-auto pr-1">
         {loading && challenges.length === 0 && (
           <div className="flex items-center justify-center h-48">
-            <Loader2 size={24} className="text-[color:color-mix(in_srgb,var(--foreground)_20%,transparent)] animate-spin" />
+            <Loader2 size={24} className="text-[var(--foreground)] animate-spin" />
           </div>
         )}
 
@@ -564,11 +564,11 @@ export function IntrospectionTab() {
 
         {!loading && challenges.length === 0 && !error && (
           <div className="flex flex-col items-center justify-center h-48 text-center">
-            <Brain size={36} className="text-[color:color-mix(in_srgb,var(--foreground)_10%,transparent)] mb-3" />
-            <p className="text-sm text-[color:color-mix(in_srgb,var(--foreground)_30%,transparent)] font-mono">
+            <Brain size={36} className="text-[var(--foreground)] mb-3" />
+            <p className="text-sm text-[var(--foreground)] font-mono">
               No hay sesiones disponibles aún
             </p>
-            <p className="text-xs text-[color:color-mix(in_srgb,var(--foreground)_20%,transparent)] mt-1">
+            <p className="text-xs text-[var(--foreground)] mt-1">
               Xavier generará sesiones a medida que detecte patrones en tus conversaciones
             </p>
           </div>
