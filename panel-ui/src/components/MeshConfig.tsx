@@ -103,16 +103,16 @@ export default function MeshConfig({ token }: MeshConfigProps) {
     <div className="space-y-8 p-6 overflow-y-auto h-full">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-light text-white tracking-tight">
+          <h2 className="text-2xl font-light text-[var(--foreground)] dark:text-white tracking-tight">
             Mesh Network & Sharing
           </h2>
-          <p className="text-sm text-white/40 mt-1">
+          <p className="text-sm text-[var(--foreground)]/40 dark:text-white/40 mt-1">
             Connect multiple Xavier instances and manage data sharing
             permissions.
           </p>
         </div>
         <div className="text-right">
-          <p className="text-[10px] uppercase text-white/30 tracking-widest">
+          <p className="text-[10px] uppercase text-[var(--foreground)]/30 dark:text-white/30 tracking-widest">
             Local Node ID
           </p>
           <code className="text-xs text-[#39ff14] font-mono select-all">
@@ -124,10 +124,10 @@ export default function MeshConfig({ token }: MeshConfigProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Pairing Actions */}
         <section className="space-y-4">
-          <h3 className="text-sm font-medium text-white/80">Link New Node</h3>
-          <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-4">
+          <h3 className="text-sm font-medium text-[var(--foreground)]/80 dark:text-white/80">Link New Node</h3>
+          <div className="p-5 rounded-2xl bg-[var(--surface-card)] dark:bg-white/[0.02] border border-[var(--border-subtle)] dark:border-white/[0.06] space-y-4">
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-widest text-white/40 block">
+              <label className="text-[10px] uppercase tracking-widest text-[var(--foreground)]/40 dark:text-white/40 block">
                 Enter Pairing Code
               </label>
               <div className="flex gap-2">
@@ -136,7 +136,7 @@ export default function MeshConfig({ token }: MeshConfigProps) {
                   value={pairingCode}
                   onChange={(e) => setPairingCode(e.target.value)}
                   placeholder="Paste code from another node"
-                  className="flex-1 bg-black/30 border border-white/10 text-white/80 text-xs px-3 py-2 rounded-lg outline-none focus:border-[#39ff14]/30 transition-all font-mono"
+                  className="flex-1 bg-[var(--surface)] dark:bg-black/30 border border-[var(--border-subtle)] dark:border-white/10 text-[var(--foreground)]/80 dark:text-white/80 text-xs px-3 py-2 rounded-lg outline-none focus:border-[#39ff14]/30 transition-all font-mono"
                 />
                 <button
                   onClick={handlePair}
@@ -153,14 +153,14 @@ export default function MeshConfig({ token }: MeshConfigProps) {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-white/[0.04] space-y-4">
+            <div className="pt-4 border-t border-[var(--border-subtle)] dark:border-white/[0.04] space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-xs text-white/60">
+                <p className="text-xs text-[var(--foreground)]/60 dark:text-white/60">
                   Generate my pairing code
                 </p>
                 <button
                   onClick={handleGenerateCode}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/70 border border-white/10 rounded-lg hover:border-white/20 transition-all"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[var(--foreground)]/70 dark:text-white/70 border border-[var(--border-subtle)] dark:border-white/10 rounded-lg hover:border-[var(--foreground)]/20 dark:hover:border-white/20 transition-all"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
                   Generate
@@ -180,14 +180,14 @@ export default function MeshConfig({ token }: MeshConfigProps) {
                         Pairing Code (Share with peer)
                       </label>
                       <div className="flex gap-2">
-                        <code className="flex-1 bg-black/40 p-2 rounded text-[10px] text-white/80 font-mono break-all line-clamp-2">
+                        <code className="flex-1 bg-[var(--surface-card)] dark:bg-black/40 p-2 rounded text-[10px] text-[var(--foreground)]/80 dark:text-white/80 font-mono break-all line-clamp-2">
                           {generatedCode.code}
                         </code>
                         <button
                           onClick={() =>
                             navigator.clipboard.writeText(generatedCode.code)
                           }
-                          className="p-2 text-white/40 hover:text-white transition-colors"
+                          className="p-2 text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)] dark:hover:text-[var(--foreground)] dark:text-white transition-colors"
                         >
                           <Copy className="w-4 h-4" />
                         </button>
@@ -210,30 +210,30 @@ export default function MeshConfig({ token }: MeshConfigProps) {
 
         {/* Global Stats/Status */}
         <section className="space-y-4">
-          <h3 className="text-sm font-medium text-white/80">Network Status</h3>
-          <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex flex-col justify-center gap-6 h-[calc(100%-2rem)]">
+          <h3 className="text-sm font-medium text-[var(--foreground)]/80 dark:text-white/80">Network Status</h3>
+          <div className="p-5 rounded-2xl bg-[var(--surface-card)] dark:bg-white/[0.02] border border-[var(--border-subtle)] dark:border-white/[0.06] flex flex-col justify-center gap-6 h-[calc(100%-2rem)]">
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 rounded-full bg-[#39ff14]/10 flex items-center justify-center">
                 <Shield className="w-5 h-5 text-[#39ff14]" />
               </div>
               <div>
-                <p className="text-sm text-white/80 font-medium">
+                <p className="text-sm text-[var(--foreground)]/80 dark:text-white/80 font-medium">
                   Secure P2P Mesh
                 </p>
-                <p className="text-xs text-white/40">
+                <p className="text-xs text-[var(--foreground)]/40 dark:text-white/40">
                   {peers.length} Trusted Peer{peers.length !== 1 ? "s" : ""}
                 </p>
               </div>
             </div>
             <div className="space-y-2">
-              <div className="flex justify-between text-[10px] uppercase tracking-widest text-white/30">
+              <div className="flex justify-between text-[10px] uppercase tracking-widest text-[var(--foreground)]/30 dark:text-white/30">
                 <span>Data Sovereignty</span>
                 <span className="text-[#39ff14]">Active</span>
               </div>
-              <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+              <div className="h-1.5 w-full bg-[var(--foreground)]/5 dark:bg-white/5 rounded-full overflow-hidden">
                 <div className="h-full bg-[#39ff14] w-full" />
               </div>
-              <p className="text-[10px] text-white/20 italic">
+              <p className="text-[10px] text-[var(--foreground)]/20 dark:text-white/20 italic">
                 All data remains encrypted at rest. Sharing is opt-in per peer.
               </p>
             </div>
@@ -252,7 +252,7 @@ export default function MeshConfig({ token }: MeshConfigProps) {
 
       {/* Peers List */}
       <section className="space-y-4">
-        <h3 className="text-sm font-medium text-white/80">Trusted Peers</h3>
+        <h3 className="text-sm font-medium text-[var(--foreground)]/80 dark:text-white/80">Trusted Peers</h3>
         {error && (
           <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs">
             <AlertTriangle className="w-4 h-4" />
@@ -262,8 +262,8 @@ export default function MeshConfig({ token }: MeshConfigProps) {
 
         <div className="space-y-3">
           {peers.length === 0 && !isLoading && (
-            <div className="text-center py-12 bg-white/[0.01] border border-dashed border-white/5 rounded-2xl">
-              <p className="text-sm text-white/20">
+            <div className="text-center py-12 bg-[var(--surface)] dark:bg-white/[0.01] border border-dashed border-[var(--border-subtle)] dark:border-white/5 rounded-2xl">
+              <p className="text-sm text-[var(--foreground)]/20 dark:text-white/20">
                 No peers linked yet. Generate a code to get started.
               </p>
             </div>
@@ -272,23 +272,23 @@ export default function MeshConfig({ token }: MeshConfigProps) {
           {peers.map((peer) => (
             <div
               key={peer.node_id}
-              className="p-5 rounded-2xl bg-white/[0.02] border border-white/[0.06] hover:border-white/10 transition-all group"
+              className="p-5 rounded-2xl bg-[var(--surface-card)] dark:bg-white/[0.02] border border-[var(--border-subtle)] dark:border-white/[0.06] hover:border-[var(--border-subtle)] dark:border-white/10 transition-all group"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/40 font-bold">
+                  <div className="w-10 h-10 rounded-xl bg-[var(--foreground)]/5 dark:bg-white/5 flex items-center justify-center text-[var(--foreground)]/40 dark:text-white/40 font-bold">
                     {peer.alias?.[0] || peer.node_id[0].toUpperCase()}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-white/90">
+                      <p className="text-sm font-medium text-[var(--foreground)]/90 dark:text-white/90">
                         {peer.alias || "Xavier Node"}
                       </p>
                       <span
-                        className={`w-2 h-2 rounded-full ${peer.last_seen_at ? "bg-[#39ff14] shadow-[0_0_8px_#39ff14]" : "bg-white/10"}`}
+                        className={`w-2 h-2 rounded-full ${peer.last_seen_at ? "bg-[#39ff14] shadow-[0_0_8px_#39ff14]" : "bg-[var(--foreground)]/10 dark:bg-white/10"}`}
                       />
                     </div>
-                    <code className="text-[10px] text-white/30 font-mono">
+                    <code className="text-[10px] text-[var(--foreground)]/30 dark:text-white/30 font-mono">
                       {peer.node_id}
                     </code>
                   </div>
@@ -296,7 +296,7 @@ export default function MeshConfig({ token }: MeshConfigProps) {
 
                 <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <p className="text-[10px] uppercase text-white/30 tracking-widest mb-1">
+                    <p className="text-[10px] uppercase text-[var(--foreground)]/30 dark:text-white/30 tracking-widest mb-1">
                       Clearance Depth
                     </p>
                     <select
@@ -308,7 +308,7 @@ export default function MeshConfig({ token }: MeshConfigProps) {
                           e.target.value as ClearanceLevel,
                         )
                       }
-                      className="bg-black/40 border border-white/10 rounded px-2 py-1 text-[11px] text-white/70 outline-none focus:border-[#39ff14]/40"
+                      className="bg-[var(--surface-card)] dark:bg-black/40 border border-[var(--border-subtle)] dark:border-white/10 rounded px-2 py-1 text-[11px] text-[var(--foreground)]/70 dark:text-white/70 outline-none focus:border-[#39ff14]/40"
                     >
                       <option value="unclassified">Unclassified</option>
                       <option value="confidential">Confidential</option>
@@ -317,7 +317,7 @@ export default function MeshConfig({ token }: MeshConfigProps) {
                     </select>
                   </div>
                   <div className="text-right">
-                    <p className="text-[10px] uppercase text-white/30 tracking-widest mb-1">
+                    <p className="text-[10px] uppercase text-[var(--foreground)]/30 dark:text-white/30 tracking-widest mb-1">
                       Role
                     </p>
                     <select
@@ -329,7 +329,7 @@ export default function MeshConfig({ token }: MeshConfigProps) {
                           peer.clearance,
                         )
                       }
-                      className="bg-black/40 border border-white/10 rounded px-2 py-1 text-[11px] text-white/70 outline-none focus:border-[#39ff14]/40"
+                      className="bg-[var(--surface-card)] dark:bg-black/40 border border-[var(--border-subtle)] dark:border-white/10 rounded px-2 py-1 text-[11px] text-[var(--foreground)]/70 dark:text-white/70 outline-none focus:border-[#39ff14]/40"
                     >
                       <option value="reader">Reader</option>
                       <option value="editor">Editor</option>
@@ -338,14 +338,14 @@ export default function MeshConfig({ token }: MeshConfigProps) {
                   </div>
                   <button
                     onClick={() => handleRemovePeer(peer.node_id)}
-                    className="p-2 text-white/10 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                    className="p-2 text-[var(--foreground)]/10 dark:text-white/10 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              <div className="mt-4 pt-4 border-t border-white/[0.04] flex items-center justify-between text-[10px] text-white/20">
+              <div className="mt-4 pt-4 border-t border-[var(--border-subtle)] dark:border-white/[0.04] flex items-center justify-between text-[10px] text-[var(--foreground)]/20 dark:text-white/20">
                 <div className="flex items-center gap-3">
                   <span className="flex items-center gap-1">
                     <Activity className="w-3 h-3" />
