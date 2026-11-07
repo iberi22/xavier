@@ -1,0 +1,6 @@
+feat(panel-ui): Replace hard-coded dark colors in CloudRelayConfig with theme tokens
+
+Replaced `bg-black`, `text-white`, `border-white/5` and other hardcoded dark classes with `bg-surface`, `dark:bg-[#050505]/30`, `text-foreground`, `dark:text-white` to follow the active UI theme correctly (e.g. `studio-bone` light mode).
+Also created a new e2e spec (`ui-31-light-theme-cloud-relay.spec.ts`) that asserts the correct classes are applied and captures screenshots to verify the theme correctly in light mode and still looks dark in dark mode.
+
+Test validation (pnpm run build and vitest checks successful, newly added e2e playwright tested locally).
