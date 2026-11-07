@@ -113,7 +113,7 @@ export function OllamaModelManager({
   };
 
   return (
-    <div className="bg-[#050505]/80 border border-white/10 rounded-[24px] p-6 backdrop-blur-xl shadow-2xl space-y-6">
+    <div className="bg-[var(--surface-card)]/80 dark:bg-[#050505]/80 border border-[var(--border-subtle)] dark:border-white/10 rounded-[24px] p-6 backdrop-blur-xl shadow-2xl space-y-6 text-[var(--foreground)] dark:text-white">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="relative">
@@ -124,7 +124,7 @@ export function OllamaModelManager({
               <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-[#39ff14] animate-ping opacity-75" />
             )}
           </div>
-          <h3 className="text-xs uppercase tracking-[0.2em] font-bold text-white/80">
+          <h3 className="text-xs uppercase tracking-[0.2em] font-bold text-[var(--foreground)]/80 dark:text-white/80">
             Ollama Model Manager
           </h3>
         </div>
@@ -132,7 +132,7 @@ export function OllamaModelManager({
           onClick={loadData}
           disabled={loading || pulling}
           aria-label="Refrescar modelos"
-          className="p-1.5 hover:bg-white/5 rounded-lg transition-colors text-white/40 hover:text-white/80 disabled:opacity-30"
+          className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)]/80 dark:hover:text-white/80 disabled:opacity-30"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
         </button>
@@ -152,20 +152,20 @@ export function OllamaModelManager({
       ) : (
         <div className="space-y-6">
           {/* Active Status Header */}
-          <div className="grid grid-cols-2 gap-4 bg-white/5 border border-white/5 p-4 rounded-xl text-xs">
+          <div className="grid grid-cols-2 gap-4 bg-black/5 dark:bg-white/5 border border-[var(--border-subtle)] dark:border-white/5 p-4 rounded-xl text-xs">
             <div>
-              <span className="text-white/40 block mb-0.5">
+              <span className="text-[var(--foreground)]/50 dark:text-white/40 block mb-0.5">
                 Chat LLM Activo
               </span>
-              <span className="font-mono text-white/90 truncate block">
+              <span className="font-mono text-[var(--foreground)]/90 dark:text-white/90 truncate block">
                 {activeLLM || "Ninguno"}
               </span>
             </div>
             <div>
-              <span className="text-white/40 block mb-0.5">
+              <span className="text-[var(--foreground)]/50 dark:text-white/40 block mb-0.5">
                 Embedding Activo
               </span>
-              <span className="font-mono text-white/90 truncate block">
+              <span className="font-mono text-[var(--foreground)]/90 dark:text-white/90 truncate block">
                 {activeEmbedding || "Ninguno"}
               </span>
             </div>
@@ -176,7 +176,7 @@ export function OllamaModelManager({
             <div className="flex items-center justify-between">
               <label
                 htmlFor="model-select"
-                className="text-[10px] uppercase text-white/50 tracking-widest block font-medium"
+                className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest block font-medium"
               >
                 Modelos Disponibles
               </label>
@@ -187,7 +187,7 @@ export function OllamaModelManager({
                   className={`text-[9px] px-2 py-0.5 rounded uppercase font-bold tracking-wider transition-all ${
                     activeKind === "llm"
                       ? "bg-[#39ff14]/10 text-[#39ff14] border border-[#39ff14]/20"
-                      : "text-white/40 hover:text-white/70 border border-transparent"
+                      : "text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)]/70 dark:hover:text-white/70 border border-transparent"
                   }`}
                 >
                   LLM
@@ -198,7 +198,7 @@ export function OllamaModelManager({
                   className={`text-[9px] px-2 py-0.5 rounded uppercase font-bold tracking-wider transition-all ${
                     activeKind === "embedding"
                       ? "bg-[#39ff14]/10 text-[#39ff14] border border-[#39ff14]/20"
-                      : "text-white/40 hover:text-white/70 border border-transparent"
+                      : "text-[var(--foreground)]/40 dark:text-white/40 hover:text-[var(--foreground)]/70 dark:hover:text-white/70 border border-transparent"
                   }`}
                 >
                   Embedding
@@ -213,7 +213,7 @@ export function OllamaModelManager({
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
                 disabled={models.length === 0 || settingActive}
-                className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-mono text-white/90 outline-none focus:border-[#39ff14]/40"
+                className="flex-1 bg-[var(--surface)]/60 dark:bg-black/60 border border-[var(--border-subtle)] dark:border-white/10 rounded-xl px-4 py-2.5 text-xs font-mono text-[var(--foreground)]/90 dark:text-white/90 outline-none focus:border-[#39ff14]/40"
               >
                 {models.length === 0 ? (
                   <option value="">No hay modelos cargados</option>
@@ -232,7 +232,7 @@ export function OllamaModelManager({
                 disabled={
                   !selectedModel || settingActive || models.length === 0
                 }
-                className="px-4 py-2.5 bg-white/5 hover:bg-[#39ff14]/10 border border-white/10 hover:border-[#39ff14]/30 hover:text-[#39ff14] text-white/80 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-white/80 disabled:hover:border-white/10"
+                className="px-4 py-2.5 bg-black/5 dark:bg-white/5 hover:bg-[#39ff14]/10 border border-[var(--border-subtle)] dark:border-white/10 hover:border-[#39ff14]/30 hover:text-[#39ff14] text-[var(--foreground)]/80 dark:text-white/80 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--foreground)]/80 disabled:dark:hover:text-white/80 disabled:hover:border-transparent disabled:dark:hover:border-white/10"
               >
                 {settingActive ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -251,11 +251,11 @@ export function OllamaModelManager({
           {/* Pull New Model */}
           <form
             onSubmit={handlePullModel}
-            className="space-y-3 pt-2 border-t border-white/5"
+            className="space-y-3 pt-2 border-t border-[var(--border-subtle)] dark:border-white/5"
           >
             <label
               htmlFor="pull-input"
-              className="text-[10px] uppercase text-white/50 tracking-widest block font-medium"
+              className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest block font-medium"
             >
               Descargar nuevo modelo (Pull)
             </label>
@@ -267,12 +267,12 @@ export function OllamaModelManager({
                 onChange={(e) => setPullModelName(e.target.value)}
                 placeholder="ej: deepseek-coder:1.5b"
                 disabled={pulling}
-                className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-mono text-white/90 outline-none focus:border-[#39ff14]/40 placeholder:text-white/20"
+                className="flex-1 bg-[var(--surface)]/60 dark:bg-black/60 border border-[var(--border-subtle)] dark:border-white/10 rounded-xl px-4 py-2.5 text-xs font-mono text-[var(--foreground)]/90 dark:text-white/90 outline-none focus:border-[#39ff14]/40 placeholder:text-[var(--foreground)]/30 dark:placeholder:text-white/20"
               />
               <button
                 type="submit"
                 disabled={pulling || !pullModelName.trim()}
-                className="px-4 py-2.5 bg-white/5 hover:bg-[#39ff14]/10 border border-white/10 hover:border-[#39ff14]/30 hover:text-[#39ff14] text-white/80 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-white/80"
+                className="px-4 py-2.5 bg-black/5 dark:bg-white/5 hover:bg-[#39ff14]/10 border border-[var(--border-subtle)] dark:border-white/10 hover:border-[#39ff14]/30 hover:text-[#39ff14] text-[var(--foreground)]/80 dark:text-white/80 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--foreground)]/80 disabled:dark:hover:text-white/80"
               >
                 {pulling ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
