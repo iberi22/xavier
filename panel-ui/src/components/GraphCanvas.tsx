@@ -60,6 +60,7 @@ export default React.memo(function GraphCanvas({
   });
 
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
+  const fgColor = typeof window !== 'undefined' ? window.getComputedStyle(document.documentElement).getPropertyValue('--foreground').trim() || '#ffffff' : '#ffffff';
   const [selectedNode, setSelectedNode] = useState<any | null>(null);
   const [selectedNodeExtra, setSelectedNodeExtra] = useState<any>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -247,12 +248,12 @@ export default React.memo(function GraphCanvas({
         }
       }
 
-      ctx.fillStyle = isHovered ? "#ffffff" : nodeColor;
+      ctx.fillStyle = isHovered ? fgColor : nodeColor;
 
       // Outer glow for hovered/selected nodes
       if (isHovered || isSelected || intensity > 0.1) {
         ctx.shadowBlur = (isSelected ? 20 : 10 + intensity * 15) / globalScale;
-        ctx.shadowColor = isHovered || isSelected ? "#ffffff" : nodeColor;
+        ctx.shadowColor = isHovered || isSelected ? fgColor : nodeColor;
       } else {
         ctx.shadowBlur = 0;
       }
@@ -262,14 +263,14 @@ export default React.memo(function GraphCanvas({
 
       // Draw label if zoomed in or hovered/selected
       if (globalScale > 1.8 || isHovered || isSelected) {
-        ctx.fillStyle = isSelected ? "#39ff14" : "rgba(255, 255, 255, 0.85)";
+        ctx.fillStyle = isSelected ? "#39ff14" : fgColor;
         ctx.font = `${isHovered || isSelected ? 8 : 6}px monospace`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         ctx.fillText(node.label || node.id, node.x, node.y + radius + 3);
       }
     },
-    [hoveredNode, selectedNode, linkCounts, maxLinks, isCodeMode],
+    [hoveredNode, selectedNode, linkCounts, maxLinks, isCodeMode, fgColor],
   );
 
   const paintLink = useCallback(
@@ -287,8 +288,8 @@ export default React.memo(function GraphCanvas({
       ctx.strokeStyle = isSelectedLink
         ? "rgba(57, 255, 20, 0.8)"
         : isHoveredLink
-          ? "rgba(255, 255, 255, 0.5)"
-          : "rgba(255, 255, 255, 0.12)";
+          ? fgColor
+          : "rgba(128, 128, 128, 0.3)";
 
       ctx.lineWidth =
         isSelectedLink || isHoveredLink ? 1.5 / globalScale : 0.8 / globalScale;
@@ -296,7 +297,7 @@ export default React.memo(function GraphCanvas({
       ctx.lineTo(t.x, t.y);
       ctx.stroke();
     },
-    [hoveredNode, selectedNode],
+    [hoveredNode, selectedNode, fgColor],
   );
 
   return (
