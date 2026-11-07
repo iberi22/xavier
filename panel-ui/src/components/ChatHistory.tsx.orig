@@ -1,0 +1,403 @@
+import { AnimatePresence, motion } from "motion/react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useChatPreferences,
+  type ConversationWidth,
+} from "../hooks/useChatPreferences";
+import type { PanelMessage } from "../types";
+import { parseOpenUi } from "../utils/openuiParser";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { RenderSurface } from "./OpenUi/RenderSurface";
+import LoadingSpinner from "./ui/LoadingSpinner";
+
+interface ChatHistoryProps {
+  messages: PanelMessage[];
+  streamingMessageId: string | null;
+  isLoading?: boolean;
+  onStreamingComplete?: (messageId: string) => void;
+}
+
+const WIDTH_CLASSES: Record<ConversationWidth, string> = {
+  narrow: "max-w-xl",
+  default: "max-w-3xl",
+  wide: "max-w-5xl",
+};
+
+export function parseThinkingContent(
+  text: string,
+  metadata?: any
+): { thinkingText: string | null; mainText: string } {
+  let thinkingText: string | null = null;
+  let mainText = text || "";
+
+  const thinkRegex = /<(think|thought|thinking)>([\s\S]*?)<\/\1>/i;
+  const match = thinkRegex.exec(mainText);
+
+  if (match) {
+    thinkingText = match[2].trim();
+    mainText = mainText.replace(match[0], "").trim();
+  } else if (metadata && typeof metadata === "object") {
+    if (typeof metadata.thinking === "string" && metadata.thinking.trim()) {
+      thinkingText = metadata.thinking.trim();
+    } else if (typeof metadata.reasoning === "string" && metadata.reasoning.trim()) {
+      thinkingText = metadata.reasoning.trim();
+    } else if (typeof metadata.thought === "string" && metadata.thought.trim()) {
+      thinkingText = metadata.thought.trim();
+    }
+  }
+
+  return { thinkingText, mainText };
+}
+
+function CollapsibleThoughtProcess({
+  thinkingText,
+  verboseChat,
+}: {
+  thinkingText: string;
+  verboseChat: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(verboseChat);
+
+  useEffect(() => {
+    setIsOpen(verboseChat);
+  }, [verboseChat]);
+
+  return (
+    <div className="mb-2.5 rounded-lg border border-[#39ff14]/20 bg-[#39ff14]/[0.03] overflow-hidden text-xs">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+        aria-label="Toggle agent thinking process"
+        className="flex items-center justify-between w-full px-3 py-1.5 text-left font-mono text-[11px] text-[#39ff14]/80 hover:bg-[#39ff14]/[0.08] transition-colors cursor-pointer"
+      >
+        <span className="flex items-center gap-1.5 font-semibold">
+          <span>{isOpen ? "▼" : "▶"}</span>
+          <span>Proceso de Pensamiento</span>
+        </span>
+        <span className="text-[10px] opacity-60 uppercase font-mono">
+          {isOpen ? "Ocultar" : "Mostrar"}
+        </span>
+      </button>
+      {isOpen && (
+        <div
+          className="px-3 py-2 border-t border-[#39ff14]/15 font-mono text-[11px] leading-relaxed text-[#39ff14]/70 whitespace-pre-wrap bg-black/20"
+          data-testid="agent-thought-process"
+        >
+          {thinkingText}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatConfidence(value?: number) {
+  if (typeof value !== "number") {
+    return "n/a";
+  }
+  return `${Math.round(value * 100)}%`;
+}
+
+function StreamingMessageRenderer({
+  message,
+  isStreamingActive,
+  onStreamingComplete,
+}: {
+  message: PanelMessage;
+  isStreamingActive: boolean;
+  onStreamingComplete?: (messageId: string) => void;
+}) {
+  const [streamedText, setStreamedText] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+
+  useEffect(() => {
+    if (!isStreamingActive) {
+      setStreamedText(message.plain_text || "");
+      setIsStreaming(false);
+      return;
+    }
+
+    const fullText = message.plain_text || "";
+    if (fullText.length === 0) {
+      setIsStreaming(false);
+      onStreamingComplete?.(message.id);
+      return;
+    }
+
+    let currentIndex = 0;
+    setIsStreaming(true);
+    setStreamedText("");
+
+    const intervalId = setInterval(() => {
+      currentIndex += 5;
+      setStreamedText(fullText.slice(0, currentIndex));
+
+      if (currentIndex >= fullText.length) {
+        setIsStreaming(false);
+        clearInterval(intervalId);
+        onStreamingComplete?.(message.id);
+      }
+    }, 20);
+
+    return () => clearInterval(intervalId);
+  }, [message, isStreamingActive, onStreamingComplete]);
+
+  return (
+    <div className="flex flex-col gap-4 w-full">
+      <p className="text-sm leading-relaxed font-mono whitespace-pre-wrap">
+        {streamedText}
+        {isStreaming && (
+          <span className="inline-flex items-center gap-1.5 ml-1">
+            <span className="animate-pulse opacity-70">▊</span>
+            <LoadingSpinner size={12} className="text-[#39ff14]" />
+          </span>
+        )}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted message row into ChatMessageItem and wrapped in React.memo()
+ * 🎯 Why: When appending new messages to the chat (or streaming text), ChatHistory
+ *         was re-rendering the entire list. This caused O(N) string parsing because
+ *         JSON.parse(msg.metadata) ran for every message on every render.
+ * 📊 Impact: Eliminates O(N) JSON.parse overhead and DOM reconciliation for old messages
+ *         when new messages stream in. Appending/streaming is now O(1) in the list context.
+ */
+const ChatMessageItem = memo(function ChatMessageItem({
+  msg,
+  isStreamingActive,
+  verboseChat,
+  onStreamingComplete,
+}: {
+  msg: PanelMessage;
+  isStreamingActive: boolean;
+  verboseChat: boolean;
+  onStreamingComplete?: (messageId: string) => void;
+}) {
+  const parsedMetadata = useMemo(() => {
+    if (!msg.metadata) return null;
+    if (typeof msg.metadata === "string") {
+      try {
+        return JSON.parse(msg.metadata);
+      } catch {
+        return null;
+      }
+    }
+    return msg.metadata;
+  }, [msg.metadata]);
+
+  const { thinkingText, mainText } = useMemo(
+    () => parseThinkingContent(msg.plain_text, parsedMetadata),
+    [msg.plain_text, parsedMetadata]
+  );
+
+  const msgForStreaming = useMemo(
+    () => ({ ...msg, plain_text: mainText }),
+    [msg, mainText]
+  );
+
+  const openUiNodes = useMemo(() => {
+    if (msg.role !== "assistant" || !msg.openui_lang) return null;
+    return parseOpenUi(msg.openui_lang);
+  }, [msg.role, msg.openui_lang]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12, filter: "blur(4px)" }}
+      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      className={`message-card flex w-full gap-3 ${msg.role === "assistant" ? "assistant-card" : "user-card"} ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
+      data-testid={msg.role === "assistant" ? "assistant-card" : "user-card"}
+    >
+      {/* Avatar */}
+      {msg.role === "assistant" ? (
+        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-[#39ff14]/10 border border-[#39ff14]/20 flex items-center justify-center mt-1">
+          <div className="w-1.5 h-1.5 rounded-full bg-[#39ff14] msg-active-dot" />
+        </div>
+      ) : (
+        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/10 border border-white/[0.12] flex items-center justify-center mt-1 text-[9px] font-bold text-white/50 uppercase">
+          U
+        </div>
+      )}
+
+      {/* Bubble */}
+      <div
+        className={`flex flex-col max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}
+      >
+        <div
+          className={`px-4 py-3 rounded-2xl backdrop-blur-md ${
+            msg.role === "user"
+              ? "bg-white/[0.05] border border-white/[0.07] text-white/80 shadow-sm rounded-tr-sm"
+              : "bg-[#39ff14]/[0.025] border border-[#39ff14]/[0.09] text-[#39ff14] neon-glow-subtle w-full rounded-tl-sm"
+          }`}
+        >
+          {msg.role === "assistant" && (
+            <div className="flex items-center justify-between mb-2.5 border-b border-[#39ff14]/[0.08] pb-2">
+              <div className="flex items-center gap-2 opacity-50">
+                <span className="text-[9px] uppercase tracking-[0.15em] font-bold">
+                  Xavier Agent
+                </span>
+                <span className="text-[9px] opacity-60">
+                  {new Date(msg.created_at).toLocaleTimeString()}
+                </span>
+              </div>
+              {parsedMetadata && (
+                <div className="flex gap-3 text-[9px] uppercase tracking-widest font-mono opacity-40">
+                  <span>
+                    Conf: {formatConfidence(parsedMetadata.confidence)}
+                  </span>
+                  <span>Docs: {parsedMetadata.documents ?? 0}</span>
+                  <span>Lat: {parsedMetadata.timings?.total_ms ?? 0}ms</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {msg.role === "assistant" &&
+            parsedMetadata?.provider === "memory-fallback" && (
+              <div
+                role="note"
+                aria-label="Respondiendo desde memoria (LLM no disponible)"
+                className="flex items-center gap-2 px-3 py-1.5 mb-3 text-xs rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 select-none"
+              >
+                <span aria-hidden="true">💾</span>
+                <span className="font-medium">
+                  Respondiendo desde memoria (LLM no disponible)
+                </span>
+              </div>
+            )}
+
+          {msg.role === "assistant" && thinkingText && (
+            <CollapsibleThoughtProcess
+              thinkingText={thinkingText}
+              verboseChat={verboseChat}
+            />
+          )}
+
+          {msg.role === "assistant" ? (
+            openUiNodes && !isStreamingActive ? (
+              <ErrorBoundary
+                fallback={
+                  <div className="plain-text w-full" data-testid="plain-text-fallback">
+                    <StreamingMessageRenderer
+                      message={msgForStreaming}
+                      isStreamingActive={isStreamingActive}
+                      onStreamingComplete={onStreamingComplete}
+                    />
+                  </div>
+                }
+              >
+                <div className="flex flex-col gap-2 w-full">
+                  <RenderSurface nodes={openUiNodes} />
+                  <div
+                    className="plain-text text-xs text-white/50 border-t border-[#39ff14]/10 pt-2 font-mono"
+                    data-testid="assistant-plain-text"
+                  >
+                    {mainText}
+                  </div>
+                </div>
+              </ErrorBoundary>
+            ) : (
+              <div className="plain-text w-full" data-testid="plain-text-fallback">
+                <StreamingMessageRenderer
+                  message={msgForStreaming}
+                  isStreamingActive={isStreamingActive}
+                  onStreamingComplete={onStreamingComplete}
+                />
+              </div>
+            )
+          ) : (
+            <p className="plain-text text-sm leading-relaxed font-sans" data-testid="user-plain-text">
+              {msg.plain_text}
+            </p>
+          )}
+        </div>
+
+        {/* Timestamp below bubble for user messages */}
+        {msg.role === "user" && (
+          <span className="text-[9px] text-white/20 mt-1 mr-1">
+            {new Date(msg.created_at).toLocaleTimeString()}
+          </span>
+        )}
+      </div>
+    </motion.div>
+  );
+});
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped ChatHistory in React.memo()
+ * 🎯 Why: ChatHistory is a large complex component re-rendering dynamic lists of ChatMessageItem. When the parent App.tsx updates due to typing inputs or hash changes, ChatHistory needlessly re-rendered.
+ * 📊 Impact: O(1) rendering for the ChatHistory container when un-related parent state updates, preventing expensive DOM reconciliation of the message list.
+ */
+export default memo(function ChatHistory({
+  messages,
+  streamingMessageId,
+  isLoading = false,
+  onStreamingComplete,
+}: ChatHistoryProps) {
+  const { conversationWidth, verboseChat } = useChatPreferences();
+  const widthClass = WIDTH_CLASSES[conversationWidth] || WIDTH_CLASSES.default;
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      setTimeout(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      }, 50);
+    }
+  }, []);
+
+  return (
+    <div className={`absolute top-0 bottom-[120px] left-1/2 -translate-x-1/2 w-full ${widthClass} p-4 flex flex-col justify-end pointer-events-none z-10`}>
+      <div
+        ref={scrollRef}
+        className="w-full overflow-y-auto flex flex-col gap-5 pointer-events-auto pb-4 scroll-smooth"
+        style={{
+          maskImage:
+            "linear-gradient(to bottom, transparent, black 15%, black 100%)",
+          WebkitMaskImage:
+            "-webkit-linear-gradient(top, transparent, black 15%, black 100%)",
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+        }}
+      >
+        <AnimatePresence>
+          {messages.map((msg) => (
+            <ChatMessageItem
+              key={msg.id}
+              msg={msg}
+              isStreamingActive={msg.id === streamingMessageId}
+              verboseChat={verboseChat}
+              onStreamingComplete={onStreamingComplete}
+            />
+          ))}
+          {isLoading && !streamingMessageId && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              className="flex items-center gap-3 p-3 rounded-xl bg-[#39ff14]/[0.025] border border-[#39ff14]/[0.09] text-[#39ff14] text-xs font-mono"
+              data-testid="chat-loading-indicator"
+            >
+              <LoadingSpinner size={16} className="text-[#39ff14]" />
+              <span>Xavier is thinking...</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      <style>{`
+        .scroll-smooth::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
+    </div>
+  );
+});
