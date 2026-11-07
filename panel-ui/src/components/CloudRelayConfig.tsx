@@ -56,16 +56,16 @@ export function CloudRelayConfig({ token }: { token: string }) {
   };
 
   return (
-    <section className="bg-[#050505]/30 border border-white/5 rounded-2xl p-6">
+    <section className="bg-[var(--surface-card,#1b1c20)] border border-[var(--border-subtle,rgba(255,255,255,0.06))] rounded-2xl p-6">
       <div className="flex items-center gap-3 mb-5">
         <div className="p-2 rounded-lg bg-orange-500/10 text-orange-400">
           <Cloud size={18} />
         </div>
         <div>
-          <h2 className="font-semibold text-white/90">
+          <h2 className="font-semibold text-[var(--foreground,#f3f3f5)]">
             Zero-Trust Cloud Relay
           </h2>
-          <p className="text-xs text-white/40 uppercase tracking-widest mt-1">
+          <p className="text-xs text-[var(--foreground-muted,#8f919a)] uppercase tracking-widest mt-1">
             Configure Supabase / Neon endpoints
           </p>
         </div>
@@ -74,7 +74,7 @@ export function CloudRelayConfig({ token }: { token: string }) {
       <form onSubmit={handleSaveCloud} className="space-y-4">
         <div className="space-y-4">
           <div className="flex flex-col gap-1">
-            <label htmlFor={urlId} className="text-[10px] uppercase text-white/50 tracking-widest">
+            <label htmlFor={urlId} className="text-[10px] uppercase text-[var(--foreground-muted,#8f919a)] tracking-widest">
               Supabase URL
             </label>
             <input
@@ -85,11 +85,11 @@ export function CloudRelayConfig({ token }: { token: string }) {
                 setCloudSettings({ ...cloudSettings, url: e.target.value })
               }
               placeholder="https://xyz.supabase.co"
-              className="w-full bg-black/40 border border-white/5 rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30 text-white/80"
+              className="w-full bg-[var(--surface,#141518)] border border-[var(--border-subtle,rgba(255,255,255,0.08))] rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30 text-[var(--foreground,#f3f3f5)]"
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label htmlFor={tokenId} className="text-[10px] uppercase text-white/50 tracking-widest">
+            <label htmlFor={tokenId} className="text-[10px] uppercase text-[var(--foreground-muted,#8f919a)] tracking-widest">
               Service Token (API Key)
             </label>
             <input
@@ -100,11 +100,11 @@ export function CloudRelayConfig({ token }: { token: string }) {
                 setCloudSettings({ ...cloudSettings, token: e.target.value })
               }
               placeholder="Your service_role key or anon key"
-              className="w-full bg-black/40 border border-white/5 rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30 text-white/80"
+              className="w-full bg-[var(--surface,#141518)] border border-[var(--border-subtle,rgba(255,255,255,0.08))] rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30 text-[var(--foreground,#f3f3f5)]"
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label htmlFor={instanceId} className="text-[10px] uppercase text-white/50 tracking-widest">
+            <label htmlFor={instanceId} className="text-[10px] uppercase text-[var(--foreground-muted,#8f919a)] tracking-widest">
               Namespace / Node ID
             </label>
             <input
@@ -118,11 +118,11 @@ export function CloudRelayConfig({ token }: { token: string }) {
                 })
               }
               placeholder="pgheart-namespace-id"
-              className="w-full bg-black/40 border border-white/5 rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30 text-white/80"
+              className="w-full bg-[var(--surface,#141518)] border border-[var(--border-subtle,rgba(255,255,255,0.08))] rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30 text-[var(--foreground,#f3f3f5)]"
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label htmlFor={syncId} className="text-[10px] uppercase text-white/50 tracking-widest">
+            <label htmlFor={syncId} className="text-[10px] uppercase text-[var(--foreground-muted,#8f919a)] tracking-widest">
               Sync Interval (ms)
             </label>
             <input
@@ -135,15 +135,15 @@ export function CloudRelayConfig({ token }: { token: string }) {
                   sync_interval_ms: Number.parseInt(e.target.value, 10),
                 })
               }
-              className="w-full bg-black/40 border border-white/5 rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30 text-white/80"
+              className="w-full bg-[var(--surface,#141518)] border border-[var(--border-subtle,rgba(255,255,255,0.08))] rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30 text-[var(--foreground,#f3f3f5)]"
             />
           </div>
-          <div className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-white/5">
+          <div className="flex items-center justify-between p-3 bg-[var(--surface,#141518)] rounded-xl border border-[var(--border-subtle,rgba(255,255,255,0.08))]">
             <div>
-              <h4 className="text-white/70 text-[10px] uppercase tracking-widest">
+              <h4 className="text-[var(--foreground,#f3f3f5)] text-[10px] uppercase tracking-widest">
                 Auto Heartbeat
               </h4>
-              <p className="text-[9px] text-white/30 uppercase mt-0.5">
+              <p className="text-[9px] text-[var(--foreground-muted,#8f919a)] uppercase mt-0.5">
                 Keep cloud connection alive
               </p>
             </div>

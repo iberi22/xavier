@@ -63,24 +63,24 @@ export function NodeConnectionModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto"
+          className="fixed inset-0 z-[100] bg-black/20 dark:bg-black/70 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto"
           onClick={onClose}
         >
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
-            className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-5"
+            className="bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-5"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-4">
               <div className="flex items-center gap-2">
                 <Server className="w-5 h-5 text-emerald-400" />
                 <div>
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                  <h3 className="text-sm font-bold text-[var(--foreground)] uppercase tracking-wider font-mono">
                     Xavier Node Connectivity
                   </h3>
-                  <p className="text-[10px] text-white/50">
+                  <p className="text-[10px] text-[var(--foreground)]/50">
                     Configure active remote node URL & auto-reconnect settings
                   </p>
                 </div>
@@ -88,7 +88,7 @@ export function NodeConnectionModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="text-white/40 hover:text-white transition-colors"
+                className="text-[var(--foreground)]/40 hover:text-[var(--foreground)] transition-colors"
                 aria-label="Close modal"
               >
                 <X className="w-4 h-4" />
@@ -97,8 +97,8 @@ export function NodeConnectionModal({
 
             <div className="space-y-4">
               {/* Active Mode Banner */}
-              <div className="bg-white/5 border border-white/10 p-3 rounded-xl flex items-center justify-between text-xs font-mono">
-                <span className="text-white/60">Current Base URL:</span>
+              <div className="bg-black/5 dark:bg-white/5 border border-[var(--border-subtle)] p-3 rounded-xl flex items-center justify-between text-xs font-mono">
+                <span className="text-[var(--foreground)]/60">Current Base URL:</span>
                 <span
                   className="text-emerald-400 font-bold truncate max-w-[200px]"
                   title={getApiUrl("")}
@@ -109,7 +109,7 @@ export function NodeConnectionModal({
 
               {/* Status Indicator */}
               <div className="flex items-center gap-2 text-xs font-mono">
-                <span className="text-white/60">Status:</span>
+                <span className="text-[var(--foreground)]/60">Status:</span>
                 <span
                   className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
                     nodeStatus === "connected"
@@ -127,19 +127,19 @@ export function NodeConnectionModal({
               <div className="space-y-1.5">
                 <label
                   htmlFor="remote-node-url-input"
-                  className="block text-xs font-mono text-white/70"
+                  className="block text-xs font-mono text-[var(--foreground)]/70"
                 >
                   Remote Node Endpoint (e.g., https://xavier-node.domain.com:8006)
                 </label>
                 <div className="relative">
-                  <Globe className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                  <Globe className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--foreground)]/40" />
                   <input
                     id="remote-node-url-input"
                     type="text"
                     value={inputRemoteUrl}
                     onChange={(e) => setInputRemoteUrl(e.target.value)}
                     placeholder="https://node.swal.local:8006"
-                    className="w-full pl-9 pr-3 py-2 bg-black/50 border border-white/15 rounded-xl text-white text-xs font-mono focus:outline-none focus:border-emerald-400 transition-colors"
+                    className="w-full pl-9 pr-3 py-2 bg-black/5 dark:bg-black/50 border border-[var(--border-subtle)] rounded-xl text-[var(--foreground)] text-xs font-mono focus:outline-none focus:border-emerald-400 transition-colors"
                   />
                 </div>
               </div>
@@ -157,12 +157,12 @@ export function NodeConnectionModal({
               )}
 
               {/* Button Controls */}
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10">
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--border-subtle)]">
                 <button
                   type="button"
                   onClick={handleTestConnection}
                   disabled={testingConnection}
-                  className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 rounded-xl text-xs font-mono font-bold transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-3 py-1.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 border border-[var(--border-subtle)] text-[var(--foreground)]/80 rounded-xl text-xs font-mono font-bold transition-colors flex items-center gap-1.5 disabled:opacity-50"
                 >
                   {testingConnection && (
                     <RefreshCw className="w-3 h-3 animate-spin" />
