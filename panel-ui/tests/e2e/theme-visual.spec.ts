@@ -31,7 +31,31 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
       });
     });
 
-    await page.route("**/auth/login", async (route) => {
+    await page.route("**/auth/refresh", async (route) => { await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ access_token: "mock-jwt-token", refresh_token: "mock-rt-token" }) }); }); await page.route("**/auth/login", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          token: "mock-jwt-token",
+          user: { id: "1", email: "operator@xavier.local", role: "admin" },
+        }),
+      });
+    });
+
+    // Add missing auth/refresh intercept
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          token: "mock-jwt-token",
+          user: { id: "1", email: "operator@xavier.local", role: "admin" },
+        }),
+      });
+    });
+
+    // Fallback v1/auth/login intercept
+    await page.route("**/v1/auth/login", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -63,19 +87,22 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
     // 1. Navigate to the app root
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(1000);
+
+    // Add auto-wait explicitly for components to mount
+    await expect(page.locator("html")).toBeVisible();
 
     // If login is shown, log in
     const loginButton = page.locator('button:has-text("INITIALIZE SESSION")');
-    if (await loginButton.isVisible()) {
+    if (await loginButton.isVisible({ timeout: 2000 }).catch(() => false)) {
       await page.fill('input[type="email"]', "operator@xavier.local");
       const passwordInput = page.locator('input[type="password"]');
       if (await passwordInput.isVisible()) {
         await passwordInput.fill("password123");
       }
       await loginButton.click();
-      await page.waitForTimeout(1000);
     }
+
+    await expect(page.locator('button[aria-label="Open Control Node"]')).toBeVisible();
 
     // 2. Verify Studio Dark is applied by default
     const htmlElement = page.locator("html");
@@ -106,10 +133,10 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
     // Appearance is default tab or switch to it
     const appearanceSidebarBtn = page.locator('button:has-text("Appearance")').first();
     await appearanceSidebarBtn.click();
-    await page.waitForTimeout(600);
 
     // Verify Antigravity Appearance content
-    await expect(page.locator('h1:has-text("Appearance")')).toBeVisible();
+    const appearanceHeader = page.locator('h1:has-text("Appearance")');
+    await expect(appearanceHeader).toBeVisible();
     await expect(page.locator('text="Verbose Agent Chat"')).toBeVisible();
     await expect(page.locator('text="Conversation Width"')).toBeVisible();
     await expect(page.locator('text="Light Theme"')).toBeVisible();
@@ -126,11 +153,13 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
     // 4. Switch to Light Mode (Sun icon)
     const sunBtn = page.locator('button[aria-label="Light theme"]');
     await sunBtn.click();
-    await page.waitForTimeout(600);
 
     // Verify DOM theme attribute switched to studio-bone
     await expect(htmlElement).toHaveAttribute("data-theme", "studio-bone");
     await expect(htmlElement).toHaveClass(/studio-bone/);
+
+    // Verify luminance (text should be dark)
+    await expect(appearanceHeader).toHaveCSS("color", /rgb\(28, 28, 31\)|rgba\(28, 28, 31, 0\.95\)|oklch\(0\.208 0\.042 265\.755\)/);
 
     // Take screenshot in Bone White
     const boneWhitePath = path.join(ARTIFACT_DIR, "bone_white_e2e.png");
@@ -139,13 +168,12 @@ test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", ()
     // 5. Switch to Dark Mode (Moon icon)
     const moonBtn = page.locator('button[aria-label="Dark theme"]');
     await moonBtn.click();
-    await page.waitForTimeout(600);
+
     await expect(htmlElement).toHaveAttribute("data-theme", "studio-dark");
     await expect(htmlElement).toHaveClass(/studio-dark/);
 
     // Close modal
     await modal.click();
-    await page.waitForTimeout(400);
+    await expect(modal).toBeHidden();
   });
 });
-

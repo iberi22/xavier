@@ -6,8 +6,8 @@ import type { Agent } from "../types";
 function StatusBadge({ status }: { status: Agent["status"] }) {
   const colors = {
     running: "text-[#39ff14] bg-[#39ff14]/10 border-[#39ff14]/20",
-    stopped: "text-white/40 bg-white/5 border-white/10",
-    error: "text-red-400 bg-red-400/10 border-red-400/20",
+    stopped: "text-gray-500 dark:text-white/40 bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10",
+    error: "text-red-500 dark:text-red-400 bg-red-500/10 dark:bg-red-400/10 border-red-500/20 dark:border-red-400/20",
   };
 
   return (
@@ -28,28 +28,28 @@ function StatusBadge({ status }: { status: Agent["status"] }) {
  */
 const AgentItem = React.memo(function AgentItem({ agent }: { agent: Agent }) {
   return (
-    <div className="bg-white/5 border border-white/10 rounded-[24px] p-6 hover:border-[#39ff14]/30 transition-all group">
+    <div className="bg-[var(--surface-card,#ffffff)] dark:bg-white/5 border border-[var(--border-subtle,rgba(0,0,0,0.08))] dark:border-white/10 rounded-[24px] p-6 hover:border-[#39ff14]/30 transition-all group">
       <div className="flex items-start justify-between mb-6">
-        <div className="p-3 bg-white/5 rounded-2xl group-hover:bg-[#39ff14]/10 group-hover:text-[#39ff14] transition-colors">
+        <div className="p-3 bg-black/5 dark:bg-white/5 rounded-2xl group-hover:bg-[#39ff14]/10 group-hover:text-[#39ff14] transition-colors">
           <Bot size={24} />
         </div>
         <StatusBadge status={agent.status} />
       </div>
 
       <div className="space-y-1 mb-6">
-        <h3 className="font-bold text-white tracking-tight">
+        <h3 className="font-bold text-[var(--foreground,#1c1c1f)] dark:text-white tracking-tight">
           {agent.name}
         </h3>
-        <p className="text-[10px] text-white/30 font-mono truncate">
+        <p className="text-[10px] text-[var(--foreground-muted,#8f919a)] dark:text-white/30 font-mono truncate">
           {agent.id}
         </p>
       </div>
 
-      <div className="pt-6 border-t border-white/5 flex items-center justify-between">
-        <div className="text-[10px] uppercase tracking-widest text-white/40">
+      <div className="pt-6 border-t border-[var(--border-subtle,rgba(0,0,0,0.08))] dark:border-white/5 flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-widest text-[var(--foreground-muted,#8f919a)] dark:text-white/40">
           Last Active
         </div>
-        <div className="text-[11px] font-mono text-white/60">
+        <div className="text-[11px] font-mono text-black/60 dark:text-white/60">
           {agent.last_seen
             ? new Date(agent.last_seen).toLocaleTimeString()
             : "Never"}
@@ -89,10 +89,10 @@ export default React.memo(function AgentsView({ token }: { token: string }) {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-light text-white tracking-tight">
+          <h2 className="text-3xl font-light text-[var(--foreground,#1c1c1f)] dark:text-white tracking-tight">
             Agent Manager
           </h2>
-          <p className="text-sm text-white/40 mt-1">
+          <p className="text-sm text-[var(--foreground-muted,#8f919a)] dark:text-white/40 mt-1">
             Monitor and control active agents
           </p>
         </div>
@@ -100,7 +100,7 @@ export default React.memo(function AgentsView({ token }: { token: string }) {
           type="button"
           disabled={loading}
           onClick={loadAgents}
-          className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-4 py-2 bg-[var(--surface-card,#ffffff)] dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 border border-[var(--border-subtle,rgba(0,0,0,0.08))] dark:border-white/10 rounded-xl text-xs font-bold text-[var(--foreground,#1c1c1f)] dark:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           Refresh
@@ -108,15 +108,15 @@ export default React.memo(function AgentsView({ token }: { token: string }) {
       </div>
 
       {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-500 dark:text-red-400 text-sm">
           Error: {error}
         </div>
       )}
 
       {loading && !agents.length ? (
-        <div className="text-white/20 text-sm font-mono">Loading agents...</div>
+        <div className="text-black/40 dark:text-white/20 text-sm font-mono">Loading agents...</div>
       ) : agents.length === 0 ? (
-        <div className="text-center py-20 text-white/20 bg-white/[0.02] border border-dashed border-white/10 rounded-[32px]">
+        <div className="text-center py-20 text-black/40 dark:text-white/20 bg-[var(--surface-card,#ffffff)] dark:bg-white/[0.02] border border-dashed border-[var(--border-subtle,rgba(0,0,0,0.08))] dark:border-white/10 rounded-[32px]">
           No active agents detected in the current workspace.
         </div>
       ) : (

@@ -67,22 +67,22 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
     <div className="w-full h-full overflow-y-auto px-8 py-6 text-foreground space-y-7 select-none font-sans">
       {/* Title & Subtitle */}
       <div>
-        <h1 className="text-xl font-medium tracking-tight text-white/95">Appearance</h1>
-        <p className="text-xs text-white/50 mt-1">
+        <h1 className="text-xl font-medium tracking-tight text-foreground/95">Appearance</h1>
+        <p className="text-xs text-foreground/50 mt-1">
           Configure the agent's visual theme and display preferences.
         </p>
       </div>
 
       {/* Section: Chat Settings */}
       <div className="space-y-2">
-        <h2 className="text-xs font-semibold text-white/70">Chat Settings</h2>
+        <h2 className="text-xs font-semibold text-foreground/70">Chat Settings</h2>
 
-        <div className="rounded-xl border border-white/[0.07] bg-[#16171a]/50 divide-y divide-white/[0.05]">
+        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] divide-y divide-[var(--border-subtle)]">
           {/* Verbose Agent Chat */}
           <div className="flex items-center justify-between px-4 py-3">
             <div className="space-y-0.5">
-              <span className="text-xs font-medium text-white/90">Verbose Agent Chat</span>
-              <p className="text-[11px] text-white/45 leading-relaxed">
+              <span className="text-xs font-medium text-foreground/90">Verbose Agent Chat</span>
+              <p className="text-[11px] text-foreground/45 leading-relaxed">
                 Display and preserve intermediate thinking steps.
               </p>
             </div>
@@ -93,11 +93,11 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
               aria-label="Verbose Agent Chat"
               onClick={() => updatePreferences({ verboseChat: !preferences.verboseChat })}
               className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${
-                preferences.verboseChat ? "bg-blue-600" : "bg-white/15"
+                preferences.verboseChat ? "bg-blue-600" : "bg-[var(--foreground)]/15 dark:bg-white/15"
               }`}
             >
               <span
-                className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out mt-[3px] ${
+                className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-[var(--background)] shadow-md transition duration-200 ease-in-out mt-[3px] ${
                   preferences.verboseChat ? "translate-x-4 ml-[3px]" : "translate-x-1"
                 }`}
               />
@@ -107,12 +107,12 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
           {/* Conversation Width */}
           <div className="flex items-center justify-between px-4 py-3">
             <div className="space-y-0.5">
-              <span className="text-xs font-medium text-white/90">Conversation Width</span>
-              <p className="text-[11px] text-white/45 leading-relaxed">
+              <span className="text-xs font-medium text-foreground/90">Conversation Width</span>
+              <p className="text-[11px] text-foreground/45 leading-relaxed">
                 Configure the maximum width of the conversation panel.
               </p>
             </div>
-            <div className="inline-flex rounded-lg bg-[#111215] p-0.5 border border-white/[0.08]">
+            <div className="inline-flex rounded-lg bg-[var(--surface-card)] p-0.5 border border-[var(--border-subtle)]">
               {(["default", "narrow", "wide"] as const).map((width) => {
                 const label = width === "default" ? "Default" : width === "narrow" ? "Narrow" : "Wide";
                 return (
@@ -122,8 +122,8 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
                     onClick={() => updatePreferences({ conversationWidth: width })}
                     className={`px-3 py-1 text-xs font-medium rounded-md transition-all duration-150 ${
                       preferences.conversationWidth === width
-                        ? "bg-[#25272c] text-white shadow-sm font-semibold border border-white/10"
-                        : "text-white/50 hover:text-white hover:bg-white/[0.04]"
+                        ? "bg-[var(--foreground)] text-[var(--background)] dark:bg-[#25272c] dark:text-white shadow-sm font-semibold border border-[var(--border-subtle)]"
+                        : "text-foreground/50 hover:text-foreground hover:bg-[var(--foreground)]/[0.04]"
                     }`}
                   >
                     {label}
@@ -137,18 +137,18 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
 
       {/* Section: Appearance (Mode Selector) */}
       <div className="space-y-2">
-        <h2 className="text-xs font-semibold text-white/70">Appearance</h2>
+        <h2 className="text-xs font-semibold text-foreground/70">Appearance</h2>
 
-        <div className="rounded-xl border border-white/[0.07] bg-[#16171a]/50 px-4 py-3 flex items-center justify-between">
+        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] px-4 py-3 flex items-center justify-between">
           <div className="space-y-0.5">
-            <span className="text-xs font-medium text-white/90">Appearance</span>
-            <p className="text-[11px] text-white/45 leading-relaxed">
+            <span className="text-xs font-medium text-foreground/90">Appearance</span>
+            <p className="text-[11px] text-foreground/45 leading-relaxed">
               Select light, dark, or inherit system settings.
             </p>
           </div>
 
           {/* 3-icon button group: [Monitor/System, Sun/Light, Moon/Dark] */}
-          <div className="inline-flex items-center rounded-lg bg-[#111215] p-0.5 border border-white/[0.08]">
+          <div className="inline-flex items-center rounded-lg bg-[var(--surface-card)] p-0.5 border border-[var(--border-subtle)]">
             <button
               type="button"
               aria-label="Inherit system theme"
@@ -156,8 +156,8 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
               onClick={() => setTheme("system")}
               className={`p-1.5 rounded-md transition-all duration-150 ${
                 theme === "system"
-                  ? "bg-[#25272c] text-white shadow-sm border border-white/10"
-                  : "text-white/40 hover:text-white/80 hover:bg-white/[0.04]"
+                  ? "bg-[var(--foreground)] text-[var(--background)] dark:bg-[#25272c] dark:text-white shadow-sm border border-[var(--border-subtle)]"
+                  : "text-foreground/40 hover:text-foreground/80 hover:bg-[var(--foreground)]/[0.04]"
               }`}
             >
               <Laptop className="w-3.5 h-3.5" />
@@ -170,8 +170,8 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
               onClick={() => setTheme("studio-bone")}
               className={`p-1.5 rounded-md transition-all duration-150 ${
                 theme === "studio-bone" || theme === "light"
-                  ? "bg-[#25272c] text-white shadow-sm border border-white/10"
-                  : "text-white/40 hover:text-white/80 hover:bg-white/[0.04]"
+                  ? "bg-[var(--foreground)] text-[var(--background)] dark:bg-[#25272c] dark:text-white shadow-sm border border-[var(--border-subtle)]"
+                  : "text-foreground/40 hover:text-foreground/80 hover:bg-[var(--foreground)]/[0.04]"
               }`}
             >
               <Sun className="w-3.5 h-3.5" />
@@ -184,8 +184,8 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
               onClick={() => setTheme("studio-dark")}
               className={`p-1.5 rounded-md transition-all duration-150 ${
                 theme === "studio-dark" || theme === "dark"
-                  ? "bg-[#25272c] text-white shadow-sm border border-white/10"
-                  : "text-white/40 hover:text-white/80 hover:bg-white/[0.04]"
+                  ? "bg-[var(--foreground)] text-[var(--background)] dark:bg-[#25272c] dark:text-white shadow-sm border border-[var(--border-subtle)]"
+                  : "text-foreground/40 hover:text-foreground/80 hover:bg-[var(--foreground)]/[0.04]"
               }`}
             >
               <Moon className="w-3.5 h-3.5" />
@@ -196,12 +196,12 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
 
       {/* Section: Light Theme */}
       <div className="space-y-2">
-        <h2 className="text-xs font-semibold text-white/70">Light Theme</h2>
+        <h2 className="text-xs font-semibold text-foreground/70">Light Theme</h2>
 
-        <div className="rounded-xl border border-white/[0.07] bg-[#16171a]/50 divide-y divide-white/[0.05]">
+        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] divide-y divide-[var(--border-subtle)]">
           {/* Preset Dropdown */}
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-xs font-medium text-white/90">Preset</span>
+            <span className="text-xs font-medium text-foreground/90">Preset</span>
             <div className="relative">
               <select
                 aria-label="Light Theme Preset"
@@ -210,12 +210,12 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
                   setLightPreset(e.target.value);
                   setTheme("studio-bone");
                 }}
-                className="bg-[#1e2025] hover:bg-[#25272d] text-white/80 text-xs px-3 py-1 pr-6 rounded-md border border-white/10 outline-none cursor-pointer appearance-none transition-colors"
+                className="bg-[var(--surface-card)] hover:bg-[var(--surface-card)]/80 text-foreground/80 text-xs px-3 py-1 pr-6 rounded-md border border-[var(--border-subtle)] outline-none cursor-pointer appearance-none transition-colors"
               >
-                <option value="Default Light" className="bg-[#1a1b20]">Default Light</option>
-                <option value="studio-bone" className="bg-[#1a1b20]">Default Light (studio-bone)</option>
+                <option value="Default Light" className="bg-[var(--surface)] text-foreground">Default Light</option>
+                <option value="studio-bone" className="bg-[var(--surface)] text-foreground">Default Light (studio-bone)</option>
               </select>
-              <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-white/40 text-[10px]">
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-foreground/40 text-[10px]">
                 ▼
               </span>
             </div>
@@ -223,37 +223,37 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
 
           {/* Background Swatch */}
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-xs font-medium text-white/90">Background</span>
-            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/10">
+            <span className="text-xs font-medium text-foreground/90">Background</span>
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-card)] border border-[var(--border-subtle)]">
               <span
-                className="w-3 h-3 rounded-[3px] border border-black/10 shrink-0"
+                className="w-3 h-3 rounded-[3px] border border-[var(--border-subtle)] shrink-0"
                 style={{ backgroundColor: "#EEEEEE" }}
               />
-              <span className="font-mono text-[11px] text-white/70">#EEEEEE</span>
+              <span className="font-mono text-[11px] text-foreground/70">#EEEEEE</span>
             </div>
           </div>
 
           {/* Foreground Swatch */}
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-xs font-medium text-white/90">Foreground</span>
-            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/20 shrink-0">
+            <span className="text-xs font-medium text-foreground/90">Foreground</span>
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-card)] border border-[var(--border-subtle)] shrink-0">
               <span
-                className="w-3 h-3 rounded-[3px] border border-white/20 shrink-0"
+                className="w-3 h-3 rounded-[3px] border border-[var(--border-subtle)] shrink-0"
                 style={{ backgroundColor: "#101010" }}
               />
-              <span className="font-mono text-[11px] text-white/70">#101010</span>
+              <span className="font-mono text-[11px] text-foreground/70">#101010</span>
             </div>
           </div>
 
           {/* Accent Swatch */}
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-xs font-medium text-white/90">Accent</span>
-            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/10">
+            <span className="text-xs font-medium text-foreground/90">Accent</span>
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-card)] border border-[var(--border-subtle)]">
               <span
-                className="w-3 h-3 rounded-[3px] border border-white/20 shrink-0"
+                className="w-3 h-3 rounded-[3px] border border-[var(--border-subtle)] shrink-0"
                 style={{ backgroundColor: "#007ACC" }}
               />
-              <span className="font-mono text-[11px] text-white/70">#007ACC</span>
+              <span className="font-mono text-[11px] text-foreground/70">#007ACC</span>
             </div>
           </div>
         </div>
@@ -261,12 +261,12 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
 
       {/* Section: Dark Theme */}
       <div className="space-y-2">
-        <h2 className="text-xs font-semibold text-white/70">Dark Theme</h2>
+        <h2 className="text-xs font-semibold text-foreground/70">Dark Theme</h2>
 
-        <div className="rounded-xl border border-white/[0.07] bg-[#16171a]/50 divide-y divide-white/[0.05]">
+        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] divide-y divide-[var(--border-subtle)]">
           {/* Preset Dropdown */}
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-xs font-medium text-white/90">Preset</span>
+            <span className="text-xs font-medium text-foreground/90">Preset</span>
             <div className="relative">
               <select
                 aria-label="Dark Theme Preset"
@@ -279,13 +279,13 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
                     setTheme("studio-dark");
                   }
                 }}
-                className="bg-[#1e2025] hover:bg-[#25272d] text-white/80 text-xs px-3 py-1 pr-6 rounded-md border border-white/10 outline-none cursor-pointer appearance-none transition-colors"
+                className="bg-[var(--surface-card)] hover:bg-[var(--surface-card)]/80 text-foreground/80 text-xs px-3 py-1 pr-6 rounded-md border border-[var(--border-subtle)] outline-none cursor-pointer appearance-none transition-colors"
               >
-                <option value="Default Dark" className="bg-[#1a1b20]">Default Dark</option>
-                <option value="studio-dark" className="bg-[#1a1b20]">Default Dark (studio-dark)</option>
-                <option value="cyberpunk" className="bg-[#1a1b20]">Xavier Cyberpunk</option>
+                <option value="Default Dark" className="bg-[var(--surface)] text-foreground">Default Dark</option>
+                <option value="studio-dark" className="bg-[var(--surface)] text-foreground">Default Dark (studio-dark)</option>
+                <option value="cyberpunk" className="bg-[var(--surface)] text-foreground">Xavier Cyberpunk</option>
               </select>
-              <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-white/40 text-[10px]">
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-foreground/40 text-[10px]">
                 ▼
               </span>
             </div>
@@ -293,37 +293,37 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
 
           {/* Background Swatch */}
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-xs font-medium text-white/90">Background</span>
-            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/10">
+            <span className="text-xs font-medium text-foreground/90">Background</span>
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-card)] border border-[var(--border-subtle)]">
               <span
-                className="w-3 h-3 rounded-[3px] border border-white/20 shrink-0"
+                className="w-3 h-3 rounded-[3px] border border-[var(--border-subtle)] shrink-0"
                 style={{ backgroundColor: "#101010" }}
               />
-              <span className="font-mono text-[11px] text-white/70">#101010</span>
+              <span className="font-mono text-[11px] text-foreground/70">#101010</span>
             </div>
           </div>
 
           {/* Foreground Swatch */}
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-xs font-medium text-white/90">Foreground</span>
-            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/10">
+            <span className="text-xs font-medium text-foreground/90">Foreground</span>
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-card)] border border-[var(--border-subtle)]">
               <span
-                className="w-3 h-3 rounded-[3px] border border-white/20 shrink-0"
+                className="w-3 h-3 rounded-[3px] border border-[var(--border-subtle)] shrink-0"
                 style={{ backgroundColor: "#CCCCCC" }}
               />
-              <span className="font-mono text-[11px] text-white/70">#CCCCCC</span>
+              <span className="font-mono text-[11px] text-foreground/70">#CCCCCC</span>
             </div>
           </div>
 
           {/* Accent Swatch */}
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-xs font-medium text-white/90">Accent</span>
-            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/10">
+            <span className="text-xs font-medium text-foreground/90">Accent</span>
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--surface-card)] border border-[var(--border-subtle)]">
               <span
-                className="w-3 h-3 rounded-[3px] border border-white/20 shrink-0"
+                className="w-3 h-3 rounded-[3px] border border-[var(--border-subtle)] shrink-0"
                 style={{ backgroundColor: "#007ACC" }}
               />
-              <span className="font-mono text-[11px] text-white/70">#007ACC</span>
+              <span className="font-mono text-[11px] text-foreground/70">#007ACC</span>
             </div>
           </div>
         </div>
@@ -354,7 +354,7 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
           {/* Background Custom Swatch */}
-          <div className="p-4 rounded-xl border border-white/[0.06] bg-[#141518]/70 flex items-center justify-between gap-3">
+          <div className="p-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] flex items-center justify-between gap-3">
             <div>
               <span className="text-sm font-medium block">Color de Fondo</span>
               <span className="text-xs font-mono text-foreground/60">{activeTokens.background}</span>
@@ -363,7 +363,7 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
               <button
                 type="button"
                 onClick={() => bgInputRef.current?.click()}
-                className="w-8 h-8 rounded-lg border border-white/20 shadow-sm cursor-pointer hover:scale-105 transition-transform"
+                className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] shadow-sm cursor-pointer hover:scale-105 transition-transform"
                 style={{ backgroundColor: activeTokens.background }}
                 title="Editar color de fondo"
                 aria-label="Editar color de fondo"
@@ -380,7 +380,7 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
           </div>
 
           {/* Foreground Custom Swatch */}
-          <div className="p-4 rounded-xl border border-white/[0.06] bg-[#141518]/70 flex items-center justify-between gap-3">
+          <div className="p-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] flex items-center justify-between gap-3">
             <div>
               <span className="text-sm font-medium block">Color Texto / Texto Principal</span>
               <span className="text-xs font-mono text-foreground/60">{activeTokens.foreground}</span>
@@ -389,7 +389,7 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
               <button
                 type="button"
                 onClick={() => fgInputRef.current?.click()}
-                className="w-8 h-8 rounded-lg border border-white/20 shadow-sm cursor-pointer hover:scale-105 transition-transform"
+                className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] shadow-sm cursor-pointer hover:scale-105 transition-transform"
                 style={{ backgroundColor: activeTokens.foreground }}
                 title="Editar color texto principal"
                 aria-label="Editar color texto principal"
@@ -406,7 +406,7 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
           </div>
 
           {/* Accent Custom Swatch */}
-          <div className="p-4 rounded-xl border border-white/[0.06] bg-[#141518]/70 flex items-center justify-between gap-3">
+          <div className="p-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface)] flex items-center justify-between gap-3">
             <div>
               <span className="text-sm font-medium block">Color de Acento</span>
               <span className="text-xs font-mono text-foreground/60">{activeTokens.accent}</span>
@@ -415,7 +415,7 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
               <button
                 type="button"
                 onClick={() => accentInputRef.current?.click()}
-                className="w-8 h-8 rounded-lg border border-white/20 shadow-sm cursor-pointer hover:scale-105 transition-transform"
+                className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] shadow-sm cursor-pointer hover:scale-105 transition-transform"
                 style={{ backgroundColor: activeTokens.accent }}
                 title="Editar color de acento"
                 aria-label="Editar color de acento"
