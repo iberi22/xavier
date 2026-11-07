@@ -142,10 +142,10 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
     >
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-light text-white tracking-tight">
+          <h2 className="text-3xl font-light text-[var(--foreground)] dark:text-white tracking-tight">
             AI Provider Ecosystem
           </h2>
-          <p className="text-sm text-white/40 mt-1">
+          <p className="text-sm text-[var(--foreground)]/40 dark:text-white/40 mt-1">
             Manage LLM backends, API keys and system-wide routing.
           </p>
         </div>
@@ -167,10 +167,10 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
           {/* Active Provider & General Status */}
-          <section className="bg-[#050505]/30 border border-white/5 rounded-[32px] p-8">
+          <section className="bg-[var(--surface-card)] dark:bg-[#050505]/30 border border-[var(--border-subtle)] dark:border-white/5 rounded-[32px] p-8">
             <div className="flex items-center gap-2 mb-6">
               <Globe className="w-4 h-4 text-[#39ff14]" />
-              <h3 className="text-xs uppercase tracking-[0.2em] font-bold text-white/60">
+              <h3 className="text-xs uppercase tracking-[0.2em] font-bold text-[var(--foreground)]/60 dark:text-white/60">
                 Primary Routing
               </h3>
             </div>
@@ -180,15 +180,15 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
                 activeProvider={activeProvider}
                 onSwitch={setActiveProvider}
               />
-              <div className="flex gap-4 p-4 bg-white/5 rounded-2xl border border-white/5">
+              <div className="flex gap-4 p-4 bg-black/5 dark:bg-white/5 rounded-2xl border border-[var(--border-subtle)] dark:border-white/5">
                 <div className="p-2 bg-[#39ff14]/10 rounded-lg">
                   <ShieldCheck className="w-5 h-5 text-[#39ff14]" />
                 </div>
                 <div>
-                  <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
+                  <p className="text-[10px] text-[var(--foreground)]/40 dark:text-white/40 uppercase font-bold tracking-wider">
                     Security Policy
                   </p>
-                  <p className="text-sm text-white/90">Hardware-Backed Keys</p>
+                  <p className="text-sm text-[var(--foreground)]/90 dark:text-white/90">Hardware-Backed Keys</p>
                 </div>
               </div>
             </div>
@@ -203,8 +203,8 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
           {/* API Credentials */}
           <section className="space-y-6">
             <div className="flex items-center gap-2 px-2">
-              <Cpu className="w-4 h-4 text-white/40" />
-              <h3 className="text-xs uppercase tracking-[0.2em] font-bold text-white/40">
+              <Cpu className="w-4 h-4 text-[var(--foreground)]/40 dark:text-white/40" />
+              <h3 className="text-xs uppercase tracking-[0.2em] font-bold text-[var(--foreground)]/40 dark:text-white/40">
                 Model Credentials
               </h3>
             </div>
@@ -233,8 +233,8 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
           {/* CLI Agents */}
           <section className="space-y-4">
             <div className="flex items-center gap-2 px-2">
-              <Zap className="w-4 h-4 text-white/40" />
-              <h3 className="text-xs uppercase tracking-[0.2em] font-bold text-white/40">
+              <Zap className="w-4 h-4 text-[var(--foreground)]/40 dark:text-white/40" />
+              <h3 className="text-xs uppercase tracking-[0.2em] font-bold text-[var(--foreground)]/40 dark:text-white/40">
                 CLI Agents
               </h3>
             </div>
@@ -251,12 +251,12 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
       <section className="space-y-4 mt-4">
         <div className="flex items-center justify-between px-2">
           <div className="flex items-center gap-2">
-            <RefreshCcw className="w-4 h-4 text-white/40" />
-            <h3 className="text-xs uppercase tracking-[0.2em] font-bold text-white/40">
+            <RefreshCcw className="w-4 h-4 text-[var(--foreground)]/40 dark:text-white/40" />
+            <h3 className="text-xs uppercase tracking-[0.2em] font-bold text-[var(--foreground)]/40 dark:text-white/40">
               Usage & Quotas
             </h3>
           </div>
-          <span className="text-[10px] text-white/30 italic">
+          <span className="text-[10px] text-[var(--foreground)]/30 dark:text-white/30 italic">
             Auto-refreshes every 30s
           </span>
         </div>
@@ -286,14 +286,14 @@ const ProviderConfigCard = React.memo(function ProviderConfigCard({
   onTestProvider,
 }: ProviderConfigCardProps) {
   return (
-    <div className="bg-[#050505]/30 border border-white/5 rounded-2xl p-6">
+    <div className="bg-[var(--surface-card)] dark:bg-[#050505]/30 border border-[var(--border-subtle)] dark:border-white/5 rounded-2xl p-6">
       <div className="flex items-center justify-between mb-4">
         <h4 className="text-sm font-bold capitalize">{config.provider}</h4>
         <div className="flex items-center gap-4">
           <div className="flex flex-col items-end">
             <label
               htmlFor={`${config.provider}-model-input`}
-              className="text-[9px] text-white/30 uppercase font-bold"
+              className="text-[9px] text-[var(--foreground)]/30 dark:text-white/30 uppercase font-bold"
             >
               Model
             </label>
@@ -305,7 +305,7 @@ const ProviderConfigCard = React.memo(function ProviderConfigCard({
                   model: e.target.value,
                 })
               }
-              className="bg-transparent text-right text-xs text-white/80 focus:text-[#39ff14] outline-none"
+              className="bg-transparent text-right text-xs text-[var(--foreground)]/80 dark:text-white/80 focus:text-[#39ff14] outline-none"
             />
           </div>
         </div>
@@ -321,7 +321,7 @@ const ProviderConfigCard = React.memo(function ProviderConfigCard({
         <div className="mt-4">
           <label
             htmlFor={`${config.provider}-endpoint-input`}
-            className="text-[10px] uppercase text-white/50 tracking-widest block mb-2"
+            className="text-[10px] uppercase text-[var(--foreground)]/50 dark:text-white/50 tracking-widest block mb-2"
           >
             Endpoint URL
           </label>
@@ -333,7 +333,7 @@ const ProviderConfigCard = React.memo(function ProviderConfigCard({
                 base_url: e.target.value,
               })
             }
-            className="w-full bg-black/40 border border-white/5 rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30"
+            className="w-full bg-black/5 dark:bg-black/40 border border-[var(--border-subtle)] dark:border-white/5 rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30"
             placeholder="http://localhost:11434"
           />
         </div>
