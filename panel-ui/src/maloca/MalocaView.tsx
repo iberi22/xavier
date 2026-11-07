@@ -42,7 +42,7 @@ export default function MalocaView({ onClose }: Props) {
       case "roadmap": return <RoadmapTab />;
       case "explain": return <ExplainTab />;
       default: return (
-        <div className="flex items-center justify-center h-48 text-white/40 font-mono text-sm">
+        <div className="flex items-center justify-center h-48 text-[var(--foreground)] font-mono text-sm">
           Module '{activeTab}' under construction...
         </div>
       );
@@ -52,12 +52,12 @@ export default function MalocaView({ onClose }: Props) {
   const activeTabConfig = TABS.find((t) => t.id === activeTab) || TABS[0];
 
   return (
-    <div className="maloca-root absolute inset-0 z-40 bg-[#050505] text-white overflow-hidden flex flex-col font-sans">
+    <div className="maloca-root absolute inset-0 z-40 bg-[var(--background)] text-[var(--foreground)] overflow-hidden flex flex-col font-sans">
       <div className="maloca-shell relative flex-1 flex flex-col max-w-[1600px] w-full mx-auto p-4 sm:p-6 lg:p-8 overflow-hidden h-full">
         {onClose && (
           <button
             type="button"
-            className="absolute top-6 right-6 p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 z-50"
+            className="absolute top-6 right-6 p-2 rounded-full bg-white/5 hover:bg-white/10 text-[var(--foreground)] hover:text-[var(--foreground)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 z-50"
             onClick={onClose}
             aria-label="Cerrar Maloca"
           >
@@ -66,13 +66,13 @@ export default function MalocaView({ onClose }: Props) {
         )}
 
         {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-6 border-b border-white/10 shrink-0">
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-6 border-b border-[var(--border-subtle)] shrink-0">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-1 flex items-center gap-3">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--foreground)] mb-1 flex items-center gap-3">
               <span className="w-3 h-3 rounded-full bg-[#39ff14] shadow-[0_0_12px_rgba(57,255,20,0.5)] animate-pulse" />
               Maloca Ops Hub
             </h1>
-            <p className="text-sm font-mono text-white/50">Primary Xavier Ecosystem Workspace</p>
+            <p className="text-sm font-mono text-[var(--foreground)]">Primary Xavier Ecosystem Workspace</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -89,9 +89,9 @@ export default function MalocaView({ onClose }: Props) {
         </header>
 
         {deviceKey && (
-          <div className="my-4 p-3 glass-panel border border-emerald-500/40 rounded-lg bg-[#0a0a0a] shrink-0">
+          <div className="my-4 p-3 glass-panel border border-emerald-500/40 rounded-lg bg-[var(--surface)] shrink-0">
             <span className="text-xs text-emerald-400 font-mono mb-1 block">Attestation Key (WebAuthn PRF):</span>
-            <code className="text-[11px] font-mono text-white/70 break-all bg-black/50 p-2 rounded block">
+            <code className="text-[11px] font-mono text-[var(--foreground)] break-all bg-[var(--surface)] p-2 rounded block">
               {deviceKey}
             </code>
           </div>
@@ -111,12 +111,12 @@ export default function MalocaView({ onClose }: Props) {
                   aria-current={isActive ? "page" : undefined}
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all whitespace-nowrap lg:whitespace-normal text-left
                     ${isActive
-                      ? 'bg-white/10 text-white shadow-[inset_3px_0_0_#39ff14]'
-                      : 'text-white/50 hover:bg-white/5 hover:text-white/80'}`}
+                      ? 'bg-white/10 text-[var(--foreground)] shadow-[inset_3px_0_0_#39ff14]'
+                      : 'text-[var(--foreground)] hover:bg-white/5 hover:text-[var(--foreground)]'}`}
                 >
                   <Icon size={18} className={isActive ? 'text-[#39ff14]' : ''} />
                   <div className="hidden sm:block">
-                    <div className={`text-sm font-medium ${isActive ? 'text-white' : ''}`}>{tab.label}</div>
+                    <div className={`text-sm font-medium ${isActive ? 'text-[var(--foreground)]' : ''}`}>{tab.label}</div>
                     <div className="text-[10px] opacity-60 hidden lg:block mt-0.5 line-clamp-1">{tab.description}</div>
                   </div>
                   <span className="sm:hidden text-sm font-medium">{tab.label}</span>
@@ -126,7 +126,7 @@ export default function MalocaView({ onClose }: Props) {
           </nav>
 
           {/* Main Content Area */}
-          <main className="flex-1 min-w-0 bg-[#0a0a0a] rounded-2xl border border-white/5 p-4 sm:p-6 lg:p-8 overflow-y-auto custom-scrollbar relative">
+          <main className="flex-1 min-w-0 bg-[var(--surface)] rounded-2xl border border-[var(--border-subtle)] p-4 sm:p-6 lg:p-8 overflow-y-auto custom-scrollbar relative">
             <div className="max-w-5xl mx-auto">
               {renderActiveTab()}
             </div>

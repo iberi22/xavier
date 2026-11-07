@@ -29,10 +29,10 @@ function RoadmapCard({ title, summary }: RoadmapCardProps) {
   const listId = `roadmap-features-${title.replace(/\s+/g, "-").toLowerCase()}`;
 
   return (
-    <section className="glass-panel p-4 border border-white/5 rounded-xl bg-[#0a0a0a]" aria-label={title}>
+    <section className="glass-panel p-4 border border-[var(--border-subtle)] rounded-xl bg-[var(--surface)]" aria-label={title}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <h4 className="text-white font-medium text-sm">{title}</h4>
-        <div className="flex flex-wrap gap-2 text-[11px] font-mono text-white/60">
+        <h4 className="text-[var(--foreground)] font-medium text-sm">{title}</h4>
+        <div className="flex flex-wrap gap-2 text-[11px] font-mono text-[var(--foreground)]">
           <span>{summary.total} total</span>
           <span className="text-emerald-400">{summary.stable} stable</span>
           <span className="text-amber-400">{summary.in_progress} in progress</span>
@@ -57,7 +57,7 @@ function RoadmapCard({ title, summary }: RoadmapCardProps) {
         <div className="mt-3">
           <button
             type="button"
-            className="flex items-center gap-1 text-xs font-mono text-white/60 hover:text-white transition-colors"
+            className="flex items-center gap-1 text-xs font-mono text-[var(--foreground)] hover:text-[var(--foreground)] transition-colors"
             aria-expanded={expanded}
             aria-controls={listId}
             onClick={() => setExpanded((v) => !v)}
@@ -70,13 +70,13 @@ function RoadmapCard({ title, summary }: RoadmapCardProps) {
               {summary.features.map((feature) => (
                 <li
                   key={feature.id}
-                  className="flex items-center justify-between gap-3 text-xs border-t border-white/5 pt-1.5"
+                  className="flex items-center justify-between gap-3 text-xs border-t border-[var(--border-subtle)] pt-1.5"
                 >
-                  <span className="text-white/80">
+                  <span className="text-[var(--foreground)]">
                     {feature.name}
-                    <span className="ml-2 font-mono text-white/30">{feature.id}</span>
+                    <span className="ml-2 font-mono text-[var(--foreground)]">{feature.id}</span>
                   </span>
-                  <span className="font-mono text-white/50 whitespace-nowrap">
+                  <span className="font-mono text-[var(--foreground)] whitespace-nowrap">
                     {feature.status} · {Math.round(clampPct(feature.progress_pct))}%
                   </span>
                 </li>
@@ -128,9 +128,9 @@ export function RoadmapTab() {
 
   if (!roadmap || isRoadmapEmpty(roadmap)) {
     return (
-      <div className="text-center py-12 border border-dashed border-white/10 rounded-xl bg-[#0a0a0a]">
-        <Map size={32} className="mx-auto text-white/10 mb-3" />
-        <p className="text-white/40 text-sm">No roadmap features are available yet.</p>
+      <div className="text-center py-12 border border-dashed border-[var(--border-subtle)] rounded-xl bg-[var(--surface)]">
+        <Map size={32} className="mx-auto text-[var(--foreground)] mb-3" />
+        <p className="text-[var(--foreground)] text-sm">No roadmap features are available yet.</p>
       </div>
     );
   }
@@ -138,11 +138,11 @@ export function RoadmapTab() {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+        <h3 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
           <Map size={18} className="text-emerald-400" />
           Roadmap
         </h3>
-        <p className="text-xs text-white/50 mt-1">Feature progress grouped by wave</p>
+        <p className="text-xs text-[var(--foreground)] mt-1">Feature progress grouped by wave</p>
       </div>
 
       <div className="grid gap-3">

@@ -28,7 +28,7 @@ export function MalocaAuthPrompt() {
   };
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-[var(--surface)] p-4">
       <form
         role="dialog"
         aria-modal="true"
@@ -38,16 +38,16 @@ export function MalocaAuthPrompt() {
         onKeyDown={(e) => {
           if (e.key === "Escape") cancelMalocaToken();
         }}
-        className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0a0a0a] p-6 flex flex-col gap-4"
+        className="w-full max-w-md rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-6 flex flex-col gap-4"
       >
-        <h2 id={titleId} className="text-lg font-bold text-white">
+        <h2 id={titleId} className="text-lg font-bold text-[var(--foreground)]">
           Token required
         </h2>
-        <p id={descId} className="text-sm text-white/60">
+        <p id={descId} className="text-sm text-[var(--foreground)]">
           This data is private. Enter your Xavier access token. It is stored only on this device and sent only to
           this server.
         </p>
-        <label htmlFor={`${titleId}-token`} className="text-xs text-white/60 uppercase tracking-widest">
+        <label htmlFor={`${titleId}-token`} className="text-xs text-[var(--foreground)] uppercase tracking-widest">
           Access token
         </label>
         <input
@@ -57,13 +57,13 @@ export function MalocaAuthPrompt() {
           autoComplete="off"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none font-mono"
+          className="w-full bg-white/5 border border-[var(--border-subtle)] rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none font-mono"
         />
         <div className="flex justify-end gap-2">
           <button
             type="button"
             onClick={cancelMalocaToken}
-            className="px-4 py-2 text-xs font-mono rounded-lg text-white/60 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="px-4 py-2 text-xs font-mono rounded-lg text-[var(--foreground)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
             Cancel
           </button>

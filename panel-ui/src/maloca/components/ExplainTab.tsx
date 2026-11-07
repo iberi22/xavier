@@ -71,11 +71,11 @@ export function renderableOpenUi(markup: string): OpenUiNode[] | null {
 }
 
 const INPUT_CLASS =
-  "w-full px-3 py-2 text-xs font-mono bg-black/50 border border-white/10 rounded-lg text-white placeholder:text-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500";
+  "w-full px-3 py-2 text-xs font-mono bg-[var(--surface)] border border-[var(--border-subtle)] rounded-lg text-[var(--foreground)] placeholder:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500";
 
 function PlainTextFallback({ text }: { text: string }) {
   return (
-    <div className="text-sm leading-relaxed text-white/80 whitespace-pre-wrap" data-testid="explain-plain-text">
+    <div className="text-sm leading-relaxed text-[var(--foreground)] whitespace-pre-wrap" data-testid="explain-plain-text">
       {text}
     </div>
   );
@@ -89,7 +89,7 @@ function ExplainResult({ result }: { result: ExplainResponse }) {
 
   return (
     <div className="space-y-4">
-      <div className="glass-panel p-4 border border-white/5 rounded-xl bg-[#0a0a0a]">
+      <div className="glass-panel p-4 border border-[var(--border-subtle)] rounded-xl bg-[var(--surface)]">
         {nodes ? (
           <ErrorBoundary fallback={<PlainTextFallback text={result.plain_text} />}>
             <RenderSurface nodes={nodes} />
@@ -101,7 +101,7 @@ function ExplainResult({ result }: { result: ExplainResponse }) {
 
       {citedRefs.length > 0 && (
         <div>
-          <h4 className="text-xs font-mono uppercase text-white/50 mb-2">Cited references</h4>
+          <h4 className="text-xs font-mono uppercase text-[var(--foreground)] mb-2">Cited references</h4>
           <ul aria-label="Cited references" className="space-y-1">
             {citedRefs.map((ref) => (
               <li key={ref} className="text-xs font-mono text-emerald-300 break-all">
@@ -130,7 +130,7 @@ function ExplainResult({ result }: { result: ExplainResponse }) {
       )}
 
       {skippedSources.length > 0 && (
-        <ul aria-label="Skipped sources" className="space-y-0.5 text-[11px] text-white/40 font-mono">
+        <ul aria-label="Skipped sources" className="space-y-0.5 text-[11px] text-[var(--foreground)] font-mono">
           {skippedSources.map(([source, reason]) => (
             <li key={`${source}:${reason}`}>
               Skipped {source}: {reason}
@@ -172,17 +172,17 @@ export function ExplainTab() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+        <h3 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
           <FileCode size={18} className="text-emerald-400" />
           Explain code
         </h3>
-        <p className="text-xs text-white/50 mt-1">
+        <p className="text-xs text-[var(--foreground)] mt-1">
           Explain a line range of a repository file. Citations are checked against the evidence.
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="grid gap-3 sm:grid-cols-2" aria-label="Explain request">
-        <label className="sm:col-span-2 space-y-1 text-xs text-white/60">
+        <label className="sm:col-span-2 space-y-1 text-xs text-[var(--foreground)]">
           File path
           <input
             className={INPUT_CLASS}
@@ -192,7 +192,7 @@ export function ExplainTab() {
             required
           />
         </label>
-        <label className="space-y-1 text-xs text-white/60">
+        <label className="space-y-1 text-xs text-[var(--foreground)]">
           Start line
           <input
             className={INPUT_CLASS}
@@ -203,7 +203,7 @@ export function ExplainTab() {
             required
           />
         </label>
-        <label className="space-y-1 text-xs text-white/60">
+        <label className="space-y-1 text-xs text-[var(--foreground)]">
           End line
           <input
             className={INPUT_CLASS}
@@ -214,7 +214,7 @@ export function ExplainTab() {
             required
           />
         </label>
-        <label className="space-y-1 text-xs text-white/60">
+        <label className="space-y-1 text-xs text-[var(--foreground)]">
           Symbol (optional)
           <input
             className={INPUT_CLASS}
@@ -222,7 +222,7 @@ export function ExplainTab() {
             onChange={(e) => update("symbol", e.target.value)}
           />
         </label>
-        <label className="space-y-1 text-xs text-white/60">
+        <label className="space-y-1 text-xs text-[var(--foreground)]">
           Audience
           <select
             className={INPUT_CLASS}

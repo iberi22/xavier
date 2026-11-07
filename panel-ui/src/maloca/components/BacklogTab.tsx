@@ -50,41 +50,41 @@ export function BacklogTab() {
     <div className="space-y-4">
       <div className="flex justify-between items-center mb-4">
         <div>
-          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
             <ListTodo size={18} className="text-emerald-400" />
             Global Backlog
           </h3>
-          <p className="text-xs text-white/50 mt-1">Unified task queue & work-item scheduling</p>
+          <p className="text-xs text-[var(--foreground)] mt-1">Unified task queue & work-item scheduling</p>
         </div>
       </div>
 
       <div className="grid gap-3">
         {items.length === 0 ? (
-          <div className="text-center py-12 border border-dashed border-white/10 rounded-xl bg-[#0a0a0a]">
-            <ListTodo size={32} className="mx-auto text-white/10 mb-3" />
-            <p className="text-white/40 text-sm">No backlog items currently available.</p>
+          <div className="text-center py-12 border border-dashed border-[var(--border-subtle)] rounded-xl bg-[var(--surface)]">
+            <ListTodo size={32} className="mx-auto text-[var(--foreground)] mb-3" />
+            <p className="text-[var(--foreground)] text-sm">No backlog items currently available.</p>
           </div>
         ) : (
           items.map((item) => (
-            <div key={item.id} className="glass-panel p-4 border border-white/5 rounded-xl bg-[#0a0a0a] hover:bg-white/[0.02] transition-colors">
+            <div key={item.id} className="glass-panel p-4 border border-[var(--border-subtle)] rounded-xl bg-[var(--surface)] hover:bg-white/[0.02] transition-colors">
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     {getStatusIcon(item.status)}
-                    <h4 className="text-white font-medium text-sm">{item.title}</h4>
-                    <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-white/50 border border-white/10 uppercase">
+                    <h4 className="text-[var(--foreground)] font-medium text-sm">{item.title}</h4>
+                    <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-[var(--foreground)] border border-[var(--border-subtle)] uppercase">
                       {item.status}
                     </span>
                   </div>
                   {item.notes && (
-                    <p className="text-xs text-white/60 mb-3">{item.notes}</p>
+                    <p className="text-xs text-[var(--foreground)] mb-3">{item.notes}</p>
                   )}
                   <div className="flex items-center gap-3 text-xs">
                     <span className="flex items-center gap-1 text-cyan-400 font-mono">
                       <Code2 size={12} />
                       {item.repo_name}
                     </span>
-                    <span className="text-white/30 font-mono">ID: {item.id}</span>
+                    <span className="text-[var(--foreground)] font-mono">ID: {item.id}</span>
                   </div>
                 </div>
 
